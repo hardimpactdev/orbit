@@ -23,7 +23,7 @@ final readonly class RemoteProgramCatalog
         $this->directory = $directory ?? resource_path('remote');
     }
 
-    public function program(string $name): RemoteProgram
+    public function program(string $name, ?string $user = null): RemoteProgram
     {
         if (preg_match('/\A('.self::Segment.')\.('.self::Segment.')\z/D', $name, $parts) !== 1 || $parts[1] === 'lib') {
             throw new LogicException("[{$name}] is not a remote program name.");
@@ -68,6 +68,7 @@ final readonly class RemoteProgramCatalog
             source: $source.$program,
             outcomes: $this->outcomes($name, $language, $header),
             timeoutSeconds: (int) $timeout,
+            user: $user,
         );
     }
 

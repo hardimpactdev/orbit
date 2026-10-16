@@ -7,6 +7,7 @@ use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\RollbackInstanceAction;
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\Instances\Deployment\DeploymentCancellation;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
@@ -19,8 +20,13 @@ use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
+use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
+use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
@@ -46,6 +52,27 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Orb220DeploymentApiFixture;
+
+it('does not run the env-sync runtime refresher during deployment', function (): void {
+    $instance = orb219_deployment_instance([], php: true);
+    $instance->environmentValues()->create(['env_key' => 'QUEUE_CONNECTION', 'env_value' => 'redis']);
+    $preflight = Mockery::mock(InstanceOperationPreflight::class);
+    $preflight->shouldReceive('assertEnvironmentWritable')->once();
+    app()->instance(InstanceOperationPreflight::class, $preflight);
+    $writer = Mockery::mock(InstanceEnvironmentWriter::class);
+    $writer->shouldReceive('write')->once()->andReturn(InstanceEnvironmentWriteResult::changed());
+    app()->instance(InstanceEnvironmentWriter::class, $writer);
+    $reader = Mockery::mock(InstanceEnvironmentReader::class);
+    $reader->shouldReceive('read')->once()->andReturn('');
+    app()->instance(InstanceEnvironmentReader::class, $reader);
+    $refresher = Mockery::mock(InstanceEnvironmentRuntimeRefresher::class);
+    $refresher->shouldNotReceive('refresh');
+    app()->instance(InstanceEnvironmentRuntimeRefresher::class, $refresher);
+    $trace = new Orb219DeploymentTrace;
+    [$deploy] = orb219_actions($trace, app(SynchronizeInstanceEnvironmentAction::class));
+
+    expect($deploy->execute($instance, new InlineDeploymentSteps)->succeeded)->toBeTrue();
+});
 
 it('resolves shared paths from the production Instance and Laravel application directory', function (string $type, string $root, ?array $declared, array $expected): void {
     $instance = orb219_deployment_instance([]);

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Operations;
 
+use App\Domain\Operations\OperationKinds;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+/** The list filters. `kind` and `target_type` are checked by form, so a kind without operations lists nothing. */
 final class ListOperationsRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
@@ -14,8 +16,8 @@ final class ListOperationsRequest extends FormRequest
     {
         return [
             'status' => ['sometimes', 'string', Rule::in(['queued', 'running', 'succeeded', 'failed', 'cancelled'])],
-            'kind' => ['sometimes', 'string', Rule::in(['instance.deploy'])],
-            'target_type' => ['sometimes', 'string', Rule::in(['instance'])],
+            'kind' => ['sometimes', 'string', 'max:64', 'regex:'.OperationKinds::NamePattern],
+            'target_type' => ['sometimes', 'string', 'max:32', 'regex:'.OperationKinds::TargetTypePattern],
             'target_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }

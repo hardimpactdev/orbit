@@ -87,7 +87,8 @@ def deb(name, version):
 
 class InstallBuildTest(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
+        # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
+        self.directory = tempfile.TemporaryDirectory(dir='/tmp', prefix='orbit-php-')
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name) / 'root'
         self.state = Path(self.directory.name) / 'state'
@@ -218,6 +219,15 @@ class InstallBuildTest(unittest.TestCase):
 
         self.assertEqual(self.run_program()[0], 'download_failed')
         self.assertNotIn(f'php8.5-cli_{pin["sha256"]}.deb', self.cached())
+        self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
+
+    def test_corrupt_mirror_stops_even_when_the_original_source_has_valid_bytes(self):
+        pin = self.pins['php8.5-cli']
+        mirror = self.state / 'served' / ('mirror.example_php_php8.5-cli_' + pin['sha256'] + '.deb')
+        mirror.write_bytes(b'corrupt bytes')
+
+        self.assertEqual(self.run_program()[0], 'download_failed')
+        self.assertNotIn('curl ' + pin['url'], self.calls())
         self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
 
     def test_keeps_the_previous_build_and_rolls_back_when_php_fpm_does_not_start(self):

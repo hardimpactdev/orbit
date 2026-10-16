@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Instances\RefreshInstanceEnvironmentRuntimeAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -18,11 +19,12 @@ final class InstanceEnvironmentSynchronizationsController extends Controller
     public function store(
         SynchronizeInstanceEnvironmentRequest $request,
         SynchronizeInstanceEnvironmentAction $action,
+        RefreshInstanceEnvironmentRuntimeAction $runtime,
     ): JsonResponse {
         $instance = $request->route('instance');
         assert($instance instanceof Instance);
 
-        $result = $action->execute($instance);
+        $result = $action->executeForApi($instance, $runtime);
 
         // Activity recording reads the base request, not this Form Request copy.
         if ($result->testing !== null) {

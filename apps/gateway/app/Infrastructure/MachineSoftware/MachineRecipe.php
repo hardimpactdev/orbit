@@ -9,6 +9,7 @@ use InvalidArgumentException;
 final readonly class MachineRecipe
 {
     /**
+     * @param  list<string>  $gitPackages
      * @param  list<string>  $architectures
      * @param  array<string, ToolPin>  $tools
      * @param  array<string, list<string>>  $profiles  Effective, sorted tool sets, including common tools.
@@ -25,6 +26,8 @@ final readonly class MachineRecipe
         public array $php = [],
         public string $ciPhp = '',
         public PhpPolicy $phpPolicy = new PhpPolicy,
+        public string $artifactMirror = '',
+        public array $gitPackages = [],
     ) {}
 
     public function php(string $version): PhpBuild

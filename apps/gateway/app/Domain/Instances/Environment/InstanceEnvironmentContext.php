@@ -21,6 +21,7 @@ final readonly class InstanceEnvironmentContext
         public string $nodeStatus,
         public Node $node,
         public ?InstanceEnvironmentRouteDomain $routeDomainSource = null,
+        public bool $cloning = false,
     ) {}
 
     public function samePlacement(self $other): bool
@@ -36,6 +37,7 @@ final readonly class InstanceEnvironmentContext
             && $this->routeId === $other->routeId
             && $this->routeDomain === $other->routeDomain
             && $this->nodeStatus === $other->nodeStatus
-            && $this->routeDomainSource === $other->routeDomainSource;
+            && $this->routeDomainSource === $other->routeDomainSource
+            && $this->cloning === $other->cloning;
     }
 }

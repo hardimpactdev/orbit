@@ -3,9 +3,9 @@ title: "Instance environment variables"
 description: "How the Gateway imports, stores, updates, and synchronizes an Instance .env file without exposing its values."
 covers:
   - apps/gateway/app/Domain/Instances/Environment/**
-  - apps/gateway/app/Actions/*/{Import,Update,Synchronize}*EnvironmentAction.php
+  - apps/gateway/app/Actions/*/{Import,Update,Synchronize,Refresh}*Environment*Action.php
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,RemoteInstanceEnvironmentRuntimeRefresher,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php
   - apps/gateway/database/migrations/{2026_09_30_*,*rename_app_domain_to_project_and_instance}.php
   - apps/cli/app/Commands/Environment/**
@@ -84,6 +84,8 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Where the file lives
 
+The Instance's recorded [vp runtime and package-manager environment](/reference/tools#project-environments-in-the-vite-store) is separate from its environment variables. The nullable `vp_environment` record holds store versions and prerequisite status, not `.env` keys or values. Preparing or adopting those tools does not import, synchronize, or rewrite the Instance's `.env` file.
+
 The Gateway derives the file location and the user from the Instance's placement. The caller cannot choose the Node, the user, the directory, or the file name.
 
 | Placement | File | User |
@@ -147,7 +149,19 @@ Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So a
 
 When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, synchronization returns `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
-Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
+Development synchronization changes only `.env` and `.env.testing`. On production, when `.env` changes and a PHP version is selected, Orbit checks `<home>/current`. Orbit resolves the application directory inside that release from the Instance root, falling back to the Project root, and removes a trailing `public` component. For example, `apps/site/public` selects `<home>/current/apps/site`.
+
+If that application directory has `bootstrap/cache/config.php`, Orbit runs `php<version> artisan config:cache` there as the Instance user. It then resets FPM's opcache through the same runtime refresh used by deploys. An uncached release stays uncached. Changes only to `.env.testing` do not trigger a refresh. Deploys and Route-domain transitions use file-only synchronization; only the explicit env-sync API/CLI path runs this refresh. Unchanged files do not trigger a refresh unless an earlier refresh is pending.
+
+No current release or no selected PHP version produces an explicit skipped result.
+
+The production sync response adds `runtime_refresh`: `config_cache_and_opcache_refreshed`, `opcache_refreshed_config_uncached`, `skipped_unchanged`, `skipped_no_current_release`, or `skipped_no_php_version`. Development responses keep their existing shape. Config-cache failures return `env.config_cache_refresh_failed` (502) and do not reset opcache. Runtime reset failures return `env.php_runtime_refresh_failed` (502). Both errors say the file changed; neither exposes application output or environment values.
+
+Config is built at a temporary `APP_CONFIG_CACHE` path and verified by booting Artisan against that cache before renaming it over the old cache. Laravel loads the cached array using the application's own bootstrap and autoload context, including custom Composer vendor directories and shared repository autoloaders. Valid cached enums and class instances need no special handling. A build failure keeps the old cache. Fix the cause and repeat env-sync; the Gateway remembers pending refreshes and retries them even when `.env` is unchanged.
+
+After refresh, Orbit uses the deploy Process restart action to restart running Instance Processes opted into `restart_on_deploy`. The response includes `restarted_process_ids`. Restart failures return `env.process_restart_failed` (502), including IDs already restarted, without exposing application output. An unexpected refresh failure returns `env.runtime_refresh_failed` (502).
+
+Only successful explicit production runtime refresh restarts eligible Instance Processes. Development synchronization, deploy and Route file synchronization, and skipped or failed runtime refresh do not restart them through env-sync. Opted-out and failed Processes are excluded. Check `process:list` after `env.process_restart_failed`, recover failed Processes with `process:restart <process-id>`, then retry env-sync to finish any remaining eligible restarts. Repeating env-sync can succeed while those Processes remain failed. Restart unmanaged workers separately when they retain configuration in memory.
 
 The Gateway takes one consistent snapshot of the Instance owner, any authoritative Route, and complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
@@ -157,7 +171,9 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 `APP_ENV` and `APP_DEBUG` are ordinary stored keys. The Node role, not these keys, decides the release layout, the Unix user, and the PHP-FPM pool. So a change to `APP_ENV` never moves an Instance between layouts. When `APP_ENV` is absent or is the environment placeholder, Orbit reads it as `development` on `app-dev` and `production` on `app-prod`.
 
-A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
+A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration except `DB_*` keys and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
+
+When the clone seeds a SQLite snapshot, it registers an owned connection on the target Node, attaches it under `DB`, and synchronizes `DB_CONNECTION=sqlite` and `DB_DATABASE=<production_home>/database.sqlite` into the production `.env`. This provisioning step uses the pending clone's placement and Route checks; public environment operations still require an active Instance. An identical retry reuses the connection and attachment. Without a SQLite snapshot, the clone has no candidate `DB_*` values. Other application settings, such as `QUEUE_CONNECTION`, copy unchanged.
 
 ## Other writers
 
@@ -212,6 +228,10 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
+| `env.config_cache_refresh_failed` | 502 | The file changed, but config cache preparation failed or was unconfirmed. FPM opcache was not reset. |
+| `env.php_runtime_refresh_failed` | 502 | The file changed and config cache preparation completed, but FPM opcache refresh failed. |
+| `env.process_restart_failed` | 502 | PHP refresh succeeded, but an opted-in Instance Process could not restart; the error reports IDs already restarted. Recover failed Processes with `process:restart <process-id>` before repeating env-sync. |
+| `env.runtime_refresh_failed` | 502 | Orbit could not record or confirm the runtime refresh. No application output is returned. Retry env-sync. |
 | `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
 | `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
@@ -237,7 +257,7 @@ A write that pulls edits from the Node would replace stored intent with changes 
 
 ### Synchronization runs no framework
 
-Synchronization must work before dependencies are installed and before the application runs. So it writes the file and nothing else. Deploy steps own caches and restarts.
+Development synchronization must work before dependencies are installed and before the application runs, so it only writes files. Production FPM disables opcache timestamp validation. Writing `.env` alone cannot make a cached Laravel configuration take effect there. A changed production sync therefore rebuilds an existing config cache before resetting opcache. It skips runtime work before the first release or PHP selection, and never creates a config cache where none existed. After refresh, running Instance Processes opted into `restart_on_deploy` restart so workers also see the new environment.
 
 ### The Node role decides isolation
 

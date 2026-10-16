@@ -38,14 +38,27 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         private ?InstanceEnvironmentReader $reader = null,
     ) {}
 
-    public function execute(Instance $instance): InstanceEnvironmentResult
+    public function execute(Instance $instance, bool $forClone = false): InstanceEnvironmentResult
     {
         return $this->operations->run(
             [$instance->id],
             fn (): InstanceEnvironmentResult => $this->synchronize(
-                $this->contexts->resolve($instance->refresh(), requireActiveNode: true),
+                $forClone
+                    ? $this->contexts->resolveForClone($instance->refresh(), requireActiveNode: true)
+                    : $this->contexts->resolve($instance->refresh(), requireActiveNode: true),
+                keepWorkloadKeys: ! $forClone,
             ),
         );
+    }
+
+    public function executeForApi(Instance $instance, RefreshInstanceEnvironmentRuntimeAction $runtime): InstanceEnvironmentResult
+    {
+        return $this->operations->run([$instance->id], function () use ($instance, $runtime): InstanceEnvironmentResult {
+            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
+            $result = $this->synchronize($context);
+
+            return $runtime->execute($context, $result);
+        });
     }
 
     public function synchronizeRouteDomain(
@@ -80,7 +93,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             $this->assertKeepsWorkloadKeys($context, $snapshot);
         }
 
-        $changed = $this->confirmed($this->writer->write($context, $contents));
+        $environmentChanged = $changed = $this->confirmed($this->writer->write($context, $contents));
         $this->store->recordSynchronizedKeys($context, array_keys($snapshot->values()));
         $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());
         $outcome = null;
@@ -110,6 +123,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             changed: $changed,
             keyCount: $snapshot->keyCount(),
             testing: $outcome,
+            environmentChanged: $environmentChanged,
         );
     }
 
