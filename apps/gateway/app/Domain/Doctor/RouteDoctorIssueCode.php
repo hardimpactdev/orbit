@@ -7,6 +7,7 @@ namespace App\Domain\Doctor;
 enum RouteDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'route.lifecycle_not_active';
+    case DomainReserved = 'route.domain_reserved';
     case DnsMismatch = 'route.dns_mismatch';
     case CertificateMismatch = 'route.certificate_mismatch';
     case CaddyMismatch = 'route.caddy_mismatch';

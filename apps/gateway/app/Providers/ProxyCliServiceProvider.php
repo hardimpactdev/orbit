@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\AppDev\ContributedPrivateDnsRecords;
+use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
+use App\Domain\ProxyCli\ProxyCliReservedHostnames;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\ContributedReservedHostnames;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
@@ -17,7 +21,9 @@ use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
+use App\Infrastructure\ProxyCli\ProxyCliFootprintArtifact;
 use App\Infrastructure\ProxyCli\ProxyCliModelKeyIssuer;
+use App\Infrastructure\ProxyCli\ProxyCliPrivateDnsRecords;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
@@ -72,5 +78,8 @@ final class ProxyCliServiceProvider extends ExtensionServiceProvider
             $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
         }
         $this->contribute(ContributedCaddySiteSource::class, ProxyCliCaddySiteSource::class);
+        $this->contribute(NodeFootprintArtifact::class, ProxyCliFootprintArtifact::class);
+        $this->contribute(ContributedPrivateDnsRecords::class, ProxyCliPrivateDnsRecords::class);
+        $this->contribute(ContributedReservedHostnames::class, ProxyCliReservedHostnames::class);
     }
 }

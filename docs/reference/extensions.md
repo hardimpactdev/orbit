@@ -4,7 +4,7 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody}.php
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,AppDev/ContributedPrivateDnsRecords,Routes/ContributedReservedHostnames}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
   - apps/gateway/bootstrap/providers.php
   - apps/gateway/extensions/*/src/*ServiceProvider.php
@@ -74,6 +74,9 @@ Core resolves every tagged implementation and calls each one. When a tagged clas
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
 | `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()` and `certificateSlug()` |
+| `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, `digest()`, and `apply()` |
+| `App\Domain\AppDev\ContributedPrivateDnsRecords` | [Private DNS](/reference/private-dns) publication | `records()` |
+| `App\Domain\Routes\ContributedReservedHostnames` | The [Route domain](/reference/routes) and analytics tracking host checks, and private DNS publication | `hostnames()` |
 | `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
@@ -90,6 +93,19 @@ A contributed source cannot take a core name:
 - A core certificate slug, such as `websocket`, makes the renderer throw a `LogicException`. No publisher can then record or forget that slug.
 - A core source name on a contributed site, such as `gateway` or `websocket`, fails the build at stage `render`. The task VM guard admits those two names.
 
+The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact needs its own name, because the footprint keys its digests by name. A contributed artifact with the name of a core artifact, such as `caddy`, or of another contribution makes the footprint throw a `LogicException`. ProxyCli contributes the `proxycli` artifact this way.
+
+Private DNS publishes each record that a `ContributedPrivateDnsRecords` returns as a `host-record`. A contribution decides its records from stored state, as core does. Core checks each record before it writes the dnsmasq configuration:
+
+- The hostname must be one that an extension reserves, so no core record or Route can answer for it.
+- Only one contribution may publish a hostname.
+- The hostname must not be a Cluster TLD that the publication answers for, or a name under one.
+- The address must be an IPv4 host address in the VPN subnet.
+
+A record that breaks a rule makes publication throw a `LogicException` before it changes the `vpn` Node. So no contribution can add a dnsmasq directive. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contributed record source and the classes it uses. ProxyCli contributes the `collector.cli-proxy-api.orbit` record this way.
+
+The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. No Route and no analytics tracking host can use one. A contributed name must be a lowercase DNS name under `.orbit`, with no comma or whitespace, that core and the other contributions do not reserve. Any other name makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
+
 `GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
 
 Core checks every hook before it changes anything:
@@ -105,7 +121,7 @@ The program records the hooks it installed in `/etc/orbit/php-fpm-start-hooks`. 
 
 `ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 
-A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. Each PHP-FPM start must also close the document cleanup gate. A Caddy build renders every site that is placed, so a site stays live until the extension removes it.
+A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. Each PHP-FPM start must also close the document cleanup gate. A Caddy build renders every site that is placed, so a site stays live until the extension removes it. A reserved hostname stays reserved, so no Route can take it while the extension is off.
 
 ## The boundary
 

@@ -56,6 +56,8 @@ Route responses show target IDs and positions. They never show infrastructure ad
 
 Every Route is expected to be `active`. Doctor reports any other status as `route.lifecycle_not_active` in the `route` family. So a Route that an operation left `pending`, `activating`, `retiring`, or `failed` stays visible until a retry or cleanup finishes it. Doctor reads only the stored status, so the check also runs when the Node is unreachable.
 
+No Route may hold a reserved name, such as `gateway.orbit`. A Route that took a name before core or an extension reserved it keeps the name until you move the Route. Doctor reports such a Route as `route.domain_reserved` in the `route` family. It also reads only stored state.
+
 Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped Route belongs to the Node that holds the Cluster's Router role. A Route with neither is not reported.
 
 ## Select a domain and scope
@@ -229,7 +231,7 @@ The first form stores a loopback URL. The second form stores a Node Process and 
 | Rule | Result |
 | --- | --- |
 | Domain | Any unique DNS domain, such as `executor.orbit`, `grafana.internal`, or `something.test`. No Cluster TLD, Node TLD, or `.orbit` suffix is required. |
-| Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. `cli-proxy-api.orbit` is not reserved. |
+| Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. Core reserves its own names, and an [extension](/reference/extensions#plug-in-points) can reserve more, such as `collector.cli-proxy-api.orbit`. `cli-proxy-api.orbit` is not reserved. |
 | Owner and scope | The serving Node, which must be active and have a WireGuard address. Cluster membership never gives it Cluster scope. |
 | Publication | Private only. |
 | Upstream | HTTP on `127.0.0.1`, `localhost`, or `::1`, or the listener of a Node Process on the serving Node. A remote URL is refused. |

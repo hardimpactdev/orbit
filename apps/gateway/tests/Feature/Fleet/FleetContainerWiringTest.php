@@ -22,7 +22,6 @@ use App\Infrastructure\Fleet\Footprint\AnnotatorFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
@@ -31,6 +30,7 @@ use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\SshNodeCliInstaller;
+use App\Infrastructure\ProxyCli\ProxyCliFootprintArtifact;
 use Illuminate\Support\Facades\Artisan;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -64,10 +64,10 @@ describe('fleet container wiring', function (): void {
                 CaddyPackageFootprintArtifact::class,
                 CaddyFootprintArtifact::class,
                 PrivateDnsFootprintArtifact::class,
-                ProxyCliFootprintArtifact::class,
                 AnnotatorFootprintArtifact::class,
                 RouteResidueFootprintArtifact::class,
                 TmpfilesFootprintArtifact::class,
+                ProxyCliFootprintArtifact::class,
             ]);
     });
 

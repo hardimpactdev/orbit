@@ -125,6 +125,14 @@ describe('Node footprint', function (): void {
         expect($agent->applied)->toBe(['dev']);
     });
 
+    it('refuses two artifacts with one name, so a contributed artifact takes no core name', function (): void {
+        $core = new FakeFootprintArtifact('caddy', 'c1');
+        $contributed = new FakeFootprintArtifact('caddy', 'x1');
+
+        expect(fn (): NodeFootprint => new NodeFootprint([$core, new FakeFootprintArtifact('agent', 'a1'), $contributed]))
+            ->toThrow(LogicException::class, 'The footprint artifact ['.FakeFootprintArtifact::class.'] uses the name [caddy] of ['.FakeFootprintArtifact::class.'].');
+    });
+
     it('never changes an Instance', function (): void {
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
         $before = Instance::query()->count();
