@@ -521,7 +521,7 @@ The scheduler records a successful workspace start in the activity log within th
 
 A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
 
-A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The provisioner records its owning task on the Instance when it creates the row, before remote preparation. The next claim requires that recorded ownership, then finds the workspace by name and branch and resumes it on its Node. 
+A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The provisioner records its owning task on the Instance when it creates the row, before remote preparation. The next claim requires that recorded ownership, then finds the workspace by name and branch and resumes it on its Node.
 
 If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
