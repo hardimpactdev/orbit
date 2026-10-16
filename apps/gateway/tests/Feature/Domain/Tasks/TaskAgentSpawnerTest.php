@@ -548,7 +548,14 @@ it('returns null when the driver refuses the spawn', function (): void {
     $dispatcher->fail = true;
 
     expect($spawner->spawnReviewer($group->tasks->first()))->toBeNull()
-        ->and($spawner->spawnImplementer($group->tasks->first()))->toBeNull();
+        ->and($spawner->spawnImplementer($group->tasks->first()))->toBeNull()
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0)
+        ->and(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
+
+    $dispatcher->fail = false;
+    expect($spawner->spawnReviewer($group->tasks->first()))->toBeInt()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->count())->toBe(1)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->count())->toBe(0);
 });
 
 it('reuses a subtask reviewer instead of spawning again', function (): void {

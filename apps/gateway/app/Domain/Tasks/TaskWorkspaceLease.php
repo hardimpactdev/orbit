@@ -114,10 +114,12 @@ final class TaskWorkspaceLease
         try {
             return $operation();
         } finally {
-            if ($previous instanceof TaskWorkspaceLeaseRecord) {
-                $this->scopes[$lease->instance_id] = $previous;
-            } else {
-                unset($this->scopes[$lease->instance_id]);
+            if (($this->scopes[$lease->instance_id] ?? null)?->id === $lease->id) {
+                if ($previous instanceof TaskWorkspaceLeaseRecord) {
+                    $this->scopes[$lease->instance_id] = $previous;
+                } else {
+                    unset($this->scopes[$lease->instance_id]);
+                }
             }
         }
     }
@@ -462,7 +464,7 @@ final class TaskWorkspaceLease
     /** Never discard an uncertain remote owner merely because the local startup failed. */
     public function abandonPreparation(AgentThread $thread): bool
     {
-        return $this->withThreadLock($thread, function () use ($thread): bool {
+        return app(TaskExecutionLock::class)->synchronized($thread->task_group_id, function () use ($thread): bool {
             $lease = TaskWorkspaceLeaseRecord::query()->where('group_id', $thread->task_group_id)
                 ->where('thread_id', $thread->id)->where('status', 'held')->first();
             if (! $lease instanceof TaskWorkspaceLeaseRecord) {
@@ -473,8 +475,8 @@ final class TaskWorkspaceLease
             }
             $this->release($lease);
 
-            return true;
-        });
+            return $lease->fresh()?->status === 'released';
+        }, wait: false);
     }
 
     /** Only a protocol-level refusal proves that this dispatch did not start a turn. */
@@ -486,6 +488,10 @@ final class TaskWorkspaceLease
                 ->where('thread_id', $thread->id)->first();
             if ($lease instanceof TaskWorkspaceLeaseRecord) {
                 $this->release($lease, $this->snapshot($group));
+                if ($lease->fresh()?->status === 'released' && ($this->scopes[$lease->instance_id] ?? null)?->id === $lease->id) {
+                    // A proven refusal ends this scope; nested unwind must not restore it.
+                    unset($this->scopes[$lease->instance_id]);
+                }
             }
         });
     }

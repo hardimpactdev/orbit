@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Models\Activity;
 use App\Models\Instance;
@@ -108,29 +108,10 @@ final readonly class TaskWorkspaceLeaseRecovery
         if (! $gateway instanceof Node || ! is_string($host) || ! is_string($boot) || ! is_int($pid) || $pid < 1 || ! is_string($started)) {
             return false;
         }
-        $program = <<<'PYTHON'
-import json, os, socket, sys
-host, boot, pid, started = sys.argv[1:]
-dead = False
-if socket.gethostname() == host:
-    with open('/proc/sys/kernel/random/boot_id') as source:
-        current_boot = source.read().strip()
-    # Exact original boot binds this proof to the old host, even with duplicate hostnames.
-    # A different foreign boot needs durable original host identity that legacy rows lack.
-    if current_boot == boot:
-        try:
-            with open('/proc/' + pid + '/stat') as source:
-                stat = source.read()
-            dead = stat[stat.rfind(')') + 2:].split()[19] != started
-        except FileNotFoundError:
-            dead = not os.path.exists('/proc/' + pid)
-print(json.dumps({'host': socket.gethostname(), 'dead': dead}))
-PYTHON;
-        $result = app(DevelopmentSshExecutor::class)->execute($gateway, new RemoteCommand(['python3', '-c', $program, $host, $boot, (string) $pid, $started]),
-            'task-gateway-owner-proof', 'tasks.gateway_owner_unverifiable', failureLabel: 'Recorded Gateway owner');
-        $data = json_decode($result->stdout, true, 4, JSON_THROW_ON_ERROR);
+        $result = app(RemoteProgramRunner::class)->run($gateway, app(RemoteProgramCatalog::class)->program('gateway.task-workspace-owner'),
+            ['host' => $host, 'boot' => $boot, 'pid' => $pid, 'started' => $started]);
 
-        return $result->succeeded() && is_array($data) && ($data['host'] ?? null) === $host && ($data['dead'] ?? null) === true;
+        return $result->outcome === 'inspected' && ($result->data['host'] ?? null) === $host && ($result->data['dead'] ?? null) === true;
     }
 
     /** @param array<string, mixed> $proof */

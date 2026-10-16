@@ -167,15 +167,41 @@ it('recovers a missing non VM Instance only through recorded endpoint proof', fu
     expect($lease->fresh()->status)->toBe($hasEndpoint ? 'released' : 'held');
 })->with([false, true]);
 
-it('rejects a stale in memory scope after an operator seal before admitting any new SSH', function (): void {
+it('rejects a stale in memory scope after sealing or replacement before admitting any new SSH', function (bool $sealed): void {
     $leases = app(TaskWorkspaceLease::class);
     $lease = $leases->acquire($this->group, 'publication', 'stale');
-    $leases->within($lease, function () use ($leases, $lease): void {
-        $lease->update(['recovery_sealed' => true]);
+    $leases->within($lease, function () use ($leases, $lease, $sealed): void {
+        if ($sealed) {
+            $lease->update(['recovery_sealed' => true]);
+        } else {
+            $lease->update(['status' => 'released', 'active_instance_id' => null]);
+            (new TaskWorkspaceLease)->acquire($this->group, 'publication', 'successor');
+        }
         expect(fn () => $leases->currentScope())->toThrow(TaskWorkspaceWaiting::class);
         expect(fn () => $leases->remoteStarted($this->group->taskable, true))->toThrow(TaskWorkspaceWaiting::class);
     });
     expect(TaskWorkspaceOperation::query()->count())->toBe(0);
+})->with([false, true]);
+
+it('retires only a proven refused scope through nested unwind without admitting late SSH', function (): void {
+    $leases = app(TaskWorkspaceLease::class);
+    $thread = AgentThread::query()->create([
+        'task_group_id' => $this->group->id, 'task_id' => $this->group->tasks->first()->id,
+        'node_id' => $this->group->taskable->node_id, 'runtime_key' => 'node:'.$this->group->taskable->node_id,
+        'driver' => 'pi', 'external_id' => 'refused-reviewer', 'role' => 'reviewer', 'state' => 'idle',
+    ]);
+    $lease = $leases->acquire($this->group, 'reviewer', 'thread:'.$thread->id, $thread->id, $thread->task_id);
+    $leases->within($lease, function () use ($leases, $lease, $thread): void {
+        $leases->within($lease, function () use ($leases, $thread): void {
+            $leases->rejectedDispatch($thread);
+            expect($leases->abandonPreparation($thread))->toBeTrue();
+            expect(fn () => $leases->remoteStarted($this->group->taskable, true))->toThrow(TaskWorkspaceWaiting::class);
+        });
+        expect($leases->currentScope())->toBeNull();
+        expect(fn () => $leases->remoteStarted($this->group->taskable, true))->toThrow(TaskWorkspaceWaiting::class);
+    });
+    expect($leases->currentScope())->toBeNull();
+    expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
 });
 
 it('settles a previous boot receipt as unknown without replay or success attribution', function (): void {
@@ -322,12 +348,11 @@ it('requires the original boot and exact dead process when a pinned Node proves 
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            if (str_contains($command->arguments[2] ?? '', 'socket.gethostname()')) {
-                $arguments = $command->arguments;
+            if (is_string($command->input) && str_contains($command->input, '# Program: gateway.task-workspace-owner')) {
                 // The pinned endpoint's hostname is controlled; its /proc boot/PID reads remain real.
-                $arguments[2] = 'import socket; socket.gethostname = lambda: '.json_encode($this->host, JSON_THROW_ON_ERROR)."\n".$arguments[2];
+                $input = 'import socket; socket.gethostname = lambda: '.json_encode($this->host, JSON_THROW_ON_ERROR)."\n".$command->input;
 
-                return $this->local->execute($connection, new RemoteCommand($arguments));
+                return $this->local->execute($connection, new RemoteCommand($command->arguments, input: $input));
             }
 
             return $this->local->execute($connection, $command);
@@ -338,7 +363,8 @@ it('requires the original boot and exact dead process when a pinned Node proves 
     $keys->shouldReceive('privateKeyPath')->andReturn('/unused-key');
     $hosts = Mockery::mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/unused-hosts');
-    app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor($transport, $keys, $hosts));
+    app()->instance(SshKeyProvider::class, $keys);
+    app()->instance(KnownHostsStore::class, $hosts);
     $parameters = ['lease-id' => (string) $lease->id, '--reason' => 'Pinned foreign owner investigation',
         '--gateway-node' => (string) $this->group->taskable->node_id];
     if ($released) {
