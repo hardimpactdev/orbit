@@ -1,0 +1,28 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskAgentRequest",
+    "route": "GET /api/v1/task-groups/{group}/agents/{session}",
+    "status": 200,
+    "body": {
+        "data": {
+            "state": "done",
+            "entries": [
+                {
+                    "id": "e9",
+                    "kind": "message",
+                    "label": "assistant",
+                    "text": "Approved.",
+                    "at": "2026-09-23T09:58:00.000Z"
+                }
+            ],
+            "tokens": 9000,
+            "thread_id": 4,
+            "kind": "snapshot",
+            "cursor": null,
+            "archived": true
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

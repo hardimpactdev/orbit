@@ -9,6 +9,7 @@ final readonly class AgentObservation
     /**
      * @param  list<AgentInputRequest>  $inputRequests
      * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $entries
+     * @param  bool  $delta  The entries are only those after the reader's cursor, not the whole transcript.
      */
     public function __construct(
         public ?AgentThreadState $state,
@@ -27,6 +28,7 @@ final readonly class AgentObservation
         public ?string $turnId = null,
         public ?string $sessionUpdatedAt = null,
         public ?string $providerError = null,
+        public bool $delta = false,
     ) {}
 
     public function lastText(string $role): ?string
