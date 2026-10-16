@@ -15,7 +15,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
+use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentSourceProfile;
@@ -220,7 +220,7 @@ it('clones and deploys an Instance without a route', function (): void {
         new CommandDeadline,
     );
 
-    $result = $deploy->execute($cloned, new InlineDeploymentSteps);
+    $result = $deploy->execute($cloned, operation_steps($cloned, $deploy), DeploymentRequest::withoutOutput());
 
     expect($cloned->status)->toBe(InstanceState::Active)
         ->and($cloned->provisioning_step)->toBe('active')

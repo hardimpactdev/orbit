@@ -838,6 +838,20 @@ it('docs impact reports unowned error identifiers genuinely added and removed', 
         ->and($report['errors'])->toContain('Removed from current source: Unowned error identifier [example.old_failure] in '.$path.':1.');
 });
 
+it('docs impact does not fail on the unowned identifiers of a deleted file outside the API', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Domain/Unmapped/DeletedIdentifier.php';
+    mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/'.$path, "<?php return ['errorCode' => 'example.deleted_failure'];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    unlink($root.'/'.$path);
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['errors'])->toBe([]);
+});
+
 it('docs impact reports Laravel console route schedule changes', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");

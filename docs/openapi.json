@@ -99,7 +99,7 @@
     },
     {
       "name": "Operations",
-      "description": "Long operations, such as an Instance deploy, that run on the Gateway queue as named steps."
+      "description": "Long operations, such as an Instance deploy or rollback, that run on the Gateway queue as named steps."
     },
     {
       "name": "proxycli",
@@ -12408,7 +12408,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Select one retained production Instance release.",
+        "description": "Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12429,151 +12429,52 @@
             }
           }
         },
+        "x-orbit-operation": "start",
         "responses": {
-          "200": {
-            "description": "Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event.",
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
             "content": {
-              "application/x-ndjson": {
+              "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "title": "Phase event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "phase"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "phase"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "phase": {
-                          "type": "string",
-                          "enum": [
-                            "source_preparation",
-                            "environment_sync",
-                            "before_activation",
-                            "activation",
-                            "php_refresh",
-                            "process_restart",
-                            "after_activation",
-                            "rollback"
-                          ]
-                        },
-                        "step_name": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
                     },
-                    {
-                      "title": "Output event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "stream",
-                        "data_base64"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "output"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "stream": {
-                          "type": "string",
-                          "enum": [
-                            "stdout",
-                            "stderr"
-                          ]
-                        },
-                        "data_base64": {
-                          "type": "string",
-                          "description": "At most 16 KiB of decoded bytes, base64-encoded."
-                        }
-                      }
-                    },
-                    {
-                      "title": "Result event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "status"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "result"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed"
-                          ]
-                        },
-                        "failed_step": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "error_code": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "selected_release": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
                     }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
                   ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12593,7 +12494,7 @@
             }
           },
           "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "description": "The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12612,7 +12513,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new RollbackInstanceRequest(instanceId: 4, release: '20260914T101500Z'))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RollbackInstanceRequest(instanceId: 4, release: '20260914T101500Z'))->dto();\n"
           }
         ]
       }

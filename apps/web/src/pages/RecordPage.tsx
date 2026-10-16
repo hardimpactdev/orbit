@@ -316,7 +316,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                     />
                 )}
             </div>
-            {/* A running deploy sits right under the properties, where a phone sees it first. */}
+            {/* A running deploy or rollback sits right under the properties, where a phone sees it first. */}
             <OperationPanel instance={instance} />
             <div
                 className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[30vh] md:grid-cols-2 ${GAPS}`}

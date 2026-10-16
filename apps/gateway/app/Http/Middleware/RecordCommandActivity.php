@@ -11,7 +11,6 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
@@ -257,23 +256,6 @@ final readonly class RecordCommandActivity
             'duration_ms' => $this->duration($startedAt),
             'error_code' => $errorCode,
         ];
-
-        $deployment = $request->attributes->get('orbit.deployment_result');
-
-        if ($deployment instanceof DeploymentResult) {
-            $updates['status'] = $deployment->succeeded ? 'succeeded' : 'failed';
-            $updates['error_code'] = $deployment->failure?->errorCode;
-            $updates['properties'] = [
-                ...($activity->properties?->toArray() ?? []),
-                'deployment' => $this->inputSanitizer->sanitizeProperties([
-                    'status' => $deployment->succeeded ? 'succeeded' : 'failed',
-                    'selected_release' => $deployment->selectedRelease?->name,
-                    'failed_step' => $deployment->failure?->boundary->value,
-                    'error_code' => $deployment->failure?->errorCode,
-                ]),
-            ];
-            $commandResult = null;
-        }
 
         $toolActivity = $request->attributes->get('orbit.tool_activity');
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Instances\Deployment\InstanceDeployOperation;
+use App\Domain\Instances\Deployment\InstanceRollbackOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
@@ -19,12 +20,15 @@ final readonly class OperationKinds
 
     public const string InstanceDeploy = 'instance.deploy';
 
+    public const string InstanceRollback = 'instance.rollback';
+
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 
     /** @var array<string, class-string<OperationKind>> */
     private const array Kinds = [
         self::InstanceDeploy => InstanceDeployOperation::class,
+        self::InstanceRollback => InstanceRollbackOperation::class,
     ];
 
     public function __construct(private Container $container) {}

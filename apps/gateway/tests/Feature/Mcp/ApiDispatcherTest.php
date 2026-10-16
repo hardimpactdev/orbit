@@ -42,7 +42,6 @@ it('gives a bodiless internal request empty content instead of the caller body',
         path: '/api/v1/task-groups/{group}/tasks/{task}',
         pathInputs: ['group', 'task'],
         queryInputs: [],
-        streams: false,
         inputSchema: ['type' => 'object'],
     );
 
@@ -67,7 +66,6 @@ it('keeps nested empty objects in the tool body and result', function (): void {
         path: '/api/v1/examples',
         pathInputs: [],
         queryInputs: [],
-        streams: false,
         inputSchema: ['type' => 'object'],
     );
     $caller = Request::create('/mcp', 'POST', content: '{"params":{"name":"example-create","arguments":{"options":{},"flags":[]}}}');
