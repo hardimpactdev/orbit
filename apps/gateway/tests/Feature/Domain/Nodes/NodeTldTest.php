@@ -18,7 +18,7 @@ describe(NodeTld::class, function (): void {
         expect(NodeTld::isValid($tld))->toBeFalse();
     })->with(['orbit', '.ORBIT', ' orbit ']);
 
-    it('refuses the configured private VPN domain and the private space under it', function (): void {
+    it('refuses both the private space and the configured private VPN domain', function (): void {
         app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'corp');
 
         expect(NodeTld::isValid('corp'))->toBeFalse()
