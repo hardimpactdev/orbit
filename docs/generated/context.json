@@ -1916,6 +1916,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
