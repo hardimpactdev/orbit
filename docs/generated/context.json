@@ -2632,6 +2632,7 @@
             "concepts": [
                 "Activity",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

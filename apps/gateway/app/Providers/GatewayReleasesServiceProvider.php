@@ -118,7 +118,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): GatewayRuntimeHandoff => new GatewayRuntimeHandoff(
                 builds: $app->make(NodeCaddyBuilds::class),
                 fpmRenderer: $app->make(GatewayFpmConfigRenderer::class),
-                fpm: new NativeGatewayFpmConverger($app->make(ProcessRunner::class)),
+                fpm: $app->make(NativeGatewayFpmConverger::class),
                 files: $app->make(ProtectedFileWriter::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),
                 agentView: $app->make(AgentViewConverger::class),
