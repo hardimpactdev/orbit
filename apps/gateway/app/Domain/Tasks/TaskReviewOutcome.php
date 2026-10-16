@@ -640,6 +640,9 @@ final readonly class TaskReviewOutcome
             return false;
         }
         try {
+            if ($this->runner->workspaceChecksRunning($group)) {
+                return false;
+            }
             $current = $this->workspaceSnapshot($group);
         } catch (TaskCheckException $exception) {
             $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
@@ -648,8 +651,7 @@ final readonly class TaskReviewOutcome
 
             return false;
         }
-        if (app(TaskWorkspaceHead::class)->checksRunning($group)
-            || ! (($current->head !== $head && $this->recordedMainMerge($group, $current)) || $this->recordedCheckTree($group, $task, $current))) {
+        if (! (($current->head !== $head && $this->recordedMainMerge($group, $current)) || $this->recordedCheckTree($group, $task, $current))) {
             return false;
         }
         $observation = $this->observer->observe($group, $task);
