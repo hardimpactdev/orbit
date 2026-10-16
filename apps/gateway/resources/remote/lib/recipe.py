@@ -1,3 +1,4 @@
+# Library: recipe apt, package and source helpers shared by convergence and Docker migration.
 """Fixed, synchronous recipe operations. Only bounded package failure diagnostics escape this boundary."""
 from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
@@ -516,13 +517,18 @@ def configure_git(payload, *, apply=False):
     for path, before, _after in changes:
         backup_apt_source(path, before, 'git', check_only=True)
     if apply:
-        for path, before, after in changes:
-            backup_apt_source(path, before, 'git')
-            if after.strip():
-                publish(path, after)
-            else:
-                path.unlink()
+        retire_sources(changes, 'git')
     return actions
+
+
+def retire_sources(changes, owner):
+    """Retire validated entries with the same durable backup contract for Git and Docker."""
+    for path, before, after in changes:
+        backup_apt_source(path, before, owner)
+        if after.strip():
+            publish(path, after)
+        else:
+            path.unlink()
 
 
 def pin_git(payload):
@@ -1017,7 +1023,3 @@ def main():
         else:
             print('recipe-stage:' + stage)
         return 1
-
-
-if __name__ == '__main__':
-    sys.exit(main())

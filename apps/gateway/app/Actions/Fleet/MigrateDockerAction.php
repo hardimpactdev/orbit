@@ -8,15 +8,15 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
@@ -31,13 +31,14 @@ final readonly class MigrateDockerAction
         private NodeRoleConvergeLock $roles,
         private NodeUpdateLock $updates,
         private ToolManagerScopeLock $tools,
-        private NodeShell $shell,
+        private RemoteProgramRunner $programs,
+        private RemoteProgramCatalog $catalog,
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
     ) {}
 
     /** @return array<string, mixed> */
-    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun): array
+    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun, bool $fallback = false): array
     {
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException('node.docker_migration_unsupported', 'Docker migration requires an active managed Linux Node.', 422);
@@ -48,16 +49,19 @@ final readonly class MigrateDockerAction
         $ids = array_values($processes->map(fn (Process $process): string => (string) $process->id)->all());
         $states = $processes->mapWithKeys(fn (Process $process): array => [(string) $process->id => $process->desired_state->value])->all();
         if ($dryRun) {
-            return $this->remote($node, $recipe, $ids, $states, $processes, 'plan');
+            return $this->remote($node, $recipe, $ids, $states, $processes, 'plan', $fallback);
         }
 
-        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states): array {
+        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states, $fallback): array {
             foreach ($processes as $process) {
                 if ($this->targets->forInstallation($process)->node->id !== $node->id) {
                     throw new RuntimeException('The Docker Process target changed. Nothing was migrated.');
                 }
             }
-            $prepared = $this->remote($node, $recipe, $ids, $states, $processes, 'prepare');
+            $prepared = $this->remote($node, $recipe, $ids, $states, $processes, 'prepare', $fallback);
+            if (isset($prepared['failure'])) {
+                return $prepared;
+            }
             $recorded = $prepared['process_ids'] ?? [];
             if (! is_array($recorded) || ! array_is_list($recorded) || array_any($recorded, fn (mixed $id): bool => ! is_string($id) || ! in_array($id, $ids, true))) {
                 throw new RuntimeException('Migration returned unknown Process IDs. Resume after checking stored specs.');
@@ -90,14 +94,8 @@ final readonly class MigrateDockerAction
      * @param  Collection<int, Process>  $processes
      * @return array<string, mixed>
      */
-    private function remote(Node $node, MachineRecipe $recipe, array $ids, array $states, Collection $processes, string $mode): array
+    private function remote(Node $node, MachineRecipe $recipe, array $ids, array $states, Collection $processes, string $mode, bool $fallback = false): array
     {
-        $library = file_get_contents(resource_path('machine-software/converge-node.py'));
-        $migration = file_get_contents(resource_path('machine-software/migrate-docker.py'));
-        if ($library === false || $migration === false) {
-            throw new RuntimeException('Docker migration program is missing.');
-        }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".explode("if __name__ == '__main__':", $library)[0]."\n".$migration;
         $specs = [];
         foreach ($processes as $process) {
             $target = $this->targets->forInstallation($process);
@@ -108,17 +106,15 @@ final readonly class MigrateDockerAction
             $specs[(string) $process->id] = ['name' => $renderer->containerName($process), 'hash' => $renderer->specHash($process, $target),
                 'volumes' => $process->runtime_config['volumes'] ?? []];
         }
-        $payload = json_encode(['recipe' => $recipe->identity, 'snapshot' => $recipe->snapshot,
-            'docker_version' => $recipe->tools['docker.io']->version, 'process_ids' => $ids, 'process_states' => (object) $states, 'process_specs' => (object) $specs,
-            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64'], JSON_THROW_ON_ERROR);
-        $result = $this->shell->run($node, new RemoteCommand(
-            ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '1500', 'python3', '-', $mode, $payload],
-            input: $program, maxOutputBytes: 65536, timeout: 1560,
-        ));
-        $report = json_decode($result->stdout, true);
-        if (! $result->succeeded() || $result->truncated || ! is_array($report) || isset($report['failure'])) {
-            $stage = is_array($report) && is_string($report['failure'] ?? null) && preg_match('/^docker-migration:[a-z-]+$/D', $report['failure']) === 1 ? $report['failure'] : 'docker-migration:remote';
-            throw new ResourceOperationException('node.docker_migration_failed', "Migration stopped at {$stage}. No volume data was deleted. Resume the same command with the same recipe after resolving the failure. Remote output is private.", 502);
+        $payload = ['mode' => $mode, 'fallback' => $fallback, 'recipe' => $recipe->identity, 'snapshot' => $recipe->snapshot,
+            'docker_version' => $recipe->tools['docker.io']->version, 'containerd_version' => $recipe->tools['containerd']->version,
+            'process_ids' => $ids, 'process_states' => (object) $states, 'process_specs' => (object) $specs,
+            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64'];
+        $result = $this->programs->run($node, $this->catalog->program('docker.migrate', 'root'), $payload);
+        $report = $result->data;
+        if ($result->outcome === 'failed') {
+            $report['healthy'] = false;
+            $report['message'] = 'Resume the same command with the same recipe after resolving the failure. Use --fallback only after reviewing a fallback-required refusal. No volume data was deleted.';
         }
 
         $fields = [];

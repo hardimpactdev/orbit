@@ -235,11 +235,11 @@ final readonly class NodeRecipeProgram
      */
     private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
     {
-        $program = file_get_contents(resource_path('machine-software/converge-node.py'));
+        $program = file_get_contents(resource_path('remote/lib/recipe.py'));
         if ($program === false) {
             throw new RuntimeException('The recipe converge program is missing.');
         }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program;
+        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program."\nif __name__ == '__main__':\n    sys.exit(main())\n";
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');

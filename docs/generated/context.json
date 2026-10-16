@@ -1812,6 +1812,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Doctor",
                 "Gateway",
                 "Node",

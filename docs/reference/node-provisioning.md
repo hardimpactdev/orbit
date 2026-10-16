@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
-  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/machine-software/converge-node.py}
+  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/remote/lib/recipe.py}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/*_{create_nodes_table,add_ssh_jump_node_id_to_nodes}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}

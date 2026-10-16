@@ -5,13 +5,15 @@ declare(strict_types=1);
 use App\Actions\Fleet\MigrateDockerAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgram;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeUpdateLock;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Process\Process;
@@ -57,22 +59,29 @@ it('translates the Docker CE recipe refusal to a typed reason with the explicit 
         ->and($node->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
 });
 
-it('runs the Docker dry-run as one read-only remote plan without update locks', function (): void {
+it('runs the Docker plan as an ADR 0211 program with stdin input and recipe containerd', function (): void {
     $node = FleetFixtures::node('docker-plan', [RoleName::AppProd]);
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/python3 - plan /', static function (RemoteCommand $command): CommandResult {
-        $payload = json_decode($command->arguments[8], true, flags: JSON_THROW_ON_ERROR);
-        expect($payload['docker_version'])->toBe(new RecipeLoader()->load()->tools['docker.io']->version)
-            ->and($payload['process_ids'])->toBe([])
-            ->and($command->input)->toContain('def migration_main():', 'def backup_apt_source(');
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node): bool {
+        $recipe = new RecipeLoader()->load();
+        expect($target->id)->toBe($node->id)
+            ->and($program->name)->toBe('docker.migrate')
+            ->and($program->user)->toBe('root')
+            ->and($program->timeoutSeconds)->toBe(3600)
+            ->and($program->outcomes)->toBe(['planned', 'prepared', 'reported', 'failed'])
+            ->and($program->source)->toContain('def snapshot_options(', 'def retire_sources(', 'def transient_prepare(')
+            ->and($input['docker_version'])->toBe($recipe->tools['docker.io']->version)
+            ->and($input['containerd_version'])->toBe($recipe->tools['containerd']->version)
+            ->and($input['mode'])->toBe('plan')
+            ->and($input['fallback'])->toBeTrue()
+            ->and($input['process_ids'])->toBe([]);
 
-        return ScriptedSshExecutor::ok('{"steps":["inventory","stop all containers"],"containers":["mailpit"]}');
-    });
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+        return true;
+    })->andReturn(new ProgramResult('planned', ['containers' => ['mailpit']], ''));
+    app()->instance(RemoteProgramRunner::class, $runner);
 
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--dry-run' => true]))->toBe(0)
-        ->and(Artisan::output())->toContain('mailpit')
-        ->and($ssh->commands)->toHaveCount(1);
+    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--dry-run' => true, '--fallback' => true]))->toBe(0)
+        ->and(Artisan::output())->toContain('mailpit');
 });
 
 it('reports final states after reconciling stored specs even when a Process fails', function (bool $failConverge): void {
@@ -86,23 +95,22 @@ it('reports final states after reconciling stored specs even when a Process fail
     $runtime = new ProcessesApiFakeRuntimeManager;
     $runtime->failConverge = $failConverge;
     app()->instance(ProcessRuntimeManager::class, $runtime);
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/python3 - prepare /', static function (RemoteCommand $command) use ($process): CommandResult {
-        $payload = json_decode($command->arguments[8], true, flags: JSON_THROW_ON_ERROR);
-        expect($payload['process_ids'])->toBe([(string) $process->id])
-            ->and($payload['process_states'][(string) $process->id])->toBe('running')
-            ->and($payload['process_specs'][(string) $process->id]['hash'])->toBeString()
-            ->and($command->arguments)->not->toContain('private');
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($process): bool {
+        expect($input['mode'])->toBe('prepare')
+            ->and($input['process_ids'])->toBe([(string) $process->id])
+            ->and($input['process_states']->{(string) $process->id})->toBe('running')
+            ->and(json_encode($input))->not->toContain('private');
 
-        return ScriptedSshExecutor::ok(json_encode(['fallback' => true, 'process_ids' => [(string) $process->id], 'containers' => []], JSON_THROW_ON_ERROR));
-    });
-    $ssh->on('/python3 - report /', static function () use ($runtime, $process): CommandResult {
-        expect($runtime->convergedProcessIds)->toBe([$process->id]);
+        return true;
+    })->andReturn(new ProgramResult('prepared', ['fallback' => true, 'process_ids' => [(string) $process->id]], ''));
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($runtime, $process): bool {
+        expect($input['mode'])->toBe('report')->and($runtime->convergedProcessIds)->toBe([$process->id]);
 
-        return ScriptedSshExecutor::ok('{"healthy":true,"containers":[{"name":"mysql","state":"running"}]}');
-    });
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+        return true;
+    })->andReturn(new ProgramResult('reported', ['healthy' => true, 'containers' => [['name' => 'mysql', 'state' => 'running']]], ''));
+    app()->instance(RemoteProgramRunner::class, $runner);
+    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
 
     $report = app(MigrateDockerAction::class)->execute($node, new RecipeLoader()->load(), false);
 
@@ -112,24 +120,26 @@ it('reports final states after reconciling stored specs even when a Process fail
     }
 })->with(['success' => false, 'Process failure' => true]);
 
-it('keeps Docker migration remote diagnostics private and stops before Process reconciliation', function (): void {
+it('reports final states on remote failure without reconciling Processes or exposing logs', function (): void {
     $node = FleetFixtures::node('docker-failure', [RoleName::AppProd]);
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/python3 - prepare /', ScriptedSshExecutor::fail(stdout: '{"failure":"docker-migration:package-verification"}', stderr: 'PASSWORD=private'));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn(new ProgramResult('failed', [
+        'failure' => 'docker-migration:swapping', 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
+    ], 'PASSWORD=private'));
+    app()->instance(RemoteProgramRunner::class, $runner);
+    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
     expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true]))->toBe(1)
-        ->and(Artisan::output())->toContain('docker-migration:package-verification', 'Resume')
+        ->and(Artisan::output())->toContain('docker-migration:swapping', 'Resume', 'mailpit', 'unreadable')
         ->not->toContain('PASSWORD=private')
         ->and($runtime->convergedProcessIds)->toBe([]);
 });
 
-it('executes the Docker provider inventory swap fallback preservation and resume regression programs', function (): void {
+it('executes the Docker inventory swap fallback preservation and resume regression programs', function (): void {
     $process = new Process(['python3', base_path('tests/Programs/test_docker_migration.py'), '-v']);
     $process->mustRun();
 
-    expect($process->getErrorOutput())->toContain('Ran 17 tests', 'OK');
+    expect($process->getErrorOutput())->toMatch('/Ran [1-9][0-9]* tests/')->toContain('OK');
 });

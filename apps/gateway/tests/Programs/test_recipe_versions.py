@@ -14,11 +14,11 @@ import unittest
 from unittest.mock import patch
 
 RESOURCE = Path(__file__).resolve().parents[2] / 'resources/machine-software'
-spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE / 'converge-node.py')
+spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE.parent / 'remote/lib/recipe.py')
 recipe = importlib.util.module_from_spec(spec)
-exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
+exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
-image_spec = importlib.util.spec_from_file_location('recipe_image_versions', RESOURCE / 'converge-node.py')
+image_spec = importlib.util.spec_from_file_location('recipe_image_versions', RESOURCE.parent / 'remote/lib/recipe.py')
 image = importlib.util.module_from_spec(image_spec)
 exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), image.__dict__)
 image_spec.loader.exec_module(image)

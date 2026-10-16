@@ -1,19 +1,31 @@
-"""Appended to the recipe library; never emit inspect data or remote command output."""
+# Program: docker.migrate
+# Uses: lib/program.py lib/artifacts.py lib/recipe.py
+# Outcomes: planned prepared reported failed
+# Timeout: 3600
+# Input: {"mode": "plan"|"prepare"|"report", "recipe": identity, "snapshot": timestamp,
+#   "architecture": amd64|arm64, "docker_version": version, "containerd_version": version,
+#   "process_ids": [...], "process_states": {...}, "process_specs": {...}, "fallback": bool}
+# Result: plan or per-container final states. failed adds a fixed stage and resumable=true.
+# Inspect documents, environment secrets and command diagnostics never leave the root-only journal.
 import fcntl
 import http.client
 import socket
 import time
+import shutil
 from urllib.parse import quote
 
 JOURNAL = Path('/var/lib/orbit/docker-migration')
 DAEMON = Path('/etc/docker/daemon.json')
 DROPIN = Path('/etc/systemd/system/docker.service.d/orbit-docker-migration.conf')
 CE = ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin',
-      'docker-compose-plugin', 'docker-ce-rootless-extras']
-STEPS = ['inventory', 'stop all containers', 'retire Docker apt sources with backups in /etc/apt',
+      'docker-compose-plugin', 'docker-ce-rootless-extras', 'docker-model-plugin']
+STEPS = ['inventory and storage driver', 'save local images and commit changed non-Orbit layers',
+         'disable restart policies', 'stop all containers', 'save shutdown layer changes',
+         'back up offline Docker and containerd metadata databases', 'retire Docker apt sources with backups in /etc/apt',
          'swap CE packages for recipe docker.io, containerd, docker-buildx, docker-compose-v2',
-         'verify engine and every image, container and volume',
-         'if unreadable: isolate fresh engine, preserve original volume paths, pull and recreate',
+         'record swapping; repair interrupted dpkg and dependencies; install with recipe snapshot sources',
+         'verify every image, container layer and volume; start and stop one container before restoring policies',
+         'if unreadable: refuse unless --fallback; isolate fresh engine, load archives, preserve volume paths and recreate',
          'reconcile Orbit Processes from stored specs', 'report every container state']
 
 
@@ -142,8 +154,8 @@ def validate_process(container, payload):
 def validate_container(container, process_ids):
     config, host = container['Config'], container['HostConfig']
     image = config.get('Image', '')
-    if not image or image.startswith('sha256:') or re.fullmatch(r'[a-f0-9]{64}', image):
-        raise RecipeFailure('unpullable-image')
+    if not image:
+        raise RecipeFailure('missing-image')
     labels = config.get('Labels') or {}
     supported_fields(config, CONFIG_FIELDS)
     supported_fields(host, HOST_FIELDS)
@@ -175,8 +187,7 @@ def validate_container(container, process_ids):
             raise RecipeFailure('unsupported-mount')
         if mount['Type'] in ('bind', 'volume') and not Path(mount['Source']).exists():
             raise RecipeFailure('missing-mount')
-    if api('GET', '/containers/' + container['Id'] + '/changes'):
-        raise RecipeFailure('writable-layer')
+    # Orbit layers are disposable: only their stored specs and data mounts are authoritative.
 
 
 def inventory(payload):
@@ -203,8 +214,6 @@ def inventory(payload):
         if '@sha256:' in reference:
             references = [reference]
         pinned = next((ref for ref in references if not run(['docker', 'manifest', 'inspect', ref], required=False).returncode), None)
-        if pinned is None:
-            raise RecipeFailure('unpullable-image')
         image_refs[container['Id']] = pinned
     volumes = api('GET', '/volumes')['Volumes'] or []
     for volume in volumes:
@@ -219,13 +228,157 @@ def inventory(payload):
             raise RecipeFailure('unsupported-network')
         if network['Name'] not in ('bridge', 'host', 'none'):
             network_request(network)
+    for container in containers:
+        if (container['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+            container['Config'].pop('Env', None)
     return {'recipe': payload['recipe'], 'containers': containers, 'volumes': volumes, 'networks': networks,
-            'images': images, 'image_refs': image_refs, 'daemon': None if raw is None else raw.hex(),
+            'images': images, 'image_refs': image_refs, 'driver': info.get('Driver'),
+            'defaults': {key: info.get(key) for key in ('DefaultRuntime', 'LoggingDriver', 'CgroupDriver')},
+            'archives': {}, 'committed': {}, 'stage': 'inventory',
+            'daemon': None if raw is None else raw.hex(),
             'fallback': False, 'swapped': False, 'prepared': False, 'stopped': False}
 
 
+def daemon_defaults(info):
+    return {key: info.get(key) for key in ('DefaultRuntime', 'LoggingDriver', 'CgroupDriver')}
+
+
+def stage(state, name):
+    state['stage'] = name
+    record('inventory.json', state)
+
+
+def guard_packages(simulation):
+    for line in simulation.splitlines():
+        if line.startswith('Remv ') and line.split()[1].split(':')[0] not in CE:
+            raise RecipeFailure('unrelated-package-removal')
+        if line.startswith('Inst '):
+            entry = re.match(r'Inst (\S+)(?: \[([^]]+)\])? \((\S+)', line)
+            if not entry:
+                raise RecipeFailure('apt-plan')
+            name, old, new = entry.groups()
+            if old and name.split(':')[0] not in CE + ['docker.io', 'containerd']:
+                if run(['dpkg', '--compare-versions', new, 'lt', old], required=False).returncode != 1:
+                    raise RecipeFailure('unrelated-package-downgrade')
+
+
+def stop_loaded(units):
+    loaded = [unit for unit in units if run(['systemctl', 'show', '--property=LoadState', '--value', unit],
+                                           required=False).stdout.strip() == 'loaded']
+    if loaded:
+        run(['systemctl', 'stop', *loaded])
+
+
+def start_daemon():
+    for attempt in range(3):
+        try:
+            run(['systemctl', 'start', '--no-block', 'docker'], timeout=15)
+            for _ in range(10):
+                try:
+                    api('GET', '/info')
+                    return
+                except (RecipeFailure, OSError, http.client.HTTPException):
+                    time.sleep(2)
+        except RecipeFailure:
+            pass
+        if attempt < 2:
+            run(['systemctl', 'reset-failed', 'docker'], required=False)
+    raise RecipeFailure('daemon-start')
+
+
+def archive_image(state, image):
+    destination = JOURNAL / ('image-' + image.replace(':', '-') + '.tar')
+    if image not in state['archives']:
+        temporary = destination.with_suffix('.partial')
+        run(['docker', 'save', '--output', str(temporary), image], timeout=600)
+        temporary.chmod(0o600)
+        with temporary.open('rb') as stream:
+            os.fsync(stream.fileno())
+        temporary.replace(destination)
+        state['archives'][image] = str(destination)
+        record('inventory.json', state)
+
+
+def preserve_images(state, *, shutdown=False):
+    for image in state['images']:
+        if not image.get('RepoDigests') or any(c['Image'] == image['Id'] and not state['image_refs'][c['Id']]
+                                              for c in state['containers']):
+            archive_image(state, image['Id'])
+    for container in state['containers']:
+        if (container['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+            continue
+        if api('GET', '/containers/' + container['Id'] + '/changes'):
+            key = container['Id'] + (':shutdown' if shutdown else ':running')
+            image = run(['docker', 'commit', container['Id']], timeout=600).stdout.strip()
+            if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
+                raise RecipeFailure('commit-image')
+            archive_image(state, image)
+            state['committed'][key] = image
+            record('inventory.json', state)
+
+
+METADATA_ROOTS = [Path('/var/lib/docker'), Path('/var/lib/containerd')]
+
+
+def backup_metadata(state):
+    if state.get('metadata_backed_up'):
+        return
+    stage(state, 'metadata-backup')
+    target = JOURNAL / 'metadata'
+    target.mkdir(mode=0o700, exist_ok=True)
+    for root in METADATA_ROOTS:
+        if not root.exists():
+            continue
+        candidates = [*root.glob('volumes/metadata.db'), *root.glob('network/files/local-kv.db'),
+                      *root.glob('containers/*/config.v2.json'), *root.glob('containers/*/hostconfig.json'),
+                      *root.glob('io.containerd.metadata.v1.bolt/meta.db'),
+                      *root.glob('containerd/daemon/io.containerd.metadata.v1.bolt/meta.db')]
+        for directory in [root / 'image']:
+            if directory.is_dir() and not directory.is_symlink():
+                candidates.extend(directory.rglob('*'))
+        for source in candidates:
+            relative = source.relative_to(root)
+            if source.is_symlink() or not source.is_file():
+                continue
+            parts = relative.parts
+            selected = (source.name in ('metadata.db', 'meta.db', 'local-kv.db')
+                        or (parts[0] == 'containers' and source.name in ('config.v2.json', 'hostconfig.json'))
+                        or (parts[0] == 'image' and ('imagedb' in parts or 'layerdb' in parts)))
+            if not selected or '_data' in parts:
+                continue
+            destination = target / root.name / relative
+            destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            with source.open('rb') as incoming, destination.open('wb') as outgoing:
+                shutil.copyfileobj(incoming, outgoing)
+                outgoing.flush()
+                os.fsync(outgoing.fileno())
+            destination.chmod(0o600)
+    state['metadata_backed_up'] = True
+    record('inventory.json', state)
+
+
+def policies(state, restore=False):
+    for container in state['containers']:
+        if state['fallback'] and (container['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+            continue
+        reference = container['Name'].lstrip('/') if state['fallback'] else container['Id']
+        api('POST', '/containers/' + quote(reference, safe='') + '/update',
+            {'RestartPolicy': container['HostConfig'].get('RestartPolicy', {'Name': 'no'}) if restore else {'Name': 'no'}})
+
+
+def restart_original(state):
+    state['metadata_backed_up'] = False
+    state['committed'] = {}
+    record('inventory.json', state)
+    start_daemon()
+    policies(state, restore=True)
+    for container in state['containers']:
+        if container['State']['Running']:
+            run(['docker', 'start', container['Id']], required=False)
+
+
 def package_arguments(payload, installed):
-    return ['docker.io=' + payload['docker_version'], 'containerd=2.2.2-0ubuntu1.1',
+    return ['docker.io=' + payload['docker_version'], 'containerd=' + payload['containerd_version'],
             'docker-buildx', 'docker-compose-v2', *[name + '-' for name in CE if name in installed]]
 
 
@@ -240,40 +393,67 @@ def swap(payload, state):
         marker.unlink()
     if POLICY.exists() or POLICY.is_symlink():
         raise RecipeFailure('restart-policy')
-    with temporary_indexes(snapshot_source(payload['snapshot'])) as options:
+    with tempfile.TemporaryDirectory(prefix='orbit-docker-apt-') as directory:
+        options = snapshot_options(payload, Path(directory))
+        environment = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
+        stage(state, 'apt-indexes')
+        run(['apt-get', 'update', *options, '-o', 'APT::Update::Error-Mode=any'], env=environment)
         arguments = package_arguments(payload, packages())
         base = ['apt-get', 'install', '--no-install-recommends', '--allow-downgrades',
                 '-o', 'Dpkg::Options::=--force-confold', *options]
-        simulation = run([*base, '--simulate', '--', *arguments]).stdout
-        for line in simulation.splitlines():
-            if line.startswith('Remv ') and line.split()[1] not in CE:
-                raise RecipeFailure('unrelated-package-removal')
         record('restart-policy.json', {'owned': True})
         publish(POLICY, policy_content, 0o755)
+        previous_term = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        previous_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            run([*base, '--yes', '--', *arguments], env=dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1'))
-            run(['apt-get', 'check'])
+            if state.get('swapping'):
+                stage(state, 'repair-dpkg')
+                run(['dpkg', '--configure', '-a'], required=False, env=environment, timeout=None)
+                repair = ['apt-get', '-f', 'install', *options]
+                guard_packages(run([*repair, '--simulate'], env=environment).stdout)
+                stage(state, 'repair-dependencies')
+                run([*repair, '--yes'], env=environment, timeout=None)
+                run(['dpkg', '--configure', '-a'], env=environment, timeout=None)
+            stage(state, 'apt-simulation')
+            guard_packages(run([*base, '--simulate', '--', *arguments], env=environment).stdout)
+            state['swapping'] = True
+            stage(state, 'swapping')
+            run([*base, '--yes', '--', *arguments], env=environment, timeout=None)
+            stage(state, 'apt-check')
+            run(['apt-get', 'check', *options], env=environment)
         finally:
+            signal.signal(signal.SIGTERM, previous_term)
+            signal.signal(signal.SIGINT, previous_int)
             POLICY.unlink()
             marker.unlink()
     installed = packages()
-    if (installed.get('docker.io') != payload['docker_version'] or installed.get('containerd') != '2.2.2-0ubuntu1.1'
+    if (installed.get('docker.io') != payload['docker_version'] or installed.get('containerd') != payload['containerd_version']
             or any(name in installed for name in CE) or not all(name in installed for name in ('docker-buildx', 'docker-compose-v2'))):
         raise RecipeFailure('package-verification')
     state['swapped'] = True
-    record('inventory.json', state)
+    state['swapping'] = False
+    stage(state, 'swapped')
 
 
 def readable(state):
     try:
-        run(['systemctl', 'start', 'docker'], timeout=120)
-        api('GET', '/info')
+        start_daemon()
+        info = api('GET', '/info')
+        if info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {}):
+            return False
         if any(inspect_container(c['Id'], missing=True) is None for c in state['containers']):
             return False
         if any(api('GET', '/images/' + image['Id'] + '/json', missing=True) is None for image in state['images']):
             return False
         if any(api('GET', '/volumes/' + quote(v['Name'], safe=''), missing=True) is None for v in state['volumes']):
             return False
+        durable = [c for c in state['containers'] if (c['Config'].get('Labels') or {}).get('orbit.managed') != 'true']
+        for container in durable:
+            api('GET', '/containers/' + container['Id'] + '/changes')
+        probe = next((c for c in durable if c['State']['Running']), None)
+        if probe:
+            run(['docker', 'start', probe['Id']], timeout=120)
+            run(['docker', 'stop', '--time', '60', probe['Id']], timeout=90)
         return True
     except (RecipeFailure, OSError, http.client.HTTPException):
         return False
@@ -297,7 +477,7 @@ def network_request(network):
 
 
 def fresh_engine(state):
-    run(['systemctl', 'stop', 'docker.service', 'docker.socket'])
+    stop_loaded(['docker.service', 'docker.socket'])
     content = ('[Unit]\nRequires=\nRequires=docker.socket\nWants=\nWants=network-online.target\n'
                '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
                + str(JOURNAL / 'engine') + '\n').encode()
@@ -306,7 +486,7 @@ def fresh_engine(state):
     DROPIN.parent.mkdir(parents=True, exist_ok=True)
     publish(DROPIN, content)
     run(['systemctl', 'daemon-reload'])
-    run(['systemctl', 'start', 'docker'], timeout=120)
+    start_daemon()
     api('GET', '/info')
     for volume in state['volumes']:
         expected = {'type': 'none', 'o': 'bind', 'device': volume['Mountpoint']}
@@ -327,9 +507,21 @@ def fresh_engine(state):
             raise RecipeFailure('network-conflict')
 
 
+def effective_host(host, info):
+    result = {key: value for key, value in host.items() if value not in (None, '', [], {}, False, 0)}
+    result['Runtime'] = host.get('Runtime') or info.get('DefaultRuntime') or 'runc'
+    logging = host.get('LogConfig') or {}
+    result['LogConfig'] = {'Type': logging.get('Type') or info.get('LoggingDriver') or 'json-file',
+                           'Config': logging.get('Config') or {}}
+    result['RestartPolicy'] = dict({'Name': 'no', 'MaximumRetryCount': 0}, **(host.get('RestartPolicy') or {}))
+    result['NetworkMode'] = host.get('NetworkMode') or 'default'
+    return result
+
+
 def recreate(container, image_ref):
     name = container['Name'].lstrip('/')
     body = dict(container['Config'], HostConfig=dict(container['HostConfig']))
+    body['HostConfig']['RestartPolicy'] = {'Name': 'no'}
     body['Labels'] = dict(body.get('Labels') or {}, **{'orbit.docker.migration': container['Id']})
     # The old engine's anonymous volume names must not silently become new empty volumes.
     binds = list(body['HostConfig'].get('Binds') or [])
@@ -348,18 +540,22 @@ def recreate(container, image_ref):
     for network_name, endpoint in container['NetworkSettings']['Networks'].items():
         endpoints[network_name] = {key: endpoint[key] for key in ('IPAMConfig', 'Aliases', 'DriverOpts', 'MacAddress', 'GwPriority') if endpoint.get(key) is not None}
     body['NetworkingConfig'] = {'EndpointsConfig': endpoints}
+    if not image_ref:
+        body['Image'] = container.get('RecoveryImage', container['Image'])
     existing = inspect_container(name, missing=True)
     if existing is not None:
-        config = {key: value for key, value in body.items() if key not in ('HostConfig', 'NetworkingConfig')}
-        if (existing['Image'] != container['Image'] or existing['Config'] != config
-                or any(existing['HostConfig'].get(key) != value for key, value in body['HostConfig'].items())):
+        if (existing['Image'] != container.get('RecoveryImage', container['Image'])
+                or any(existing['Config'].get(key) != value for key, value in body.items()
+                       if key not in ('HostConfig', 'NetworkingConfig') and value not in (None, '', [], {}))
+                or effective_host(existing['HostConfig'], api('GET', '/info')) != effective_host(body['HostConfig'], api('GET', '/info'))):
             raise RecipeFailure('container-conflict')
         return
-    run(['docker', 'pull', image_ref], timeout=600)
-    if api('GET', '/images/' + quote(image_ref, safe='') + '/json')['Id'] != container['Image']:
-        raise RecipeFailure('image-version')
-    if '@' not in container['Config']['Image']:
-        run(['docker', 'tag', image_ref, container['Config']['Image']])
+    if image_ref:
+        run(['docker', 'pull', image_ref], timeout=600)
+        if api('GET', '/images/' + quote(image_ref, safe='') + '/json')['Id'] != container['Image']:
+            raise RecipeFailure('image-version')
+        if '@' not in container['Config']['Image']:
+            run(['docker', 'tag', image_ref, container['Config']['Image']])
     api('POST', '/containers/create?name=' + quote(name, safe=''), body)
 
 
@@ -400,7 +596,12 @@ def migrate(payload, mode):
                 'volume_backings': [{'name': v['Name'], 'path': v['Mountpoint']} for v in state['volumes']],
                 'packages': package_arguments(payload, packages()),
                 'source_backups': [str(APT_ETC / (p.name + '.orbit-docker-backup')) for p, _, _ in sources],
-                'resuming': path.exists(), 'daemon_json': 'unchanged', 'volume_data': 'never deleted'}
+                'resuming': path.exists(), 'daemon_json': 'unchanged', 'volume_data': 'never deleted',
+                'storage_driver': state.get('driver'), 'fallback_authorized': payload.get('fallback', False),
+                'local_images': [image['Id'] for image in state['images'] if not image.get('RepoDigests')],
+                'changed_layers': [c['Name'].lstrip('/') for c in state['containers']
+                                   if (c['Config'].get('Labels') or {}).get('orbit.managed') != 'true'
+                                   and api('GET', '/containers/' + c['Id'] + '/changes')]}
     if daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon'])):
         raise RecipeFailure('daemon-changed')
     if not path.exists():
@@ -433,73 +634,143 @@ def migrate(payload, mode):
         known = {c['Id'] for c in state['containers']}
         if not state['fallback'] and any(c['Id'] not in known for c in current):
             raise RecipeFailure('inventory-drift')
-        for container in current:
-            run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
-        if not state['fallback']:
+        if state['stopped']:
+            # A failed restart or verification may have left a container running. Stop it before opening metadata.
             for container in current:
-                # Shutdown itself can write to the layer. Never discover that only after downgrading.
-                if api('GET', '/containers/' + container['Id'] + '/changes'):
-                    raise RecipeFailure('writable-layer')
-        state['stopped'] = True
-        record('inventory.json', state)
-        run(['systemctl', 'stop', 'docker.service', 'docker.socket', 'containerd.service'])
-        for source, before, after in sources:
-            backup_apt_source(source, before, 'docker')
-            if after.strip():
-                publish(source, after)
-            else:
-                source.unlink()
+                api('POST', '/containers/' + container['Id'] + '/update', {'RestartPolicy': {'Name': 'no'}})
+                run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
+        if not state['stopped']:
+            stage(state, 'preserve-images')
+            preserve_images(state)
+            state['policies_disabled'] = True
+            stage(state, 'disable-policies')
+            try:
+                policies(state)
+                stage(state, 'stop-containers')
+                for container in current:
+                    run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
+                stage(state, 'preserve-shutdown-layers')
+                preserve_images(state, shutdown=True)
+            except Exception:
+                restart_original(state)
+                state['policies_disabled'] = False
+                stage(state, 'post-stop-refusal')
+                raise
+            state['stopped'] = True
+            stage(state, 'stopped')
+        stage(state, 'stop-services')
+        stop_loaded(['docker.service', 'docker.socket', 'containerd.service'])
+        backup_metadata(state)
+        stage(state, 'retire-sources')
+        retire_sources(sources, 'docker')
         if not state['swapped']:
             swap(payload, state)
+        stage(state, 'verify-engine')
         if not state['fallback'] and not readable(state):
-            # Persist the choice before touching service configuration, so interruptions cannot reuse old metadata.
+            if not payload.get('fallback'):
+                raise RecipeFailure('fallback-required')
             state['fallback'] = True
-            record('inventory.json', state)
+            stage(state, 'fallback')
         if state['fallback']:
+            stage(state, 'fresh-engine')
             fresh_engine(state)
+            stage(state, 'load-images')
+            for archive in state['archives'].values():
+                run(['docker', 'load', '--input', archive], timeout=600)
+            stage(state, 'recreate')
             for container in state['containers']:
                 if (container['Config'].get('Labels') or {}).get('orbit.managed') != 'true':
-                    recreate(container, state['image_refs'][container['Id']])
+                    committed = state['committed'].get(container['Id'] + ':shutdown', state['committed'].get(container['Id'] + ':running'))
+                    if committed:
+                        container['RecoveryImage'] = committed
+                    recreate(container, None if committed else state['image_refs'][container['Id']])
+        stage(state, 'restore-policies')
+        policies(state, restore=True)
+        stage(state, 'restart-containers')
         for container in state['containers']:
             if (container['Config'].get('Labels') or {}).get('orbit.managed') != 'true' and container['State']['Running']:
                 run(['docker', 'start', container['Name'].lstrip('/')])
         state['prepared'] = True
-        record('inventory.json', state)
+        stage(state, 'prepared')
     return public_report(state)
 
 
-def migration_main():
-    signal.signal(signal.SIGTERM, interrupted)
-    signal.signal(signal.SIGINT, interrupted)
-    mode, document = sys.argv[1:]
-    payload = json.loads(document)
+def transient_prepare(payload):
+    # The worker owns the journal lock and survives an SSH disconnect. Input and result are root-only files.
+    with tempfile.TemporaryDirectory(prefix='prepare-', dir=JOURNAL) as directory:
+        work = Path(directory)
+        source = globals()['__orbit_source__']
+        publish(work / 'program.py', source, 0o600)
+        publish(work / 'input.json', json.dumps(dict(payload, worker=True)).encode(), 0o600)
+        result = work / 'result.json'
+        publish(result, b'', 0o600)
+        unit = 'orbit-docker-migration-' + work.name
+        run(['systemd-run', '--quiet', '--wait', '--collect', '--unit=' + unit,
+             '--property=RuntimeMaxSec=2400', '--property=TimeoutStopSec=900', '--property=SendSIGKILL=no',
+             '--property=StandardInput=file:' + str(work / 'input.json'),
+             '--property=StandardOutput=file:' + str(result), '--property=StandardError=null',
+             'python3', str(work / 'program.py')], timeout=3360)
+        document = json.loads(result.read_text())
+        return document['outcome'], document['data']
+
+
+def journal_permissions():
+    if not JOURNAL.exists():
+        return
+    for path in (JOURNAL, JOURNAL.parent):
+        if path.is_symlink() or path.stat().st_uid != 0 or path.stat().st_mode & 0o022:
+            raise RecipeFailure('journal-permissions')
+    if JOURNAL.stat().st_mode & 0o077:
+        raise RecipeFailure('journal-permissions')
+    inventory_path = JOURNAL / 'inventory.json'
+    if inventory_path.exists() and (inventory_path.is_symlink() or not inventory_path.is_file()
+            or inventory_path.stat().st_uid != 0 or inventory_path.stat().st_mode & 0o077):
+        raise RecipeFailure('journal-permissions')
+
+
+def migration_main(payload):
+    mode = payload['mode']
+    trusted_journal = False
     try:
         platform_check(payload['architecture'])
         if mode != 'plan':
             JOURNAL.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if JOURNAL.exists():
-            for path in (JOURNAL, JOURNAL.parent):
-                if path.is_symlink() or path.stat().st_uid != 0 or path.stat().st_mode & 0o022:
-                    raise RecipeFailure('journal-permissions')
-            if JOURNAL.stat().st_mode & 0o077:
-                raise RecipeFailure('journal-permissions')
-            inventory_path = JOURNAL / 'inventory.json'
-            if inventory_path.exists() and (inventory_path.is_symlink() or not inventory_path.is_file()
-                    or inventory_path.stat().st_uid != 0 or inventory_path.stat().st_mode & 0o077):
-                raise RecipeFailure('journal-permissions')
+        journal_permissions()
+        trusted_journal = True
+        if mode == 'prepare' and not payload.get('worker'):
+            return transient_prepare(payload)
         if mode == 'plan':
-            print(json.dumps(migrate(payload, mode)))
+            report = migrate(payload, mode)
         else:
             with open(JOURNAL / 'lock', 'a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                print(json.dumps(migrate(payload, mode)))
-        return 0
+                try:
+                    report = migrate(payload, mode)
+                except Exception:
+                    path = JOURNAL / 'inventory.json'
+                    if mode == 'prepare' and path.exists():
+                        state = json.loads(path.read_text())
+                        if state.get('stopped') and not state.get('swapping') and not state.get('swapped'):
+                            restart_original(state)
+                            state['stopped'] = False
+                            stage(state, 'post-stop-refusal')
+                    raise
+        return {'plan': 'planned', 'prepare': 'prepared', 'report': 'reported'}[mode], report
     except Exception as error:
         # Fixed stage names only. Docker and apt errors can include credentials.
-        stage = str(error) if isinstance(error, RecipeFailure) and re.fullmatch('[a-z-]+', str(error)) else 'remote'
-        print(json.dumps({'failure': 'docker-migration:' + stage, 'resumable': True}))
-        return 1
+        failure_stage = str(error) if isinstance(error, RecipeFailure) and re.fullmatch('[a-z-]+', str(error)) else 'remote'
+        if isinstance(error, BlockingIOError):
+            failure_stage = 'locked'
+        report = {'containers': []}
+        path = JOURNAL / 'inventory.json'
+        if trusted_journal and path.exists():
+            state = json.loads(path.read_text())
+            report = public_report(state)
+            if failure_stage == 'remote':
+                failure_stage = state.get('stage', failure_stage)
+        report.update({'failure': 'docker-migration:' + failure_stage, 'resumable': True, 'healthy': False})
+        return 'failed', report
 
 
 if __name__ == '__main__':
-    sys.exit(migration_main())
+    run_program(migration_main)
