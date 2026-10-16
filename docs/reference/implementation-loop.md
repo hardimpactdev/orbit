@@ -127,7 +127,7 @@ A pull request that changes the PHP build runs its CI on the self-hosted runners
 
 Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
 
-[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 

@@ -78,13 +78,13 @@ Image builds refresh the snapshot indexes before assessing Git with the Ubuntu t
 
 Installed binaries built from source package `git` but absent from `git.packages` are refused as `git-dependency:<package>` before Git source or package changes. This includes siblings such as `gitk` and `git-gui`, even at the pinned version. An operator must remove these unmanaged siblings before convergence; the recipe owns only its declared package set.
 
-PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release retains its existing URL and now holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
+PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
 
 Exact Git pins block automatic Ubuntu and PPA security updates. Orbit owns the delay between an upstream fix and a reviewed recipe bump. The daily `Git build watch` workflow queries Launchpad for published Git builds for the recipe release and Ubuntu’s security notice API. It opens or updates one GitHub issue for a newer build or a notice published on or after `git.usn_since`. Network and parsing failures fail the workflow visibly.
 
 Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices.
 
-Git bumps remain separate from nightly snapshot and PHP build pull requests. The snapshot flow changes only its date; the PHP bump authenticates Sury's indexes and knows PHP's package sets. Adding Launchpad key verification and a separately reviewed Git bump to that flow is outside this change. To bump Git by hand, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
+Git bumps stay separate from the nightly snapshot and PHP build pull requests. The snapshot flow changes only its date; the PHP bump authenticates Sury's indexes and knows PHP's package sets. No automated flow verifies Launchpad's signed indexes, so a maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
 
 The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
@@ -237,30 +237,6 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 3. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
 
-#### Why one PHP build
-
-PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
-
-These alternatives were rejected.
-
-`setup-php` with a floating version cannot pin a patch. It loads extensions that Orbit does not use, and a hosted runner gets a new patch on its own schedule.
-
-A pin for each environment would give CI, Nodes, and images each a copy of the version and the extension list. The copies drift.
-
-Sury removes a version from its index when it publishes the next one, so `package=version` from the Sury apt source does not last. The recipe's files are checked by digest, and the same files build images and converge Nodes.
-
-The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
-
-Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the `ci-runner` profile purges, because its machine runs nothing but CI jobs.
-
-A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
-
-The PHP bump does not auto-merge with the snapshot. A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request keeps its narrow one-line auto-merge.
-
-Sabre did not wait for a `ci-runner` role. Its hand-managed PHP would keep breaking the cache match until then. A profile that a roleless Node selects manages it now.
-
-Git uses exact artifacts for the same reason. A live PPA would be a second owner of Git, and an exact APT version alone does not last, because Launchpad deletes superseded builds. The cost is that Orbit, not unattended-upgrades, delivers Git security fixes, so the [Git build watch](#recipe-schema) signals each one for review.
-
 ### Recipe identity
 
 The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
@@ -302,7 +278,27 @@ Trusted Gateway jobs build images and fill package caches. Agents have root insi
 
 Every workspace clones and runs Project setup. Per-Project snapshots would keep setup coupled to image builds, invalidation, and retention. Package and CI caches speed setup without a saved workspace. Fresh VMs also avoid capacity held by idle pre-enrolled guests and their refill lifecycle, at the cost of boot time.
 
-Nightly convergence checks one Node before advancing to the next. This limits failure spread but permits a mixed-recipe fleet and a partly changed Node. Automatic rollback was rejected: the operator investigates and selects a reviewed recipe for recovery.
+Nightly convergence checks one Node before advancing to the next. This limits failure spread but permits a mixed-recipe fleet and a partly changed Node. Automatic rollback of a Node's convergence was rejected: the operator investigates and selects a reviewed recipe for recovery. The PHP build is the exception: its installer keeps the previous build as files and [restores it at once](/reference/php-runtime#one-installer-with-a-rollback).
+
+#### One PHP build
+
+PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
+
+A pin for each environment was rejected. CI, Nodes, and images would each keep a copy of the version and the extension list, and the copies drift. [Feature delivery](/reference/implementation-loop#one-php-build-in-ci) explains why CI does not use `setup-php`. [PHP runtimes](/reference/php-runtime#why-it-works-this-way) explains the Sury packages, the recipe's files instead of the Sury apt source, the one installer, and PCOV.
+
+The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
+
+Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the `ci-runner` profile purges, because its machine runs nothing but CI jobs.
+
+A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
+
+The PHP bump does not auto-merge with the snapshot. A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request keeps its narrow one-line auto-merge.
+
+Sabre did not wait for a `ci-runner` role. Its hand-managed PHP would keep breaking the cache match until then. A profile that a roleless Node selects manages it now.
+
+#### Git from exact artifacts
+
+A live PPA would be a second owner of Git, and an exact APT version alone does not last, because Launchpad deletes superseded builds. The cost is that Orbit, not unattended-upgrades, delivers Git security fixes, so the daily `Git build watch` workflow signals each one for review.
 
 ## Task VMs
 

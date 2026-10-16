@@ -120,6 +120,8 @@ container() {
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
     "$name$tree/apps/gateway/resources/machine-software/recipe.json" --project "$PROJECT"
   incus file push --recursive "$REPOSITORY/apps/gateway/resources/remote" "$name$tree/apps/gateway/resources/" --project "$PROJECT"
+  # A recursive push keeps the host's owners; root runs this code, so root owns it.
+  in_ct "$name" chown -R root:root "$tree"
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
     COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" bash -euo pipefail <<'SH'
