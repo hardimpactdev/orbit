@@ -141,9 +141,17 @@ The Gateway already holds every database password, and the API never returns one
 
 Orbit stays the source of truth. If the secrets lived only in Vaultwarden, the Gateway would still need the organization key to use them, so they would not be hidden from it. Deploys and recovery would also depend on Vaultwarden, which runs on an Orbit Node.
 
+### The API does not return passwords
+
+Returning passwords through the Orbit API was rejected. Every client with Gateway access would read every password, and copies made that way still go stale when Orbit rotates a password.
+
+### Items are matched by their source
+
+Vaultwarden assigns the item ID. A create that times out can still store the item, so recording an item before its create does not tell the Gateway which item exists. The `orbit.source` field names the source record, so the next run finds that item and adopts it.
+
 ### The scheduler runs the sync
 
-The sync runs from the scheduler instead of inside each database write. When Vaultwarden is down, database operations still succeed, and the Gateway needs no general job queue.
+The sync runs from the scheduler instead of inside each database write. When Vaultwarden is down, database operations still succeed, and a later run copies the change.
 
 ### The sync stops while the extension is off
 

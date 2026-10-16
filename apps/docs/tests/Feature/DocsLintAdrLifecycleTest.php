@@ -26,6 +26,14 @@ function adrLifecycleFixture(): string
     return $root;
 }
 
+function recordAdrRow(string $root, string $slug): void
+{
+    $path = $root.'/docs/decisions/overview.mdx';
+    $overview = file_get_contents($path);
+    $row = '| ['.substr($slug, 0, 4).'](/decisions/'.$slug.') | Decision | In progress |'."\n";
+    file_put_contents($path, str_replace("## Records\n\n", "## Records\n\n".$row, $overview));
+}
+
 afterEach(function (): void {
     if (isset($this->root)) {
         new Filesystem()->deleteDirectory($this->root);
@@ -112,12 +120,22 @@ it('adr lifecycle rejects new ADRs missing status or principle', function (): vo
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n");
     expectAdrLifecycleLintFailure($root, 'ADR 0180+ must include a Principle: line in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    expectAdrLifecycleLintFailure($root, 'Live decision 0181-new-decision has no row in the Records table.');
+    recordAdrRow($root, '0181-new-decision');
     expect(new AdrLifecycle($root)->findings())->toBe([]);
+});
+
+it('adr lifecycle needs a Records row with the exact live slug', function (): void {
+    $root = adrLifecycleFixture();
+    file_put_contents($root.'/docs/decisions/0181-new-decision.md', "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    recordAdrRow($root, '0181-old-name');
+    expectAdrLifecycleLintFailure($root, 'Live decision 0181-new-decision has no row in the Records table.');
 });
 
 it('adr lifecycle keeps a withdrawn ADR without a redirect', function (): void {
     $root = adrLifecycleFixture();
     file_put_contents($root.'/docs/decisions/0181-withdrawn.md', "# Decision\n\n## Status\n\nWithdrawn on 2026-10-15.\n\nPrinciple: lean.\n");
+    recordAdrRow($root, '0181-withdrawn');
 
     expect(new AdrLifecycle($root)->findings())->toBe([]);
 });
@@ -138,8 +156,10 @@ it('adr lifecycle accepts a gap number that follows the in-progress rules', func
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n");
     expectAdrLifecycleLintFailure($root, 'ADR 0180+ must include a Principle: line in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    recordAdrRow($root, '0176-outer-loop');
     foreach (['0007', '0020'] as $gap) {
         file_put_contents($root."/docs/decisions/{$gap}-gap.md", "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+        recordAdrRow($root, "{$gap}-gap");
     }
     expect(new AdrLifecycle($root)->findings())->toBe([]);
 });
