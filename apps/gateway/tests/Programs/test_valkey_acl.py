@@ -127,7 +127,7 @@ class RealValkeyBootstrapTest(unittest.TestCase):
                 return reply
 
         def wait_ready():
-            for attempt in range(30):
+            for _attempt in range(30):
                 try:
                     if command('PING') == b'+PONG\r\n':
                         return
