@@ -64,7 +64,7 @@ function tvm_glue_group(TaskVmState $state = TaskVmState::Ready): Task
         'state' => $state, 'wireguard_ip' => '10.44.0.130', 'pi_token' => TVM_GLUE_PI_TOKEN, 'model_key' => TVM_GLUE_MODEL_KEY,
     ]);
     $workspace = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id,
         'checkout_path' => '/home/orbit/apps/shop/task-'.$group->id, 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($workspace);

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
-use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
@@ -12,16 +11,12 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSettling;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWait;
-use App\Domain\Tasks\TaskWorkspaceOwnership;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -34,7 +29,6 @@ use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
-use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskModelRouter;
 
 it('claimNext continues after provision null', function (): void {
@@ -310,7 +304,7 @@ function claim_hol_app(): Project
     ]);
 }
 
-function claim_hol_instance(Project $project, string $name): Instance
+function claim_hol_instance(Project $project, string $name, ?Task $owner = null): Instance
 {
     $node = Node::query()->firstOrCreate(['name' => 'claim-hol-node'], [
         'status' => LifecycleStatus::Active,
@@ -324,6 +318,7 @@ function claim_hol_instance(Project $project, string $name): Instance
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/tmp/{$name}",
+        'task_workspace_owner_id' => $owner?->id,
         'status' => 'reserved',
     ]);
 }
@@ -410,7 +405,7 @@ describe('the end of a claim', function (): void {
                 test()->travel(5)->seconds();
                 Task::topLevel()->whereKey($intent->group->id)->update(['status' => TaskGroupStatus::Cancelled, 'reserved_at' => now()]);
 
-                return claim_hol_instance($this->project, 'task-'.$intent->group->id);
+                return claim_hol_instance($this->project, 'task-'.$intent->group->id, $intent->group);
             }
         });
 
@@ -509,8 +504,7 @@ describe('a group cancelled while its claim runs', function (): void {
         $project = claim_hol_app();
         $group = claim_hol_group($project, 'Cancelled mid-claim');
         $removed = claim_hol_recording_remover();
-        $instance = claim_hol_instance($project, 'task-'.$group->id);
-        $instance->update(['task_workspace_owner_id' => $group->id]);
+        $instance = claim_hol_instance($project, 'task-'.$group->id, $group);
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
             public function __construct(private Instance $instance) {}
@@ -544,7 +538,7 @@ describe('a group cancelled while its claim runs', function (): void {
             public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 $name = 'task-'.$intent->group->id;
-                claim_hol_instance($this->project, $name)->update(['branch_override' => $name, 'task_workspace_owner_id' => $intent->group->id]);
+                claim_hol_instance($this->project, $name, $intent->group)->update(['branch_override' => $name]);
                 app(CancelTaskGroupAction::class)->execute($intent->group);
 
                 throw new RuntimeException('The checkout failed part way.');
@@ -581,7 +575,7 @@ describe('the abandoned workspace sweep', function (): void {
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
     });
 
-    it('keeps workspaces of live groups and Instances that only share the name', function (): void {
+    it('keeps workspaces of live groups and user Instances named and branched like a workspace', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
         $removed = claim_hol_recording_remover();
@@ -589,11 +583,31 @@ describe('the abandoned workspace sweep', function (): void {
         claim_hol_workspace($project, $todo);
         $cancelled = claim_hol_group($project, 'Cancelled lookalike');
         $cancelled->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        claim_hol_instance($project, 'task-'.$cancelled->id);
+        claim_hol_instance($project, 'task-'.$cancelled->id)->update(['branch_override' => 'task-'.$cancelled->id]);
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([])
             ->and(Instance::query()->count())->toBe(2);
+    });
+
+    it('removes a workspace once, for its owner, and never for another group that holds it', function (): void {
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $removed = claim_hol_recording_remover();
+        $owner = claim_hol_group($project, 'Owner');
+        $workspace = claim_hol_workspace($project, $owner, 'source_resolved');
+        $holder = claim_hol_group($project, 'Holder');
+        $holder->taskable()->associate($workspace);
+        $holder->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([]);
+
+        $owner->forceFill(['status' => TaskGroupStatus::Completed])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([$workspace->id]);
     });
 
     it('backs off failing removals per Instance so a later workspace is still removed', function (): void {
@@ -857,8 +871,8 @@ function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
 function claim_hol_workspace(Project $project, Task $group, string $status = 'reserved'): Instance
 {
     $name = 'task-'.$group->id;
-    $workspace = claim_hol_instance($project, $name);
-    $workspace->update(['branch_override' => $name, 'status' => $status, 'task_workspace_owner_id' => $group->id]);
+    $workspace = claim_hol_instance($project, $name, $group);
+    $workspace->update(['branch_override' => $name, 'status' => $status]);
 
     return $workspace;
 }
@@ -947,83 +961,4 @@ it('releases only expired top-level reservations without an execution mode', fun
         TaskGroupStatus::Running, TaskGroupStatus::Backlog,
     ]);
     expect(Task::query()->whereNotNull('parent_id')->get()->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
-});
-
-it('never admits a name and branch collision without durable workspace ownership', function (): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Unrelated ended task');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_instance($project, 'task-'.$group->id);
-    $instance->update(['branch_override' => $instance->name]);
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $group, $instance))->toBeFalse();
-    expect(app(RemoveTaskWorkspaceAction::class)->find($group))->toBeNull();
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))
-        ->toThrow(RuntimeException::class, 'ownership is missing or ambiguous');
-    expect($instance->fresh())->not->toBeNull();
-});
-
-it('refuses conflicting owners and associations at both cleanup gates', function (string $conflict): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Ended owner');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_workspace($project, $group);
-    $other = claim_hol_group($project, 'Other owner');
-    if ($conflict === 'recorded owner') {
-        $instance->update(['task_workspace_owner_id' => $other->id]);
-        $group->taskable()->associate($instance);
-        $group->save();
-    } else {
-        $other->taskable()->associate($instance);
-        $other->save();
-    }
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $group, $instance))->toBeFalse();
-    expect(app(RemoveTaskWorkspaceAction::class)->find($group))->toBeNull();
-    expect($instance->fresh())->not->toBeNull();
-})->with(['recorded owner', 'other association']);
-
-it('refuses a workspace on another task VM before waking or removing anything', function (): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Ended owner');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_workspace($project, $group);
-    $other = claim_hol_group($project, 'Other VM owner');
-    $vm = test_task_vm($other, $instance->node);
-    $vm->update(['state' => TaskVmState::Parked]);
-    Queue::fake();
-
-    expect(TaskWorkspaceOwnership::owns($group, $instance))->toBeFalse();
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))
-        ->toThrow(RuntimeException::class, 'ownership is missing or ambiguous');
-    Queue::assertNothingPushed();
-    expect($instance->fresh())->not->toBeNull();
-});
-
-it('retains ambiguous associations when completing a group so another ended group cannot acquire cleanup authority', function (): void {
-    app(TaskExtensionState::class)->enable();
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Completing group');
-    $other = claim_hol_group($project, 'Ended group');
-    $instance = claim_hol_instance($project, 'task-'.$other->id);
-    $instance->update(['branch_override' => $instance->name]);
-    foreach ([$group, $other] as $owner) {
-        $owner->taskable()->associate($instance);
-        $owner->status = $owner->id === $group->id ? TaskGroupStatus::Settling : TaskGroupStatus::Cancelled;
-        $owner->save();
-    }
-    app(CompleteTaskGroupAction::class)->execute($group);
-    expect($group->fresh()?->taskable_id)->toBe($instance->id);
-    expect($group->fresh()?->assistance_reason)->toContain('ownership is missing or ambiguous');
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $other, $instance))->toBeFalse();
-    expect($instance->fresh())->not->toBeNull();
 });

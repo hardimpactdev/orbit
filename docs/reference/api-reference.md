@@ -49,7 +49,7 @@ The generator reads every command class, including commands the CLI hides at run
 
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `tasks:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
 
-The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and the name-and-branch match used to retry unattached leftovers. An active or shared Route still refuses removal.
+The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and how a repeated cancel removes the unattached workspace the group owns. An active or shared Route still refuses removal.
 
 The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
 

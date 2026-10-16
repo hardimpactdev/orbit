@@ -63,6 +63,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'status' => $status,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
     ]);
+    $instance->forceFill(['task_workspace_owner_id' => $group->id])->save();
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -96,6 +97,36 @@ it('removes the shared App instance and marks a settling group completed', funct
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and(Instance::query()->find($instanceId))->toBeNull();
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
+
+it('never removes a user Instance named and branched like the workspace of the group it completes', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = complete_group();
+    $name = 'task-'.$group->id;
+    $user = $group->taskable;
+    $user->update(['task_workspace_owner_id' => null, 'name' => $name, 'branch_override' => $name]);
+    $group->taskable()->dissociate();
+    $group->save();
+    $remover = new class implements InstanceRemover
+    {
+        /** @var list<int> */
+        public array $calls = [];
+
+        public function execute(Instance $instance, bool $force): InstanceRemoval
+        {
+            $this->calls[] = $instance->id;
+            $instance->delete();
+
+            return new InstanceRemoval;
+        }
+    };
+    app()->instance(InstanceRemover::class, $remover);
+
+    $completed = app(CompleteTaskGroupAction::class)->execute($group);
+
+    expect($completed->status)->toBe(TaskGroupStatus::Completed)
+        ->and($remover->calls)->toBe([])
+        ->and(Instance::query()->find($user->id))->name->toBe($name)->branch_override->toBe($name);
+});
 
 it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
     app(TaskExtensionState::class)->enable();

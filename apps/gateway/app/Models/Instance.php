@@ -125,7 +125,7 @@ final class Instance extends Model
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
-            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
+            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'task_workspace_owner_id'])) {
                 TaskVmWorkspaceGuard::assertInstance($instance);
             }
         });

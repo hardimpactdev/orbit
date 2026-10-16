@@ -13,9 +13,6 @@ use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskWorkspaceName;
-use App\Domain\Tasks\TaskWorkspaceOwnership;
-use App\Domain\Tasks\TaskWorkspaceOwnershipException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -29,9 +26,9 @@ use Throwable;
 /**
  * Finds and removes a task group's workspace, including one that a claim provisioned but never attached.
  *
- * A claim can provision the `task-{group id}` Instance and then fail, or stop, before it attaches it. The
- * workspace records its task owner before remote preparation. Cleanup requires that owner or an explicit
- * Instance association, and refuses conflicting claims. Names and branches alone never authorize removal.
+ * Provisioning records the group as the workspace's owner when it creates the Instance, before any remote work, so
+ * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
+ * owner is never a task workspace, whatever its name or branch.
  *
  * A workspace on a task VM goes with its VM. A workspace whose VM is already gone uses the generic forced Instance
  * remover, which runs the Project's teardown steps, then deletes the checkout and only then the Instance row. A
@@ -40,8 +37,6 @@ use Throwable;
  */
 final readonly class RemoveTaskWorkspaceAction
 {
-    public const string OwnershipRefusedPrefix = 'Workspace ownership refused: ';
-
     public const string RemovalFailedPrefix = 'Workspace removal failed: ';
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
@@ -50,18 +45,10 @@ final readonly class RemoveTaskWorkspaceAction
         private InstanceRemover $remover,
     ) {}
 
-    /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
+    /** The workspace the group owns, attached or not. */
     public function find(Task $group): ?Instance
     {
-        $name = TaskWorkspaceName::for($group);
-
-        return TaskWorkspaceOwnership::forGroup($group)
-            ->where(function ($candidate) use ($group, $name): void {
-                $candidate->where('instances.id', $group->taskable_id)
-                    ->orWhere(function ($named) use ($name): void {
-                        $named->where('instances.name', $name)->where('instances.branch_override', $name);
-                    });
-            })->first();
+        return $group->workspace()->first();
     }
 
     /**
@@ -86,12 +73,8 @@ final readonly class RemoveTaskWorkspaceAction
     {
         $instance = $this->find($group);
 
-        if (! $instance instanceof Instance && $group->fresh()?->taskable instanceof Instance) {
-            throw new TaskWorkspaceOwnershipException;
-        }
-
         if ($instance instanceof Instance) {
-            $this->remove($instance, $group);
+            $this->remove($instance);
         }
 
         return $instance;
@@ -101,23 +84,13 @@ final readonly class RemoveTaskWorkspaceAction
      * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
      * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Instance $instance, Task $group): void
+    public function remove(Instance $instance): void
     {
-        if (! TaskWorkspaceOwnership::owns($group, $instance)) {
-            throw new TaskWorkspaceOwnershipException;
-        }
-        $vm = TaskVm::forNode($instance->node_id);
-        if ($vm instanceof TaskVm) {
-            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
-        }
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
-            if ($vm->group_id !== $group->id) {
-                throw new TaskWorkspaceOwnershipException;
-            }
             $this->removeWithTaskVm($instance, $vm);
 
             return;
@@ -148,8 +121,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
     {
-        $prefix = $exception instanceof TaskWorkspaceOwnershipException ? self::OwnershipRefusedPrefix : ($prefix ?? self::RemovalFailedPrefix);
-        TaskAssistance::apply($group, AssistanceKind::Failure, null, $prefix.$exception->getMessage(), replaceFailure: true);
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
     }
 
     /** Clears assistance that this removal recorded, once the checkout is gone. Another cause is left alone. */
@@ -162,7 +134,7 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix) && ! str_starts_with($reason, self::OwnershipRefusedPrefix)) {
+        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix)) {
             return;
         }
 

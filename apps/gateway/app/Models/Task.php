@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
@@ -378,6 +379,17 @@ final class Task extends Model
     public function taskable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * The workspace this group owns: the Instance that provisioning created for it. It is the only record of task
+     * workspace ownership. An Instance name or branch never makes an Instance a group's workspace.
+     *
+     * @return HasOne<Instance, $this>
+     */
+    public function workspace(): HasOne
+    {
+        return $this->hasOne(Instance::class, 'task_workspace_owner_id');
     }
 
     /** @return BelongsTo<AgentThread, $this> */

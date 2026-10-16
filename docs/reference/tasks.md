@@ -521,9 +521,7 @@ The scheduler records a successful workspace start in the activity log within th
 
 A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
 
-A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The provisioner records its owning task on the Instance when it creates the row, before remote preparation. The next claim requires that recorded ownership, then finds the workspace by name and branch and resumes it on its Node.
-
-If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
+A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it through its [owner](#workspace-ownership) and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name is never adopted: the claim refuses it with HTTP 409 `instance.name_taken`. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
 ### Start a subtask
 
@@ -557,6 +555,21 @@ The setting defaults to true and does not depend on the Project slug. Provisioni
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one. An ordinary development Instance, including a monorepo `default` without a Route, settles at `active` instead. It runs the Project's create-time setup list and can supply dependencies to task workspaces without serving an endpoint. See [Provision the application endpoint](/domains/applications#provision-the-application-endpoint).
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
+
+### Workspace ownership
+
+When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. The owner never changes. Deleting the task clears it. A task owns at most one Instance.
+
+The owner is the only record of task workspace ownership. Claims, cancel, complete, and the sweep find a task's workspace only through it, attached or not. The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
+
+Workspaces created before the owner existed get it from explicit records:
+
+- An Instance on the Node of a task VM that is not destroyed belongs to the VM's task.
+- Any other Instance belongs to the one task that holds it as its Instance.
+
+An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
+
+A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
 ## Agent threads
 
@@ -1431,7 +1444,7 @@ Settle, escalate, and assistance that is not `direction` stay on the [Coder webh
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by its recorded task owner, Project, `task-{id}` name, and matching branch. Neither a name nor a matching branch grants removal authority.
+Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
@@ -1473,17 +1486,11 @@ Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the 
 
 A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path.
 
-Task VM cleanup requires proven ownership of every Instance on its Node. The ended-VM sweep, queued destroy and resume jobs, provider destruction, and offline workspace deletion recheck that authority. A queued job or `destroying` state does not preserve permission after an ownership conflict appears.
-
-Ownership refusals use `Workspace ownership refused: ` and retain associations; they are not operational removal failures. Generic failure text stored by an earlier release also cannot bypass the ownership check. A VM without a group or workspace can still be removed, and an unambiguously owned workspace whose VM died can still be cleaned up offline.
-
-When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. An operational failure keeps the reason `Workspace removal failed: `; an ownership refusal keeps `Workspace ownership refused: `. The retry does not read GitHub.
-
-Cleanup refuses conflicting task owners or multiple task associations. A detached Instance created before ownership was recorded stays in place until an operator establishes its ownership; Orbit does not backfill ownership from names, branches or paths. Losing an association never grants cleanup authority.
+When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task with proven ownership. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
+- of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
 For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.

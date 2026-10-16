@@ -355,8 +355,6 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-Cleanup requires [proven task ownership](/reference/tasks) of every Instance on the VM Node. An unknown or conflicting owner prevents wake, teardown, VM destruction, and offline row deletion. The scheduler and queued destroy/resume jobs check current ownership, including retries in `destroying`. Orbit checks again before the provider deletes the VM and before it deletes each Instance row. An empty VM can still be removed when its group is gone; a VM with unowned workspace rows stays.
-
 When the group ends, Orbit removes its workspace with the VM. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
@@ -366,7 +364,7 @@ When the group ends, Orbit removes its workspace with the VM. The checkout lives
 
 A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release.
 
-Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
+Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and the workspace the group [owns](/reference/tasks#workspace-ownership) is gone. Any other Instance row on the Node goes with the VM. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. Then it deletes any retained workspace volume, because Incus keeps custom volumes after VM deletion. A VM or a clone that is already gone counts as deleted.
@@ -385,9 +383,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
-An ownership refusal records `Workspace ownership refused:` and does not qualify for this fallback. A generic removal-failure reason from an earlier release also needs current ownership proof.
-
-The job reads the VM on its host only after ownership is proven. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
@@ -784,7 +780,7 @@ While task VMs are configured and the range is invalid, every Node Caddy build r
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
+A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
 
 ### Configure task VMs
 

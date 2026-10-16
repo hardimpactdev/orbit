@@ -43,23 +43,23 @@ beforeEach(function (): void {
 });
 
 it('places the group workspace on its task VM Node', function (): void {
-    $workspace = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->vmNode->id, 'name' => TaskWorkspaceName::for($this->group)]);
+    $workspace = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->vmNode->id, 'name' => TaskWorkspaceName::for($this->group), 'task_workspace_owner_id' => $this->group->id]);
 
     $workspace->update(['root' => 'web']);
 
     expect($workspace->fresh()?->node_id)->toBe($this->vmNode->id);
 });
 
-it('refuses a foreign Instance on a task VM Node', function (string $project, string $name): void {
+it('refuses a foreign Instance on a task VM Node', function (string $project, bool $owned): void {
     $projectId = $project === 'group' ? $this->project->id : $this->other->id;
-    $name = $name === 'workspace' ? TaskWorkspaceName::for($this->group) : $name;
+    $name = TaskWorkspaceName::for($this->group);
 
-    expect(fn () => invariant_instance(['project_id' => $projectId, 'node_id' => $this->vmNode->id, 'name' => $name]))
+    expect(fn () => invariant_instance(['project_id' => $projectId, 'node_id' => $this->vmNode->id, 'name' => $name, 'branch_override' => $name, 'task_workspace_owner_id' => $owned ? $this->group->id : null]))
         ->toThrow(TaskVmException::class, 'serves only the workspace');
     expect(Instance::query()->where('node_id', $this->vmNode->id)->exists())->toBeFalse();
 })->with([
-    'another Project' => ['other', 'workspace'],
-    'another name' => ['group', 'main'],
+    'another Project' => ['other', true],
+    'named and branched like the workspace without an owner' => ['group', false],
 ]);
 
 it('refuses moving an Instance onto a task VM Node', function (): void {

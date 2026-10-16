@@ -16,7 +16,7 @@ use App\Models\TaskVm;
 const TEST_TASK_VM_PI_TOKEN = 'pi-node-token-with-more-than-32-characters';
 
 /**
- * Runs a group on its own ready task VM, as every task group does: its workspace is `task-<group id>`, and a ready
+ * Runs a group on its own ready task VM, as every task group does: it owns its workspace `task-<group id>`, and a ready
  * task VM owns the workspace's Node. A test provisioner calls {@see test_vm_workspace()} for a group without a
  * workspace when the claim provides one.
  */
@@ -31,16 +31,17 @@ function test_vm_group(Task $group): Task
 }
 
 /**
- * Places a group's workspace as the task VM provisioner does: the workspace becomes `task-<group id>`, and a ready
- * task VM of the group owns its Node.
+ * Places a group's workspace as the task VM provisioner does: the group owns the workspace `task-<group id>`, and a
+ * ready task VM of the group owns its Node.
  */
 function test_vm_workspace(Task $group, Instance $workspace): Instance
 {
-    $workspace->forceFill(['task_workspace_owner_id' => $group->id])->save();
     if (TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
+        $workspace->forceFill(['task_workspace_owner_id' => $group->id])->save();
+
         return $workspace;
     }
-    $workspace->forceFill(['name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
+    $workspace->forceFill(['task_workspace_owner_id' => $group->id, 'name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
     test_task_vm($group, $workspace->node);
 
     return $workspace->refresh();

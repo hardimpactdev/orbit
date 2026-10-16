@@ -60,11 +60,11 @@ final readonly class CancelTaskGroupAction
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
         $attachedByClaim = DB::transaction(static function () use ($group, $removedId, $offlineId): ?Instance {
-            $locked = Task::topLevel()->with('taskable')->lockForUpdate()->findOrFail($group->id);
-            // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
-            // attached and was not removed above, whether or not it saw a claim in flight. The unreachable Instance
-            // stays attached so the sweep can find the checkout.
-            $current = $locked->taskable instanceof Instance ? $locked->taskable : null;
+            $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            // A claim can attach the workspace between the checks above and this lock. Cancel removes the group's
+            // workspace when it is attached and was not removed above, whether or not it saw a claim in flight. The
+            // unreachable Instance stays attached so the sweep can find the checkout.
+            $current = $locked->taskable_id !== null ? $locked->workspace()->first() : null;
             $keepOffline = $current instanceof Instance && $current->id === $offlineId;
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
@@ -72,9 +72,7 @@ final readonly class CancelTaskGroupAction
                     $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
                 }
             } else {
-                if (! $attached instanceof Instance) {
-                    $locked->taskable()->dissociate();
-                }
+                $locked->taskable()->dissociate();
                 $locked->assistance_requested = false;
             }
             $locked->status = TaskGroupStatus::Cancelled;
@@ -86,8 +84,6 @@ final readonly class CancelTaskGroupAction
         if ($attachedByClaim instanceof Instance) {
             try {
                 $this->removeWorkspace($group, $attachedByClaim);
-                Task::topLevel()->whereKey($group->id)->where('taskable_type', 'instance')
-                    ->where('taskable_id', $attachedByClaim->id)->update(['taskable_type' => null, 'taskable_id' => null]);
             } catch (Throwable $exception) {
                 $locked = Task::topLevel()->findOrFail($group->id);
                 $locked->taskable()->associate($attachedByClaim);
@@ -127,7 +123,7 @@ final readonly class CancelTaskGroupAction
     private function removeWorkspace(Task $group, Instance $instance): void
     {
         try {
-            $this->workspace->remove($instance, $group);
+            $this->workspace->remove($instance);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

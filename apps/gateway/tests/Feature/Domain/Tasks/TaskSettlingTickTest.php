@@ -672,7 +672,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
             'public_ssh_host' => '10.44.0.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet,
         ]);
         $workspace = Instance::query()->create([
-            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id,
+            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id, 'task_workspace_owner_id' => $owner->id,
             'checkout_path' => '/srv/orbit/apps/tick-app/workspace', 'branch' => 'task-'.$owner->id,
             'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved',
         ]);

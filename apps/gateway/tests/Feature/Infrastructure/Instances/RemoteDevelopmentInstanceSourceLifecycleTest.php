@@ -185,7 +185,7 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     $name = 'task-'.$group->id;
 
     try {
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
         $this->source->prepare($instance, false);
         $resolution = $this->source->resolve($instance->refresh());
     } finally {
@@ -416,6 +416,7 @@ describe('CheckoutProcesses', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
         $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
+        $instance->update(['task_workspace_owner_id' => $group->id]);
         TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'removal-vm', 'wireguard_ip' => '10.44.0.130', 'state' => TaskVmState::Ready]);
         $checkout = (string) $instance->checkout_path;
         // A copy of bash keeps its own behaviour under any name; a multi-call coreutils `sleep` does not.
@@ -3418,6 +3419,7 @@ function orb76_source_instance(
     string $appsRoot,
     string $name,
     ?string $branchOverride = null,
+    ?Task $owner = null,
 ): Instance {
     if (! $node->roles()->where('role', 'app-dev')->exists()) {
         $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
@@ -3431,6 +3433,7 @@ function orb76_source_instance(
             'source_layout' => 'checkout',
             'checkout_path' => "{$appsRoot}/{$project->slug}/{$name}",
             'branch_override' => $branchOverride,
+            'task_workspace_owner_id' => $owner?->id,
             'status' => InstanceState::Reserved,
         ])
         ->load(['project', 'node']);
