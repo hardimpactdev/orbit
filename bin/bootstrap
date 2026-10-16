@@ -103,6 +103,8 @@ if ((with_rust)); then
     done
 fi
 
+(cd "$repository_root" && bin/generated-merge --install)
+
 "$repository_root/bin/worktree-cache"
 
 "$repository_root/bin/gateway-app-key"

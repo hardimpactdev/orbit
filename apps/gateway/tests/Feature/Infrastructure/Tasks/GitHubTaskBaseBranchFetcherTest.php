@@ -461,13 +461,20 @@ it('refuses to move a workspace to a value that is not a commit SHA', function (
         ->and($transport->commands)->toBe([]);
 });
 
-it('merges main directly without hooks and aborts conflicts without losing the task tree', function (string $mode): void {
-    $conflict = $mode === 'conflict';
+it('merges main with repository drivers, without hooks, and aborts unresolved conflicts', function (string $mode): void {
+    $driver = $mode === 'generated-only conflict';
+    $conflict = $mode === 'conflict' || $driver;
     $overlap = $mode === 'overlap';
     $checkout = TestOrbitHome::scratch('mechanical-main-merge');
     mkdir($checkout, 0755, true);
     fetcher_git($checkout, ['init', '--quiet']);
     file_put_contents($checkout.'/shared.txt', "base\n".str_repeat("unchanged\n", 20)."end\n");
+    if ($driver) {
+        // A Project setup step installs its repository-local driver. Only the
+        // generated snapshot conflicts; no agent should have to resolve it.
+        file_put_contents($checkout.'/.gitattributes', "shared.txt merge=orbit-generated\n");
+        fetcher_git($checkout, ['config', 'merge.orbit-generated.driver', 'printf "regenerated\\n" > %A']);
+    }
     fetcher_git($checkout, ['add', '.']);
     fetcher_git($checkout, ['commit', '--quiet', '-m', 'base']);
     $base = fetcher_git($checkout, ['rev-parse', 'HEAD']);
@@ -489,7 +496,7 @@ it('merges main directly without hooks and aborts conflicts without losing the t
     $merged = fetcher(new LocalShellSshExecutor)->mergeDefault($group);
 
     expect(fetcher_git($checkout, ['status', '--porcelain']))->toBe('');
-    if ($conflict) {
+    if ($conflict && ! $driver) {
         expect($merged->head)->toBeNull()
             ->and($merged->conflictingPaths)->toBe(['shared.txt'])
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
@@ -497,12 +504,15 @@ it('merges main directly without hooks and aborts conflicts without losing the t
     } else {
         expect($merged->head)->not->toBe($head)
             ->and($merged->conflictingPaths)->toBe([])
-            ->and(fetcher(new LocalShellSshExecutor)->overlappingPaths($group, $head, $merged->head))->toBe($overlap ? ['shared.txt'] : [])
+            ->and(fetcher(new LocalShellSshExecutor)->overlappingPaths($group, $head, $merged->head))->toBe(($overlap || $driver) ? ['shared.txt'] : [])
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^1']))->toBe($head)
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^2']))->toBe($main)
             ->and(fetcher(new LocalShellSshExecutor)->mergeDefault($group)->head)->toBe($merged->head);
+        if ($driver) {
+            expect(file_get_contents($checkout.'/shared.txt'))->toBe("regenerated\n");
+        }
     }
-})->with(['clean' => 'clean', 'conflict' => 'conflict', 'overlap' => 'overlap']);
+})->with(['clean' => 'clean', 'conflict' => 'conflict', 'overlap' => 'overlap', 'generated-only conflict' => 'generated-only conflict']);
 
 it('retains uncertainty for a checkout move but not a timed-out merge-base read', function (bool $move): void {
     $group = fetcher_group('/srv/orbit/apps/shop/task-7');

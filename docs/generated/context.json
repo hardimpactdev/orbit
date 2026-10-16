@@ -695,7 +695,9 @@
             ],
             "concepts": [
                 "Cluster",
+                "Deployment",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Pi server",
