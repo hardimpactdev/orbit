@@ -100,3 +100,37 @@ it('requires the Docs merge result to succeed on PRs while allowing it to be ski
     'push skip' => ['push', 'skipped', 0],
     'dispatch skip' => ['workflow_dispatch', 'skipped', 0],
 ]);
+
+it('provisions Gateway and web dependencies before the Docs merge proof can run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $job = $workflow['jobs']['project'];
+    $steps = array_column($job['steps'], null, 'name');
+    $names = array_keys($steps);
+
+    expect(array_column($job['strategy']['matrix']['include'], 'directory'))->toContain('apps/docs');
+    expect($job['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
+    expect($steps['Install dependencies'])->toMatchArray([
+        'if' => "matrix.directory != 'apps/e2e'",
+        'run' => 'composer install --no-interaction --prefer-dist',
+    ]);
+    expect($steps['Set up Bun for package cache and generated merge tests'])->toMatchArray([
+        'if' => "matrix.directory == 'apps/gateway' || matrix.directory == 'apps/docs'",
+        'uses' => 'oven-sh/setup-bun@v2',
+        'with' => ['bun-version' => '1.4.2'],
+    ]);
+    expect($steps['Install generated merge proof dependencies'])->toBe([
+        'name' => 'Install generated merge proof dependencies',
+        'if' => "matrix.directory == 'apps/docs'",
+        'working-directory' => '.',
+        'run' => "(cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)\n"
+            ."(cd apps/web && bun install --frozen-lockfile)\n",
+    ]);
+    expect(array_search('Set up Bun for package cache and generated merge tests', $names, true))
+        ->toBeLessThan(array_search('Install generated merge proof dependencies', $names, true));
+    foreach (['Run affected tests', 'Run full test suite and refresh Pest TIA graph', 'Run subprocess tests'] as $name) {
+        expect($names)->toContain($name);
+        expect(array_search('Install generated merge proof dependencies', $names, true))
+            ->toBeLessThan(array_search($name, $names, true));
+    }
+    expect($steps['Run subprocess tests']['run'])->toContain('--group=subprocess');
+});
