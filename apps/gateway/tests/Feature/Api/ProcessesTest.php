@@ -932,7 +932,7 @@ it('resolves an exact development Route domain for process creation', function (
     $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertCreated()->assertJsonPath('data.target_id', $this->instance->id)->assertJsonPath('data.desired_state', 'stopped');
 });
 
-it('keeps ordinary handmade annotation Processes and environment supported', function (): void {
+it('keeps ordinary handmade annotation Process commands supported', function (): void {
     $response = $this->postJson('/api/v1/processes', [
         'target_type' => 'node',
         'target_id' => $this->node->id,
@@ -940,14 +940,11 @@ it('keeps ordinary handmade annotation Processes and environment supported', fun
         'runtime' => 'systemd',
         'command' => ['/usr/bin/node', '/home/orbit/annotator/serve.mjs'],
         'working_directory' => '/home/orbit/annotator',
-        'environment' => ['ANNOTATOR_URL' => 'http://127.0.0.1:4848', 'ORBIT_ANNOTATOR_PORT' => '4848'],
     ])->assertCreated();
 
     $process = Process::query()->findOrFail($response->json('data.id'));
     $unit = new SystemdProcessRenderer()->render($process, app(ProcessTargetResolver::class)->forInspection($process));
-    expect($unit)->toContain('Environment=ANNOTATOR_URL=http://127.0.0.1:4848')
-        ->toContain('Environment=ORBIT_ANNOTATOR_PORT=4848')
-        ->toContain('ExecStart="/usr/bin/node" "/home/orbit/annotator/serve.mjs"');
+    expect($unit)->toContain('ExecStart="/usr/bin/node" "/home/orbit/annotator/serve.mjs"');
 });
 
 it('refuses retired annotation presets without creating a Process', function (string $preset): void {

@@ -14,17 +14,16 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Tests\Support\TestOrbitHome;
 
-it('ships problem suppression config beside tasks with an empty fingerprint list and the T3 path prefix', function (): void {
+it('ships problem suppression config beside tasks with empty fingerprint and path prefix lists', function (): void {
     expect(config('orbit.problems'))->toBe([
         'suppressed_fingerprints' => [],
-        'suppressed_path_prefixes' => [
-            'app/Infrastructure/Tasks/T3/',
-        ],
+        'suppressed_path_prefixes' => [],
     ])->and(array_key_exists('tasks', config('orbit')))->toBeTrue()
         ->and(array_key_exists('problems', config('orbit')))->toBeTrue();
 });
 
 it('suppresses an exact fingerprint and a path prefix and still counts an unsuppressed key', function (): void {
+    config()->set('orbit.problems.suppressed_path_prefixes', ['app/Infrastructure/Example/']);
     config()->set('orbit.problems.suppressed_fingerprints', [
         'activity|instance:clone|instance.clone_failed',
     ]);
@@ -56,21 +55,21 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
     $hidden = problem_suppression_activity('instance:delete', 'instance.delete_failed', 1, 'req-delete');
     $hidden->forceFill([
         'properties' => [
-            'path' => 'app/Infrastructure/Tasks/T3/Driver.php',
+            'path' => 'app/Infrastructure/Example/Driver.php',
             'error_message' => 'hidden',
         ],
     ])->save();
     problem_suppression_activity('instance:clone', 'Instance.clone_failed', 1, 'req-case');
     problem_suppression_activity('route:publish', 'route.publish_failed', 1, 'req-publish');
 
-    $t3 = base_path().'/app/Infrastructure/Tasks/T3/Driver.php';
+    $hiddenPath = base_path().'/app/Infrastructure/Example/Driver.php';
     $kept = base_path().'/app/Domain/Tasks/TaskScheduler.php';
     problem_suppression_append(problem_suppression_record(
         'RuntimeException',
-        $t3,
-        'App\\Infrastructure\\Tasks\\T3\\Driver->run()',
-        'req-t3',
-        'T3 subscription ended.',
+        $hiddenPath,
+        'App\\Infrastructure\\Example\\Driver->run()',
+        'req-hidden',
+        'Example subscription ended.',
         '2026-10-01 00:01:06',
     ));
     problem_suppression_append(problem_suppression_record(
@@ -198,16 +197,16 @@ it('does not suppress a source path when the configured prefix is empty', functi
     Artisan::call('problems:collect');
     problem_suppression_append(problem_suppression_record(
         'RuntimeException',
-        base_path().'/app/Infrastructure/Tasks/T3/Driver.php',
-        'App\\Infrastructure\\Tasks\\T3\\Driver->run()',
+        base_path().'/app/Infrastructure/Example/Driver.php',
+        'App\\Infrastructure\\Example\\Driver->run()',
         'req-empty',
-        'T3 subscription ended.',
+        'Example subscription ended.',
         '2026-10-01 00:01:06',
     ));
 
     expect(Artisan::call('problems:collect'))->toBe(0)
         ->and(ProblemFingerprint::query()->count())->toBe(1)
-        ->and(ProblemFingerprint::query()->sole()->evidence['source_path'])->toBe('app/Infrastructure/Tasks/T3/Driver.php');
+        ->and(ProblemFingerprint::query()->sole()->evidence['source_path'])->toBe('app/Infrastructure/Example/Driver.php');
 });
 
 it('suppresses filing of an exact fingerprint and a path prefix and still files an unsuppressed key', function (): void {
@@ -215,7 +214,7 @@ it('suppresses filing of an exact fingerprint and a path prefix and still files 
         'activity|instance:clone|instance.clone_failed',
     ]);
     config()->set('orbit.problems.suppressed_path_prefixes', [
-        'app/Infrastructure/Tasks/T3/',
+        'app/Infrastructure/Example/',
         '/resources/noise/',
     ]);
     problem_suppression_project();
@@ -238,13 +237,13 @@ it('suppresses filing of an exact fingerprint and a path prefix and still files 
         100,
         [
             'log_excerpt' => 'old path',
-            'source_path' => 'app/Infrastructure/Tasks/T3/Subscription.php',
+            'source_path' => 'app/Infrastructure/Example/Subscription.php',
             ...problem_suppression_windows(10, '2026-09-01 00:00:00'),
         ],
         Carbon::parse('2026-09-01 00:00:00', 'UTC'),
     );
     $framePath = problem_suppression_fingerprint(
-        'log|RuntimeException|app/Infrastructure/Tasks/T3/Driver.php:App\\Infrastructure\\Tasks\\T3\\Driver->run',
+        'log|RuntimeException|app/Infrastructure/Example/Driver.php:App\\Infrastructure\\Example\\Driver->run',
         100,
         [
             'log_excerpt' => 'driver down',
@@ -254,16 +253,16 @@ it('suppresses filing of an exact fingerprint and a path prefix and still files 
     );
     $activityPath = problem_suppression_fingerprint('activity|instance:delete|instance.delete_failed', 100, [
         'error_message' => 'Delete failed',
-        'paths' => ['app/Infrastructure/Tasks/T3/Driver.php'],
+        'paths' => ['app/Infrastructure/Example/Driver.php'],
         ...problem_suppression_windows(10, '2026-09-01 00:00:00'),
     ], Carbon::parse('2026-09-01 00:00:00', 'UTC'));
-    $fingerprintText = problem_suppression_fingerprint('activity|app/Infrastructure/Tasks/T3/noise|exit', 10, [
+    $fingerprintText = problem_suppression_fingerprint('activity|app/Infrastructure/Example/noise|exit', 10, [
         'error_message' => 'The fingerprint text is not a source path.',
         'paths' => ['/resources/route:publish'],
         ...problem_suppression_windows(10, '2026-09-26 08:00:00'),
     ], Carbon::parse('2026-09-26 08:00:00', 'UTC'));
     $doctor = problem_suppression_fingerprint(
-        'doctor|node.lifecycle_not_active|node|app/Infrastructure/Tasks/T3/4',
+        'doctor|node.lifecycle_not_active|node|app/Infrastructure/Example/4',
         2,
         [
             'summary' => 'Node is still provisioning.',
@@ -304,6 +303,7 @@ it('suppresses filing of an exact fingerprint and a path prefix and still files 
 });
 
 it('suppresses a shortened log fingerprint with no source path and does not mute or file it', function (): void {
+    config()->set('orbit.problems.suppressed_path_prefixes', ['app/Infrastructure/Example/']);
     $project = problem_suppression_project();
     $unchanged = problem_suppression_cancelled($project->id, 'Unplaced');
     $known = problem_suppression_cancelled($project->id, 'Known path');
@@ -313,7 +313,7 @@ it('suppresses a shortened log fingerprint with no source path and does not mute
     ], $unchanged->id);
     $placed = problem_suppression_log('log#'.substr(hash('sha256', 'has-path'), 0, 12), [
         'log_excerpt' => 'placed',
-        'source_path' => 'app/Infrastructure/Tasks/T3/Driver.php',
+        'source_path' => 'app/Infrastructure/Example/Driver.php',
         ...problem_suppression_windows(10, '2026-09-29 08:00:00'),
     ], $known->id);
     $innocent = problem_suppression_log('log#'.substr(hash('sha256', 'innocent-path'), 0, 12), [
@@ -359,7 +359,7 @@ it('does not suppress a shortened log fingerprint when no path prefix is configu
         ...problem_suppression_windows(10),
     ]);
     $frame = problem_suppression_fingerprint(
-        'log|RuntimeException|app/Infrastructure/Tasks/T3/Driver.php:App\\Infrastructure\\Tasks\\T3\\Driver->run',
+        'log|RuntimeException|app/Infrastructure/Example/Driver.php:App\\Infrastructure\\Example\\Driver->run',
         10,
         [
             'log_excerpt' => 'driver',

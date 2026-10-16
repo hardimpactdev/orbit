@@ -6,13 +6,13 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/** Runs every migration except the split on a separate database, then returns the split migration. */
+/** Builds the pre-merge task schema without the driver split, then returns the split migration. */
 function split_driver_migration(): object
 {
     config()->set('database.connections.split_driver', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
     DB::setDefaultConnection('split_driver');
     $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'split_task_group_agent_driver_by_role')
-        && ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal')));
+        && basename($path) < '2026_10_05_000000_merge_task_groups_into_tasks.php'));
     Artisan::call('migrate', ['--database' => 'split_driver', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
     return require glob(database_path('migrations/*split_task_group_agent_driver_by_role.php'))[0];
