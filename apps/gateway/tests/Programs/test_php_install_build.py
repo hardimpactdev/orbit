@@ -87,7 +87,7 @@ def deb(name, version):
 
 class InstallBuildTest(unittest.TestCase):
     def setUp(self):
-        # Keep mapped Unix socket paths below sun_path's 108-byte limit, even with Orbit's long TMPDIR.
+        # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
         self.directory = tempfile.TemporaryDirectory(dir='/tmp', prefix='orbit-php-')
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name) / 'root'
