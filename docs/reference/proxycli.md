@@ -98,7 +98,7 @@ The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd d
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
-`collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` refuses it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
+`collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` and `route:update` refuse it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 
 Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
 

@@ -98,7 +98,7 @@ orbit instance:create <project> <node> <name> [options]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
+| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. A domain that another Route owns, or a reserved name such as `gateway.orbit`, returns `route.domain_conflict`. |
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
 | `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
 
