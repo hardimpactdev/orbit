@@ -112,7 +112,7 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
     /** @return list<string> How a Python program starts on a Node. */
     public static function pythonArguments(RemoteProgram $program, string $bootstrap): array
     {
-        return ['python3', '-I', '-c', $bootstrap, $program->name];
+        return [...self::userArguments($program), 'python3', '-I', '-c', $bootstrap, $program->name];
     }
 
     /**
@@ -149,12 +149,18 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         }
 
         return new RemoteCommand(
-            arguments: ['bash', '-seu', '--', ...$input],
+            arguments: [...self::userArguments($program), 'bash', '-seu', '--', ...$input],
             input: $program->source,
             maxOutputBytes: self::OutputLimitBytes,
             cancelled: $cancelled,
             timeout: $timeout,
         );
+    }
+
+    /** @return list<string> */
+    private static function userArguments(RemoteProgram $program): array
+    {
+        return $program->user === null ? [] : ['sudo', '-n', '-u', $program->user, '-H'];
     }
 
     /**

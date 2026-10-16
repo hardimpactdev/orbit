@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -113,6 +114,7 @@ final class DevelopmentDeploymentFixture
             $accounts,
             app(CheckoutRemovalBoundary::class),
             app(RepositoryReadAccess::class),
+            app(PrepareVpEnvironmentAction::class),
         );
     }
 

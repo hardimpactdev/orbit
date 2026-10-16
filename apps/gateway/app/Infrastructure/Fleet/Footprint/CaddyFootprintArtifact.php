@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -48,14 +50,17 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
     }
 
     /**
-     * Every Gateway source file the Caddy build renders from: the build, its site sources, and the classes
-     * they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
+     * Every Gateway source file the Caddy build renders from: the build, its site sources, the sources that
+     * extensions contribute, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
      *
      * @return list<string>
      */
     public static function inputs(): array
     {
-        return SourceClosure::of(['app/Infrastructure/Caddy']);
+        return SourceClosure::of(['app/Infrastructure/Caddy'], array_map(
+            static fn (ContributedCaddySiteSource $source): string => $source::class,
+            app(Contributions::class)->of(ContributedCaddySiteSource::class),
+        ));
     }
 
     public function apply(Node $node): bool
