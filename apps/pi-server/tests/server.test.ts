@@ -388,6 +388,89 @@ describe("resume", () => {
         expect(first.entries).toHaveLength(4);
     });
 
+    it("reads only the events after the cursor, as a resumed stream sends them", async () => {
+        const { h, events } = await completedTurn();
+        const run = events[0].run;
+        const first = events.find((e) => e.kind === "entry");
+        const cursor = `?run=${run}&after=${first.sequence}`;
+
+        const delta = (await h.request("GET", `/sessions/thread-1${cursor}`)).body;
+        const resumed = await h.stream("thread-1", done, cursor);
+        const snapshot = (await h.request("GET", "/sessions/thread-1")).body;
+
+        expect(delta).toMatchObject({
+            kind: "delta",
+            run,
+            sequence: events.at(-1).sequence,
+            session: { id: "thread-1" },
+            state: "done",
+            error: null,
+            turnId: "k1",
+            context: [],
+        });
+        expect(delta).not.toHaveProperty("entries");
+        expect(delta.usage).toEqual(snapshot.usage);
+        expect(delta.usage).toEqual(events.at(-1).usage);
+        const later = (e: any) => e.kind === "entry" && e.sequence > first.sequence;
+        expect(delta.events).toEqual([...events.filter(later), events.at(-1)]);
+        expect(delta.context).toEqual(resumed[0].context);
+        expect(delta.events).toEqual(resumed.slice(1));
+    });
+
+    it("reads a tool call that has no result yet at the cursor into the context", async () => {
+        const { h, events } = await completedTurn();
+        const call = events.find((e) => e.kind === "entry" && e.entry.message.role === "assistant");
+
+        const delta = (
+            await h.request("GET", `/sessions/thread-1?run=${call.run}&after=${call.sequence}`)
+        ).body;
+
+        expect(delta.kind).toBe("delta");
+        expect(delta.context).toEqual([call.entry]);
+        expect(delta.events[0].entry.message).toMatchObject({
+            role: "toolResult",
+            toolCallId: call.entry.message.content[0].id,
+        });
+    });
+
+    it.each([
+        ["no cursor", () => ""],
+        ["another run", (run: string) => `?run=other${run}&after=1`],
+        ["a sequence ahead of the run", (run: string) => `?run=${run}&after=999999`],
+        ["a malformed sequence", (run: string) => `?run=${run}&after=abc`],
+        ["no run", () => "?after=1"],
+    ])("reads a snapshot for %s", async (_name, query) => {
+        const { h, events } = await completedTurn();
+
+        const read = (await h.request("GET", `/sessions/thread-1${query(events[0].run)}`)).body;
+
+        expect(read).toMatchObject({
+            kind: "snapshot",
+            run: events[0].run,
+            sequence: events.at(-1).sequence,
+            state: "done",
+        });
+        expect(read.entries).toHaveLength(4);
+    });
+
+    it("reads no events at the newest sequence", async () => {
+        const { h, events } = await completedTurn();
+        const newest = events.at(-1);
+
+        const delta = (
+            await h.request("GET", `/sessions/thread-1?run=${newest.run}&after=${newest.sequence}`)
+        ).body;
+
+        expect(delta).toMatchObject({
+            kind: "delta",
+            run: newest.run,
+            sequence: newest.sequence,
+            state: "done",
+            context: [],
+            events: [],
+        });
+    });
+
     it("sends a snapshot for a cursor from before a restart", async () => {
         const { h, events } = await completedTurn();
         const cursor = `?run=${events[0].run}&after=${events.at(-1).sequence}`;

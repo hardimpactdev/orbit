@@ -99,7 +99,7 @@
     },
     {
       "name": "Operations",
-      "description": "Long operations, such as an Instance deploy, that run on the Gateway queue as named steps."
+      "description": "Long operations, such as an Instance deploy or rollback, that run on the Gateway queue as named steps."
     },
     {
       "name": "proxycli",
@@ -12408,7 +12408,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Select one retained production Instance release.",
+        "description": "Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12429,151 +12429,52 @@
             }
           }
         },
+        "x-orbit-operation": "start",
         "responses": {
-          "200": {
-            "description": "Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event.",
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
             "content": {
-              "application/x-ndjson": {
+              "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "title": "Phase event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "phase"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "phase"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "phase": {
-                          "type": "string",
-                          "enum": [
-                            "source_preparation",
-                            "environment_sync",
-                            "before_activation",
-                            "activation",
-                            "php_refresh",
-                            "process_restart",
-                            "after_activation",
-                            "rollback"
-                          ]
-                        },
-                        "step_name": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
                     },
-                    {
-                      "title": "Output event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "stream",
-                        "data_base64"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "output"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "stream": {
-                          "type": "string",
-                          "enum": [
-                            "stdout",
-                            "stderr"
-                          ]
-                        },
-                        "data_base64": {
-                          "type": "string",
-                          "description": "At most 16 KiB of decoded bytes, base64-encoded."
-                        }
-                      }
-                    },
-                    {
-                      "title": "Result event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "status"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "result"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed"
-                          ]
-                        },
-                        "failed_step": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "error_code": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "selected_release": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
                     }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
                   ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12593,7 +12494,7 @@
             }
           },
           "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "description": "The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12612,7 +12513,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new RollbackInstanceRequest(instanceId: 4, release: '20260914T101500Z'))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RollbackInstanceRequest(instanceId: 4, release: '20260914T101500Z'))->dto();\n"
           }
         ]
       }
@@ -27156,6 +27057,128 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/agents/{session}": {
+      "get": {
+        "operationId": "tasks-agent-show",
+        "summary": "Show a task agent session",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric task agent session ID within this group."
+          },
+          {
+            "name": "after_sequence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[A-Za-z0-9._:+=\\/-]+$",
+              "maxLength": 512
+            }
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer's `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread's Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskAgentSnapshot"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The thread's Pi server is unavailable, refused the read, did not answer within 5 seconds, or sent a session over 16 MiB, and Orbit saved no transcript (`tasks.agent_read_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/agents/2?after_sequence=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskAgentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskAgentRequest(groupId: 1, sessionId: 2))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/agents/{session}/stream": {
       "get": {
         "operationId": "tasks-agent-stream",
@@ -30526,6 +30549,173 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/DevelopmentDeployStep"
+        }
+      },
+      "TaskAgentSnapshot": {
+        "type": "object",
+        "required": [
+          "thread_id",
+          "kind",
+          "cursor",
+          "archived"
+        ],
+        "properties": {
+          "thread_id": {
+            "type": "integer",
+            "description": "The agent thread ID."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "delta"
+            ],
+            "description": "`snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`."
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "idle",
+              "working",
+              "asking_for_input",
+              "done",
+              "failed",
+              null
+            ]
+          },
+          "input_requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "details": {}
+              },
+              "required": [
+                "id",
+                "kind",
+                "details"
+              ]
+            }
+          },
+          "entries": {
+            "type": "array",
+            "description": "The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "`message` or `activity`."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The role of a message, or the tool of an activity."
+                },
+                "text": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "label",
+                "text",
+                "at"
+              ]
+            }
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model_calls": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "peak_context_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "overloaded",
+              "rate_limited",
+              "server_error",
+              null
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "True when the snapshot is the transcript Orbit saved before the task VM was deleted."
+          }
         }
       },
       "Activity": {

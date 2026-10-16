@@ -296,6 +296,7 @@ final readonly class CreateRouteAction
                 $placement->effectiveTld,
             )
             : RouteDomain::validate($domain);
+        ReservedPrivateHostname::assertAvailable($resolvedHostname);
 
         return $this->create(
             projectId: $instance->project_id,

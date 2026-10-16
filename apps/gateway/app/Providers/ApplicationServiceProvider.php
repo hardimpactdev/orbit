@@ -67,6 +67,7 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -186,8 +187,6 @@ use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
-use App\Http\Streaming\DeploymentStreamConnection;
-use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -355,6 +354,7 @@ use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -447,7 +447,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
         DevelopmentDeployment::class => RemoteDevelopmentDeployment::class,
-        DeploymentStreamConnection::class => NativeDeploymentStreamConnection::class,
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
@@ -819,6 +818,15 @@ final class ApplicationServiceProvider extends ServiceProvider
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
+        // One converger, with the contributed start hooks, for Gateway web convergence and the release handoff.
+        $this->app->bind(
+            NativeGatewayFpmConverger::class,
+            static fn (): NativeGatewayFpmConverger => new NativeGatewayFpmConverger(
+                app(ProcessRunner::class),
+                app(RemoteProgramCatalog::class),
+                app(Contributions::class)->of(GatewayServiceStartHook::class),
+            ),
+        );
         $this->app->singleton(
             GatewayWebConverger::class,
             static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
@@ -837,7 +845,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                     processes: app(ProcessRunner::class),
                     orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
-                fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class)),
+                fpm: app(NativeGatewayFpmConverger::class),
                 builds: app(NodeCaddyBuilds::class),
                 caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),

@@ -19,7 +19,6 @@ bin/docs-openapi
 
 The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
 
-The fixed deployment stream schema includes `process_restart`, the phase between PHP refresh and after-activation commands. Keep its accepted phase values aligned with the Gateway and SDK.
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 
@@ -53,6 +52,8 @@ The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/
 
 The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and the name-and-branch match used to retry unattached leftovers. An active or shared Route still refuses removal.
 
+The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
+
 A form-request rule `present` marks that property required, as `required` does.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
@@ -67,7 +68,7 @@ The Project development deploy step operations publish typed step responses from
 
 [Project Documents](/reference/project-documents#api-contract) publish typed entry and version schemas, numeric entry IDs, cursor metadata, and the same JSON text/base64 bodies for HTTP and MCP. Their generated create schema distinguishes folders from files and requires exactly one content field for files. Write has the same content choice; metadata update requires a name or parent. These constraints remain on MCP tools when the body already has shared object properties. Create returns only HTTP 201, not an upsert retry response.
 
-The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It publishes HTTP 202 and the queued [operation](/reference/operations) for `instance:deploy`, and the operation with its steps for `operation:show`. Only `instance:rollback` keeps the NDJSON response. It also maps the automatic release controller to its state schema.
+The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It publishes HTTP 202 and the queued [operation](/reference/operations) for each controller action that answers `202` with an operation, `instance:deploy` and `instance:rollback`, and the operation with its steps for `operation:show`. It also maps the automatic release controller to its state schema.
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 

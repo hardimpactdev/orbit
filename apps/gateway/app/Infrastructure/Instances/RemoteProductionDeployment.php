@@ -280,7 +280,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                         value: $output->value,
                     ));
                 },
-                cancelled: $request->cancellation->requested(...),
                 timeout: $step->timeoutSeconds,
             ),
             "deployment-step-{$stepName}",

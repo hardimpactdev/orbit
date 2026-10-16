@@ -97,7 +97,7 @@ Use `--json` where the command supports it. Preserve its documented shape when w
 
 Error codes are namespaced by family, such as `node.not_active`, `schedule.calendar_invalid`, or `env.operation_busy`. The reference pages list each family's codes and what the Gateway leaves in place after a refusal.
 
-`instance:rollback` streams newline-delimited JSON (NDJSON) instead of one document, because it reports phases and application output while the Gateway is still working. The [instance family](/cli/instance#orbit-instancerollback) describes that event stream. `instance:deploy` follows an [operation](/reference/operations) instead, and its `--json` output is the final operation document.
+`instance:deploy` and `instance:rollback` follow an [operation](/reference/operations) while the Gateway works, and their `--json` output is the final operation document.
 
 ## Follow a request through the Gateway
 
@@ -112,7 +112,7 @@ Activity records identify the operation, target, caller, and result. They never 
 
 ## Retry after a connection failure
 
-A command that reads from the Gateway retries the read once. When the connection is refused, reset, or closed before any HTTP response, the CLI waits 250 milliseconds and sends the same read again with the same request ID. A Caddy reload on the Gateway can cause these failures. The CLI never retries a change, a read that received any HTTP response (including a `5xx` error), a timeout, or a deployment stream. A second failure ends the command with the error. The read and its retry share the 900-second request timeout, so the retry never extends it. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds.
+A command that reads from the Gateway retries the read once. When the connection is refused, reset, or closed before any HTTP response, the CLI waits 250 milliseconds and sends the same read again with the same request ID. A Caddy reload on the Gateway can cause these failures. The CLI never retries a change, a read that received any HTTP response (including a `5xx` error), or a timeout. A second failure ends the command with the error. The read and its retry share the 900-second request timeout, so the retry never extends it. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds.
 
 ## Exit status
 

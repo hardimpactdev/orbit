@@ -17,12 +17,14 @@ use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
+use Orbit\Sdk\Responses\Tasks\TaskAgentSnapshotResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
@@ -58,7 +60,13 @@ describe('task transport', function (): void {
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
         'question close' => [new CloseTaskQuestionRequest(98, 'superseded', 'Stale.'), Method::POST, '/api/v1/task-questions/98/close'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
+        'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/task-groups/13/agents/21'],
     ]);
+
+    it('sends the agent thread cursor only when one is given', function (): void {
+        expect(new ShowTaskAgentRequest(13, 21)->query()->all())->toBe([])
+            ->and(new ShowTaskAgentRequest(13, 21, 'run-1.7')->query()->all())->toBe(['after_sequence' => 'run-1.7']);
+    });
 
     it('sends create fields and omits only absent optional values', function (): void {
         expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
@@ -129,6 +137,7 @@ describe('task transport', function (): void {
         'complete' => [new CompleteTaskGroupRequest(13)],
         'destroy' => [new DestroySubtaskRequest(13, 57)],
         'subtask cancel' => [new CancelSubtaskRequest(13, 57)],
+        'agent show' => [new ShowTaskAgentRequest(13, 21)],
     ]);
 });
 
@@ -160,7 +169,45 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'question close' => ['tasks-question-close/closed', new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.'), TaskQuestionResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
+        'agent show' => ['tasks-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
+        'archived agent show' => ['tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
+        'agent delta' => ['tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
+        'pending agent show' => ['tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5), TaskAgentSnapshotResponse::class],
     ]);
+
+    it('keeps the transcript, cursor, and source of live and archived agent snapshots', function (): void {
+        $snapshot = task_fixture_send('tasks-agent-show/default', new ShowTaskAgentRequest(1, 3));
+
+        expect($snapshot)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($snapshot->threadId)->toBe(3)
+            ->and($snapshot->state)->toBe('working')
+            ->and($snapshot->cursor)->toBe('run-1.7')
+            ->and($snapshot->archived)->toBeFalse()
+            ->and(array_column($snapshot->entries, 'kind'))->toBe(['message', 'activity'])
+            ->and($snapshot->entries[1]['text'])->toBe("Tests: 12 passed\n\n$ composer check\nexit code 0")
+            ->and($snapshot->tokens)->toBe(48_200)
+            ->and($snapshot->toArray())->toMatchArray(['thread_id' => 3, 'kind' => 'snapshot', 'cursor' => 'run-1.7', 'archived' => false, 'request_id' => task_request_id()]);
+
+        $archived = task_fixture_send('tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4));
+
+        expect($archived)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($archived->archived)->toBeTrue()
+            ->and($archived->cursor)->toBeNull()
+            ->and($archived->state)->toBe('done')
+            ->and($archived->inputRequests)->toBe([])
+            ->and($archived->modelCalls)->toBeNull()
+            ->and($archived->entries[0]['text'])->toBe('Approved.');
+
+        $delta = task_fixture_send('tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
+        $pending = task_fixture_send('tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5));
+
+        expect($delta)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($delta->kind)->toBe('delta')->and($delta->cursor)->toBe('run-1.9')
+            ->and(array_column($delta->entries, 'id'))->toBe(['e3'])
+            ->and($pending)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($pending->kind)->toBe('snapshot')->and($pending->state)->toBeNull()
+            ->and($pending->entries)->toBe([])->and($pending->cursor)->toBeNull();
+    });
 
     it('keeps the review-and-merge state of a task and of tasks status', function (): void {
         $group = task_fixture_send('tasks-show/review-and-merge', new ShowTaskGroupRequest(1));
@@ -513,6 +560,9 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'subtask with a scalar deliverable' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],
         'comment without author' => [new CreateTaskCommentRequest(1, 1, 'resolution', 'B', 'nick'), ['id' => 1, 'task_group_id' => 1, 'task_id' => 1, 'type' => 'resolution', 'body' => 'B', 'posted_at' => 'now']],
         'agent without driver' => [new ListTaskAgentsRequest(1), [['id' => 1, 'task_group_id' => 1, 'role' => 'reviewer', 'external_id' => 'x']]],
+        'agent snapshot without its source' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'entries' => []]],
+        'agent snapshot with an entry without text' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'archived' => true, 'entries' => [['id' => 'e1', 'kind' => 'message', 'label' => 'user', 'at' => 'now']]]],
+        'agent snapshot with entries that are not a list' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'archived' => false, 'entries' => 'none']],
         'group with a question count that is not an integer' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'questions' => 'many', 'tasks' => []]],
         'question without an id' => [new ListTaskQuestionsRequest, [['task_id' => 1, 'subtask_id' => 2, 'attempt' => 1, 'asked_by' => 'implementer', 'question' => 'Which database?', 'status' => 'open', 'asked_at' => '2026-10-07T00:00:00+00:00']]],
     ]);

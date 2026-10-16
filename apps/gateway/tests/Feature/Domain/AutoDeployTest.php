@@ -387,7 +387,7 @@ describe('automatic deployment of a production Instance', function (): void {
             ->and($this->instance->fresh()->auto_deploy_state['blocked'] ?? null)->toBe([$this->c]);
     });
 
-    it('pauses for a rollback that still waits for the Instance lock', function (): void {
+    it('pauses for a rollback that is still running', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
         auto_deploy_row($this->instance, ['commit' => null, 'kind' => 'rollback', 'status' => 'running', 'finished_at' => null]);
 
@@ -397,7 +397,7 @@ describe('automatic deployment of a production Instance', function (): void {
             ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused');
     });
 
-    it('stops a queued automatic deployment when a rollback came after the tick started it', function (): void {
+    it('stops a queued automatic deployment when a rollback row appeared after the tick read the history', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
         auto_deploy_tick($this);
         $operation = Operation::query()->sole();
@@ -412,6 +412,28 @@ describe('automatic deployment of a production Instance', function (): void {
         auto_deploy_tick($this);
         expect($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused')
             ->and(Operation::query()->count())->toBe(1);
+    });
+
+    it('lets a rollback cancel a queued automatic deployment, and stays paused after it', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_tick($this);
+        $deploy = Operation::query()->sole();
+
+        $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$this->instance->id}/rollback", server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ], content: '{"release":"initial"}')
+            ->assertAccepted();
+        run_operation_jobs();
+
+        expect($deploy->refresh()->error_code)->toBe('operation.superseded')
+            ->and($this->fixture->deployment->preparedCommits)->toBe([])
+            ->and(InstanceDeployment::query()->latest('id')->first()?->kind)->toBe(InstanceDeployment::Rollback);
+
+        auto_deploy_tick($this);
+        expect($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused')
+            ->and(Operation::query()->count())->toBe(2);
     });
 
     it('pauses after a manual deployment and continues from its commit after resuming', function (): void {
@@ -574,6 +596,26 @@ describe('release alerts of automatic deployments', function (): void {
         expect($this->notifier->alerts)->toHaveCount(1)
             ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployPaused)
             ->and($this->notifier->alerts[0]->summary)->toStartWith('Manual deployment');
+    });
+
+    it('reports busy while a rollback waits for a worker, starts nothing, and counts no stall', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$this->instance->id}/rollback", server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ], content: '{"release":"initial"}')
+            ->assertAccepted();
+
+        auto_deploy_tick($this);
+        $this->travel(31)->minutes();
+        auto_deploy_tick($this);
+        $state = AutomaticDeployState::of($this->instance->fresh());
+
+        expect($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('busy')
+            ->and(Operation::query()->pluck('kind')->all())->toBe(['instance.rollback'])
+            ->and($state->stall())->toBeNull()
+            ->and($this->notifier->alerts)->toBe([]);
     });
 
     it('ends a stall once the commit deploys', function (): void {

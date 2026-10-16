@@ -36,11 +36,14 @@ final readonly class StartOperationAction
         }
     }
 
-    /** @param array<string, mixed> $input */
-    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId): Operation
+    /**
+     * @param  array<string, mixed>  $input
+     * @param  list<string>  $supersedes  the kinds of a queued operation on the target that this one cancels and replaces
+     */
+    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
     {
         $this->assertAvailable();
-        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId);
+        $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes);
 
         try {
             $this->dispatcher->dispatch($operation);

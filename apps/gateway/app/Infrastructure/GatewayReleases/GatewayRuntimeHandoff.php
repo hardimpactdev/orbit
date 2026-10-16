@@ -246,12 +246,19 @@ final readonly class GatewayRuntimeHandoff
         }
     }
 
-    /** Reloads PHP-FPM only for a changed pool, because a reload ends the requests in flight. */
+    /**
+     * Reloads PHP-FPM only for a changed pool, because a reload ends the requests in flight. The start hooks are
+     * installed either way: a changed hook takes effect at the next start, and a reload runs every hook first.
+     */
     private function fpm(): string
     {
         $rendered = $this->fpmRenderer->renderPool($this->applicationPath, $this->orbitHome);
 
         if (($this->readLivePool)($this->livePool) === $rendered) {
+            $this->step('fpm', 'gateway.release_fpm_failed', function (): void {
+                $this->fpm->installStartHooks();
+            });
+
             return 'unchanged';
         }
 

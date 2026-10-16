@@ -128,7 +128,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.update_required` | No option was given. |
 | `route.kind_unsupported` | The Route is a custom proxy or analytics tracking Route. |
 | `route.domain_immutable` | The Route is generated. Only an explicit domain can change. |
-| `route.domain_conflict` | Another Route owns the new domain. |
+| `route.domain_conflict` | Another Route owns the new domain, or it is a reserved name. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
 | `route.web_root_domain_immutable` | A Route with a web root keeps its domain. Create a new Route and remove the old one. |
 | `route.web_root_update_separate` | `--web-root` was combined with another option. |

@@ -34,7 +34,8 @@ final readonly class AutomaticDeployHistory
 
     /**
      * The newest manual deployment or rollback, in any state, after `auto_deploy` was last set. It pauses automatic
-     * deployment until `auto_deploy` is set again. A rollback that still waits for the Instance lock counts.
+     * deployment until `auto_deploy` is set again. A rollback writes its row when a worker starts it; before that, its
+     * operation holds the Instance, so the tick starts nothing.
      */
     public function pausedBy(): ?InstanceDeployment
     {

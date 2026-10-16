@@ -1,0 +1,25 @@
+{
+    "requesters": {
+        "10.44.0.1": "vpn",
+        "10.44.0.2": "gateway",
+        "10.44.0.3": "services",
+        "10.44.0.4": "app-prod",
+        "10.44.0.7": "beast",
+        "10.44.0.10": "sabre",
+        "10.44.0.11": "shark",
+        "10.44.0.9": "mini"
+    },
+    "records": {
+        "analytics.orbit": "10.44.0.3",
+        "cli-proxy-api.orbit": "10.44.0.3",
+        "collector.cli-proxy-api.orbit": "10.44.0.3",
+        "gateway.orbit": "10.44.0.2",
+        "metrics.orbit": "10.44.0.2",
+        "reverb.orbit": "10.44.0.3",
+        "shop.test": "10.44.0.7"
+    },
+    "suffixes": {
+        "test": "10.44.0.7"
+    },
+    "overrides": []
+}
