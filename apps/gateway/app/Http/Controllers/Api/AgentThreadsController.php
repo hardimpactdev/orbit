@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Tasks\ShowAgentThreadAction;
+use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Tasks\TaskAgentStreamRequest;
+use App\Http\Requests\Tasks\TaskAgentCursorRequest;
 use App\Models\AgentThread;
 use App\Models\Task;
 use Illuminate\Http\JsonResponse;
@@ -29,15 +29,15 @@ final class AgentThreadsController extends Controller
         ]);
     }
 
-    public function show(Request $request, Task $group, AgentThread $session, ShowAgentThreadAction $action): JsonResponse
+    public function show(TaskAgentCursorRequest $request, Task $group, AgentThread $session, ReadAgentThreadAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($group, $session),
+            'data' => $action->execute($group, $session, $request->afterSequence()),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
 
-    public function stream(TaskAgentStreamRequest $request, Task $group, AgentThread $session, StreamAgentThreadAction $action): StreamedResponse
+    public function stream(TaskAgentCursorRequest $request, Task $group, AgentThread $session, StreamAgentThreadAction $action): StreamedResponse
     {
         return $action->execute($group, $session, $request->afterSequence());
     }

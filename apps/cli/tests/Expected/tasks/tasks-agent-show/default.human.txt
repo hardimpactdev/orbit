@@ -11,6 +11,8 @@ Loading agent thread...
 │
 ├  State            working
 │
+├  Kind             snapshot
+│
 ├  Source           live
 │
 ├  Cursor           run-1.7

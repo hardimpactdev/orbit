@@ -62,7 +62,7 @@ The `tasks/tasks-show/watched` fixture records a running task whose branch pull 
 
 The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
-The `tasks/tasks-agent-show` fixtures record a live agent thread snapshot with a `cursor` and `archived` false, and a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay both.
+The `tasks/tasks-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
 
 ## Validate a fixture
 

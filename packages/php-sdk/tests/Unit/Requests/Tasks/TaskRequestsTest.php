@@ -63,6 +63,11 @@ describe('task transport', function (): void {
         'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/task-groups/13/agents/21'],
     ]);
 
+    it('sends the agent thread cursor only when one is given', function (): void {
+        expect(new ShowTaskAgentRequest(13, 21)->query()->all())->toBe([])
+            ->and(new ShowTaskAgentRequest(13, 21, 'run-1.7')->query()->all())->toBe(['after_sequence' => 'run-1.7']);
+    });
+
     it('sends create fields and omits only absent optional values', function (): void {
         expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
@@ -166,6 +171,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
         'agent show' => ['tasks-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
         'archived agent show' => ['tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
+        'agent delta' => ['tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
+        'pending agent show' => ['tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5), TaskAgentSnapshotResponse::class],
     ]);
 
     it('keeps the transcript, cursor, and source of live and archived agent snapshots', function (): void {
@@ -190,6 +197,16 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($archived->inputRequests)->toBe([])
             ->and($archived->modelCalls)->toBeNull()
             ->and($archived->entries[0]['text'])->toBe('Approved.');
+
+        $delta = task_fixture_send('tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
+        $pending = task_fixture_send('tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5));
+
+        expect($delta)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($delta->kind)->toBe('delta')->and($delta->cursor)->toBe('run-1.9')
+            ->and(array_column($delta->entries, 'id'))->toBe(['e3'])
+            ->and($pending)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($pending->kind)->toBe('snapshot')->and($pending->state)->toBeNull()
+            ->and($pending->entries)->toBe([])->and($pending->cursor)->toBeNull();
     });
 
     it('keeps the review-and-merge state of a task and of tasks status', function (): void {

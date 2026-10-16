@@ -80,7 +80,7 @@ export function createPiServer(options: HttpOptions): Server {
         const id = parts[1] ?? "";
         const action = parts.slice(2).join("/");
         if (method === "GET" && action === "") {
-            sendJson(response, 200, await registry.snapshot(id));
+            sendJson(response, 200, await registry.read(id, cursor(url.searchParams)));
             return;
         }
         if (method === "POST" && action === "messages") {
@@ -136,7 +136,10 @@ export function createPiServer(options: HttpOptions): Server {
     }
 }
 
-/** Reads `run` and `after` from a stream URL. A missing or malformed cursor means a snapshot. */
+/**
+ * Reads `run` and `after` from a stream or session URL. A missing or malformed cursor means a
+ * snapshot.
+ */
 function cursor(params: URLSearchParams): StreamCursor | undefined {
     const run = params.get("run");
     const after = params.get("after");

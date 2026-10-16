@@ -236,7 +236,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return (int) $this->commandPrompts()->selectEntity('Task group', ['ID', 'Title', 'Project', 'Status'], $rows);
     }
 
-    /** Lists the group's agent threads and returns the selected ID. */
+    /** Lists the group's agent threads and returns the selected ID. A stored `t3` thread has no transcript, so it is left out. */
     protected function selectAgent(GatewayConnector $connector, int $groupId): ?int
     {
         $agents = $this->sendWithProgress(
@@ -254,6 +254,10 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $rows = [];
 
         foreach ($agents->agents as $agent) {
+            if ($agent->driver === 't3') {
+                continue;
+            }
+
             $rows[$agent->id] = [(string) $agent->id, $agent->role, $agent->taskId === null ? '—' : (string) $agent->taskId, $agent->driver, $agent->state ?? '—'];
         }
 

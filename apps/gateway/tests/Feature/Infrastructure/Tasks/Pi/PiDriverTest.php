@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
@@ -9,15 +10,25 @@ use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Infrastructure\Tasks\Pi\PiClient;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use GuzzleHttp\Exception\ResponseException;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Request as Psr7Request;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
+use Tests\Support\TaskModelRouter;
 
 const PI_TOKEN = TEST_TASK_VM_PI_TOKEN;
 const PI_BASE = 'http://10.44.0.9:3774';
@@ -505,5 +516,162 @@ describe('events', function (): void {
         $events = pi_events([pi_snapshot('working'), pi_entry_event(8, $call)]);
 
         expect($events[1]->data['entry']['text'])->not->toContain(PI_TOKEN)->toContain('[REDACTED]');
+    });
+});
+
+/**
+ * A Pi `delta` from the cursor `run-1.7`: the open call `call-1` from before the cursor, its result, a new call that never
+ * gets a result, and the settled state.
+ *
+ * @return array{array<string, mixed>, list<array<string, mixed>>}
+ */
+function pi_delta_and_stream(): array
+{
+    [, $call, $result] = pi_check_transcript('token '.PI_TOKEN);
+    $open = ['id' => 'e5', 'timestamp' => '2026-09-22T10:00:04.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
+        ['type' => 'toolCall', 'id' => 'call-2', 'name' => 'bash', 'arguments' => ['command' => 'ls']],
+    ]]];
+    $state = ['kind' => 'state', 'run' => 'run-1', 'sequence' => 10, 'state' => 'done', 'error' => null, 'turnId' => 'turn-key-1', 'usage' => ['total' => 300]];
+    $events = [pi_entry_event(8, $result), pi_entry_event(9, $open), $state];
+    $delta = [
+        'kind' => 'delta', 'run' => 'run-1', 'sequence' => 10, 'session' => ['id' => 'session-1'],
+        'state' => 'done', 'error' => null, 'turnId' => 'turn-key-1', 'usage' => ['input' => 200, 'output' => 100, 'cacheRead' => 0, 'cacheWrite' => 0, 'total' => 300],
+        'context' => [$call], 'events' => $events,
+    ];
+
+    return [$delta, [['kind' => 'resumed', 'run' => 'run-1', 'sequence' => 7, 'session' => ['id' => 'session-1'], 'context' => [$call]], ...$events]];
+}
+
+describe('read', function (): void {
+    it('folds a delta into the entries the stream sends after the same cursor', function (): void {
+        [$delta, $stream] = pi_delta_and_stream();
+        Http::fake([
+            PI_BASE.'/sessions/session-1/stream*' => Http::response(implode("\n", array_map(json_encode(...), $stream))."\n"),
+            PI_BASE.'/sessions/session-1?*' => Http::response($delta),
+        ]);
+        $thread = pi_thread(pi_node());
+
+        $observation = pi_driver()->read($thread, 'run-1.7');
+        $streamed = [];
+        foreach (pi_driver()->events($thread, 'run-1.7') as $event) {
+            if ($event->kind === 'entry') {
+                $streamed[$event->data['entry']['id'].'|'.$event->data['entry']['kind']] = $event->data['entry'];
+            }
+        }
+
+        expect($observation->delta)->toBeTrue()
+            ->and($observation->cursor)->toBe('run-1.10')
+            ->and($observation->state)->toBe(AgentThreadState::Done)
+            ->and($observation->tokens)->toBe(300)
+            ->and($observation->entries)->toBe(array_values($streamed))
+            ->and(array_column($observation->entries, 'text'))->toBe(["token [REDACTED]\n$ composer check\nexit code 0", '$ ls (stopped without a result)'])
+            ->and(json_encode($observation->toArray()))->not->toContain(PI_TOKEN);
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?run=run-1&after=7');
+    });
+
+    it('reads a snapshot when the server cannot resume the cursor or predates deltas', function (): void {
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', pi_check_transcript("All checks passed\n")))]);
+        $thread = pi_thread(pi_node());
+
+        $resumable = pi_driver()->read($thread, 'run-0.3');
+        $opaque = pi_driver()->read($thread, 'not a pi cursor');
+
+        expect($resumable->delta)->toBeFalse()->and($resumable->cursor)->toBe('run-1.7')
+            ->and(array_column($resumable->entries, 'kind'))->toBe(['message', 'message', 'activity', 'message'])
+            ->and($opaque->delta)->toBeFalse();
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?run=run-0&after=3');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1');
+    });
+
+    it('refuses a session body over the limit before decoding it', function (): void {
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(str_repeat(' ', PiClient::SESSION_MAX_BYTES + 1))]);
+        $thread = pi_thread(pi_node());
+
+        expect(fn () => pi_driver()->read($thread, null))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.')
+            ->and(fn () => pi_driver()->observe($thread))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
+    });
+
+    it('stops a transfer whose announced or received size passes the limit, within its time budget', function (): void {
+        $seen = [];
+        Http::fake(function (Request $request, array $options) use (&$seen): PromiseInterface {
+            $progress = $options['progress'];
+            expect(fn () => $progress(PiClient::SESSION_MAX_BYTES + 1, 0))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.')
+                ->and(fn () => $progress(0, PiClient::SESSION_MAX_BYTES + 1))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
+            $progress(PiClient::SESSION_MAX_BYTES, PiClient::SESSION_MAX_BYTES);
+            $seen[] = [$options['timeout'], $options['decode_content']];
+
+            return Http::response(pi_snapshot('done'));
+        });
+        $thread = pi_thread(pi_node());
+
+        pi_driver()->read($thread, null);
+        pi_driver()->observe($thread);
+
+        expect($seen)->toBe([[PiClient::READ_TIMEOUT, false], [15.0, false]]);
+    });
+
+    it('names the limit when the transfer stops at it', function (): void {
+        $request = new Psr7Request('GET', PI_BASE.'/sessions/session-1');
+        $stopped = new ResponseException('An error was encountered during the progress event', $request, new Psr7Response(200), new AgentDriverException('The Pi server session is larger than 16 MiB.'));
+        Http::fake(fn () => throw new ConnectionException($stopped->getMessage(), 0, $stopped));
+
+        expect(fn () => pi_driver()->read(pi_thread(pi_node()), null))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
+    });
+
+    it('answers an error status whose transfer stopped as a failed server', function (): void {
+        Http::fake(fn () => throw new RequestException(new Response(new Psr7Response(500))));
+
+        expect(fn () => pi_driver()->read(pi_thread(pi_node()), null))->toThrow(AgentDriverException::class, 'The Pi server failed with HTTP 500.');
+    });
+
+    it('refuses an answer that is neither a snapshot nor a delta', function (): void {
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(['kind' => 'resumed', 'session' => ['id' => 'session-1']])]);
+
+        expect(fn () => pi_driver()->read(pi_thread(pi_node()), 'run-1.7'))->toThrow(AgentDriverException::class, 'The Pi server returned an invalid snapshot.');
+    });
+});
+
+describe('agent thread read route', function (): void {
+    /** Calls the read as the Gateway peer with the tasks extension on. */
+    function pi_read_as_gateway(AgentThread $thread): TestResponse
+    {
+        $gateway = Node::query()->create(['name' => 'pi-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1']);
+        test()->markAsGateway($gateway);
+        test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+        TaskModelRouter::ready();
+        test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+
+        return test()->getJson("/api/v1/task-groups/{$thread->task_group_id}/agents/{$thread->id}?after_sequence=run-1.7");
+    }
+
+    it('answers a Pi server error as a 502 without its detail and reports the detail', function (): void {
+        Exceptions::fake();
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(['error' => ['code' => 'server.unhandled', 'message' => 'secret detail', 'details' => []]], 500)]);
+
+        $response = pi_read_as_gateway(pi_thread(pi_node()));
+
+        $response->assertStatus(502)->assertJsonPath('error.code', 'tasks.agent_read_failed')
+            ->assertJsonPath('error.message', 'Orbit could not read the agent thread from its Node.');
+        expect($response->getContent())->not->toContain('secret detail')->not->toContain('server.unhandled');
+        Exceptions::assertReported(fn (ResourceOperationException $exception): bool => $exception->getPrevious() instanceof AgentDriverException
+            && str_contains($exception->getPrevious()->getMessage(), 'server.unhandled'));
+    });
+
+    it('answers an unreachable Pi server as a 502 without the connection error', function (): void {
+        Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to 10.44.0.9 port 3774'));
+
+        $response = pi_read_as_gateway(pi_thread(pi_node()));
+
+        $response->assertStatus(502)->assertJsonPath('error.code', 'tasks.agent_read_failed');
+        expect($response->getContent())->not->toContain('cURL')->not->toContain('3774');
+    });
+
+    it('returns the delta to the client', function (): void {
+        [$delta] = pi_delta_and_stream();
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response($delta)]);
+
+        pi_read_as_gateway(pi_thread(pi_node()))->assertOk()
+            ->assertJsonPath('data.kind', 'delta')->assertJsonPath('data.cursor', 'run-1.10')->assertJsonPath('data.state', 'done')
+            ->assertJsonPath('data.archived', false)->assertJsonCount(2, 'data.entries');
     });
 });

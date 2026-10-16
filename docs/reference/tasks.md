@@ -178,7 +178,7 @@ The task and subtask operations return these errors.
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
 | `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
-| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) while the thread's Pi server is unavailable or refuses the read |
+| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server could not serve, when Orbit saved no transcript |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -1373,7 +1373,7 @@ Each card shows the Project code and the task id, such as `ORB-13`, its line cou
 
 ## Agent viewer
 
-The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads one snapshot](#read-a-thread) of the thread's normalized conversation. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
+The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads](#read-a-thread) the thread's normalized conversation, as a snapshot or as a delta after a cursor. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
 
 Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
 
@@ -1381,26 +1381,32 @@ A snapshot replaces the browser transcript. Entries merge by id and kind, so an 
 
 ### Read a thread
 
-`GET /api/v1/task-groups/{group}/agents/{session}` returns one snapshot of the thread as JSON. It holds the same redacted content as the first event of the stream, plus `archived`. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent can poll it to follow a thread without a stream.
+`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
+
+A first read returns a snapshot of the whole transcript. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
 
 | Field | Meaning |
 | --- | --- |
 | `thread_id` | The agent thread ID |
-| `kind` | Always `snapshot`, as in the stream |
-| `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown |
-| `entries` | The normalized transcript, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
+| `kind` | `snapshot` when `entries` is the whole transcript. `delta` when `entries` holds only the entries after `after_sequence` |
+| `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown or before the thread starts |
+| `entries` | Normalized transcript entries, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
 | `input_requests` | Open input requests. A Pi thread has none |
 | `tokens`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, `peak_context_tokens` | The [thread token metrics](#thread-token-metrics). Each is null when unknown |
 | `lines_added`, `lines_deleted` | The thread's line diff, or null |
 | `error`, `provider_error` | The error of a `failed` turn and its provider class |
-| `cursor` | The place of this snapshot in the thread's events, or null |
-| `archived` | True when the snapshot is the saved transcript |
+| `cursor` | The thread's place in its events after this answer. Null for a saved transcript or a thread that has not started |
+| `archived` | True when the answer is the saved transcript |
 
-The cursor has the form `{run}.{sequence}`. Pass it to the stream as `after_sequence` or `Last-Event-ID`. The stream then sends only the events after the snapshot. A cursor from an earlier run of the Pi server gets a fresh snapshot. The run changes when the Pi server restarts or unloads an idle session. An entry can appear in the snapshot and again in a later event, so merge entries by id and kind, as the stream does.
+The cursor has the form `{run}.{sequence}`. Pass it back as `after_sequence`, or to the stream as `after_sequence` or `Last-Event-ID`. Either one then sends only what came after it. Replace your transcript with a snapshot. Merge a delta into it by id and kind, so a changed entry replaces the earlier one. A delta can repeat an entry that you already have. A cursor from an earlier run of the Pi server gets a snapshot. The run changes when the Pi server restarts or unloads an idle session. A Pi server binary built before delta reads answers every read with a snapshot.
 
-When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. A saved transcript does not change, so a reader can stop polling it.
+A thread that has not started yet returns an empty snapshot: no entries, a null `state`, and a null `cursor`. Poll it again until it starts.
 
-The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). While the thread's Pi server is unavailable or refuses the read, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
+When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. It does the same when the thread's Pi server fails and Orbit saved a transcript, as after the task VM is deleted. A saved transcript does not change, so a reader can stop polling it.
+
+The read waits at most 5 seconds for the Pi server. The Gateway accepts at most 16 MiB of session data from the Pi server for one read; real transcripts reach about 9 MiB. The same limit applies when the [tick](#session-routing) observes the thread and when Orbit [saves its transcript](#archive-finished-threads), so a larger thread counts as unobservable.
+
+The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or sends more than 16 MiB, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
 ## Coder settle webhook
 
@@ -1690,6 +1696,8 @@ A task VM is deleted when its task ends, and its Pi sessions go with it. Without
 ### Agents read a snapshot, browsers stream
 
 An MCP tool call returns one answer and holds no request open, so an agent cannot follow the stream. The [thread read](#read-a-thread) gives it the same content as one JSON response. The read and the stream share the checks, the saved-transcript fallback, and the sanitizer, so they never redact differently. The cursor stays the Pi server's, so a reader can move from the read to the stream without a gap. The Gateway keeps no state per reader.
+
+A poll returns a delta, because a transcript only grows: downloading it again on every poll would cost more on each call and pass the MCP output limit for a long thread. The Pi server already keeps the events of its current run for the stream, so it can answer a delta from the same cursor. The 16 MiB limit bounds the memory of one read and stays above real transcripts, so the scheduler still observes a long thread. A thread that has not started is a normal state, so its read is an empty snapshot and not an error.
 
 ### Orbit commits and pushes
 

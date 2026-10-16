@@ -11,6 +11,8 @@ Loading agent thread...
 │
 ├  State            done
 │
+├  Kind             snapshot
+│
 ├  Source           saved transcript
 │
 ├  Cursor           —

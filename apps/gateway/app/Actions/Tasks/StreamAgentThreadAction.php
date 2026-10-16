@@ -16,14 +16,14 @@ final readonly class StreamAgentThreadAction
 
     public function __construct(
         private AgentDriverRegistry $drivers,
-        private ShowAgentThreadAction $show,
+        private ReadAgentThreadAction $read,
     ) {}
 
     public function execute(Task $group, AgentThread $session, ?string $afterSequence): StreamedResponse
     {
-        $archived = $this->show->archived($group, $session);
-        if ($archived !== null) {
-            return $this->archived($archived);
+        $this->read->assertReadable($group, $session);
+        if ($this->read->nodeGone($session)) {
+            return $this->archived($this->read->savedTranscript($session));
         }
 
         return response()->stream(function () use ($session, $afterSequence): \Generator {
@@ -41,7 +41,7 @@ final readonly class StreamAgentThreadAction
 
                         continue;
                     }
-                    $data = $this->show->event($event);
+                    $data = $this->read->event($event);
                     $json = json_encode($data, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
                     $cursor = $event->cursor;
                     if ($cursor !== null && preg_match('/[\r\n\x00]/', $cursor) === 1) {

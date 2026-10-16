@@ -12,7 +12,7 @@ final readonly class AgentThreadObserver
 
     public function observe(AgentThread $thread): ?AgentObservation
     {
-        if (str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
+        if ($thread->isPending()) {
             return null;
         }
         try {

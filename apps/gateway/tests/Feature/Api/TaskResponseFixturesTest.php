@@ -13,6 +13,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -396,6 +397,16 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$live->id}")->assertOk(), 'tasks/tasks-agent-show/default', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
 
+        $driver->observation = new AgentObservation(
+            state: AgentThreadState::Done,
+            entries: [['id' => 'e3', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Added the SDK requests.', 'at' => '2026-09-23T09:58:00.000Z']],
+            tokens: 52_000, inputTokens: 2_400, cachedInputTokens: 43_200, outputTokens: 6_400, modelCalls: 5, peakContextTokens: 10_100,
+            cursor: 'run-1.9',
+            delta: true,
+        );
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$live->id}?after_sequence=run-1.7")->assertOk(), 'tasks/tasks-agent-show/delta', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
+
         Storage::fake('local');
         $archived = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => null, 'node_id' => null, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'driver' => 'pi', 'runtime_key' => 'node:2', 'external_id' => 'thread-archived']);
         Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($archived), json_encode([
@@ -405,6 +416,10 @@ describe('task response fixtures', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$archived->id}")->assertOk(), 'tasks/tasks-agent-show/archived', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
+
+        $pending = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => 1, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'driver' => 'pi', 'runtime_key' => 'node:1', 'external_id' => TaskAgentSpawner::PendingPrefix.'reserved']);
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$pending->id}")->assertOk(), 'tasks/tasks-agent-show/pending', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
     });
 });
 

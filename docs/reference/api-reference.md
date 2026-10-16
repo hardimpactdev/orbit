@@ -53,7 +53,7 @@ The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/
 
 The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and the name-and-branch match used to retry unattached leftovers. An active or shared Route still refuses removal.
 
-The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot event and not a data class.
+The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
 
 A form-request rule `present` marks that property required, as `required` does.
 

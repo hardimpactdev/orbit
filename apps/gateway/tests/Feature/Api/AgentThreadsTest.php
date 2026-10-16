@@ -12,6 +12,7 @@ use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\TaskModelRouter;
@@ -143,6 +144,63 @@ describe('task agent viewer', function (): void {
 
         unset($read['archived']);
         expect($read)->toBe($streamed[0]);
+    });
+
+    it('passes the cursor to the driver and answers only the later entries as a delta', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $driver = new FakeAgentDriver;
+        $driver->observation = new AgentObservation(
+            state: AgentThreadState::Done,
+            entries: [['id' => 'm2', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Done TOKEN=hidden', 'at' => '2026-10-14T18:01:00Z']],
+            tokens: 160,
+            cursor: 'run.12',
+            delta: true,
+        );
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $session->update(['driver' => 'example']);
+        $read = "/api/v1/task-groups/{$group->id}/agents/{$session->id}";
+
+        $this->getJson($read.'?after_sequence=run.8')->assertOk()
+            ->assertJsonPath('data.kind', 'delta')->assertJsonPath('data.cursor', 'run.12')->assertJsonPath('data.state', 'done')
+            ->assertJsonPath('data.tokens', 160)->assertJsonPath('data.archived', false)
+            ->assertJsonCount(1, 'data.entries')->assertJsonPath('data.entries.0.text', 'Done TOKEN=[REDACTED]');
+        $this->getJson($read)->assertOk();
+        $this->getJson($read.'?after_sequence='.rawurlencode('bad cursor'))->assertUnprocessable();
+
+        expect($driver->readCursors)->toBe(['run.8', null]);
+    });
+
+    it('answers a thread that has not started as an empty snapshot, without calling the driver or reporting', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        Exceptions::fake();
+        $driver = new FakeAgentDriver;
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $session->update(['driver' => 'example', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started']);
+
+        $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}?after_sequence=run.8")->assertOk()
+            ->assertJsonPath('data.thread_id', $session->id)->assertJsonPath('data.kind', 'snapshot')
+            ->assertJsonPath('data.state', null)->assertJsonPath('data.entries', [])->assertJsonPath('data.input_requests', [])
+            ->assertJsonPath('data.cursor', null)->assertJsonPath('data.archived', false);
+
+        expect($driver->readCursors)->toBe([]);
+        Exceptions::assertNothingReported();
+    });
+
+    it('falls back to the saved transcript when the driver cannot read a thread whose Node is still active', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        Storage::fake('local');
+        Exceptions::fake();
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([new FakeAgentDriver]));
+        $session->update(['driver' => 'example']);
+        Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($session), json_encode([
+            'state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']],
+        ], JSON_THROW_ON_ERROR));
+
+        $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}?after_sequence=run.8")->assertOk()
+            ->assertJsonPath('data.kind', 'snapshot')->assertJsonPath('data.archived', true)
+            ->assertJsonPath('data.cursor', null)->assertJsonPath('data.entries.0.text', 'Approved.');
+
+        Exceptions::assertNothingReported();
     });
 
     it('refuses a read like the stream, and hides a failed read', function (): void {

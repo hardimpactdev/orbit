@@ -26,8 +26,10 @@ use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
@@ -393,6 +395,15 @@ describe('requests', function (): void {
         $mock->assertNothingSent();
     });
 
+    it('passes the agent thread cursor through to the Gateway', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-agent-show/delta'));
+
+        expect(Artisan::call('tasks:agent:show', ['group' => '1', 'session' => '3', '--after-sequence' => 'run-1.7', '--json' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'delta', 'cursor' => 'run-1.9']);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ShowTaskAgentRequest
+            && $request->query()->all() === ['after_sequence' => 'run-1.7']);
+    });
+
     it('shows the watched pull request in JSON without changing the publication URL', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-show/watched'));
 
@@ -489,6 +500,16 @@ describe('prompts', function (): void {
         'yes' => [['y', Key::ENTER], 0, 'consented'],
     ]);
 
+    it('offers only agent threads that have a transcript', function (): void {
+        $mock = task_prompt_mock();
+        [$status, $display] = task_prompt_run('select-agent', [Key::ENTER]);
+
+        expect($status)->toBe(0)
+            ->and($display)->toContain('selected 4')
+            ->not->toContain('stored-t3-thread')->not->toContain('t3 ');
+        $mock->assertSent(ListTaskAgentsRequest::class);
+    });
+
     it('stops before mutation when a selection is cancelled', function (): void {
         $mock = task_prompt_mock();
         [$status] = task_prompt_run('select-backlog', [Key::CTRL_C]);
@@ -511,6 +532,10 @@ function task_prompt_mock(): MockClient
             static fn (array $row): bool => ! isset($pending->getRequest()->query()->all()['status']) || $row['status'] === $pending->getRequest()->query()->all()['status'],
         )), 'meta' => $meta]),
         ShowTaskGroupRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
+        ListTaskAgentsRequest::class => MockResponse::make(['data' => [
+            ['id' => 2, 'task_group_id' => 1, 'task_id' => null, 'role' => 'reviewer', 'driver' => 't3', 'external_id' => 'stored-t3-thread', 'state' => 'done'],
+            ['id' => 4, 'task_group_id' => 1, 'task_id' => 7, 'role' => 'implementer', 'driver' => 'pi', 'external_id' => 'session-4', 'state' => 'working'],
+        ], 'meta' => $meta]),
         ListProjectsRequest::class => MockResponse::make(['data' => [
             ['id' => 7, 'name' => 'Alpha', 'slug' => 'alpha', 'type' => 'monorepo', 'repository_url' => 'https://example.test/alpha.git'],
             ['id' => 42, 'name' => 'Beta', 'slug' => 'beta', 'type' => 'monorepo', 'repository_url' => 'https://example.test/beta.git'],
@@ -564,6 +589,11 @@ final class TaskPromptsCommand extends TaskCommand
             switch ($this->option('scenario')) {
                 case 'select-backlog':
                     $id = $this->selectGroup($connector, ['backlog']);
+                    $this->line("selected {$id}");
+
+                    return self::SUCCESS;
+                case 'select-agent':
+                    $id = $this->selectAgent($connector, 1);
                     $this->line("selected {$id}");
 
                     return self::SUCCESS;

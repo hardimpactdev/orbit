@@ -3550,7 +3550,7 @@ export interface paths {
         };
         /**
          * Show a task agent session
-         * @description Returns one redacted snapshot of a task agent thread: its state, its transcript entries, and its token metrics. `cursor` is the snapshot's place in the thread's events; pass it as `after_sequence` to `tasks:agent-stream` to follow only later events. Call again to poll. When the thread's Node is gone, returns the transcript Orbit saved, with `archived` true and `cursor` null; that snapshot does not change. Requires Gateway access. See /reference/tasks#read-a-thread.
+         * @description Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer's `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread's Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.
          */
         get: operations["tasks-agent-show"];
         put?: never;
@@ -3994,8 +3994,11 @@ export interface components {
         TaskAgentSnapshot: {
             /** @description The agent thread ID. */
             thread_id: number;
-            /** @enum {string} */
-            kind: "snapshot";
+            /**
+             * @description `snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`.
+             * @enum {string}
+             */
+            kind: "snapshot" | "delta";
             /** @enum {string|null} */
             state?: "idle" | "working" | "asking_for_input" | "done" | "failed" | null;
             input_requests?: {
@@ -4003,7 +4006,7 @@ export interface components {
                 kind: string;
                 details: unknown;
             }[];
-            /** @description The normalized transcript, oldest first. Merge entries by `id` and `kind`. */
+            /** @description The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`. */
             entries?: {
                 id: string;
                 /** @description `message` or `activity`. */
@@ -4024,7 +4027,7 @@ export interface components {
             error?: string | null;
             /** @enum {string|null} */
             provider_error?: "overloaded" | "rate_limited" | "server_error" | null;
-            /** @description The place of this snapshot in the thread's events. Pass it as `after_sequence` to `tasks:agent-stream`. Null for a saved transcript. */
+            /** @description The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started. */
             cursor: string | null;
             /** @description True when the snapshot is the transcript Orbit saved before the task VM was deleted. */
             archived: boolean;
@@ -19381,7 +19384,9 @@ export interface operations {
     };
     "tasks-agent-show": {
         parameters: {
-            query?: never;
+            query?: {
+                after_sequence?: string | null;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */
@@ -19432,7 +19437,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The thread's Pi server is unavailable or refused the read (`tasks.agent_read_failed`). */
+            /** @description The thread's Pi server is unavailable, refused the read, did not answer within 5 seconds, or sent a session over 16 MiB, and Orbit saved no transcript (`tasks.agent_read_failed`). */
             502: {
                 headers: {
                     [name: string]: unknown;

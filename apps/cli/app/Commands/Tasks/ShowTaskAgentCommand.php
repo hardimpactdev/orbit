@@ -16,10 +16,11 @@ final class ShowTaskAgentCommand extends TaskCommand
     protected $signature = 'tasks:agent:show
         {group? : Numeric task group ID}
         {session? : Numeric agent thread ID}
+        {--after-sequence= : The cursor of a previous read; return only the entries after it}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show a redacted snapshot of a task agent thread\'s conversation.';
+    protected $description = 'Show a redacted read of a task agent thread\'s conversation.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -48,7 +49,9 @@ final class ShowTaskAgentCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $snapshot = $this->sendWithProgress($connector, new ShowTaskAgentRequest($groupId, $sessionId), TaskAgentSnapshotResponse::class, ['Show agent thread', 'Loading agent thread', 'Loaded agent thread']);
+        $after = $this->option('after-sequence');
+        $request = new ShowTaskAgentRequest($groupId, $sessionId, is_string($after) && $after !== '' ? $after : null);
+        $snapshot = $this->sendWithProgress($connector, $request, TaskAgentSnapshotResponse::class, ['Show agent thread', 'Loading agent thread', 'Loaded agent thread']);
 
         if (! $snapshot instanceof TaskAgentSnapshotResponse) {
             return self::FAILURE;
@@ -62,6 +65,7 @@ final class ShowTaskAgentCommand extends TaskCommand
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Agent thread: '.$snapshot->threadId, [
             'State' => $snapshot->state,
+            'Kind' => $snapshot->kind,
             'Source' => $snapshot->archived ? 'saved transcript' : 'live',
             'Cursor' => $snapshot->cursor,
             'Tokens' => self::tokens($snapshot->tokens),
@@ -77,7 +81,7 @@ final class ShowTaskAgentCommand extends TaskCommand
         ]));
 
         if ($snapshot->entries === []) {
-            $this->writeHumanMessage('No entries.');
+            $this->writeHumanMessage($snapshot->kind === 'delta' ? 'No entries after the cursor.' : 'No entries.');
         }
 
         foreach ($snapshot->entries as $entry) {

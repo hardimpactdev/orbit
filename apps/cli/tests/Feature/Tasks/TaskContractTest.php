@@ -148,6 +148,8 @@ describe('tasks contract', function (): void {
     it('renders a live and an archived agent thread snapshot', function (): void {
         run_task_contract('tasks/tasks-agent-show/default', 'tasks:agent:show', ['group' => '1', 'session' => '3'], 0);
         run_task_contract('tasks/tasks-agent-show/archived', 'tasks:agent:show', ['group' => '1', 'session' => '4'], 0);
+        run_task_contract('tasks/tasks-agent-show/delta', 'tasks:agent:show', ['group' => '1', 'session' => '3', '--after-sequence' => 'run-1.7'], 0);
+        run_task_contract('tasks/tasks-agent-show/pending', 'tasks:agent:show', ['group' => '1', 'session' => '5'], 0);
     });
 
     it('renders the question list and an empty list', function (): void {
