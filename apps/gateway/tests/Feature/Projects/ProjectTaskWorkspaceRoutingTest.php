@@ -6,7 +6,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -15,7 +14,9 @@ use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -223,15 +224,6 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'publication' => RoutePublication::Private,
     ]);
     $ordinaryRoute->targets()->create(['instance_id' => $ordinary->id, 'position' => 0]);
-    $annotation = Task::topLevel()->create([
-        'project_id' => $shop->id,
-        'title' => 'Existing thread',
-        'brief' => 'An ordinary Instance.',
-        'status' => 'running',
-        'execution_mode' => TaskExecutionMode::ExistingThread,
-    ]);
-    $annotation->taskable()->associate($ordinary);
-    $annotation->save();
 
     $mismatched = Instance::query()->create([
         'project_id' => $shop->id,
@@ -248,6 +240,10 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
     ]);
     $managed->taskable()->associate($mismatched);
     $managed->save();
+
+    // Replay the routing migration with the task column it read on that release.
+    Schema::table('tasks', fn (Blueprint $table) => $table->string('execution_mode')->nullable());
+    DB::table('tasks')->whereNull('parent_id')->update(['execution_mode' => 'managed']);
 
     $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
     assert($migration instanceof Migration);

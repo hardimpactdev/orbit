@@ -1,4 +1,3 @@
-import { orbitTransport } from "./annotation/orbit-transport";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -24,17 +23,7 @@ if (import.meta.env.VITE_ORBIT_DEMO) {
 
 // Mount annotation overlay + document listeners once for the app lifetime.
 // Do not createRoot/teardown from AnnotationChrome (StrictMode double-mount races).
-const annotationServiceUrl = import.meta.env.VITE_ANNOTATION_SERVICE_URL;
 const annotation = mountAnnotation({
-    transports: annotationServiceUrl
-        ? [
-              orbitTransport({
-                  serviceUrl: annotationServiceUrl,
-                  threadId: import.meta.env.VITE_ANNOTATION_THREAD_ID,
-                  threadDiscoveryUrl: import.meta.env.DEV ? "/__annotate/thread" : undefined,
-              }),
-          ]
-        : [],
     dictation: {
         provider: import.meta.env.VITE_ANNOTATION_DICTATION_PROVIDER,
         postUrl: import.meta.env.VITE_ANNOTATION_DICTATION_POST_URL,

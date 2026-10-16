@@ -1,4 +1,3 @@
-import { notifyAnnotationUpdates } from "./annotations";
 import type { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { get } from "../api/client";
@@ -200,7 +199,6 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
             // would request every loaded page. The newest page is fetched once and merged by id.
             refreshAfterSubscribe(client, wasLive || downForMs() > FIRST_CONNECT_GRACE_MS);
 
-            notifyAnnotationUpdates();
             wasLive = true;
             setLiveness("live");
             publishSocket();
@@ -225,11 +223,6 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
                 typeof event.data === "object" &&
                 event.data !== null
             ) {
-                if (event.type === "annotation.updated") {
-                    notifyAnnotationUpdates();
-                    void client.invalidateQueries({ queryKey: ["instance-annotations"] });
-                    void client.invalidateQueries({ queryKey: ["task-groups"] });
-                }
                 applyEvent(client, event as RealtimeEvent);
             }
         });

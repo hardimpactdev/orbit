@@ -11,7 +11,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -743,32 +742,6 @@ describe('the abandoned workspace sweep', function (): void {
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
     });
 
-    it('never sweeps a user Instance attached to a non-managed group', function (): void {
-        claim_hol_enable();
-        $project = claim_hol_app();
-        $removed = claim_hol_recording_remover();
-        $managed = claim_hol_group($project, 'Ended');
-        $managed->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        $workspace = claim_hol_workspace($project, $managed, 'source_resolved');
-        $managed->taskable()->associate($workspace);
-        $managed->save();
-
-        $lookalike = claim_hol_group($project, 'Name collision');
-        $lookalike->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        $userInstance = claim_hol_workspace($project, $lookalike, 'source_resolved');
-        $annotation = claim_hol_group($project, 'Annotation');
-        $annotation->taskable()->associate($userInstance);
-        $annotation->forceFill([
-            'execution_mode' => TaskExecutionMode::ExistingThread,
-            'status' => TaskGroupStatus::Cancelled,
-        ])->save();
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and($removed->ids)->toBe([$workspace->id])
-            ->and(Instance::query()->find($userInstance->id))->not->toBeNull()
-            ->and($annotation->fresh()?->taskable_id)->toBe($userInstance->id);
-    });
-
     it('pushes a stored approval before it deletes a cancelled workspace', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
@@ -944,3 +917,27 @@ function claim_hol_fail_first_start(int $groupId): void
         throw new QueryException('sqlite', 'update "task_groups" set "status" = ?', ['running'], new PDOException('database is locked'));
     });
 }
+
+it('releases only expired top-level reservations without an execution mode', function (): void {
+    $this->freezeTime();
+    claim_hol_enable();
+    $project = claim_hol_app();
+    foreach ([
+        ['Expired', TaskGroupStatus::Reserved, now()->subSeconds(3601)],
+        ['Missing time', TaskGroupStatus::Reserved, null],
+        ['Recent', TaskGroupStatus::Reserved, now()],
+        ['Running', TaskGroupStatus::Running, now()->subSeconds(3601)],
+        ['Backlog', TaskGroupStatus::Backlog, null],
+    ] as [$title, $status, $reservedAt]) {
+        $group = claim_hol_group($project, $title);
+        $group->forceFill(['status' => $status, 'reserved_at' => $reservedAt])->save();
+    }
+
+    expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(2);
+
+    expect(Task::topLevel()->orderBy('id')->get()->pluck('status')->all())->toBe([
+        TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Reserved,
+        TaskGroupStatus::Running, TaskGroupStatus::Backlog,
+    ]);
+    expect(Task::query()->whereNotNull('parent_id')->get()->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
+});

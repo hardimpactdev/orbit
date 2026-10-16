@@ -91,9 +91,9 @@ The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads 
 
 A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd.
 
-The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, the Agentation keys, and the SSR keys when the Instance has an SSR port.
+The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the SSR keys when the Instance has an SSR port.
 
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives the Agentation keys when it has an Agentation port, and `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
+A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
 ## Presets
 
@@ -102,11 +102,8 @@ A preset configures a development Instance Process. It sets the command, the run
 | Preset | Result |
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
-| `annotator` | Installs the server and injection asset, reserves a port until proxy withdrawal, and publishes `/__orbit/annotator`. Uses systemd with restart on failure and refuses keep-alive. |
-| `agentation-mcp` | Runs the [Agentation](/reference/agentation) HTTP server, assigns its port, and publishes `/__orbit/agentation`. It refuses keep-alive. |
-| `antigravity-watch` | Runs the Agentation watcher. It needs the `agentation-mcp` Process and refuses keep-alive. Its default restart policy is `always`. |
 
-Explicit start or restart activates a stopped annotator. An identical create still respects its desired state. Sibling environment projection rewrites units without activation, including for sleeping workers and cold dependencies. See [Annotator Process](/reference/agentation#annotator-process).
+A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
 
 ## Create a Process
 
@@ -167,7 +164,7 @@ The response keeps `id: 41`, returns `working_directory: null`, and exposes the 
 
 Updating the Gateway record and changing a remote runtime are not one atomic transaction. The Gateway validates the request and acquires the operation locks before accepting new intent. Invalid input, an admission failure, or a detected ownership conflict before acceptance leaves the stored specification and runtime unchanged. Once accepted, the new specification and an incomplete convergence state are persisted before remote changes begin. The desired state remains unchanged. A later runtime failure does not roll the specification back or restore the old container layer.
 
-The Gateway records pending systemd activation before publishing changed bytes, and clears that intent only after reload and desired-state activation succeed. It also records the successfully activated unit hash. Pending activation requires reload and activation on retry even when published bytes and service state match. Legacy Processes without a hash or pending activation remain untouched when their unit bytes and desired state match; upgrading does not restart them. A lost activation response can cause one extra restart of a pending update, but cannot falsely complete it. Explicit restart always activates the service, including an unchanged, active annotator.
+The Gateway records pending systemd activation before publishing changed bytes, and clears that intent only after reload and desired-state activation succeed. It also records the successfully activated unit hash. Pending activation requires reload and activation on retry even when published bytes and service state match. Legacy Processes without a hash or pending activation remain untouched when their unit bytes and desired state match; upgrading does not restart them. A lost activation response can cause one extra restart of a pending update, but cannot falsely complete it. Explicit restart always activates the service, also when the unit is unchanged and active.
 
 Only a completed runtime convergence marks the update successful. A handled failure records the failed step and error code and returns failure. If the Gateway crashes after saving intent, its stored specification remains the recovery source; an incomplete update is not treated as successfully applied. A crash can leave the old runtime, a partially changed runtime, or the new runtime running before completion was recorded. Inspect the Process and retry after the lock is available; do not infer completion from a cached runtime status alone.
 
@@ -248,7 +245,7 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
 
-The `vp-dev`, `agentation-mcp`, and `antigravity-watch` presets apply only to development Instance Processes. Runtime definitions are copied only to production Instances.
+The `vp-dev` preset applies only to development Instance Processes. Runtime definitions are copied only to production Instances.
 
 ### A Node Process can name its account
 

@@ -66,7 +66,7 @@ Every event has the same shape. The broadcast name equals `type`.
 | Field | Contract |
 | --- | --- |
 | `type` | `<family>.<verb>`, such as `node.created`. |
-| `id` | The record's id. An annotation uses its string ID, and a deploy step uses its name. |
+| `id` | The record's id. A deploy step uses its name. |
 | `at` | ISO 8601 time of the broadcast, in the Gateway's timezone. |
 | `data` | The record as its list or show endpoint returns it, unless the catalogue names other fields. |
 
@@ -79,7 +79,7 @@ Every event has the same shape. The broadcast name equals `type`.
 }
 ```
 
-A `deleted` event carries a short snapshot, because the record is already gone. Task, Activity, annotation, and Process usage events are notices: they carry only identifiers, status, and counts. A client fetches the record over HTTP when it needs more.
+A `deleted` event carries a short snapshot, because the record is already gone. Task, Activity, and Process usage events are notices: they carry only identifiers, status, and counts. A client fetches the record over HTTP when it needs more.
 
 ## Event catalogue
 
@@ -191,13 +191,6 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 `id` is the operation ID. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
 
-### Annotation
-
-| Type | Fires when | Data |
-| --- | --- | --- |
-| `annotation.updated` | An annotation change commits. | `{ id, instanceId, revision }` |
-
-A client reads the current state with `annotation:list`, `GET /api/v1/instances/{instance}/annotations`. [Live updates](/reference/agent-annotation#live-updates) describes how the web app follows annotations.
 
 ### Tasks
 

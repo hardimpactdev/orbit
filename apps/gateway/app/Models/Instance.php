@@ -26,8 +26,6 @@ use Illuminate\Support\Carbon;
  * @property int $project_id
  * @property int|null $vite_port
  * @property int|null $ssr_port
- * @property int|null $annotator_port
- * @property int|null $agentation_port
  * @property int $node_id
  * @property string $name
  * @property string $source_layout
@@ -140,8 +138,6 @@ final class Instance extends Model
         'vp_environment',
         'vite_port',
         'ssr_port',
-        'agentation_port',
-        'annotator_port',
         'name',
         'source_layout',
         'checkout_path',
@@ -451,8 +447,6 @@ final class Instance extends Model
             'shared_paths' => 'array',
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
-            'agentation_port' => 'integer',
-            'annotator_port' => 'integer',
             'clone_candidate_id' => 'integer',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',

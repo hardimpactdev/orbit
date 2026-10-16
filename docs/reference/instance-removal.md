@@ -129,7 +129,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
 | `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside a task workspace](#processes-inside-a-task-workspace), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
-| `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
+| `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
 
@@ -203,7 +203,6 @@ The API, SDK, CLI, and Activity report removal progress in one shape. `DELETE` r
 Repeat the same command to resume at the first unfinished step. To take over a failed normal removal, repeat it with `--force`. Orbit upgrades the same operation, keeps its accepted member set and completed steps, and rechecks the remaining source identities before continuing. This also works when source finalization already moved a linked worktree into authenticated quarantine; completion removes its Git worktree entry but keeps the common repository, local branch, and sibling worktrees. You cannot downgrade a forced operation or change the mode of an operation that is still running; those requests return `instance.removal_conflict`.
 
 Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
-
 
 Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
 
