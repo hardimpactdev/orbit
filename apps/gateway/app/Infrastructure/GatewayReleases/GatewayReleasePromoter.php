@@ -73,6 +73,7 @@ final readonly class GatewayReleasePromoter
         array $phases,
         int $startedAt,
         ?GatewayRelease $record = null,
+        bool $held = false,
     ): DeployedGatewayRelease {
         $previous = $this->layout->currentReleaseId();
         $scheduled = null;
@@ -91,6 +92,20 @@ final readonly class GatewayReleasePromoter
             $previous = $this->switcher->switchTo($id);
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
             $this->recorder->progress($record, $phases);
+            if ($held) {
+                $release = $this->result(
+                    id: $id, sha: $sha, outcome: 'paused', trigger: $trigger,
+                    migrationsRan: $migrationsRan, previousId: $previous, snapshotPath: $snapshotPath,
+                    cleanupPaused: true, startedAt: $startedAt,
+                    phases: [...$phases, 'hold' => ['outcome' => 'held']],
+                    errorCode: 'gateway.release_held',
+                    message: 'The release is staged. Consumers remain held; verification and resume are operator actions.',
+                );
+                // Unlike a best-effort verified record, a held release must durably record its pause.
+                $this->recorder->write($release, $record);
+
+                return $release;
+            }
             $step = 'handoff';
             $handoffAt = CarbonImmutable::now('UTC');
             $phases['handoff'] = $this->runtime->handoff($id);

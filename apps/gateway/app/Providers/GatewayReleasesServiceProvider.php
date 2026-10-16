@@ -11,6 +11,7 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
+use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
@@ -55,6 +56,7 @@ use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseUnitConverger;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
+use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseDrain;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -69,6 +71,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(GatewayReleaseDrain::class, SystemdGatewayReleaseDrain::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
         $this->app->bind(
             GatewayReleaseWebBuild::class,

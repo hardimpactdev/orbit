@@ -9,6 +9,7 @@ use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
+use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -137,12 +138,12 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         return new GatewayReleaseAutomation(app(SettingRepository::class), $this->home.'/gateway-release.paused');
     }
 
-    public function deployer(): DeployGatewayReleaseAction
+    public function deployer(?GatewayReleaseDrain $drain = null): DeployGatewayReleaseAction
     {
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this));
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), $drain);
     }
 
     public function rollback(): RollbackGatewayReleaseAction
@@ -288,13 +289,16 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public bool $failSnapshot = false;
 
+    public int $snapshots = 0;
+
     public function snapshot(string $id): string
     {
+        $this->snapshots++;
         if ($this->failSnapshot) {
             throw new GatewayReleaseException('snapshot', 'gateway.release_disk_low', 'Not enough room for the snapshot.', 500);
         }
 
-        return $this->home.'/backups/pre-'.$id.'.sqlite';
+        return $this->home.'/backups/pre-'.$id.'-'.$this->snapshots.'.sqlite';
     }
 
     public function migrate(string $releasePath): void

@@ -199,6 +199,24 @@ It also removes each release directory without `REVISION` that is more than 1 ho
 
 Deploy keeps an incomplete directory that is the current or the previous release, because that release needs a repair. It also keeps a directory whose `REVISION` names another commit. Remove that one by hand. A directory that cannot be removed stays, and each verified release logs a warning with its id.
 
+#### Stage a release with consumers held
+
+For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, smoke, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its result is `paused`, with `gateway.release_held`; it is not a verified release.
+
+Before snapshot, migration and promotion, staging checks a root-owned `/run/orbit-gateway-drain/hold.json` bound to that exact SHA. The file lists the complete installed and loaded Gateway writer units and the previous release SHA. Every writer unit and timer must be masked, inactive with no MainPID and no remaining cgroup members. PHP-FPM must be masked and stopped, so no HTTP request, including health requests, reaches application code during migration.
+
+Every Gateway queue must have zero reservations. Other PHP processes refuse staging. Missing observations and changed inventory refuse it too. Waiting and delayed jobs stay intact. The manifest records an operator-maintained hold; it does not replace live checks or stop external console users by itself.
+
+Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its fields are `target_sha`, `source_sha` and `units`; it contains no secrets.
+
+Run staging from the reviewed prepared release containing the command, using shared configuration and stable release-layout paths. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.
+
+After staging, verify the ledger and new source while holds remain. Restore only PHP-FPM first, with Caddy allowing only GET `/up` and GET `/api/v1/gateway/status`; require the exact target SHA. Only after accepting schema and source may the operator release consumers and run normal handoff and smoke. Staging never resumes them.
+
+After the operator accepts the staged schema and exact HTTP source, restore the remaining unit definitions and run `gateway:release:deploy` for the same full SHA to complete the existing handoff, web publication and smoke pipeline. First confirm that this immutable release has no pending migrations. This finalization reruns Laravel migration discovery but does not intentionally introduce a new schema change; a failure still pauses. Keep automatic releases disabled until the operator clears the release hold separately.
+
+Do not use code rollback or migration down to claim deleted data was recovered. Restoring the paused record's snapshot is a separate operator action.
+
 #### Migrations and the snapshot
 
 Before every deploy switch, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.

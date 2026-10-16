@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\GatewayReleases;
 
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
+use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
@@ -39,6 +41,7 @@ final readonly class DeployGatewayReleaseAction
         private GatewayReleaseGuard $guard,
         private GatewayReleaseRetry $retry,
         private GatewayReleaseSupersession $supersession,
+        private ?GatewayReleaseDrain $drain = null,
     ) {}
 
     /**
@@ -51,19 +54,41 @@ final readonly class DeployGatewayReleaseAction
         return $this->lock->run(fn (): DeployedGatewayRelease => $this->deploy($commit, $force, $trigger, $record));
     }
 
+    /** Stage under a maintained operator hold; never start consumers or claim verification. */
+    public function stage(string $commit): DeployedGatewayRelease
+    {
+        if (! GatewayReleaseCommit::isSha($commit)) {
+            throw new GatewayReleaseException(step: 'resolve', errorCode: 'gateway.release_commit_invalid', message: 'Staging requires the full target SHA.', status: 422);
+        }
+
+        return $this->lock->run(function () use ($commit): DeployedGatewayRelease {
+            $this->assertDrained($commit);
+
+            return $this->deploy($commit, false, 'deploy', null, held: true);
+        });
+    }
+
+    private function assertDrained(string $sha): void
+    {
+        if (! $this->drain instanceof GatewayReleaseDrain) {
+            throw new GatewayReleaseException(step: 'drain', errorCode: 'gateway.release_not_drained', message: 'No drain observer is configured.');
+        }
+        $this->drain->assertHeld($sha);
+    }
+
     /**
      * The deploy itself, for a caller that already holds the release lock, such as adoption's second phase.
      *
      * @param  string  $trigger  what the release record names as its trigger
      * @param  GatewayRelease|null  $record  a queued record to claim, or null to start a new one
      */
-    public function deploy(string $commit, bool $force, string $trigger, ?GatewayRelease $record = null): DeployedGatewayRelease
+    public function deploy(string $commit, bool $force, string $trigger, ?GatewayRelease $record = null, bool $held = false): DeployedGatewayRelease
     {
         $startedAt = hrtime(true);
         $record = $this->recorder->begin($trigger, $commit, $record, $force);
 
         try {
-            $deployed = $this->attempt($commit, $force, $trigger, $record, $startedAt);
+            $deployed = $this->attempt($commit, $force, $trigger, $record, $startedAt, $held);
         } catch (Throwable $exception) {
             $this->recorder->fail($record, $exception, retryable: true, durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000));
 
@@ -79,7 +104,7 @@ final readonly class DeployGatewayReleaseAction
         return $deployed;
     }
 
-    private function attempt(string $commit, bool $force, string $trigger, ?GatewayRelease $record, int $startedAt): DeployedGatewayRelease
+    private function attempt(string $commit, bool $force, string $trigger, ?GatewayRelease $record, int $startedAt, bool $held = false): DeployedGatewayRelease
     {
         $step = 'prepare';
         $prepared = null;
@@ -99,17 +124,30 @@ final readonly class DeployGatewayReleaseAction
             $this->builder->refreshConfiguration($prepared->id);
             $phases['configuration'] = ['outcome' => 'cached'];
             $this->recorder->progress($record, $phases);
+            if ($held) {
+                $step = 'drain';
+                $this->assertDrained($prepared->sha);
+                $phases['drain'] = ['outcome' => 'held'];
+            }
             $step = 'snapshot';
             $taken = $this->database->snapshot($prepared->id);
             // A retry of a paused commit keeps naming the copy from before its first migration attempt.
             $snapshot = $this->recorder->pausedSnapshot($prepared->sha) ?? $taken;
             $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $taken, 'clean' => $snapshot];
             $this->recorder->progress($record, $phases);
+            if ($held) {
+                $step = 'drain';
+                $this->assertDrained($prepared->sha);
+            }
             $step = 'migrate';
             $this->database->migrate($prepared->path);
             $migrationsRan = true;
             $phases['migrate'] = ['outcome' => 'migrated'];
             $this->recorder->progress($record, $phases);
+            if ($held) {
+                // A failed barrier after migration must remain a paused schema change.
+                $this->assertDrained($prepared->sha);
+            }
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
             $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger, $record);
@@ -126,6 +164,7 @@ final readonly class DeployGatewayReleaseAction
             phases: $phases,
             startedAt: $startedAt,
             record: $record,
+            held: $held,
         );
     }
 
