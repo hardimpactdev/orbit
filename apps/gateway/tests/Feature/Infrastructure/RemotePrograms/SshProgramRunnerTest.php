@@ -112,6 +112,23 @@ describe('SshProgramRunner', function (): void {
             ->and($connection->commandTimeout)->toBe(60.0);
     });
 
+    it('runs under a selected account without changing the SSH identity', function (RemoteProgramLanguage $language): void {
+        $transport = new RemoteProgramTransport(remote_program_result("{\"outcome\":\"done\",\"data\":{}}\n"));
+        $program = new RemoteProgram('tests.program', $language, '', ['done'], 60, user: 'orbit-app-1');
+
+        remote_program_runner($transport)->run(remote_program_node(), $program);
+
+        [$connection, $command] = $transport->calls[0];
+        expect(array_slice($command->arguments, 0, 5))->toBe(['sudo', '-n', '-u', 'orbit-app-1', '-H']);
+        expect($command->arguments[5])->toBe($language === RemoteProgramLanguage::Python ? 'python3' : 'bash');
+        expect($connection->user)->toBe('orbit');
+    })->with([RemoteProgramLanguage::Python, RemoteProgramLanguage::Bash]);
+
+    it('rejects unsafe account names before a program can run', function (string $user): void {
+        expect(fn () => new RemoteProgramCatalog()->program('tools.read-vp-project', user: $user))
+            ->toThrow(InvalidArgumentException::class);
+    })->with(['-root', 'orbit;id', "orbit\nroot", 'orbit app', '', str_repeat('a', 33)]);
+
     it('sends a Git read credential only as protected input that is marked as a credential', function (): void {
         $transport = new RemoteProgramTransport(remote_program_result("{\"outcome\":\"done\",\"data\":{}}\n"));
 

@@ -971,13 +971,14 @@ When the Gateway sends the review request, it records the workspace HEAD and the
 - **Unchanged.** The Gateway applies the outcome.
 - **A newer implementer turn changed it.** That is a new handoff, for example after an operator talked to the implementer. The Gateway waits for a new receipt and a passing check.
 - **Orbit's own commit changed it.** HEAD's parent is the recorded HEAD, and HEAD's tree is the recorded tree. The Gateway stores that commit on the approval and publishes it.
-- **The reviewer changed it.** `workspace_unchanged` fails, and the outcome is not applied. The reminder asks the reviewer to revert and to request the changes.
+- **HEAD changed unexpectedly.** The Gateway consumes the old receipt and requests a fresh review of the delta from the previous review tree. It neither asks for assistance nor blames the reviewer.
+- **Only the working tree changed.** `workspace_unchanged` fails, and the outcome is not applied. The reminder describes the mismatch without attributing it to the reviewer. Restore the reviewed tree or request the needed changes from the implementer.
 
-After that reminder, the Gateway waits for a newer stopped reviewer turn. When that turn still leaves the workspace changed, the subtask asks for assistance. A failed workspace read is a communication failure, not a change.
+After that reminder, the Gateway waits for a newer stopped reviewer turn. When that turn still leaves the working tree changed on the same head, the subtask asks for assistance with the workspace mismatch as the cause. A failed workspace read is a communication failure, not a change.
 
 `changes_requested` sends the findings to the implementer and returns the subtask to `running`, once the implementer has stopped. The implementer then needs a new receipt and a passing check.
 
-`approved` waits until the implementer has stopped, because Orbit commits the whole workspace. The Gateway commits every change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval. Then it [publishes](#pull-request-and-settle-metrics) that commit. When publication fails, the next attempt publishes the stored commit again only while HEAD is still that commit and the tree still matches. A reset back to the HEAD before the approval is refused.
+`approved` waits until the implementer has stopped, because Orbit commits the whole workspace. The Gateway commits every change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval. Then it [publishes](#pull-request-and-settle-metrics) that commit. When publication fails, the next attempt publishes the stored commit again only while HEAD is still that commit and the tree still matches. A reset back to the HEAD before the approval requires a fresh review, rather than publishing the dropped commit.
 
 ## Pull request and settle metrics
 
@@ -1655,7 +1656,7 @@ Operator recovery commands keep recovery available without new markers, fences, 
 
 ### The reviewer does not edit
 
-The approval commit must hold only the work that the implementer handed off. So a reviewer that edits the workspace gets a reminder to revert and to request the change. A silent revert would hide the edit. The rule covers the workspace tree only. Agents run as the VM's `orbit` user with passwordless sudo, so the reviewer can verify behaviour with commands and disposable files outside the workspace.
+The approval commit must hold only the work that the implementer handed off. A working-tree mismatch gets a reminder to restore the reviewed tree or request the needed change. A hash comparison cannot identify who changed the workspace, so it must not blame the reviewer. A head change invalidates the old review and starts a new delta review instead. A silent revert would hide the change. The rule covers the workspace tree only. Agents run as the VM's `orbit` user with passwordless sudo, so the reviewer can verify behaviour with commands and disposable files outside the workspace.
 
 ### Transcripts outlive the task VM
 
@@ -1725,7 +1726,15 @@ The author list is Gateway configuration, like reviewer trust. A pull request ca
 
 The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
 
-Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit.
+Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit. The group execution lock owns admission of workspace head changes. A mechanical merge waits while a subtask is reviewing, a reviewer turn is working, or a handoff check is running. Publication may merge after the current review's approval has settled; it cannot overlap another review. Deferred merges run on a later tick after the review settles, without extra retries or longer waits.
+
+An unavailable superseded reviewer conversation does not hold workspace changes after its replacement settles. Orbit selects the current reviewer by the group's pointer, or the latest started conversation for that subtask. A legacy shared reviewer is superseded by the group's current reviewer. Any reviewer observed working still holds changes, including an older conversation. If the current reviewer's observation is unavailable, Orbit reports that failure for assistance instead of claiming a review is settling. Restore access to the agent runtime or retry the review to replace the unavailable conversation.
+
+If HEAD changes unexpectedly during a review, Orbit discards that turn's outcome and requests a fresh review of the delta from the previous review tree on the new head. It does not ask for assistance or attribute the head change to the reviewer. A working-tree change without a head change still needs resolution; its reminder and any assistance describe the workspace mismatch rather than claiming that the reviewer edited it.
+
+Reviews already blocked by the old workspace-change reminder recover on the next tick when Orbit's stored main-merge check identifies the current head and tree. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
+
+If Orbit cannot read the workspace during recovery, the assistance reason reports that inspection error instead of the old revert instruction. Recovery remains automatic after access returns, and unrelated assistance stays unchanged.
 
 A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
 

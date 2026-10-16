@@ -51,6 +51,16 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         );
     }
 
+    public function executeForApi(Instance $instance, RefreshInstanceEnvironmentRuntimeAction $runtime): InstanceEnvironmentResult
+    {
+        return $this->operations->run([$instance->id], function () use ($instance, $runtime): InstanceEnvironmentResult {
+            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
+            $result = $this->synchronize($context);
+
+            return $runtime->execute($context, $result);
+        });
+    }
+
     public function synchronizeRouteDomain(
         Instance $instance,
         InstanceEnvironmentRouteDomain $domain,
@@ -83,7 +93,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             $this->assertKeepsWorkloadKeys($context, $snapshot);
         }
 
-        $changed = $this->confirmed($this->writer->write($context, $contents));
+        $environmentChanged = $changed = $this->confirmed($this->writer->write($context, $contents));
         $this->store->recordSynchronizedKeys($context, array_keys($snapshot->values()));
         $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());
         $outcome = null;
@@ -113,6 +123,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             changed: $changed,
             keyCount: $snapshot->keyCount(),
             testing: $outcome,
+            environmentChanged: $environmentChanged,
         );
     }
 

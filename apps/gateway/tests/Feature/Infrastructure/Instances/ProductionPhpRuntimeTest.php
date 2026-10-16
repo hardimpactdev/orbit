@@ -2,9 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgram;
+use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Domain\RemotePrograms\RemoteProgramFailure;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -15,7 +23,9 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
+use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -29,6 +39,8 @@ use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
+
+pest()->group('subprocess');
 
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
     $project = Project::query()->create([
@@ -856,6 +868,191 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
 });
 
 /** @return array{Instance, Node} */
+it('prepares production config before resetting opcache and reports refresh skips and failures', function (string $receipt, int $exit, bool $php, bool|string $runtimeFails, string $expected, ?string $root): void {
+    [$instance] = orb214_runtime_instance();
+    $instance->project->update(['root' => 'apps/from-project/public']);
+    $instance->update(['root' => $root]);
+    if (! $php) {
+        $instance->update(['selected_php_version' => null]);
+    }
+    $programs = Mockery::mock(RemoteProgramRunner::class);
+    $prepared = false;
+    if ($php) {
+        $programs->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($instance): bool {
+            return $node->id === $instance->node_id && $program->name === 'instances.refresh-environment-config'
+                && $input === [
+                    'user' => $instance->production_user,
+                    'home' => $instance->production_home,
+                    'version' => '8.5',
+                    'application' => $instance->production_home.'/current/'.($instance->root === null ? 'apps/from-project' : 'apps/site'),
+                ];
+        })->andReturnUsing(function () use ($exit, $receipt, &$prepared): ProgramResult {
+            if ($exit === 2) {
+                throw new RuntimeException('SECRET SSH failure');
+            }
+            if ($exit !== 0) {
+                throw new RemoteProgramFailed('instances.refresh-environment-config', RemoteProgramFailure::NoResult);
+            }
+            $prepared = true;
+
+            return new ProgramResult($receipt, [], '');
+        });
+    } else {
+        $programs->shouldNotReceive('run');
+    }
+    $runtime = Mockery::mock(ProductionPhpRuntimeManager::class);
+    $shouldReset = $php && $exit === 0 && in_array($receipt, ['config_cached', 'config_uncached'], true);
+    if ($shouldReset) {
+        $call = $runtime->shouldReceive('refreshCache')->once()->withArgs(function (Instance $target) use ($instance, &$prepared): bool {
+            expect($prepared)->toBeTrue();
+
+            return $target->id === $instance->id;
+        });
+        if ($runtimeFails) {
+            $call->andThrow($runtimeFails === 'unexpected'
+                ? new RuntimeException('SECRET unexpected runtime output')
+                : new RuntimeConvergenceException(step: 'reset', errorCode: 'failed', message: 'SECRET runtime output'));
+        }
+    } else {
+        $runtime->shouldNotReceive('refreshCache');
+    }
+    $refresher = new RemoteInstanceEnvironmentRuntimeRefresher($programs, new RemoteProgramCatalog, $runtime);
+    $context = new InstanceEnvironmentContext(
+        instanceId: $instance->id, projectId: $instance->project_id, nodeId: $instance->node_id,
+        environment: 'production', path: $instance->production_home, executionUser: $instance->production_user,
+        laravel: true, routeId: null, routeDomain: null, nodeStatus: 'active', node: $instance->node,
+    );
+    if (str_starts_with($expected, 'env.')) {
+        try {
+            $refresher->refresh($context);
+            test()->fail('Refresh failure was swallowed.');
+        } catch (ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe($expected)->and($exception->getMessage())->not->toContain('SECRET');
+        }
+    } else {
+        expect($refresher->refresh($context))->toBe($expected);
+    }
+})->with([
+    'cached' => ['config_cached', 0, true, false, 'config_cache_and_opcache_refreshed'],
+    'uncached' => ['config_uncached', 0, true, false, 'opcache_refreshed_config_uncached'],
+    'no release' => ['no_current_release', 0, true, false, 'skipped_no_current_release'],
+    'no PHP' => ['', 0, false, false, 'skipped_no_php_version'],
+    'config failed' => ['SECRET config output', 1, true, false, 'env.config_cache_refresh_failed'],
+    'unconfirmed' => ['', 0, true, false, 'env.config_cache_refresh_failed'],
+    'config refused' => ['failed', 0, true, false, 'env.config_cache_refresh_failed'],
+    'runtime failed' => ['config_cached', 0, true, true, 'env.php_runtime_refresh_failed'],
+    'unexpected runtime failure' => ['config_cached', 0, true, 'unexpected', 'env.php_runtime_refresh_failed'],
+    'unexpected remote failure' => ['', 2, true, false, 'env.config_cache_refresh_failed'],
+])->with(['project root' => [null], 'instance root' => ['apps/site/public']]);
+
+it('runs config cache as the production user only for an existing cached current release', function (bool $current, bool $cached, int $fail, string $suffix): void {
+    $directory = sys_get_temp_dir().'/orbit-env-refresh-'.bin2hex(random_bytes(8));
+    $application = $directory.'/release'.$suffix;
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory.'/bin');
+    $files->ensureDirectoryExists($application.'/bootstrap/cache');
+    if ($current) {
+        symlink($directory.'/release', $directory.'/current');
+    }
+    if ($cached) {
+        $files->put($application.'/bootstrap/cache/config.php', 'old config');
+    }
+    $files->put($directory.'/bin/sudo', "#!/bin/bash\nprintf '%s\\n' \"\$*\" >> \"\$TRACE\"\n[[ \$1 == -u && \$2 == production-user && \$3 == -H ]] || exit 99\nshift 3\nexec \"\$@\"\n");
+    $files->put($directory.'/bin/php8.5', '#!/bin/bash'."\n".'[[ $PWD == "$HOME_FIXTURE/current$APPLICATION_SUFFIX" || $PWD == "$HOME_FIXTURE/release$APPLICATION_SUFFIX" ]] || exit 98'."\n"
+        .'if [[ $* == "artisan --version --no-interaction" ]]; then exec '.escapeshellarg(PHP_BINARY).' -r '.escapeshellarg('exit(is_array(require $argv[1]) ? 0 : 1);').' "$APP_CONFIG_CACHE"; fi'."\n"
+        .'[[ $* == "artisan config:cache" && $APP_CONFIG_CACHE != "$PWD/bootstrap/cache/config.php" ]] || exit 97'."\n"
+        .'[[ $FAIL_CONFIG != 3 ]] || exit 0'."\n"
+        .'printf "<?php return [123];" > "$APP_CONFIG_CACHE"'."\n"
+        .'[[ $FAIL_CONFIG != 1 ]] || exit 96'."\n"
+        .'[[ $FAIL_CONFIG != 2 ]] || printf "<?php return false;" > "$APP_CONFIG_CACHE"'."\n"
+        .'exit 0'."\n");
+    chmod($directory.'/bin/sudo', 0700);
+    chmod($directory.'/bin/php8.5', 0700);
+    $catalog = new RemoteProgramCatalog;
+    $program = $catalog->program('instances.refresh-environment-config');
+    $process = new Process(['python3', '-I', '-c', $catalog->bootstrap(), $program->name], env: [
+        'PATH' => $directory.'/bin:'.getenv('PATH'), 'TRACE' => $directory.'/trace', 'HOME_FIXTURE' => $directory, 'APPLICATION_SUFFIX' => $suffix, 'FAIL_CONFIG' => (string) $fail,
+    ]);
+    $process->setInput($program->source."\0".json_encode(['user' => 'production-user', 'home' => $directory, 'version' => '8.5', 'application' => $directory.'/current'.$suffix], JSON_THROW_ON_ERROR));
+    try {
+        $process->run();
+        expect($process->isSuccessful())->toBeTrue()->and($process->getErrorOutput())->toBe('');
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($result['outcome'])->toBe(match (true) {
+            ! $current => 'no_current_release',
+            $cached && $fail => 'failed',
+            $cached => 'config_cached',
+            default => 'config_uncached',
+        });
+        expect($files->get($directory.'/trace'))->toContain('-u production-user -H test');
+        if ($current && $cached && ! $fail) {
+            expect($files->get($application.'/bootstrap/cache/config.php'))->toBe('<?php return [123];');
+            expect(glob($application.'/bootstrap/cache/.orbit-config-*'))->toBe([]);
+        } elseif ($cached) {
+            expect($files->get($application.'/bootstrap/cache/config.php'))->toBe('old config');
+        } else {
+            expect($files->exists($application.'/bootstrap/cache/config.php'))->toBeFalse();
+        }
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with([[true, true, 0], [true, false, 0], [false, false, 0], [true, true, 1], [true, true, 2], [true, true, 3]])->with(['release root' => [''], 'nested application' => ['/apps/site']]);
+
+it('rebuilds real Laravel cached configuration in a nested application from the changed environment', function (string $cachedValue, string $vendorDirectory): void {
+    $directory = sys_get_temp_dir().'/orbit-env-laravel-'.bin2hex(random_bytes(8));
+    $application = $directory.'/release/apps/site';
+    $files = new Filesystem;
+    try {
+        foreach (['bootstrap/cache', 'config', 'storage/logs', 'storage/framework/views', $vendorDirectory] as $path) {
+            $files->ensureDirectoryExists($application.'/'.$path);
+        }
+        $files->ensureDirectoryExists($directory.'/bin');
+        symlink($directory.'/release', $directory.'/current');
+        symlink($directory.'/.env', $application.'/.env');
+        symlink(PHP_BINARY, $directory.'/bin/php8.5');
+        $files->put($directory.'/bin/sudo', "#!/bin/bash\n[[ \$1 == -u && \$2 == production-user && \$3 == -H ]] || exit 99\nshift 3\nexec \"\$@\"\n");
+        chmod($directory.'/bin/sudo', 0700);
+        $files->put($directory.'/.env', "QUEUE_CONNECTION=database\n");
+        $files->put($application.'/bootstrap/providers.php', '<?php return [];');
+        $files->put($application.'/bootstrap/app.php', '<?php return Illuminate\\Foundation\\Application::configure(basePath: dirname(__DIR__))->create();');
+        $files->put($application.'/'.$vendorDirectory.'/autoload.php', '<?php return require '.var_export(base_path('vendor/autoload.php'), true).';');
+        $files->put($application.'/artisan', '<?php require __DIR__.'.var_export('/'.$vendorDirectory.'/autoload.php', true).'; $app = require __DIR__."/bootstrap/app.php"; exit($app->handleCommand(new Symfony\\Component\\Console\\Input\\ArgvInput));');
+        $files->put($application.'/composer.json', json_encode([
+            'name' => 'orbit/env-refresh-fixture', 'config' => ['vendor-dir' => $vendorDirectory],
+        ], JSON_THROW_ON_ERROR));
+        $files->put($application.'/config/queue.php', "<?php return ['default' => env('QUEUE_CONNECTION', 'database'), 'typed' => ".$cachedValue.'];');
+        $environment = ['QUEUE_CONNECTION' => false, 'APP_CONFIG_CACHE' => false];
+        (new Process([PHP_BINARY, 'artisan', 'config:cache'], $application, $environment))->mustRun();
+        $cache = $application.'/bootstrap/cache/config.php';
+        $initial = (require $cache)['queue'];
+        expect($initial['default'])->toBe('database');
+        $files->put($directory.'/.env', "QUEUE_CONNECTION=redis\n");
+        $catalog = new RemoteProgramCatalog;
+        $program = $catalog->program('instances.refresh-environment-config');
+        $process = new Process(['python3', '-I', '-c', $catalog->bootstrap(), $program->name], env: [
+            ...$environment, 'PATH' => $directory.'/bin:'.getenv('PATH'),
+        ]);
+        $process->setInput($program->source."\0".json_encode([
+            'user' => 'production-user', 'home' => $directory, 'version' => '8.5', 'application' => $directory.'/current/apps/site',
+        ], JSON_THROW_ON_ERROR));
+        $process->mustRun();
+        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['outcome'])->toBe('config_cached')
+            ->and($process->getErrorOutput())->toBe('')
+            ->and((require $cache)['queue']['default'])->toBe('redis')
+            ->and((require $cache)['queue']['typed'])->toEqual($initial['typed']);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with([
+    'scalar' => ['null'],
+    'autoloaded enum' => ['Symfony\\Component\\String\\TruncateMode::WordBefore'],
+    'autoloaded class' => ['new Carbon\\CarbonImmutable("2026-01-01T00:00:00+00:00")'],
+])->with([
+    'application vendor' => ['vendor'],
+    'custom Composer vendor-dir' => ['dependencies'],
+    'shared repository autoloader' => ['../../vendor'],
+]);
+
 function orb214_runtime_instance(): array
 {
     $project = Project::query()->create([

@@ -155,15 +155,17 @@ class RecipeGitTest(unittest.TestCase):
 
     def test_only_a_root_owned_receipt_allows_a_later_pin_to_replace_a_previous_recipe_build(self):
         self.install(recipe)
+        # The write-only publish fake must match the real publisher's explicit mode, not the caller's umask.
+        (self.apt / 'orbit-git.json').chmod(0o644)
         self.origin = 'https://vendor.example/git resolute/main amd64 Packages'
         bumped = {name: {**pin, 'version': PIN.replace('2.55.0', '2.56.0')} for name, pin in self.tools.items()}
         original_stat = recipe.Path.stat
-        for owner, writable, accepted in ((0, False, True), (1234, False, False), (0, True, False)):
+        for owner, writable, accepted in ((0, 0, True), (1234, 0, False), (0, 0o020, False), (0, 0o002, False)):
             def receipt_stat(path, *args, owner=owner, writable=writable, **kwargs):
                 state = original_stat(path, *args, **kwargs)
                 if path.name == 'orbit-git.json':
                     fields = list(state)
-                    fields[0] |= 0o020 if writable else 0
+                    fields[0] = (fields[0] & ~0o022) | writable
                     fields[4] = owner
                     return os.stat_result(fields)
                 return state
@@ -172,7 +174,7 @@ class RecipeGitTest(unittest.TestCase):
                 report = recipe.assess(bumped, self.installed, git_names=self.tools)
             self.assertEqual(report['git']['status'], 'different' if accepted else 'unsupported_newer')
             self.assertEqual(report['git']['changed'], accepted)
-        with patch.object(recipe.Path, 'stat', lambda path, *args, **kwargs: receipt_stat(path, *args, owner=0, writable=False, **kwargs)), \
+        with patch.object(recipe.Path, 'stat', lambda path, *args, **kwargs: receipt_stat(path, *args, owner=0, writable=0, **kwargs)), \
              patch.object(recipe, 'run', side_effect=self.command):
             self.installed['git'] = '1:2.54.0-vendor1'
             self.assertEqual(recipe.assess(bumped, self.installed, git_names=self.tools)['git']['status'], 'unsupported_newer')

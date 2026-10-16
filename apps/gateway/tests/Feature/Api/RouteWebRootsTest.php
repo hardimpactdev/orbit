@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
@@ -756,7 +757,7 @@ function web_root_production_deploy_arguments(Instance $instance): array
         Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock(),
     );
     $instance->update(['source_layout' => 'checkout']);
-    new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
+    new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
 
     return $ssh->commands[0]->arguments;
 }
