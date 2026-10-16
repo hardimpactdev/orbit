@@ -863,7 +863,8 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200"
+                "0200",
+                "0222"
             ]
         },
         {
@@ -1193,6 +1194,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
+            "title": "ADR 0222: Give task VMs a cloned topology seed",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0206",
+                "0222"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1254,7 +1280,8 @@
                 "0215",
                 "0216",
                 "0217",
-                "0218"
+                "0218",
+                "0222"
             ]
         },
         {
