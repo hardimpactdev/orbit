@@ -8073,7 +8073,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply."
+                            }
+                          },
+                          "required": [
+                            "warnings"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -8095,7 +8114,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply."
+                            }
+                          },
+                          "required": [
+                            "warnings"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -10417,7 +10455,7 @@
         "x-orbit-operation": "start",
         "responses": {
           "202": {
-            "description": "Accepted. The `instance.deploy` operation is queued; follow it with `operation:show`.",
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11127,6 +11165,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11249,6 +11300,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11390,6 +11454,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -16550,9 +16627,8 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": [
-                "instance.deploy"
-              ]
+              "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$(?![\\s\\S])",
+              "maxLength": 64
             }
           },
           {
@@ -16561,9 +16637,8 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": [
-                "instance"
-              ]
+              "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])",
+              "maxLength": 32
             }
           },
           {
@@ -16576,7 +16651,7 @@
             }
           }
         ],
-        "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.",
+        "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.",
         "responses": {
           "200": {
             "description": "The request succeeded.",

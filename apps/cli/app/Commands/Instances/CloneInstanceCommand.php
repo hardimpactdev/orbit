@@ -118,6 +118,7 @@ HELP;
                 'configured_branch' => $instance->selectedBranch,
                 'preview_domain' => $route->domain,
                 'selected_release' => $releases->selectedRelease,
+                'warnings' => $instance->warnings,
                 'request_ids' => [
                     'clone' => $instance->requestId,
                     'releases' => $releases->requestId,
@@ -125,6 +126,10 @@ HELP;
             ]);
 
             return self::SUCCESS;
+        }
+
+        foreach ($instance->warnings as $warning) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->warning('Warning: '.$warning));
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [

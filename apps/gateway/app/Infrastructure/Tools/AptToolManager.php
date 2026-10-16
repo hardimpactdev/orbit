@@ -293,6 +293,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
 
         $names[] = 'openssh-server';
         $names[] = 'wireguard-tools';
+        $names = [...$names, ...($this->recipe ?? new RecipeLoader()->load())->gitPackages];
 
         return array_values(array_unique($names));
     }

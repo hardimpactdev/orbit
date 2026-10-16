@@ -4,7 +4,7 @@ description: "How the Gateway ships a program to a Node: one file per program, a
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,lib/production-shared-paths.sh}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,lib/production-shared-paths.sh,instances/refresh-environment-config.py}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
   - apps/gateway/tests/Unit/Architecture/InlineRemoteScriptTest.php
@@ -82,6 +82,8 @@ A caller matches the outcome and maps it to its own error codes. It never sees t
 
 `SshProgramRunner` implements the runner over SSH. It connects to the Node's WireGuard address as the Node's user, with the Gateway's key and pinned host keys, and sends the program on standard input. A call can pass a shorter timeout than the program's and a cancellation check.
 
+An internal caller may select a validated Unix account through the catalog's optional `user` argument. The runner prefixes that program's command with `sudo -n -u <user> -H`; SSH still connects as the enrolled account. This is not a caller-supplied API option. Project metadata inspection uses the Instance account on production, so version files are read with application permissions rather than as the store owner.
+
 ### Git read credentials
 
 A program that reads a private repository receives the [Git read environment](/reference/github-app#the-checkout-cannot-inherit-the-token) in its input under `git_read`, a map of environment variables. The program sets them only for the command that reads the origin. Input with a credential travels as protected input and is marked as a Git credential, so it never reaches a task VM ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). Bash programs take no credential.
@@ -110,6 +112,7 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | --- | --- |
 | `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal). |
 | `instances.check-publication` | Checks whether an origin branch or tag contains a commit. |
+| `instances.refresh-environment-config` | Rebuilds an existing current release config cache as the production Instance user, verifies it through the application's Artisan bootstrap, and atomically replaces it before env-sync resets FPM opcache. |
 | `instances.remove-source` | Checks and deletes an active checkout in one run. |
 | `instances.prepare-source-removal` | Records the removal journal before finalization. |
 | `instances.read-source-removal-state` | Reports whether a recorded source is present, quarantined, or removed. |

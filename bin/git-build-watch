@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Report newer git-core PPA builds and Git USNs for review. Never install or change recipe pins."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import urllib.parse
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+PPA = 'https://api.launchpad.net/1.0/~git-core/+archive/ubuntu/ppa'
+NOTICES = 'https://ubuntu.com/security/notices.json'
+CODENAMES = {'26.04': 'resolute'}
+
+
+def fetch_json(url):
+    with urllib.request.urlopen(url, timeout=60) as response:
+        if not response.geturl().startswith('https://'):
+            raise RuntimeError('The update check redirected away from HTTPS.')
+        return json.load(response)
+
+
+def newer(candidate, pinned):
+    result = subprocess.run(['dpkg', '--compare-versions', candidate, 'gt', pinned], check=False)
+    if result.returncode not in (0, 1):
+        raise RuntimeError('Could not compare Git build versions.')
+    return result.returncode == 0
+
+
+def check(recipe):
+    codename = CODENAMES[recipe['ubuntu']['release']]
+    pinned = recipe['tools']['git']['version']
+    findings = []
+    query = urllib.parse.urlencode({'ws.op': 'getPublishedSources', 'source_name': 'git', 'exact_match': 'true',
+                                   'status': 'Published', 'distro_series': 'https://api.launchpad.net/1.0/ubuntu/' + codename})
+    url = PPA + '?' + query
+    for _ in range(20):
+        page = fetch_json(url)
+        for entry in page['entries']:
+            version = entry['source_package_version']
+            if newer(version, pinned):
+                findings.append('New git-core PPA build: `' + version + '` (pinned: `' + pinned + '`).')
+        url = page.get('next_collection_link')
+        if not url:
+            break
+        if not url.startswith(PPA + '?'):
+            raise RuntimeError('Unexpected Launchpad pagination URL.')
+    else:
+        raise RuntimeError('Launchpad pagination exceeded the check limit.')
+    offset = 0
+    # Scan every page: the API does not contractually guarantee publication-date ordering.
+    for _ in range(100):
+        page = fetch_json(NOTICES + '?' + urllib.parse.urlencode({'details': 'git', 'limit': 20, 'offset': offset}))
+        for notice in page['notices']:
+            if notice['published'][:10] < recipe['git']['usn_since']:
+                continue
+            if any(package['name'] == 'git' and package.get('is_source')
+                   for packages in notice['release_packages'].values() for package in packages):
+                findings.append('Git security notice: https://ubuntu.com/security/notices/' + notice['id']
+                                + ' (' + notice['published'][:10] + '). Review PPA patch coverage.')
+        offset += len(page['notices'])
+        if offset >= page['total_results']:
+            break
+        if not page['notices']:
+            raise RuntimeError('Ubuntu notice pagination stopped before the last result.')
+    else:
+        raise RuntimeError('Ubuntu notice pagination exceeded the check limit.')
+    return sorted(set(findings))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--recipe', default=ROOT / 'apps/gateway/resources/machine-software/recipe.json')
+    parser.add_argument('--output', required=True)
+    arguments = parser.parse_args()
+    findings = check(json.loads(Path(arguments.recipe).read_text()))
+    body = ('<!-- orbit-git-build-watch -->\nGit is an exact recipe artifact and receives no unattended security updates.\n\n'
+            + '\n'.join('- ' + finding for finding in findings)
+            + '\n\nReview the signed PPA indexes and patch coverage, bump all recipe Git pins together, mirror the files, '
+            'and converge the fleet. Advance `git.usn_since` only after reviewing the covered notices. '
+            'See docs/reference/compute-drivers.md and ADR 0216.\n') if findings else ''
+    Path(arguments.output).write_text(body)
+    print(f'{len(findings)} Git update signals')
+
+
+if __name__ == '__main__':
+    main()

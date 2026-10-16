@@ -5,8 +5,8 @@ covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
-  - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
-  - apps/gateway/app/Data/Tools/**
+  - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/*_{add_vp_environment_to_instances,migrate_legacy_vp_deploy_steps}.php}
+  - apps/gateway/{app/Data/Tools/**,resources/remote/tools/**,resources/remote/lib/vp-store.py}
   - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
   - apps/gateway/app/Http/Requests/Tools/**
   - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
@@ -95,6 +95,28 @@ Either failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 5
 A `composer` prerequisite failure during `app-dev` or `app-prod` convergence leaves the manager `failed` at the same step and error code. The role or `node:add` reports `node.tool_manager_materialization_failed` in `details.error_code`. [Role operations on one Node](/reference/node-provisioning#role-operations-on-one-node) describes how a failed role reports its step.
 
 An `apt` install, update, or remove returns `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed`. Update and removal keep the recorded version. Retry the same command.
+
+## Project environments in the Vite+ store
+
+Before a JavaScript deploy step, Orbit reads the release's manifest, lockfile, and Node version files as data without running Project code. The lockfile selects the exact vite-plus release, including catalog, workspace, npm aliases, and prereleases. Node must have an exact pin in `.node-version`, `.nvmrc`, or `engines.node`, in that order. The pin must also satisfy Project and locked vite-plus engine constraints. Ranges and moving tags cannot silently change the deployed runtime.
+
+An npm or pnpm lockfile selects the package-manager family. An exact `packageManager` pin (or exact package-manager engine or lockfile metadata) supplies its version and must agree with that family. Missing or ambiguous locked requirements fail before build. Registry metadata is read only to install missing content, using the Project's `.npmrc` registry and credentials.
+
+The machine recipe owns vp itself. Deploys never upgrade it. A recipe version older than the locked vite-plus version fails the prerequisite and needs a normal recipe update. When all exact runtimes exist, the prerequisite takes a read-only path without a lock. Installation waits for the store-owner lock with a timeout and rechecks content after acquiring it.
+
+The enrolled account is the only store writer. Orbit adopts existing exact runtimes, including recipe-installed pnpm and the manual Node 24.22.0 and npm 11.12.0, without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place. Project scripts and hooks never run as the store owner.
+
+The `tools.read-vp-project` [remote program](/reference/remote-programs) reads manifests and version files as data, with production reads running as the Instance account.
+
+Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, checkout path, and prerequisite status in `vp_environment`. Preparation retains earlier checkout references, including after installation or a failed build. The selected release and every retained release keep their runtimes, so rollback can select retained code without fetching or rebuilding its prerequisites.
+
+Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references under the installation lock and removes only Orbit-installed versions with no remaining references; recipe and adopted content stays.
+
+Doctor batches checks by store. Missing recorded active content is drift. Lock timeouts, invalid requirements, and unreadable stores are unverifiable, not store drift.
+
+The installer saves each component's verified checksum receipt as soon as it publishes that component. If a later package-manager download or integrity check fails, retry keeps the Node receipt rather than treating that Node version as adopted content. Collection can remove it once no checkout references it.
+
+See [Deploy prerequisites](/reference/deployments#vite-store-prerequisite) for build execution and early failures.
 
 ## Discover installed packages
 

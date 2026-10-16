@@ -18,6 +18,8 @@ use Throwable;
 
 final readonly class TaskReviewOutcome
 {
+    private const string StaleReviewInspectionFailure = 'Orbit could not inspect the workspace while recovering a stale review after a main merge: ';
+
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
@@ -32,6 +34,7 @@ final readonly class TaskReviewOutcome
         private TaskTurnFetcher $turnFetcher,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
+        private TaskSessionObserver $observer,
     ) {}
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -202,6 +205,9 @@ final readonly class TaskReviewOutcome
             TaskFinalReview::log($group, 'final review approved', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'commit_sha' => $head]);
             $scheduler->publishApprovedCommit($group, $task, $receipt);
 
+            return true;
+        }
+        if (app(TaskWorkspaceHead::class)->held($group, $receipt)) {
             return true;
         }
         $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
@@ -420,7 +426,8 @@ final readonly class TaskReviewOutcome
      */
     public function startFinalReview(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
+        if ($task->status !== TaskStatus::Running || app(TaskWorkspaceHead::class)->held($group)
+            || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
         try {
@@ -547,7 +554,8 @@ final readonly class TaskReviewOutcome
      * from the pair recorded with the review request, unless a newer implementer turn explains the
      * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
      * stopped reviewer turn before it looks again. That later turn applies the outcome when the
-     * workspace matches, and asks for assistance when it still differs. Another poll of the reminded
+     * workspace matches, and asks for assistance when the working tree still differs. A changed
+     * HEAD starts a fresh delta review without attributing the change to an actor. Another poll of the reminded
      * turn does neither. A failed read is a communication failure, not a change. A review notified
      * before a baseline existed has nothing to compare, so its outcome applies as before.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
@@ -581,6 +589,12 @@ final readonly class TaskReviewOutcome
 
             return 'wait';
         }
+        $expectedHead = $this->committedApproval($receipt) ? $receipt->commit_sha : $task->review_workspace_head;
+        if (is_string($expectedHead) && $expectedHead !== '' && $current->head !== $expectedHead) {
+            $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
+
+            return 'reopened';
+        }
         $scheduler->remindOrAssist($group, $task, $reviewer, [
             new TaskRubricItem('workspace_unchanged', false, TaskScheduler::WorkspaceChangedReminder),
         ]);
@@ -592,6 +606,132 @@ final readonly class TaskReviewOutcome
         }
 
         return 'reminded';
+    }
+
+    /**
+     * Older deployments consumed the receipt and asked for assistance after Orbit moved HEAD.
+     * Run before the assistance gate; only Orbit's exact recorded merge tree can lift that failure.
+     */
+    public function recoverStaleReview(TaskScheduler $scheduler, Task $group, Task $task): bool
+    {
+        if ($task->status !== TaskStatus::Reviewing || ! $task->assistance_requested
+            || ! $this->workspaceFailure($task)
+            || ($group->assistance_requested && ! $this->workspaceFailure($group))
+            || $group->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
+            return false;
+        }
+        $head = $task->review_workspace_head;
+        if (! is_string($head) || $head === '') {
+            return false;
+        }
+        try {
+            $current = $this->workspaceSnapshot($group);
+        } catch (TaskCheckException $exception) {
+            $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
+            $this->reportStaleReviewInspectionFailure($group, $task, $reason);
+            $scheduler->recordCommunicationFailure($task, $group, $reason);
+
+            return false;
+        }
+        if ($current->head === $head || ! $this->recordedMainMerge($group, $current)) {
+            return false;
+        }
+        $observation = $this->observer->observe($group, $task);
+        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        if (! $observation->available || $reviewer === null || $scheduler->isWorking($reviewer)
+            || $scheduler->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+            return false;
+        }
+
+        return $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $task->review_handled_comment_id, recoverAssistance: true);
+    }
+
+    private function reportStaleReviewInspectionFailure(Task $group, Task $task, string $reason): void
+    {
+        // Only replace this recovery's failure. An operator may have requested unrelated
+        // assistance while the workspace inspection was in flight.
+        DB::transaction(function () use ($group, $task, $reason): void {
+            $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            if ($lockedTask->status !== TaskStatus::Reviewing || ! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)) {
+                return;
+            }
+            TaskAssistance::apply($lockedTask, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+            if ($lockedGroup->assistance_requested && $this->workspaceFailure($lockedGroup)
+                && ! $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
+                TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+            }
+        });
+        $task->refresh();
+        $group->refresh();
+    }
+
+    private function workspaceFailure(Task $task): bool
+    {
+        $reason = $task->assistance_reason;
+
+        return $task->assistance_kind === AssistanceKind::Failure && is_string($reason)
+            && (str_starts_with($reason, self::StaleReviewInspectionFailure) || in_array($reason, [
+                'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder,
+                'Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.',
+            ], true));
+    }
+
+    private function recordedMainMerge(Task $group, TaskWorkspaceSnapshot $current): bool
+    {
+        // The gate starts after the merge: its before snapshot already contains the merged head.
+        // A finished gate also records after. Never infer ownership from Git parents or commit text.
+        return TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
+            ->where('kind', TaskCheckKind::BaseMerge)
+            ->where(function ($query) use ($current): void {
+                $query->where(function ($query) use ($current): void {
+                    $query->where('head_before', $current->head)->where('tree_before', $current->tree);
+                })->orWhere(function ($query) use ($current): void {
+                    $query->where('head_after', $current->head)->where('tree_after', $current->tree);
+                });
+            })->exists();
+    }
+
+    private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment, bool $recoverAssistance = false): bool
+    {
+        // Keep the previous tree until the packet is sent so it remains the delta base.
+        $previousHead = $task->review_workspace_head;
+        $advanced = DB::transaction(function () use ($group, $task, $handledComment, $recoverAssistance): bool {
+            $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            if ($lockedTask->status !== TaskStatus::Reviewing || $lockedTask->review_attempt !== $task->review_attempt) {
+                return false;
+            }
+            if ($recoverAssistance) {
+                if (! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)
+                    || ($lockedGroup->assistance_requested && ! $this->workspaceFailure($lockedGroup))
+                    || $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
+                    return false;
+                }
+                $lockedGroup->update(TaskAssistance::cleared());
+            }
+            $lockedTask->update([
+                ...($recoverAssistance ? TaskAssistance::cleared() : []),
+                'review_handled_comment_id' => $handledComment,
+                'review_attempt' => $lockedTask->review_attempt + 1,
+                'review_reminder_attempt' => null,
+                'review_reminder_input_id' => null,
+            ]);
+
+            return true;
+        });
+        if (! $advanced) {
+            return false;
+        }
+        $task->refresh();
+        $group->refresh();
+        TaskFinalReview::log($group, 'workspace head changed during review', [
+            'subtask_id' => $task->id, 'previous_head' => $previousHead, 'head' => $current->head,
+            'cause' => $this->recordedMainMerge($group, $current) ? 'orbit_main_merge' : 'unattributed_head_change',
+        ]);
+        $this->nudgeReviewer($scheduler, $task, $reviewer);
+
+        return true;
     }
 
     private function workspaceMatchesReview(Task $task, TaskComment $receipt, TaskWorkspaceSnapshot $current): bool

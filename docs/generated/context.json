@@ -1674,6 +1674,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -2631,6 +2632,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Task",
                 "Tool"
             ],

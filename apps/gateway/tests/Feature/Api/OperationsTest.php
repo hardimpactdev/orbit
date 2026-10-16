@@ -312,6 +312,30 @@ describe('reading operations', function (): void {
         ($this->asCaller)()->getJson('/api/v1/operations?status=sleeping')->assertStatus(422);
     });
 
+    it('lists nothing for a well-formed kind or target type that no operation has', function (string $query): void {
+        start_deploy($this);
+
+        ($this->asCaller)()->getJson("/api/v1/operations?{$query}")->assertOk()->assertJsonPath('data', []);
+    })->with([
+        'kind' => 'kind=instance.rollback',
+        'target type' => 'target_type=route',
+    ]);
+
+    it('refuses a kind or target type in another form', function (string $query, string $field, string $message): void {
+        ($this->asCaller)()->getJson("/api/v1/operations?{$query}")
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath("error.details.{$field}.0", $message);
+    })->with([
+        'kind without a verb' => ['kind=instance', 'kind', 'The kind field format is invalid.'],
+        'kind in upper case' => ['kind=Instance.Deploy', 'kind', 'The kind field format is invalid.'],
+        'kind with three parts' => ['kind=instance.deploy.now', 'kind', 'The kind field format is invalid.'],
+        'kind longer than its column' => ['kind=instance.'.str_repeat('a', 56), 'kind', 'The kind field must not be greater than 64 characters.'],
+        'target type with a verb' => ['target_type=instance.deploy', 'target_type', 'The target type field format is invalid.'],
+        'target type in upper case' => ['target_type=Instance', 'target_type', 'The target type field format is invalid.'],
+        'target type longer than its column' => ['target_type='.str_repeat('a', 33), 'target_type', 'The target type field must not be greater than 32 characters.'],
+    ]);
+
     it('needs access to the target Node, and lists only operations the caller can access', function (): void {
         $id = start_deploy($this)->json('data.id');
         $stranger = Node::query()->create([

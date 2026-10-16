@@ -1,0 +1,55 @@
+name: Git build watch
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - bin/git-build-watch
+      - .github/workflows/git-build-watch.yml
+      - apps/gateway/resources/machine-software/recipe.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: git-build-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'nckrtl/orbit'
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check published PPA builds and Ubuntu Git notices
+        run: python3 bin/git-build-watch --output "$RUNNER_TEMP/git-build-watch.md"
+      - name: Upload the review signal
+        uses: actions/upload-artifact@v7
+        with:
+          name: git-build-watch
+          path: ${{ runner.temp }}/git-build-watch.md
+      - name: Open or update the Git update issue
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/git-build-watch.md`, 'utf8');
+            if (!body) return;
+            const {owner, repo} = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {owner, repo, state: 'open', creator: 'github-actions[bot]', per_page: 100});
+            const existing = issues.find(issue => !issue.pull_request && issue.body?.includes('<!-- orbit-git-build-watch -->'));
+            if (existing) {
+              if (existing.body !== body) await github.rest.issues.update({owner, repo, issue_number: existing.number, body});
+            } else {
+              await github.rest.issues.create({owner, repo, title: 'Review Git recipe security updates', body, assignees: [owner]});
+            }
+        # This job can only publish issues on trusted main/scheduled executions.
