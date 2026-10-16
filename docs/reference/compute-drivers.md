@@ -4,8 +4,9 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**}
-  - .github/workflows/php-build-mirror.yml
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py}
+  - .github/workflows/{php-build-mirror,git-build-watch}.yml
+  - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_upcloud_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
@@ -65,6 +66,24 @@ An `artifact` tool has an `artifacts` object keyed by every declared architectur
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
+Git and `git-man` are exact Debian artifacts from Launchpad's `ppa:git-core/ppa`, built for the recipe's Ubuntu release. The `git.packages` list names the owned packages. Both belong to `common`, so every Node profile and task VM image gets the same build. The loader requires matching versions and SHA-256 pins for both architectures. Convergence accepts the pinned build already installed, replaces an Ubuntu build after proving its origin, and refuses a different third-party build with `origin:git` or `origin:git-man`. The Ubuntu provenance rules for other tools stay unchanged.
+
+After verifying both installed package versions, convergence and image builds save their versions in root-owned `/etc/apt/orbit-git.json`. A later recipe pin may replace that recorded build. A missing, malformed, writable, or unowned receipt proves no ownership; an installed version that differs from its receipt still needs Ubuntu provenance or the current exact pin.
+
+Convergence backs up and removes git-core PPA entries for `resolute main`, including deb822 sources with inline signing keys. It preserves unrelated source entries and refuses mixed or unexpected git-core entries. Dry runs report `retire_git_source` and `pin_git` without writing. An Orbit APT preference permits only the pinned Git version, so unattended upgrades cannot introduce a second owner. The APT Tool Manager protects both packages from adoption and removal.
+
+Image builds refresh the snapshot indexes before assessing Git with the Ubuntu tools. Both installers retire the PPA before installation and publish the preference only after the install succeeds. Backups live in `/etc/apt/`, outside APT source directories. A source file with no remaining entries is removed.
+
+Installed binaries built from source package `git` but absent from `git.packages` are refused as `git-dependency:<package>` before Git source or package changes. This includes siblings such as `gitk` and `git-gui`, even at the pinned version. An operator must remove these unmanaged siblings before convergence; the recipe owns only its declared package set.
+
+PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release retains its existing URL and now holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
+
+Exact Git pins block automatic Ubuntu and PPA security updates. Orbit owns the delay between an upstream fix and a reviewed recipe bump. The daily `Git build watch` workflow queries Launchpad for published Git builds for the recipe release and Ubuntu’s security notice API. It opens or updates one GitHub issue for a newer build or a notice published on or after `git.usn_since`. Network and parsing failures fail the workflow visibly.
+
+Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices. See [ADR 0216](/decisions/0216-run-one-exact-php-build-everywhere#git-artifacts-and-security-updates).
+
+Git bumps remain separate from nightly snapshot and PHP build pull requests. The snapshot flow changes only its date; the PHP bump authenticates Sury's indexes and knows PHP's package sets. Adding Launchpad key verification and a separately reviewed Git bump to that flow is outside this change. To bump Git by hand, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
+
 The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
 An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
@@ -81,12 +100,12 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 
 | Profile | Tools in addition to `common` |
 | --- | --- |
-| `common` | Bootstrap packages: `ca-certificates`, `curl`, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
+| `common` | Bootstrap packages: `ca-certificates`, `curl`, Git and `git-man` from git-core, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
 | `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package, and `php:8.5` |
-| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
+| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
 | `app-prod` | The application prerequisites and JavaScript/Composer managers, as for `app-dev`, and `php:8.5` only. The PHP step installs `php:8.4` when an Instance selects it |
-| `websocket` | Caddy, Composer, Git, OpenSSL, `php-curl`, `php-xml`, and `php:8.5` |
-| `ci-runner` | `acl`, `attr`, Git, `unzip`, and `php:8.5`. A roleless Node that runs CI jobs, such as Sabre, selects it with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). It is not a Node role |
+| `websocket` | Caddy, Composer, OpenSSL, `php-curl`, `php-xml`, and `php:8.5` |
+| `ci-runner` | `acl`, `attr`, `unzip`, and `php:8.5`. A roleless Node that runs CI jobs, such as Sabre, selects it with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). It is not a Node role |
 | `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
 | `base` | The full `app-dev` set, explicit image-build packages described below, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
 
@@ -108,7 +127,7 @@ The recipe is the single source of truth for Orbit's PHP build. Every machine th
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
 | `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
 | `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
-| `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
+| `artifact_mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
 A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
@@ -117,7 +136,7 @@ Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
 - `php.ci` names an undeclared version;
-- `php.purge_extras` names another profile than `ci-runner`, or `php.mirror` is not an HTTPS URL.
+- `php.purge_extras` names another profile than `ci-runner`, or `artifact_mirror` is not an HTTPS URL.
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
 
@@ -138,7 +157,7 @@ Before it changes anything, the installer checks the machine:
 Then it gets the files:
 
 1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
-2. It downloads each pinned file that is not installed at its version. It tries `php.mirror` first, then the pin's URL.
+2. It downloads each pinned file that is not installed at its version. It tries `artifact_mirror` first, then the pin's URL.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
 4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one.
 
@@ -195,13 +214,13 @@ Library names are mapped to their `php -m` names first: `opcache.so` is `zend op
 
 A package at its pinned version can still hold other files, for example a `.so` that setup-php overwrote. In apply mode, the installer runs `dpkg --verify` on every recipe package. It installs a package again from its pinned file when a file's checksum changed or a file is missing. A changed conffile stays, because it may hold an operator's settings. The result lists these packages under `repaired`.
 
-#### The PHP build mirror
+#### The recipe artifact mirror
 
-The `PHP build mirror` workflow, `.github/workflows/php-build-mirror.yml`, keeps Orbit's copy of the pinned files. It runs on each push to `main` that changes the recipe or `bin/php-build`, and on manual dispatch.
+The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`, keeps Orbit's copy of the pinned files. It runs on each push to `main` that changes the recipe, `bin/php-build`, the artifact URL helper, or the workflow, and on manual dispatch.
 
-`bin/php-build mirror` downloads every pinned PHP file of every version and architecture, and checks its digest. The workflow uploads each missing file to the `php-build-mirror` release, named `<package>_<sha256>.deb`. That release is a prerelease and never the latest release.
+`bin/php-build mirror` downloads every external Debian artifact of every architecture and checks its recipe digest. The workflow lists published assets before downloading, skips those files, and uploads each missing file to the `php-build-mirror` release, named `<package>_<digest>.deb`. It retains the existing release URL. That release is a prerelease and never the latest release.
 
-Sury deletes a build from its pool when it publishes the next one. The mirror keeps rollbacks, new Nodes, and CI on the exact build after that.
+Sury and Launchpad delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
 
 #### Bump the PHP build
 
@@ -211,7 +230,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 [Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
 
-1. The [mirror](#the-php-build-mirror) workflow publishes the new files.
+1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 1. Each task VM host [builds a new base image](#build-the-base-image).
 2. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
 3. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
