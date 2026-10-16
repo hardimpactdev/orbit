@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\TaskVm;
 use Illuminate\Database\Query\Builder;
@@ -34,7 +35,7 @@ final readonly class DestroyEndedTaskVmsAction
                         ->where('assistance_reason', 'like', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'%')
                         ->orWhere('assistance_reason', 'like', RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%')))
                     ->whereExists($workspace)))
-            ->get(['id']);
+            ->get()->filter(static fn (TaskVm $vm): bool => TaskWorkspaceOwnership::ownsVmWorkspaces($vm));
 
         foreach ($vms as $vm) {
             DestroyTaskVm::dispatch($vm->id);

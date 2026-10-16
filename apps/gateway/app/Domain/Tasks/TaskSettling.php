@@ -223,7 +223,7 @@ final readonly class TaskSettling
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
         } catch (Throwable $exception) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(), replaceFailure: true);
+            $this->workspaces->recordFailure($group, $exception, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
             if (is_string($backoffKey)) {
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }

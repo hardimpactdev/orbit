@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -36,18 +37,24 @@ final readonly class ForgetTaskVmWorkspacesAction
 
     public function execute(TaskVm $vm): void
     {
+        TaskWorkspaceOwnership::requireVmWorkspaces($vm);
         if ($vm->state !== TaskVmState::Destroying) {
             throw new TaskVmException('task_vm.job_failed', "Task VM [{$vm->name}] must be destroying before its workspace is forgotten.", 500);
         }
 
+        if ($vm->node_id === null) {
+            return;
+        }
+
         foreach (Instance::query()->with('project')->where('node_id', $vm->node_id)->orderBy('id')->get() as $instance) {
+            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
             if (in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) && ! $instance->routes()->exists()) {
-                $this->deleteRow($instance, null);
+                $this->deleteRow($instance, null, $vm);
 
                 continue;
             }
             $member = $this->journal($instance, $vm);
-            $this->finish($instance, $member);
+            $this->finish($instance, $member, $vm);
         }
     }
 
@@ -83,10 +90,11 @@ final readonly class ForgetTaskVmWorkspacesAction
         });
     }
 
-    private function finish(Instance $instance, InstanceRemovalMember $member): void
+    private function finish(Instance $instance, InstanceRemovalMember $member, TaskVm $vm): void
     {
         $operation = $member->removal;
         foreach (InstanceRemovalStep::cases() as $step) {
+            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
             $member->refresh();
             $done = match ($step) {
                 InstanceRemovalStep::SourcePreparation => $member->source_prepared_at,
@@ -108,7 +116,7 @@ final readonly class ForgetTaskVmWorkspacesAction
                     ]),
                     InstanceRemovalStep::SourceFinalization => $member->update(['source_finalized_at' => now(), 'finalization_receipt' => 'deleted-with-'.$member->source_identity]),
                     InstanceRemovalStep::RuntimeCleanup => $this->forgetRuntime($member),
-                    InstanceRemovalStep::RowDeletion => $this->deleteRow($instance, $member),
+                    InstanceRemovalStep::RowDeletion => $this->deleteRow($instance, $member, $vm),
                 };
             } catch (\Throwable $exception) {
                 $operation->update(['status' => InstanceRemovalStatus::Failed, 'current_step' => $step, 'failed_step' => $step, 'error_code' => 'instance.removal_incomplete']);
@@ -126,9 +134,10 @@ final readonly class ForgetTaskVmWorkspacesAction
         $member->update(['runtime_cleaned_at' => now()]);
     }
 
-    private function deleteRow(Instance $instance, ?InstanceRemovalMember $member): void
+    private function deleteRow(Instance $instance, ?InstanceRemovalMember $member, TaskVm $vm): void
     {
-        DB::transaction(function () use ($instance, $member): void {
+        DB::transaction(function () use ($instance, $member, $vm): void {
+            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
             if (InstanceTransfer::query()->where('instance_id', $instance->id)->open()->exists()) {
                 throw new TaskVmException('task_vm.job_failed', "Instance [{$instance->id}] has an open transfer.", 409);
             }

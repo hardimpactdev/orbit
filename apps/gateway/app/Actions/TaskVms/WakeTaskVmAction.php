@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
@@ -44,6 +45,9 @@ final readonly class WakeTaskVmAction
     {
         if ($vm?->state !== TaskVmState::Parked) {
             return true;
+        }
+        if (! TaskWorkspaceOwnership::ownsVmWorkspaces($vm)) {
+            return false;
         }
         ResumeTaskVm::dispatch($vm->id);
 

@@ -1473,7 +1473,11 @@ Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the 
 
 A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path.
 
-When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
+Task VM cleanup requires proven ownership of every Instance on its Node. The ended-VM sweep, queued destroy and resume jobs, provider destruction, and offline workspace deletion recheck that authority. A queued job or `destroying` state does not preserve permission after an ownership conflict appears.
+
+Ownership refusals use `Workspace ownership refused: ` and retain associations; they are not operational removal failures. Generic failure text stored by an earlier release also cannot bypass the ownership check. A VM without a group or workspace can still be removed, and an unambiguously owned workspace whose VM died can still be cleaned up offline.
+
+When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. An operational failure keeps the reason `Workspace removal failed: `; an ownership refusal keeps `Workspace ownership refused: `. The retry does not read GitHub.
 
 Cleanup refuses conflicting task owners or multiple task associations. A detached Instance created before ownership was recorded stays in place until an operator establishes its ownership; Orbit does not backfill ownership from names, branches or paths. Losing an association never grants cleanup authority.
 

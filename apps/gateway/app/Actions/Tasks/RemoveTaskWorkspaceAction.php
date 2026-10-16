@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceOwnership;
+use App\Domain\Tasks\TaskWorkspaceOwnershipException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -23,7 +24,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -40,6 +40,8 @@ use Throwable;
  */
 final readonly class RemoveTaskWorkspaceAction
 {
+    public const string OwnershipRefusedPrefix = 'Workspace ownership refused: ';
+
     public const string RemovalFailedPrefix = 'Workspace removal failed: ';
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
@@ -85,7 +87,7 @@ final readonly class RemoveTaskWorkspaceAction
         $instance = $this->find($group);
 
         if (! $instance instanceof Instance && $group->fresh()?->taskable instanceof Instance) {
-            throw new RuntimeException('Task workspace ownership is missing or ambiguous. The Instance was retained.');
+            throw new TaskWorkspaceOwnershipException;
         }
 
         if ($instance instanceof Instance) {
@@ -102,7 +104,11 @@ final readonly class RemoveTaskWorkspaceAction
     public function remove(Instance $instance, Task $group): void
     {
         if (! TaskWorkspaceOwnership::owns($group, $instance)) {
-            throw new RuntimeException('Task workspace ownership is missing or ambiguous. The Instance was retained.');
+            throw new TaskWorkspaceOwnershipException;
+        }
+        $vm = TaskVm::forNode($instance->node_id);
+        if ($vm instanceof TaskVm) {
+            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
         }
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
@@ -110,7 +116,7 @@ final readonly class RemoveTaskWorkspaceAction
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
             if ($vm->group_id !== $group->id) {
-                throw new RuntimeException('The Instance is on another task VM. The Instance was retained.');
+                throw new TaskWorkspaceOwnershipException;
             }
             $this->removeWithTaskVm($instance, $vm);
 
@@ -142,7 +148,8 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
     {
-        TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
+        $prefix = $exception instanceof TaskWorkspaceOwnershipException ? self::OwnershipRefusedPrefix : ($prefix ?? self::RemovalFailedPrefix);
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $prefix.$exception->getMessage(), replaceFailure: true);
     }
 
     /** Clears assistance that this removal recorded, once the checkout is gone. Another cause is left alone. */
@@ -155,7 +162,7 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix)) {
+        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix) && ! str_starts_with($reason, self::OwnershipRefusedPrefix)) {
             return;
         }
 

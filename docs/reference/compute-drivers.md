@@ -355,6 +355,8 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
+Cleanup requires [proven task ownership](/reference/tasks) of every Instance on the VM Node. An unknown or conflicting owner prevents wake, teardown, VM destruction, and offline row deletion. The scheduler and queued destroy/resume jobs check current ownership, including retries in `destroying`. Orbit checks again before the provider deletes the VM and before it deletes each Instance row. An empty VM can still be removed when its group is gone; a VM with unowned workspace rows stays.
+
 When the group ends, Orbit removes its workspace with the VM. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
@@ -383,7 +385,9 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
-The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+An ownership refusal records `Workspace ownership refused:` and does not qualify for this fallback. A generic removal-failure reason from an earlier release also needs current ownership proof.
+
+The job reads the VM on its host only after ownership is proven. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.

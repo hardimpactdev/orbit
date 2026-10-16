@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
@@ -26,9 +27,11 @@ final readonly class DeleteTaskVmAction
 
     public function execute(TaskVm $vm): void
     {
+        TaskWorkspaceOwnership::requireVmWorkspaces($vm);
         try {
             $vm->update(['state' => TaskVmState::Destroying, 'error_code' => null, 'error_message' => null]);
             $this->runtime->release($vm);
+            TaskWorkspaceOwnership::requireVmWorkspaces($vm);
             $this->provider->destroy($vm);
             $vm->update(['pi_token' => null]);
             $this->workspaces->execute($vm);

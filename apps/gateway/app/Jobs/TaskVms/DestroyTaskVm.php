@@ -10,6 +10,7 @@ use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
@@ -52,6 +53,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
             return;
         }
+        TaskWorkspaceOwnership::requireVmWorkspaces($vm);
         $workspace = $vm->node_id !== null && Instance::query()->where('node_id', $vm->node_id)->exists();
         // A parked VM is stopped on purpose, not dead: its workspace removal starts it, and destroy waits for that.
         if ($workspace && $vm->state === TaskVmState::Parked) {
@@ -74,6 +76,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             if ($node instanceof Node) {
                 // The VM is gone, so the Node is unreachable: offline removal sheds its role and forgets its Processes
                 // without probing the dead address.
+                TaskWorkspaceOwnership::requireVmWorkspaces($vm);
                 $nodes->execute($node, $this->gateway(), offline: true, force: true, deleted: true);
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null]);

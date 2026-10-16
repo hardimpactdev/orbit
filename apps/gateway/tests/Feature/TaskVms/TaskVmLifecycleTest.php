@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Actions\TaskVms\FailTaskVmAction;
+use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceRemovalStatus;
@@ -44,10 +47,12 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSettling;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\Tasks\TaskWorkspaceOwnershipException;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
@@ -67,6 +72,7 @@ use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -734,6 +740,48 @@ describe(DestroyTaskVm::class, function (): void {
         }]);
     });
 
+    it('rechecks ownership after destruction admission before the provider call', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $other = tvm_life_group(TaskGroupStatus::Cancelled);
+        Queue::fake();
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(DestroyTaskVm::class);
+        $this->provider->observations = [null];
+        TaskVm::updated(static function (TaskVm $changed) use ($vm, $other, $instance): void {
+            if ($changed->id === $vm->id && $changed->state === TaskVmState::Destroying) {
+                $other->taskable()->associate($instance);
+                $other->save();
+            }
+        });
+
+        expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(TaskWorkspaceOwnershipException::class);
+
+        expect($this->provider->calls)->toBe(['observe']);
+        expect($instance->fresh())->not->toBeNull();
+        expect($group->fresh()?->taskable_id)->toBe($instance->id);
+        expect($other->fresh()?->taskable_id)->toBe($instance->id);
+    });
+
+    it('rechecks ownership before forgetting a row after offline journal work', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $other = tvm_life_group(TaskGroupStatus::Cancelled);
+        $vm->update(['state' => TaskVmState::Destroying]);
+        InstanceRemovalMember::updated(static function (InstanceRemovalMember $member) use ($other, $instance): void {
+            if ($member->instance_id === $instance->id && $member->runtime_cleaned_at !== null) {
+                $other->taskable()->associate($instance);
+                $other->save();
+            }
+        });
+
+        expect(fn () => app(ForgetTaskVmWorkspacesAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+
+        expect($instance->fresh())->not->toBeNull();
+        expect($group->fresh()?->taskable_id)->toBe($instance->id);
+        expect($other->fresh()?->taskable_id)->toBe($instance->id);
+        expect(InstanceRemovalMember::query()->sole()->row_deleted_at)->toBeNull();
+        expect($this->provider->calls)->toBe([]);
+    });
+
     it('revokes the key, deletes the VM and removes the Node before the row is destroyed', function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $node->processes()->create([
@@ -784,7 +832,7 @@ describe(DestroyTaskVm::class, function (): void {
         $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
         Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
 
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(TaskWorkspaceOwnershipException::class);
 
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
@@ -1191,3 +1239,87 @@ describe('failed VM claims', function (): void {
         expect($vm->fresh())->state->toBe(TaskVmState::Destroying)->pi_token->toBeNull();
     });
 });
+
+it('carries completion and cancellation ownership refusal through the ended VM sweep and queued retries', function (string $action, TaskVmState $state): void {
+    $node = tvm_life_node('conflicting-workspace', '10.44.0.129', role: RoleName::AppDev);
+    $group = tvm_life_group($action === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Cancelled);
+    $vm = tvm_life_vm($group, $state, $node);
+    $instance = tvm_life_workspace($group, $node);
+    $other = tvm_life_group(TaskGroupStatus::Cancelled);
+    foreach ([$group, $other] as $attached) {
+        $attached->taskable()->associate($instance);
+        $attached->save();
+    }
+    app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability();
+    Queue::fake();
+    $this->provider->observation = new VmObservation(false, null);
+
+    if ($action === 'complete') {
+        app(CompleteTaskGroupAction::class)->execute($group);
+    } else {
+        expect(fn () => app(CancelTaskGroupAction::class)->execute($group))->toThrow(TaskWorkspaceOwnershipException::class);
+    }
+    $group->refresh();
+    expect($group->assistance_reason)->toStartWith(RemoveTaskWorkspaceAction::OwnershipRefusedPrefix);
+    expect(DestroyTaskVm::removalFailed($group))->toBeFalse();
+    expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(0);
+    expect(app(TaskSettling::class)->removeAbandonedWorkspaces())->toBe(0);
+
+    // Payloads queued by the old release and its generic error text also require current positive authority.
+    $group->update(['assistance_reason' => RemoveTaskWorkspaceAction::RemovalFailedPrefix.'Legacy failure']);
+    expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(0);
+    expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(TaskWorkspaceOwnershipException::class);
+    if ($state === TaskVmState::Parked) {
+        expect(app(WakeTaskVmAction::class)->forVm($vm))->toBeFalse();
+        expect(fn () => app()->call([new ResumeTaskVm($vm->id), 'handle']))->toThrow(TaskWorkspaceOwnershipException::class);
+    }
+    expect(fn () => app(DeleteTaskVmAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+    $vm->update(['state' => TaskVmState::Destroying]);
+    expect(fn () => app(ForgetTaskVmWorkspacesAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+    expect($this->provider->calls)->toBe([]);
+    Queue::assertNothingPushed();
+    expect($instance->fresh())->not->toBeNull();
+    expect($group->fresh()?->taskable_id)->toBe($instance->id);
+    expect($other->fresh()?->taskable_id)->toBe($instance->id);
+    expect(InstanceRemoval::query()->count())->toBe(0);
+})->with(['complete', 'cancel'])->with([TaskVmState::Ready, TaskVmState::Parked, TaskVmState::Destroying]);
+
+it('requires ownership of every VM workspace before teardown or final deletion', function (): void {
+    $node = tvm_life_node('multiple-workspaces', '10.44.0.129', role: RoleName::AppDev);
+    $group = tvm_life_group(TaskGroupStatus::Cancelled);
+    $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+    $owned = tvm_life_workspace($group, $node);
+    // Historical or inconsistent rows must not be erased just because one workspace is owned.
+    $unknownId = DB::table('instances')->insertGetId([
+        'project_id' => $this->project->id, 'node_id' => $node->id,
+        'name' => 'user-workspace', 'checkout_path' => '/srv/user-workspace', 'status' => 'reserved',
+    ]);
+    Queue::fake();
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($owned, $group))->toThrow(TaskWorkspaceOwnershipException::class);
+    expect(fn () => app(DeleteTaskVmAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+    $vm->update(['state' => TaskVmState::Destroying]);
+    expect(fn () => app(ForgetTaskVmWorkspacesAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+    expect($this->provider->calls)->toBe([]);
+    expect(Instance::query()->whereIn('id', [$owned->id, $unknownId])->count())->toBe(2);
+    expect(InstanceRemoval::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('refuses an orphan VM with a workspace but permits an empty orphan VM', function (bool $workspace): void {
+    $node = tvm_life_node('orphan-vm', '10.44.0.129', role: RoleName::AppDev);
+    $group = tvm_life_group(TaskGroupStatus::Cancelled);
+    $vm = tvm_life_vm($group, TaskVmState::Destroying, $node);
+    if ($workspace) {
+        tvm_life_workspace($group, $node);
+    }
+    $vm->update(['group_id' => null]);
+    if ($workspace) {
+        expect(fn () => app(DeleteTaskVmAction::class)->execute($vm))->toThrow(TaskWorkspaceOwnershipException::class);
+        expect($this->provider->calls)->toBe([]);
+        expect(Instance::query()->where('node_id', $node->id)->count())->toBe(1);
+    } else {
+        app(DeleteTaskVmAction::class)->execute($vm);
+        expect($this->provider->calls)->toBe(['destroy']);
+    }
+})->with([true, false]);

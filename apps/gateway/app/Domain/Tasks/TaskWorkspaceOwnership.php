@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\Builder;
 
 /** One ownership predicate for discovery and the final removal check. Unknown or conflicting ownership stays. */
@@ -39,7 +40,7 @@ final readonly class TaskWorkspaceOwnership
                     });
             })
             ->whereNotExists(function ($other): void {
-                $other->selectRaw('1')->from('tasks as other_tasks')->whereNull('other_tasks.parent_id')
+                $other->selectRaw('1')->from('tasks as other_tasks')
                     ->where('other_tasks.taskable_type', TaskableType::Instance)
                     ->whereColumn('other_tasks.taskable_id', 'instances.id')->whereColumn('other_tasks.id', '!=', 'tasks.id');
             });
@@ -54,5 +55,33 @@ final readonly class TaskWorkspaceOwnership
     public static function owns(Task $group, Instance $instance): bool
     {
         return self::forGroup($group)->where('instances.id', $instance->id)->exists();
+    }
+
+    /** VM-wide operations affect every Instance on the Node, including unrelated or unowned rows. */
+    public static function ownsVmWorkspaces(TaskVm $vm): bool
+    {
+        $current = TaskVm::query()->find($vm->id);
+        if (! $current instanceof TaskVm) {
+            return false;
+        }
+        if ($current->node_id === null) {
+            return true;
+        }
+        $count = Instance::query()->where('node_id', $current->node_id)->count();
+        if ($count === 0) {
+            return true;
+        }
+        $group = Task::topLevel()->find($current->group_id);
+
+        return $group instanceof Task
+            && self::forGroup($group)->where('instances.node_id', $current->node_id)->count() === $count;
+    }
+
+    public static function requireVmWorkspaces(TaskVm $vm): void
+    {
+        $vm->refresh();
+        if (! self::ownsVmWorkspaces($vm)) {
+            throw new TaskWorkspaceOwnershipException;
+        }
     }
 }
