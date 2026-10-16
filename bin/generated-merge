@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Merge maintained indexes, then regenerate contracts in a private source merge.
+
+Install with --install. Git calls --merge O A B path current-label other-label.
+The inner --sources driver deliberately ignores derived snapshots; it must never
+call the outer driver recursively. No network, hooks, or source-tree writes.
+"""
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+DRIVER = Path(__file__).resolve()
+ARTIFACTS = (
+    'docs/generated/context.json', 'docs/docs.json', 'docs/decisions/overview.mdx',
+    'docs/openapi.json', 'apps/web/src/api/schema.d.ts', 'apps/gateway/resources/mcp/tools.json',
+)
+MISSING = object()
+
+
+def run(*args, cwd=None, env=None):
+    return subprocess.run(args, cwd=cwd, env=env, check=True, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+
+
+def git(root, *args):
+    return run('git', '-C', str(root), *args).strip()
+
+
+def install(root):
+    command = f'{shlex.quote(str(DRIVER))} --merge %O %A %B %P %X %Y'
+    git(root, 'config', '--local', 'merge.orbit-generated.name', 'Regenerate Orbit contracts')
+    git(root, 'config', '--local', 'merge.orbit-generated.driver', command)
+    git(root, 'config', '--local', 'merge.orbit-generated.recursive', 'binary')
+
+
+def identity(value):
+    if isinstance(value, str):
+        return ('value', value)
+    if isinstance(value, dict):
+        for key in ('tab', 'group', 'source'):
+            if key in value:
+                return (key, value[key])
+    raise ValueError('navigation list has no stable identity')
+
+
+def merge_value(base, ours, theirs):
+    """Conservative three-way merge. Never union conflicting scalar values."""
+    if ours == theirs or theirs == base:
+        return ours
+    if ours == base:
+        return theirs
+    if all(isinstance(value, dict) for value in (base, ours, theirs)):
+        result = {}
+        for key in dict.fromkeys([*base, *ours, *theirs]):
+            value = merge_value(base.get(key, MISSING), ours.get(key, MISSING), theirs.get(key, MISSING))
+            if value is not MISSING:
+                result[key] = value
+        return result
+    if all(isinstance(value, list) for value in (base, ours, theirs)):
+        def keyed(values):
+            result = {identity(value): value for value in values}
+            if len(result) != len(values):
+                raise ValueError('duplicate navigation identity')
+            return result
+        b, a, c = map(keyed, (base, ours, theirs))
+        # Existing order is maintained. Concurrent insertions in the same gap
+        # have a stable order in either merge direction. Reordering is explicit.
+        common = set(b) & set(a) & set(c)
+        baseline = [key for key in b if key in common]
+        if any([key for key in branch if key in common] != baseline for branch in (a, c)):
+            raise ValueError('concurrent navigation reorder')
+        placements = {}
+        for branch in (a, c):
+            anchor = None
+            for key in reversed(branch):
+                if key in b:
+                    anchor = key
+                else:
+                    if key in placements and placements[key] != anchor:
+                        raise ValueError('concurrent navigation insertion moved')
+                    placements[key] = anchor
+        result = []
+        for anchor in [*b, None]:
+            for key in sorted(key for key, position in placements.items() if position == anchor):
+                result.append(merge_value(MISSING, a.get(key, MISSING), c.get(key, MISSING)))
+            if anchor is not None:
+                value = merge_value(b[anchor], a.get(anchor, MISSING), c.get(anchor, MISSING))
+                if value is not MISSING:
+                    result.append(value)
+        return result
+    raise ValueError('both branches changed the same maintained value')
+
+
+def merge_text(base, ours, theirs):
+    with tempfile.TemporaryDirectory(prefix='orbit-text-merge-') as directory:
+        files = [Path(directory) / name for name in ('ours', 'base', 'theirs')]
+        for file, text in zip(files, (ours, base, theirs)):
+            file.write_text(text)
+        return run('git', 'merge-file', '-p', *map(str, files))
+
+
+def overview(base, ours, theirs):
+    # A few retired numbers were historically reused. Preserve those distinct
+    # baseline records without allowing new duplicate decision numbers.
+    numbers = re.findall(r'^\| \[?(\d{4})', base, flags=re.M)
+    legacy_duplicates = {number for number in numbers if numbers.count(number) > 1}
+    def tables(text):
+        extracted = []
+        def replace(match):
+            lines = match.group().splitlines()
+            rows = {}
+            for line in lines[2:]:
+                cells = line.split('|')
+                match_number = re.search(r'\d{4}', cells[1])
+                if match_number is None:
+                    raise ValueError('ADR row has no decision number')
+                number = match_number.group()
+                key = (number, cells[2].strip() if number in legacy_duplicates else '')
+                if key in rows:
+                    raise ValueError('duplicate ADR row')
+                rows[key] = line
+            extracted.append((lines[:2], rows))
+            return f'ORBIT_ADR_TABLE_{len(extracted) - 1}\n'
+        return re.sub(r'(?:^\|[^\n]*\n)+', replace, text, flags=re.M), extracted
+    (b, bt), (a, at), (c, ct) = map(tables, (base, ours, theirs))
+    if not len(bt) == len(at) == len(ct):
+        raise ValueError('ADR table layout changed')
+    merged = merge_text(b, a, c)
+    for index, ((bh, br), (ah, ar), (ch, cr)) in enumerate(zip(bt, at, ct)):
+        header = merge_value(bh, ah, ch)
+        rows = merge_value(br, ar, cr)
+        order = sorted(rows, key=lambda key: (key[0], list(br).index(key) if key in br else len(br)))
+        table = '\n'.join([*header, *[rows[key] for key in order]]) + '\n'
+        merged = merged.replace(f'ORBIT_ADR_TABLE_{index}\n', table)
+    return merged
+
+
+def sources(arguments):
+    base, ours, theirs, path = arguments
+    if path == 'docs/docs.json':
+        values = [json.loads(Path(file).read_text()) for file in (base, ours, theirs)]
+        Path(ours).write_text(json.dumps(merge_value(*values), indent=2, ensure_ascii=False) + '\n')
+    elif path == 'docs/decisions/overview.mdx':
+        Path(ours).write_text(overview(*[Path(file).read_text() for file in (base, ours, theirs)]))
+    elif path not in ARTIFACTS:
+        raise ValueError(f'unexpected generated path: {path}')
+    # Other files are regenerated, never treated as source inputs.
+
+
+LOCKS = ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock')
+
+
+def check_dependencies(tree, root):
+    for lock in LOCKS:
+        if (tree / lock).read_bytes() != (root / lock).read_bytes():
+            raise ValueError(f'dependency_lock_changed: {lock}; install the merged locked '
+                             'dependencies and regenerate explicitly; refusing stale dependencies')
+
+
+def dependencies(tree, root):
+    check_dependencies(tree, root)
+    # Copy Composer's loader so its baseDir points into the preview, not into
+    # the source checkout. Third-party packages themselves can be shared.
+    for project in ('apps/docs', 'apps/gateway'):
+        source = root / project / 'vendor'
+        destination = tree / project / 'vendor'
+        destination.mkdir()
+        for entry in source.iterdir():
+            target = destination / entry.name
+            if entry.name == 'composer':
+                shutil.copytree(entry, target)
+            elif entry.is_file():
+                shutil.copy2(entry, target)
+            else:
+                target.symlink_to(entry, target_is_directory=True)
+        env = root / project / '.env'
+        if env.exists():
+            (tree / project / '.env').symlink_to(env)
+    (tree / 'apps/web/node_modules').symlink_to(root / 'apps/web/node_modules', target_is_directory=True)
+
+
+def regenerate(tree):
+    env = dict(os.environ, APP_CONFIG_CACHE=str(tree / 'private-config.php'),
+               ORBIT_DOCS_ROOT=str(tree / 'docs'))
+    run('php', str(tree / 'apps/docs/artisan'), 'orbit:docs-index', cwd=tree, env=env)
+    run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
+    run(str(tree / 'bin/mcp-tools'), cwd=tree, env=env)
+    run(str(tree / 'apps/web/node_modules/.bin/openapi-typescript'), str(tree / 'docs/openapi.json'),
+        '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
+
+
+def merge(arguments):
+    _base, ours, _theirs, path, current, other = arguments
+    if path not in ARTIFACTS:
+        raise ValueError(f'unexpected generated path: {path}')
+    root = Path(git(Path.cwd(), 'rev-parse', '--show-toplevel'))
+    # Labels are refs for normal merges and merge-tree. Ref resolution is
+    # deliberately strict: do not guess HEAD during a rebase or virtual merge.
+    commits = [git(root, 'rev-parse', '--verify', '--end-of-options', f'{label}^{{commit}}')
+               for label in (current, other)]
+    # Installed packages have no portable attestation tying them to a lockfile.
+    # Even when the checkout lock matches the preview, it may have changed since
+    # setup last installed vendor. Refuse lock changes on either branch rather
+    # than guessing (or doing network installs inside a merge driver).
+    ancestor = git(root, 'merge-base', *commits)
+    for commit in commits:
+        changed = git(root, 'diff', '--name-only', ancestor, commit, '--', *LOCKS)
+        if changed:
+            raise ValueError(f'dependency_lock_changed: {changed}; install the merged locked '
+                             'dependencies and regenerate explicitly; refusing stale dependencies')
+    dependency_root = Path(os.environ.get('ORBIT_GENERATED_MERGE_DEPENDENCIES', str(root)))
+    # Git invokes a separate process for every artifact. Publish only complete
+    # builds, under a lock, so parallel invocations cannot see partial output.
+    fingerprint = hashlib.sha256(DRIVER.read_bytes())
+    for lock in LOCKS:
+        fingerprint.update((dependency_root / lock).read_bytes())
+    key = '-'.join([*commits, fingerprint.hexdigest()])
+    cache = Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit/generated-merge'
+    cache.mkdir(parents=True, exist_ok=True)
+    output = cache / key
+    with (cache / f'{key}.lock').open('w') as guard:
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        if not output.exists():
+            with tempfile.TemporaryDirectory(prefix='build-', dir=cache) as directory:
+                tree = Path(directory) / 'tree'
+                git(root, 'clone', '--quiet', '--shared', '--no-checkout', str(root), str(tree))
+                git(tree, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', commits[0])
+                inner = f'{shlex.quote(str(DRIVER))} --sources %O %A %B %P'
+                result = git(tree, '-c', f'merge.orbit-generated.driver={inner}',
+                             '-c', 'merge.orbit-generated.recursive=binary',
+                             'merge-tree', '--write-tree', *commits)
+                merged_tree = result.splitlines()[0]
+                git(tree, 'read-tree', '--reset', '-u', merged_tree)
+                dependencies(tree, dependency_root)
+                regenerate(tree)
+                artifacts = Path(directory) / 'artifacts'
+                for artifact in ARTIFACTS:
+                    destination = artifacts / artifact
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(tree / artifact, destination)
+                artifacts.rename(output)
+        shutil.copyfile(output / path, ours)
+
+
+def main():
+    mode, *arguments = sys.argv[1:]
+    if mode == '--install' and not arguments:
+        install(Path(git(Path.cwd(), 'rev-parse', '--show-toplevel')))
+    elif mode == '--sources' and len(arguments) == 4:
+        sources(arguments)
+    elif mode == '--merge' and len(arguments) == 6:
+        merge(arguments)
+    else:
+        raise ValueError('usage: bin/generated-merge --install')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        print(f'generated-merge: {error}', file=sys.stderr)
+        if isinstance(error, subprocess.CalledProcessError):
+            print(error.stdout or '', error.stderr or '', file=sys.stderr)
+        sys.exit(1)
