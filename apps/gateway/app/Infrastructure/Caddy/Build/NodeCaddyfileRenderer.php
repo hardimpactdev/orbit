@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Models\Node;
+use LogicException;
 use Throwable;
 
 /**
@@ -28,10 +29,27 @@ final readonly class NodeCaddyfileRenderer
     /** The named matcher of the task VMs a site refuses. */
     public const string TaskVmMatcher = '@orbit_task_vms';
 
-    /** @param list<NodeCaddySiteSource> $sources In render order. */
+    /**
+     * A contributed source that names a core certificate slug is a wiring error. It throws before any publisher can
+     * record or forget that slug.
+     *
+     * @param  list<NodeCaddySiteSource>  $sources  Core's sources, in render order.
+     * @param  list<ContributedCaddySiteSource>  $contributions  The sources that extensions contribute, rendered after core's.
+     *
+     * @throws LogicException
+     */
     public function __construct(
         private array $sources,
-    ) {}
+        private array $contributions = [],
+    ) {
+        foreach ($contributions as $source) {
+            $slug = $source->certificateSlug();
+
+            if ($slug !== null && in_array($slug, CaddySiteCertificates::CoreSlugs, true)) {
+                throw new LogicException('The contributed site source ['.$source::class."] uses the core certificate slug [{$slug}].");
+            }
+        }
+    }
 
     public function render(Node $node): NodeCaddyfile
     {
@@ -41,6 +59,22 @@ final readonly class NodeCaddyfileRenderer
         foreach ($this->sources as $source) {
             try {
                 array_push($sites, ...$source->sites($node));
+            } catch (Throwable $exception) {
+                $problems[] = $exception->getMessage();
+            }
+        }
+
+        foreach ($this->contributions as $source) {
+            try {
+                foreach ($source->sites($node) as $site) {
+                    if (in_array($site->source, NodeCaddyListeners::CoreSources, true)) {
+                        $problems[] = "The contributed {$site->describe()} uses a core source name.";
+
+                        continue;
+                    }
+
+                    $sites[] = $site;
+                }
             } catch (Throwable $exception) {
                 $problems[] = $exception->getMessage();
             }

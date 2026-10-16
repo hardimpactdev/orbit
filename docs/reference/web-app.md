@@ -20,6 +20,8 @@ The generated clone response types include required `data.warnings: string[]` fo
 
 The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
+The generated API schema includes `GET /api/v1/task-groups/{group}/agents/{session}` and its `TaskAgentSnapshot` response, the [thread read](/reference/tasks#read-a-thread). The task page's Agents section reads the agent stream, not this operation.
+
 The generated Node settings schema includes nullable `task_vms` alongside `apps`. The Node settings PATCH input accepts the typed host object or null, and Node responses expose its stored host configuration. These types describe [operator-owned task VM hosts](/reference/node-settings#configure-a-task-vm-host); they add no web settings editor and do not make an `app-dev` Node a host.
 
 The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
@@ -240,9 +242,10 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 1. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources).
 2. It grants Caddy access to the checkout's `public` directory and creates the web directory.
 3. It publishes the Gateway certificate with the public root certificate.
-4. It writes the Gateway PHP-FPM pool and runs `systemctl reload-or-restart php8.5-fpm`, which can restart the workers that serve the API.
-5. It publishes the site.
-6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
+4. It writes the Gateway PHP-FPM pool and installs the contributed [start hooks](/reference/extensions#plug-in-points).
+5. It runs each start hook, then `systemctl reload-or-restart php8.5-fpm`. That can restart the workers that serve the API.
+6. It publishes the site.
+7. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
 
 It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 

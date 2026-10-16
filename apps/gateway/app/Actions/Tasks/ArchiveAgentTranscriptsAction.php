@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Models\AgentThread;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -27,7 +26,7 @@ final readonly class ArchiveAgentTranscriptsAction
             ->where('task_group_id', $groupId)
             ->where('node_id', $nodeId)
             ->where('driver', '!=', 't3')
-            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
+            ->started()
             ->get();
         foreach ($threads as $thread) {
             try {

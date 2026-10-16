@@ -524,7 +524,6 @@
             "pages": [
               "GET /api/v1/instances/{instance}/annotations",
               "POST /api/v1/instances/{instance}/annotations",
-              "GET /api/v1/instances/{instance}/annotations/events",
               "POST /api/v1/instances/{instance}/annotations/{annotation}/retry",
               "POST /api/v1/instances/{instance}/annotations/{annotation}/status"
             ]
@@ -538,6 +537,7 @@
               "GET /api/v1/task-groups/{group}",
               "PATCH /api/v1/task-groups/{group}",
               "GET /api/v1/task-groups/{group}/agents",
+              "GET /api/v1/task-groups/{group}/agents/{session}",
               "GET /api/v1/task-groups/{group}/agents/{session}/stream",
               "POST /api/v1/task-groups/{group}/cancel",
               "POST /api/v1/task-groups/{group}/complete",
