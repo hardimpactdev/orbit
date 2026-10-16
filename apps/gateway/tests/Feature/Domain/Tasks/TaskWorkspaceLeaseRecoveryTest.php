@@ -139,8 +139,11 @@ it('reconciles an exact remote completion after a lost SSH response without repl
     $journal = app(RemoteWorkspaceOperationJournal::class);
     try {
         $leases->run($this->leaseGroup, 'publication', 'lost-reply', function () use ($journal, $transport, $connection, $directory): void {
-            $journal->execute($connection, new RemoteCommand(['bash', '-c', 'printf x >> "$1"', '--', $directory.'/executions']), function (RemoteCommand $wrapped) use ($transport, $connection): CommandResult {
-                $transport->execute($connection, $wrapped);
+            $journal->execute($connection, new RemoteCommand(['bash', '-c', 'printf x >> "$1"', '--', $directory.'/executions']), function (RemoteCommand $wrapped) use ($transport, $connection, $directory): CommandResult {
+                $result = $transport->execute($connection, $wrapped);
+                // Lose a completed execution's response, never disguise a refused supervisor launch.
+                expect($result->exitCode)->toBe(0)
+                    ->and(file_get_contents($directory.'/executions'))->toBe('x');
                 app()->instance(SshExecutor::class, new UnreachableSshExecutor);
 
                 return new CommandResult(255, '', '', 0, false);
@@ -154,6 +157,38 @@ it('reconciles an exact remote completion after a lost SSH response without repl
         expect($holder->fresh()->status)->toBe('released')
             ->and(file_get_contents($directory.'/executions'))->toBe('x')
             ->and(TaskWorkspaceOperation::query()->sole()->status)->toBe('finished');
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->group('privileged');
+
+it('reconciles a refused supervisor launch after a lost SSH response without claiming execution', function (): void {
+    [$directory, $transport, $connection] = workspace_receipt_transport();
+    mkdir($directory.'/bin');
+    file_put_contents($directory.'/bin/sudo', "#!/bin/sh\nexit 1\n");
+    chmod($directory.'/bin/sudo', 0o700);
+    $transport->environment['PATH'] = $directory.'/bin:'.getenv('PATH');
+    $leases = app(TaskWorkspaceLease::class);
+    try {
+        $leases->run($this->leaseGroup, 'publication', 'refused-launch', function () use ($transport, $connection, $directory): void {
+            app(RemoteWorkspaceOperationJournal::class)->execute($connection, new RemoteCommand(['bash', '-c', 'printf x >> "$1"', '--', $directory.'/executions']), function (RemoteCommand $wrapped) use ($transport, $connection): CommandResult {
+                $result = $transport->execute($connection, $wrapped);
+                expect($result->exitCode)->toBe(78);
+                app()->instance(SshExecutor::class, new UnreachableSshExecutor);
+
+                return new CommandResult(255, '', '', 0, false);
+            });
+        });
+        $holder = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+        expect($holder->getAttribute('remote_uncertain'))->toBeTrue()
+            ->and(TaskWorkspaceOperation::query()->sole()->status)->toBe('pending')
+            ->and(file_exists($directory.'/executions'))->toBeFalse();
+        app()->instance(SshExecutor::class, $transport);
+        $leases->reconcile($this->leaseGroup);
+        $leases->reconcile($this->leaseGroup);
+        expect($holder->fresh()->status)->toBe('released')
+            ->and(TaskWorkspaceOperation::query()->sole()->status)->toBe('not_started')
+            ->and(file_exists($directory.'/executions'))->toBeFalse();
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
