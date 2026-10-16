@@ -97,6 +97,64 @@ class WriteValkeyAclTest(unittest.TestCase):
                 self.assertEqual(self.write(**payload), ('failed', {}))
                 self.assertFalse((self.state / 'argv').exists())
 
+@unittest.skipUnless(os.environ.get('ORBIT_TEST_DOCKER') == '1', 'Set ORBIT_TEST_DOCKER=1 for disposable Docker verification')
+class RealValkeyBootstrapTest(unittest.TestCase):
+    def test_bootstrapped_volume_starts_with_the_managed_command_and_preserves_aof(self):
+        import hashlib
+        import socket
+        import subprocess
+        import time
+        import uuid
+
+        name = 'orbit-valkey-proof-' + uuid.uuid4().hex[:12]
+        volume = name + '-data'
+        password = 'orbit-disposable-test-secret'
+        acl = 'user default on #' + hashlib.sha256(password.encode()).hexdigest() + ' ~* &* +@all\n'
+
+        def docker(*args):
+            return subprocess.check_output(['docker', *args], text=True).strip()
+
+        def command(*args):
+            with socket.create_connection(('127.0.0.1', port), timeout=3) as connection:
+                stream = connection.makefile('rb')
+                for values in [('AUTH', 'default', password), args]:
+                    encoded = [str(value).encode() for value in values]
+                    connection.sendall(b'*' + str(len(encoded)).encode() + b'\r\n' + b''.join(
+                        b'$' + str(len(value)).encode() + b'\r\n' + value + b'\r\n' for value in encoded))
+                    reply = stream.readline()
+                    if reply.startswith(b'$'):
+                        reply = stream.read(int(reply[1:-2]) + 2)[:-2]
+                return reply
+
+        def wait_ready():
+            for attempt in range(30):
+                try:
+                    if command('PING') == b'+PONG\r\n':
+                        return
+                except (OSError, ValueError):
+                    pass
+                time.sleep(0.1)
+            self.fail('Valkey did not become ready')
+
+        try:
+            self.assertEqual(result(NAME, {'volume': volume, 'image': 'valkey/valkey:8.1', 'acl': acl}), ('written', {}))
+            docker('run', '--detach', '--name', name, '--publish', '127.0.0.1::6379',
+                   '--mount', f'type=volume,source={volume},target=/data', 'valkey/valkey:8.1',
+                   'valkey-server', '--appendonly', 'yes', '--dir', '/data', '--aclfile', '/data/users.acl')
+            port = int(docker('port', name, '6379').rsplit(':', 1)[1])
+            wait_ready()
+            self.assertEqual(command('SET', 'orbit-test-job', 'queued'), b'+OK\r\n')
+            docker('restart', name)
+            port = int(docker('port', name, '6379').rsplit(':', 1)[1])
+            wait_ready()
+            self.assertEqual(command('GET', 'orbit-test-job'), b'queued')
+            with socket.create_connection(('127.0.0.1', port), timeout=3) as anonymous:
+                anonymous.sendall(b'*1\r\n$4\r\nPING\r\n')
+                self.assertTrue(anonymous.recv(1024).startswith(b'-NOAUTH'))
+        finally:
+            subprocess.run(['docker', 'rm', '-f', name], capture_output=True, check=False)
+            subprocess.run(['docker', 'volume', 'rm', volume], capture_output=True, check=False)
+
 
 if __name__ == '__main__':
     unittest.main()

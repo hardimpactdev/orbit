@@ -36,6 +36,8 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 
     public bool $anonymous = false;
 
+    public int $databases = 16;
+
     /** @var list<string> */
     public array $defaultClients = [];
 
@@ -59,6 +61,13 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         $this->calls[] = "login {$server->node->wireguard_ip}:{$server->port}";
 
         return ($this->passwords["{$server->node->wireguard_ip}:{$server->port}"] ?? null) === $server->root_password;
+    }
+
+    public function databaseCount(DatabaseServer $server): int
+    {
+        $this->command($server, 'config get databases');
+
+        return $this->databases;
     }
 
     public function userExists(DatabaseServer $server, string $username): bool

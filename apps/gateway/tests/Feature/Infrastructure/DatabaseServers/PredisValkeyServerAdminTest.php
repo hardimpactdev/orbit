@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use Predis\Client;
@@ -49,7 +49,7 @@ describe('PredisValkeyServerAdmin against a real Valkey', function (): void {
             }
         }
 
-        $this->admin = new PredisValkeyServerAdmin;
+        $this->admin = app(ValkeyServerAdmin::class);
         $this->server = predis_valkey_server();
         $this->password = (string) getenv('ORBIT_TEST_VALKEY_PASSWORD');
     });
@@ -181,6 +181,25 @@ describe('PredisValkeyServerAdmin against a real Valkey', function (): void {
         $default->executeRaw(['ACL', 'LOAD']);
         expect($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeFalse();
         $default->disconnect();
+    });
+
+    it('reports the live database count and accepts only indexes below it', function (): void {
+        expect($this->admin->databaseCount($this->server))->toBe(16);
+        $default = predis_valkey_client('default', $this->password);
+        expect((string) $default->executeRaw(['SELECT', '15']))->toBe('OK')
+            ->and((string) $default->executeRaw(['SELECT', '16']))->toStartWith('ERR DB index is out of range');
+        $default->disconnect();
+    });
+
+    it('runs the documented collector ACL through the Predis handshake and cache commands', function (): void {
+        $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['orbit:proxycli:*'], ['@connection', '@string', '@keyspace', 'eval']);
+        $client = predis_valkey_client('orbit-test-queue', 'queue-secret');
+        expect((string) $client->executeRaw(['SET', 'orbit:proxycli:test', 'snapshot', 'EX', '60']))->toBe('OK')
+            ->and($client->executeRaw(['GET', 'orbit:proxycli:test']))->toBe('snapshot')
+            ->and($client->executeRaw(['EVAL', "return redis.call('GET', KEYS[1])", '1', 'orbit:proxycli:test']))->toBe('snapshot')
+            ->and((string) $client->executeRaw(['GET', 'other:test']))->toStartWith('NOPERM');
+        $client->executeRaw(['DEL', 'orbit:proxycli:test']);
+        $client->disconnect();
     });
 
     it('returns a refused rule as database.acl_rules_invalid with the message of Valkey and no hash', function (): void {

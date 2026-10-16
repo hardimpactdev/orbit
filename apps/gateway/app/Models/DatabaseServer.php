@@ -34,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 final class DatabaseServer extends Model
 {
     /** @var array<string, mixed> */
+    #[\Override]
     protected $attributes = ['driver' => 'mysql', 'default_open' => false];
 
     /** @var list<string> */

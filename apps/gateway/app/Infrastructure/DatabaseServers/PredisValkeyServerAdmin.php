@@ -56,6 +56,17 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         }
     }
 
+    public function databaseCount(DatabaseServer $server): int
+    {
+        $reply = $this->connected($server, true, fn (Client $client): mixed => $this->command($server, $client, ['CONFIG', 'GET', 'databases']));
+        $count = is_array($reply) ? ($reply[1] ?? null) : null;
+        if (! is_string($count) || ! ctype_digit($count) || (int) $count < 1) {
+            throw $this->failed($server);
+        }
+
+        return (int) $count;
+    }
+
     public function userExists(DatabaseServer $server, string $username): bool
     {
         return $this->connected(

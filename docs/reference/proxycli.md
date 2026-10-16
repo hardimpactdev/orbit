@@ -45,7 +45,7 @@ Create the Valkey server and the collector's user, enable the extension, then se
 ```bash
 orbit node:role:add db-1 database
 orbit database:server:create valkey --node=db-1 --driver=redis
-orbit database:create proxycli-cache --server=valkey --pattern='orbit:proxycli:*' --allow=@string --allow=@keyspace --allow=eval
+orbit database:create proxycli-cache --server=valkey --pattern='orbit:proxycli:*' --allow=@connection --allow=@string --allow=@keyspace --allow=eval
 orbit extension:enable proxycli
 orbit proxycli:setup --node=beast --cache-connection=proxycli-cache --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
 ```

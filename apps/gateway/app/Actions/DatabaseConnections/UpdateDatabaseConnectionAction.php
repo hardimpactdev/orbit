@@ -11,9 +11,11 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionProfile;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final readonly class UpdateDatabaseConnectionAction
 {
@@ -43,6 +45,10 @@ final readonly class UpdateDatabaseConnectionAction
                         );
                     }
                 }
+            }
+
+            if ($locked->server?->driver === DatabaseDriver::Redis && $data->databaseProvided && $proposed->database !== null && (! ctype_digit($proposed->database) || (int) $proposed->database >= app(ValkeyServerAdmin::class)->databaseCount($locked->server))) {
+                throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
             }
 
             if ($proposed->driver === DatabaseDriver::Sqlite) {

@@ -2002,6 +2002,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Database server",
                 "Deliverable",
                 "Doctor",
                 "Extension",
@@ -2860,6 +2861,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",

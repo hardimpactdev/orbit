@@ -23,6 +23,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 use Throwable;
 
@@ -303,6 +304,9 @@ final readonly class CreateServerDatabaseAction
     private function createAclUser(DatabaseServer $server, CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
     {
         $this->assertActive($server);
+        if ($data->database !== null && $data->database >= $this->valkey->databaseCount($server)) {
+            throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
+        }
         $slug = $data->slug;
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {

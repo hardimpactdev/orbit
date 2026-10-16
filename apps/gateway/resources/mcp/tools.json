@@ -1805,9 +1805,21 @@
             "minimum": 1
           },
           "database": {
-            "type": "integer",
-            "maximum": 999,
-            "minimum": 0
+            "anyOf": [
+              {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
+                "maxLength": 64
+              },
+              {
+                "type": "integer",
+                "maximum": 999,
+                "minimum": 0
+              }
+            ]
           },
           "path": {
             "type": [
@@ -2170,7 +2182,6 @@
         "database_server"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8469,10 +8480,20 @@
             "maxLength": 253
           },
           "publication": {
-            "type": "string",
-            "enum": [
-              "private",
-              "public"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              }
             ]
           },
           "instance_id": {

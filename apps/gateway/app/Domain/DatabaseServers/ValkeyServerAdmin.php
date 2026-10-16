@@ -21,6 +21,9 @@ interface ValkeyServerAdmin
     /** Whether `default` logs in with the admin password now. A connection that fails is false. */
     public function acceptsAdminLogin(DatabaseServer $server): bool;
 
+    /** The configured database count; valid indexes are zero through count minus one. */
+    public function databaseCount(DatabaseServer $server): int;
+
     public function userExists(DatabaseServer $server, string $username): bool;
 
     /**

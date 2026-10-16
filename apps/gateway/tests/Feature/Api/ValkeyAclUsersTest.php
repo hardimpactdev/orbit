@@ -131,7 +131,7 @@ describe('database:create --server on a Valkey server', function (): void {
 
         expect(strlen($password))->toBe(40)
             ->and($connection->database_server_id)->toBe($this->server->id)
-            ->and($this->valkey->calls)->toBe(['exists gateway-queue', 'setuser gateway-queue'])
+            ->and($this->valkey->calls)->toBe(['config get databases', 'exists gateway-queue', 'setuser gateway-queue'])
             ->and($live->rules)->toBe($rules)
             ->and($live->hasOnlyPassword($password))->toBeTrue()
             ->and($this->admin->statements)->toBe([]);
@@ -481,6 +481,26 @@ describe('database:update on a Valkey server', function (): void {
             ->assertJsonPath('data.database', '2');
 
         expect(DatabaseConnection::query()->sole()->password)->toBe($password)
-            ->and($this->valkey->calls)->toBe([]);
+            ->and($this->valkey->calls)->toBe(['config get databases']);
+    });
+});
+
+describe('Valkey database indexes', function (): void {
+    it('accepts the last configured database and refuses the next before creating a user', function (): void {
+        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 16]))
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect($this->valkey->users)->toBe([])->and(DatabaseConnection::query()->exists())->toBeFalse();
+        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 15]))
+            ->assertCreated()->assertJsonPath('data.database', '15');
+        $this->patchJson('/api/v1/database-connections/gateway-queue', ['database' => '16'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect(DatabaseConnection::query()->sole()->database)->toBe('15');
+        $this->patchJson('/api/v1/database-connections/gateway-queue', ['database' => 'named'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    });
+
+    it('uses the adopted server configuration rather than a fixed limit', function (): void {
+        $this->valkey->databases = 32;
+        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 31]))->assertCreated();
     });
 });

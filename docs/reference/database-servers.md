@@ -137,7 +137,9 @@ orbit database:create gateway-queue --server=services-valkey --database=1 \
 | --- | --- |
 | `--pattern=PATTERN` | A key pattern, such as `orbit-gateway:*`. Required. Repeat it for more patterns. |
 | `--allow=RULE` | A command category, such as `@list`, or a command, such as `eval`. Required. Repeat it for more rules. |
-| `--database=INDEX` | The database index that the connection records for its clients. Optional. |
+| `--database=INDEX` | The database index that the connection records for its clients. Optional. Must be below the live server's database count. |
+
+The Gateway checks an explicit index against the live server before it creates or updates a connection. An out-of-range index returns `validation.failed`. New servers have 16 databases, numbered 0 through 15.
 
 The user is named after the slug. Orbit generates its password and runs:
 
@@ -210,7 +212,7 @@ The server commands return these codes.
 | `database.server_slug_conflict` | 409 | Another server has the slug. |
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
-| `database.server_in_use` | 409 | A connection still points to the server, or `database:server:close` finds a client that would be locked out. |
+| `database.server_in_use` | 409 | A connection still points to the server, an ACL change is running, or closing would lock out a client. |
 | `database.server_connection_managed` | 409 | A change would replace a managed Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
