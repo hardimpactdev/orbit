@@ -829,10 +829,12 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertEqual(failed.exception.result.returncode, 100)
         self.assertIn('curl dependency conflict', failed.exception.result.stdout)
         with patch.object(recipe, 'platform_check'), \
-             patch.object(recipe, 'apply', side_effect=recipe.RecipeFailure('packages', result=failed.exception.result, packages=failed.exception.packages)), \
+             patch.object(recipe, 'packages', return_value={}), \
+             patch.object(recipe, 'apply', side_effect=recipe.RecipeFailure('packages', result=failed.exception.result, packages=failed.exception.packages)) as apply, \
              patch.object(sys, 'argv', ['program', 'apply', '{"architecture":"amd64"}']), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(recipe.main(), 1)
+        apply.assert_called_once_with({'architecture': 'amd64'})
         failure = json.loads(output.getvalue())['failure']
         self.assertEqual(failure['packages'], ['curl=' + PIN])
         self.assertIn('curl dependency conflict', failure['stdout'])
