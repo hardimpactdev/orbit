@@ -20,5 +20,6 @@ final readonly class AgentThreadStart
         public ?string $openingKey = null,
         public ?string $externalId = null,
         public bool $deferOpeningTurn = false,
+        public ?int $threadId = null,
     ) {}
 }

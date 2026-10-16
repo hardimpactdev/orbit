@@ -32,6 +32,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -711,7 +712,8 @@ it('preserves a real ended PR hold arriving during correction send before the fi
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure);
     $noticeKey = $task->fresh()?->ended_pr_notice_key;
     expect($noticeKey)->not->toBe($pending['key']);
-    expect(array_column($calls, 'key'))->toBe([$noticeKey, $pending['key']]);
+    // The ended-PR notice waits while the correction dispatch owns the workspace.
+    expect(array_column($calls, 'key'))->toBe([$pending['key']]);
     expect($driver->calls)->toBe($calls)
         ->and($receipts->prepared)->toBe(['implementer']);
     expect(Activity::query()->where('description', 'deliverable correction resumed')->count())->toBe(0);
@@ -762,6 +764,8 @@ it('supersedes an uncertain correction after completed direction without erasing
                     $this->state->messageId = $key;
                     file_put_contents($this->checkout.'/.git/orbit/run', $key);
                     file_put_contents($this->checkout.'/.git/orbit/run.json', json_encode(['turn' => $key], JSON_THROW_ON_ERROR));
+                } else {
+                    $this->state->reviewerTurnId = $key;
                 }
             }
             if ($implementer && $key === $this->correctionKey && str_starts_with($this->failure, 'lost-acceptance')) {
@@ -1044,7 +1048,7 @@ it('starts the reviewer with the first review request when the group has no revi
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('done');
+            return tick_checked_thread($threadId === 'reviewer-thread-2' ? 'running' : 'done', $threadId);
         }
     });
     $spawner = new class implements AgentSpawner
@@ -1056,7 +1060,12 @@ it('starts the reviewer with the first review request when the group has no revi
         {
             $this->reviewers[] = $task->id;
 
-            return test_agent_thread($task->parent, 'reviewer-thread-2')->id;
+            $thread = test_agent_thread($task->parent, 'reviewer-thread-2');
+            $thread->update(['task_id' => $task->id]);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$thread->id, $thread->id);
+            app(TaskWorkspaceLease::class)->dispatch($thread);
+
+            return $thread->id;
         }
 
         public function spawnImplementer(Task $task): ?int

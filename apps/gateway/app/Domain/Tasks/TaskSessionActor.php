@@ -74,17 +74,17 @@ final readonly class TaskSessionActor
         $this->drivers->get($thread->driver)->send($thread, $summary."\n\n".TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id), $key);
     }
 
-    public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body): void
+    public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body, ?string $key = null): void
     {
         $thread = $this->thread($group, $observed);
-        TaskExecutionHold::run($group, fn () => $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply('Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body)));
+        TaskExecutionHold::run($group, fn () => $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, 'Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body, $key), $key));
     }
 
-    public function remindRubric(Task $group, TaskThreadObservation $observed, string $message): void
+    public function remindRubric(Task $group, TaskThreadObservation $observed, string $message, ?string $key = null): void
     {
-        TaskExecutionHold::run($group, function () use ($group, $observed, $message): void {
+        TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
             $thread = $this->thread($group, $observed);
-            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message));
+            $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, $message, $key), $key);
         });
     }
 
@@ -96,8 +96,15 @@ final readonly class TaskSessionActor
     {
         TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
             $thread = $this->thread($group, $observed);
-            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message), $key);
+            $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, $message, $key), $key);
         });
+    }
+
+    private function followupMessage(AgentThread $thread, string $message, ?string $key): string
+    {
+        $pending = $key === null ? null : app(TaskWorkspaceLease::class)->pendingSend($thread, $key);
+
+        return $pending['message'] ?? $this->fetchNotice->apply($message);
     }
 
     private function thread(Task $group, TaskThreadObservation $observed): AgentThread

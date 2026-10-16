@@ -87,9 +87,20 @@ function effort_task(): Task
 function fake_effort_pi(): void
 {
     Http::preventStrayRequests();
+    $turns = [];
     Http::fake([
         'http://10.44.0.110:3774/sessions' => Http::response(['id' => 'session'], 201),
-        'http://10.44.0.110:3774/sessions/*/messages' => Http::response(['duplicate' => false], 202),
+        'http://10.44.0.110:3774/sessions/*/messages' => function (Request $request) use (&$turns) {
+            $id = basename(dirname($request->url()));
+            $turns[$id] = ($turns[$id] ?? 0) + 1;
+
+            return Http::response(['duplicate' => false], 202);
+        },
+        'http://10.44.0.110:3774/sessions/*' => function (Request $request) use (&$turns) {
+            $id = basename($request->url());
+
+            return Http::response(['kind' => 'snapshot', 'state' => 'done', 'session' => ['id' => $id], 'turnId' => $id.':'.($turns[$id] ?? 0)]);
+        },
     ]);
 }
 

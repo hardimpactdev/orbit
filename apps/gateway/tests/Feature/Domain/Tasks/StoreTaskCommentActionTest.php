@@ -104,7 +104,17 @@ function recording_t3_turns(?Closure $beforeAccept = null): object
             return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     };
-    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher));
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: new class($dispatcher) implements AgentSnapshotReader
+    {
+        public function __construct(private object $dispatcher) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $turn = count(array_filter($this->dispatcher->threads, static fn (string $id): bool => $id === $threadId));
+
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => $threadId.'-'.$turn, 'state' => 'completed']]];
+        }
+    }));
 
     return $dispatcher;
 }
@@ -190,7 +200,13 @@ it('replays a deliverable correction safely after prepare failures, lost replies
             return ['sequence' => 1, 'thread_id' => (string) $command['threadId']];
         }
     };
-    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: new NullAgentSnapshotReader));
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'blocked-'.$threadId, 'state' => 'completed']]];
+        }
+    }));
     $injectCommit = $failure === 'commit-crash';
     DB::beforeExecuting(function (string $sql) use (&$injectCommit): void {
         if ($injectCommit && str_starts_with($sql, 'update') && str_contains($sql, 'completion_attempt') && str_contains($sql, 'deliverable_correction_resume')) {
@@ -628,3 +644,23 @@ it('sends a resolution for a blocked implementation to the implementer', functio
         ->and($task->completion_attempt)->toBe(3)
         ->and($task->review_attempt)->toBe(3);
 });
+
+it('captures a fresh formal review baseline before an operator resolution is sent', function (bool $direction): void {
+    $task = blocked_task(TaskStatus::Reviewing);
+    $task->update(['review_workspace_head' => str_repeat('a', 40), 'review_workspace_tree' => str_repeat('b', 40)]);
+    if ($direction) {
+        $task->update(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which source?']);
+    }
+    $checks = new FakeTaskCheckRunner;
+    $checks->head = str_repeat('c', 40);
+    $checks->tree = str_repeat('d', 40);
+    app()->instance(TaskCheckRunner::class, $checks);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
+    $turns = recording_t3_turns(function () use ($task, $checks): void {
+        expect($task->fresh()->review_attempt)->toBe(3)
+            ->and($task->fresh()->review_workspace_head)->toBe($checks->head)
+            ->and($task->fresh()->review_workspace_tree)->toBe($checks->tree);
+    });
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the current source.', 'author' => 'operator']);
+    expect($turns->threads)->toBe(['reviewer-thread'])->and($task->fresh()->review_attempt)->toBe(4);
+})->with([false, true]);

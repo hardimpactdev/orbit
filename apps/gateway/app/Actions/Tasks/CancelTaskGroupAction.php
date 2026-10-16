@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -137,6 +138,11 @@ final readonly class CancelTaskGroupAction
      * workspace. They reach the task branch on origin before the workspace is removed.
      */
     private function pushApprovedWork(Task $group): void
+    {
+        app(TaskWorkspaceLease::class)->run($group, 'publication', 'cancel-push:'.$group->id, fn () => $this->pushApprovedWorkWithLease($group));
+    }
+
+    private function pushApprovedWorkWithLease(Task $group): void
     {
         if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
             return;

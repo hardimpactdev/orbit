@@ -37,6 +37,7 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case RouteAssociationMismatch = 'instance.route_association_mismatch';
     case RelatedNodeUnverifiable = 'instance.related_node_unverifiable';
     case InspectionFailed = 'instance.inspection_failed';
+    case WorkspaceLease = 'instance.workspace_lease';
     case NodeUnreachable = 'instance.node_unreachable';
 
     public function code(): string

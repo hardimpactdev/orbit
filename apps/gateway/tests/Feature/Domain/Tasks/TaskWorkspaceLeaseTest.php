@@ -1,0 +1,413 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceRemover;
+use App\Domain\Tasks\AgentDriverException;
+use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
+use App\Domain\Tasks\AgentThreadObserver;
+use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskReviewedCommitSource;
+use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskSubtaskRunner;
+use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
+use App\Infrastructure\Processes\CommandResult;
+use App\Models\AgentThread;
+use App\Models\Instance;
+use App\Models\InstanceRemoval;
+use App\Models\Task;
+use App\Models\TaskReviewedCommit;
+use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
+use Tests\Support\FakeAgentDriver;
+use Tests\Support\FakeTaskCheckRunner;
+
+beforeEach(function (): void {
+    tick_bind_defaults();
+});
+
+describe('workspace lease', function (): void {
+    it('serializes every actor pair and admits the queued waiter after release', function (string $first, string $second): void {
+        $group = tick_group();
+        $leases = app(TaskWorkspaceLease::class);
+        $holder = $leases->acquire($group, $first, 'first');
+        expect(fn () => $leases->acquire($group, $second, 'second'))->toThrow(TaskWorkspaceWaiting::class);
+        expect($leases->status($group)[0]['waiters'])->toHaveCount(1);
+        $leases->release($holder);
+        $next = $leases->acquire($group, $second, 'second');
+        expect($next->id)->not->toBe($holder->id);
+        expect($leases->status($group)[0]['holder']['owner'])->toBe('second');
+    })->with(function (): iterable {
+        $actors = ['implementer', 'reviewer', 'check', 'main_merge', 'publication', 'settle', 'teardown', 'verdict'];
+        foreach ($actors as $first) {
+            foreach ($actors as $second) {
+                yield $first.' / '.$second => [$first, $second];
+            }
+        }
+    });
+
+    it('does not let a later actor jump a queued waiter', function (): void {
+        $group = tick_group();
+        $leases = app(TaskWorkspaceLease::class);
+        $holder = $leases->acquire($group, 'check', 'first');
+        expect(fn () => $leases->acquire($group, 'reviewer', 'second'))->toThrow(TaskWorkspaceWaiting::class);
+        $leases->release($holder);
+        expect(fn () => $leases->acquire($group, 'publication', 'third'))->toThrow(TaskWorkspaceWaiting::class);
+        expect($leases->acquire($group, 'reviewer', 'second')->owner)->toBe('second');
+    });
+});
+
+function lease_stopped_driver(): FakeAgentDriver
+{
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentDriverRegistry::class, $registry);
+    app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+
+    return $driver;
+}
+
+it('retains a persisted turn through restart, unknown state, and an old stopped observation', function (): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+    $leases->dispatch($thread, $driver->observation);
+    $restarted = new TaskWorkspaceLease;
+    $driver->observation = new AgentObservation(null);
+    $restarted->reconcile($group);
+    expect($lease->fresh()->status)->toBe('held');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
+    $restarted->reconcile($group);
+    expect($lease->fresh()->status)->toBe('held');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'new');
+    $restarted->reconcile($group);
+    expect($lease->fresh()->status)->toBe('released');
+});
+
+it('does not mistake an old stopped turn for a prepared dispatch and releases removed preparation only', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+    $leases->reconcile($group);
+    expect($lease->fresh()->status)->toBe('held');
+    $thread->delete();
+    $leases->reconcile($group);
+    expect($lease->fresh()->status)->toBe('released');
+});
+
+it('retains lost check ownership and releases only a finished matching process', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->first();
+    $check = $task->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Cancelled,
+        'pid' => 321, 'process_started' => 'start', 'started_at' => now(), 'head_before' => 'a', 'tree_before' => 'b']);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->acquire($group, 'check', 'check:'.$task->id);
+    $lease->update(['pid' => 321, 'process_started' => 'start', 'check_id' => $check->id]);
+    $leases->finishedCheck($check, TaskCheckReading::lost('wrapper missing'));
+    expect($lease->fresh()->status)->toBe('held');
+    $leases->finishedCheck($check, TaskCheckReading::finished(0, 'a', 'c', [], 'done'));
+    expect($lease->fresh()->status)->toBe('released')->and($lease->fresh()->tree_after)->toBe('c');
+});
+
+it('admits a queued reviewer before capturing the post-check dispatch baseline', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $task = $group->tasks->first();
+    $task->update(['status' => TaskStatus::Reviewing, 'review_attempt' => 1]);
+    $thread = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
+    $thread->update(['task_id' => $task->id]);
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'check', 'check:first');
+    expect(fn () => $leases->turn($group, TaskThreadRole::Reviewer, 'thread:'.$thread->id, $thread->id))->toThrow(TaskWorkspaceWaiting::class);
+    expect($task->fresh()->review_workspace_head)->toBeNull();
+    $leases->release($holder);
+    $leases->turn($group, TaskThreadRole::Reviewer, 'thread:'.$thread->id, $thread->id);
+    $checks->tree = str_repeat('d', 40); // Packet/preparation may change the tree before dispatch.
+    $leases->dispatch($thread);
+    expect($task->fresh()->review_workspace_tree)->toBe($checks->tree);
+});
+
+it('queues baseline admission without creating an unstarted claim and starts once after release', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'busy');
+    $task = $group->tasks->first();
+    $start = new ReflectionMethod(TaskSubtaskRunner::class, 'startBaseline');
+    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
+    expect($task->checks()->count())->toBe(0)->and($checks->starts)->toBe(0);
+    $leases->release($holder);
+    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task);
+    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task);
+    expect($task->checks()->count())->toBe(1)->and($checks->starts)->toBe(1)->and($task->fresh()->communication_failures)->toBe(0);
+});
+
+it('does not resurrect a completed pre-lease actor when its runtime later becomes unreadable', function (): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    $leases = app(TaskWorkspaceLease::class);
+    $leases->reconcile($group);
+    expect(TaskWorkspaceLeaseRecord::query()->where('adopted', true)->where('status', 'released')->count())->toBe(2);
+    $driver->observation = null;
+    $leases->reconcile($group);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->exists())->toBeFalse();
+});
+
+it('requires a continuous Orbit lease chain and refuses reviewer or unleased changes', function (): void {
+    $group = tick_group();
+    $leases = app(TaskWorkspaceLease::class);
+    $record = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+        'kind' => 'check', 'owner' => 'first', 'status' => 'released', 'orbit_mutation' => true, 'head_before' => 'a', 'tree_before' => 'b', 'head_after' => 'a', 'tree_after' => 'c']);
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeTrue();
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('outside', 'c')))->toBeFalse();
+    $record->update(['kind' => 'reviewer']);
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeFalse();
+    $record->delete();
+    $group->tasks->first()->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed,
+        'pid' => 321, 'process_started' => 'start', 'started_at' => now(), 'finished_at' => now(),
+        'head_before' => 'a', 'tree_before' => 'b', 'head_after' => 'a', 'tree_after' => 'c']);
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeFalse();
+});
+
+it('does not attribute an outside edit observed under a read-only verdict lease to Orbit', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $head = $checks->head;
+    $tree = $checks->tree;
+    $leases = app(TaskWorkspaceLease::class);
+    $leases->inspect($group, function () use ($checks): bool {
+        $checks->tree = str_repeat('e', 40);
+
+        return true;
+    });
+    expect(TaskWorkspaceLeaseRecord::query()->where('kind', 'verdict')->sole()->getAttribute('orbit_mutation'))->toBeFalse();
+    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($head, $checks->tree)))->toBeFalse();
+});
+
+it('releases a confirmed rejected send but retains an unknown send result', function (bool $rejected): void {
+    $group = tick_group();
+    $driver = new class('pi') extends FakeAgentDriver
+    {
+        public bool $reject = false;
+
+        public function send(AgentThread $thread, string $message, ?string $key = null): void
+        {
+            $exception = new AgentDriverException('Send failed.');
+            $exception->turnRejected = $this->reject;
+            throw $exception;
+        }
+    };
+    $driver->reject = $rejected;
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    expect(fn () => $registry->get('pi')->send($thread, 'Work.', 'stable-key'))->toThrow(AgentDriverException::class);
+    expect(TaskWorkspaceLeaseRecord::query()->latest('id')->firstOrFail()->status)->toBe($rejected ? 'released' : 'held');
+})->with([true, false]);
+
+it('retries only the identical keyed command without opening another lease or rewriting the baseline', function (): void {
+    $group = tick_group();
+    $driver = new class('pi') extends FakeAgentDriver
+    {
+        public int $attempts = 0;
+
+        public function send(AgentThread $thread, string $message, ?string $key = null): void
+        {
+            if (++$this->attempts === 1) {
+                throw new AgentDriverException('Reply lost.');
+            }
+        }
+    };
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leased = $registry->get('pi');
+    expect(fn () => $leased->send($thread, 'Same command.', 'stable'))->toThrow(AgentDriverException::class);
+    $lease = TaskWorkspaceLeaseRecord::query()->latest('id')->firstOrFail();
+    $leased->send($thread, 'Same command.', 'stable');
+    expect($driver->attempts)->toBe(2)->and($lease->fresh()->status)->toBe('held')
+        ->and(TaskWorkspaceLeaseRecord::query()->where('adopted', false)->count())->toBe(1);
+    expect(fn () => $leased->send($thread, 'Changed command.', 'stable'))->toThrow(TaskWorkspaceWaiting::class);
+    expect(fn () => $leased->send($thread, 'New command.', 'different'))->toThrow(TaskWorkspaceWaiting::class);
+    expect($driver->attempts)->toBe(2);
+});
+
+it('gives an unkeyed send a durable retry identity and admits only the same message', function (): void {
+    $group = tick_group();
+    $driver = new class('pi') extends FakeAgentDriver
+    {
+        /** @var list<string|null> */
+        public array $sentKeys = [];
+
+        public function send(AgentThread $thread, string $message, ?string $key = null): void
+        {
+            $this->sentKeys[] = $key;
+            if (count($this->sentKeys) === 1) {
+                throw new AgentDriverException('Reply lost.');
+            }
+        }
+    };
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    expect(fn () => $registry->get('pi')->send($thread, 'Continue.'))->toThrow(AgentDriverException::class);
+    $registry->get('pi')->send($thread, 'Continue.');
+    expect($driver->sentKeys)->toHaveCount(2)->and($driver->sentKeys[0])->not->toBeNull()
+        ->and($driver->sentKeys[1])->toBe($driver->sentKeys[0]);
+    expect(fn () => $registry->get('pi')->send($thread, 'Different turn.'))->toThrow(TaskWorkspaceWaiting::class);
+});
+
+it('continues paused input within the same lease and completion fence', function (): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    $registry = new AgentDriverRegistry([$driver]);
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+    $leases->dispatch($thread, $driver->observation);
+    $driver->observation = new AgentObservation(AgentThreadState::AskingForInput, turnId: 'new');
+    $registry->get('pi')->send($thread, 'Continue without input.');
+    expect($lease->fresh()->status)->toBe('held')->and($lease->fresh()->getAttribute('previous_turn_id'))->toBe('old');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'new');
+    $leases->reconcile($group);
+    expect($lease->fresh()->status)->toBe('released');
+});
+
+it('preserves merge provenance when the same lease continues into its detached gate', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $task = $group->tasks->first();
+    $beforeHead = $checks->head;
+    $beforeTree = $checks->tree;
+    $leases->run($group, 'main_merge', 'merge', function () use ($group, $task, $checks, $leases): void {
+        $checks->head = str_repeat('c', 40);
+        $checks->tree = str_repeat('d', 40);
+        $process = $leases->startCheck($group, $task, 'check');
+        $check = $task->checks()->create(['kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Running,
+            'pid' => $process->pid, 'process_started' => $process->started, 'started_at' => now(),
+            'head_before' => $process->head, 'tree_before' => $process->tree]);
+        $leases->finishedCheck($check, TaskCheckReading::finished(0, $checks->head, $checks->tree, [], 'done'));
+    });
+    expect($leases->ownedChange($group, $beforeHead, $beforeTree, new TaskWorkspaceSnapshot($checks->head, $checks->tree)))->toBeTrue();
+});
+
+it('imports only a clean recorded historical Orbit merge with its matching gate', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->first();
+    $head = str_repeat('a', 40);
+    $tree = str_repeat('b', 40);
+    $merged = str_repeat('c', 40);
+    $mergedTree = str_repeat('d', 40);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $head, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $task->id]);
+    $task->checks()->create(['kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+        'pid' => 123, 'process_started' => 'start', 'started_at' => now()->subMinute(), 'finished_at' => now()->subSecond(),
+        'head_before' => $merged, 'tree_before' => $mergedTree, 'head_after' => $merged, 'tree_after' => $mergedTree]);
+    $leases = app(TaskWorkspaceLease::class);
+    $snapshot = new TaskWorkspaceSnapshot($merged, $mergedTree, $head, $mergedTree, $tree, str_repeat('e', 40));
+    expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeFalse();
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $merged, 'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $task->id]);
+    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, 'outside-tree', $head, $mergedTree, $tree, str_repeat('e', 40))))->toBeFalse();
+    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, $mergedTree, $head, $mergedTree, 'different-base', str_repeat('e', 40))))->toBeFalse();
+    expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeTrue();
+});
+
+it('retains uncertain teardown ownership but releases a confirmed remote refusal', function (int $exitCode): void {
+    $group = tick_group();
+    TaskVm::query()->where('group_id', $group->id)->delete();
+    lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $remover = new class($exitCode) implements InstanceRemover
+    {
+        public int $calls = 0;
+
+        public function __construct(private int $exitCode) {}
+
+        public function execute(Instance $instance, bool $force): InstanceRemoval
+        {
+            $this->calls++;
+            throw new RuntimeConvergenceException('remove', 'instance.remove_failed', 'Remote removal failed.', result: new CommandResult($this->exitCode, '', '', 1, false));
+        }
+    };
+    $action = new RemoveTaskWorkspaceAction($remover);
+    expect(fn () => $action->remove($group->taskable))->toThrow(RuntimeConvergenceException::class);
+    $lease = TaskWorkspaceLeaseRecord::query()->where('kind', 'teardown')->sole();
+    expect($lease->status)->toBe($exitCode === 255 ? 'held' : 'released');
+    if ($exitCode === 255) {
+        expect($lease->getAttribute('remote_uncertain'))->toBeTrue();
+        expect(fn () => $action->remove($group->taskable))->toThrow(TaskWorkspaceWaiting::class);
+        expect($remover->calls)->toBe(1);
+    }
+})->with([1, 255]);
+
+it('acknowledges a completed keyed send after restart without reopening its turn fence', function (): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $registry = app(AgentDriverRegistry::class);
+    $registry->get('pi')->send($thread, 'Same command.', 'durable');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'durable');
+    app()->instance(TaskWorkspaceLease::class, new TaskWorkspaceLease);
+    $registry->get('pi')->send($thread->fresh(), 'Same command.', 'durable');
+    expect(collect($driver->calls)->where('operation', 'send'))->toHaveCount(1);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->exists())->toBeFalse();
+    expect(app(TaskWorkspaceLease::class)->pendingSend($thread, 'durable'))->toBe(['key' => 'durable', 'message' => 'Same command.']);
+    expect(fn () => $registry->get('pi')->send($thread->fresh(), 'Changed command.', 'durable'))->toThrow(TaskWorkspaceWaiting::class);
+    $leases = app(TaskWorkspaceLease::class);
+    expect($leases->acquire($group, 'publication', 'after-completion')->status)->toBe('held');
+});
+
+it('drops a cancelled subtasks queued baseline and admits its successor without discarding a holder', function (): void {
+    $group = tick_group();
+    AgentThread::query()->where('task_group_id', $group->id)->delete();
+    $group->tasks()->update(['implementer_agent_thread_id' => null, 'reviewer_agent_thread_id' => null]);
+    $group->update(['implementer_agent_thread_id' => null, 'reviewer_agent_thread_id' => null]);
+    $group->refresh()->load('tasks');
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'busy');
+    $task = $group->tasks->first();
+    $next = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Next', 'brief' => 'Next', 'status' => TaskStatus::Todo]);
+    $start = new ReflectionMethod(TaskSubtaskRunner::class, 'startBaseline');
+    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
+    $queued = TaskWorkspaceLeaseRecord::query()->where('owner', 'check:'.$task->id)->sole();
+    expect($queued->getAttribute('task_id'))->toBe($task->id)->and($task->checks()->count())->toBe(0);
+    app(TaskScheduler::class)->cancelRunningSubtask($group, $task, static function (): void {});
+    expect($task->fresh()->status)->toBe(TaskStatus::Cancelled)->and($queued->fresh()->status)->toBe('cancelled');
+    expect($holder->fresh()->status)->toBe('held')->and($checks->starts)->toBe(0);
+    $leases->release($holder);
+    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group->fresh(), $next->fresh());
+    expect($checks->starts)->toBe(1)->and($next->fresh()->communication_failures)->toBe(0);
+});

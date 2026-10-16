@@ -91,6 +91,17 @@ final readonly class TaskScheduler
      */
     public function tick(): array
     {
+        app(TaskWorkspaceLease::class)->beginTick();
+        try {
+            return $this->tickWithWorkspaceLeases();
+        } finally {
+            app(TaskWorkspaceLease::class)->endTick();
+        }
+    }
+
+    /** @return list<TaskSessionDecision> */
+    private function tickWithWorkspaceLeases(): array
+    {
         if (! $this->extension->enabled()) {
             return [];
         }
@@ -109,7 +120,10 @@ final readonly class TaskScheduler
 
         $failed = [];
         foreach ($groups as $group) {
-            $this->isolateGroup($group, $failed, fn () => $this->settling->tickPullRequest($this, $group));
+            $this->isolateGroup($group, $failed, function () use ($group): void {
+                app(TaskWorkspaceLease::class)->reconcile($group);
+                $this->settling->tickPullRequest($this, $group);
+            });
         }
 
         $decisions = [];
@@ -118,6 +132,7 @@ final readonly class TaskScheduler
             if (! isset($failed[$group->id])) {
                 $this->isolateGroup($group, $failed, function () use ($group, $runningAtStart, &$decisions): void {
                     TaskExecutionHold::run($group, function () use ($group, $runningAtStart, &$decisions): void {
+                        app(TaskWorkspaceLease::class)->reconcile($group);
                         $this->runner->tickSubtasks($this, $group, isset($runningAtStart[$group->id]), $decisions);
                     });
                 });
@@ -147,6 +162,8 @@ final readonly class TaskScheduler
         Context::scope(function () use ($group, &$failed, $work): void {
             try {
                 $work();
+            } catch (TaskWorkspaceWaiting) {
+                return;
             } catch (Throwable $exception) {
                 $failed[$group->id] = true;
                 $key = self::TickFailureKey.$group->id;

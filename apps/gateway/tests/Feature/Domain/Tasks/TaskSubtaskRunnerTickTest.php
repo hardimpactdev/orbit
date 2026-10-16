@@ -30,6 +30,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -89,25 +90,22 @@ it('starts the check again when the tree changed during the run, then names the 
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
 });
 
-it('starts a lost check again once, then asks for assistance', function (): void {
-    [$group, $task, $checks, $notifier] = tick_checking([TaskCheckReading::lost(''), TaskCheckReading::lost('')]);
+it('retains a lost check lease because its child command may still run', function (): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::lost('The supervisor disappeared.'), TaskCheckReading::lost('The supervisor disappeared.')]);
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-
-    expect($checks->starts)->toBe(2)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
-
     app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toBe("Orbit's composer check stopped twice without a result.")
-        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Lost, TaskCheckStatus::Lost]);
+    expect($checks->starts)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Lost)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->pid)->toBe(4001)
+        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
 });
 
 it('reminds the implementer after an operator cancels the check', function (): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::finished(143, str_repeat('a', 40), str_repeat('b', 40), [], 'Cancelled.')]);
     app(TaskScheduler::class)->tick();
 
     $cancelled = app(CancelTaskCheckAction::class)->execute($group, $task);
@@ -132,7 +130,7 @@ it('keeps a check running when the workspace cannot be read and counts a communi
 });
 
 describe('a thread that works outside the task phase', function (): void {
-    it('collects a blocked implementer receipt and starts a consult while the shared reviewer works', function (): void {
+    it('queues a consult until the shared reviewer releases the workspace', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
         app(TaskExtensionState::class)->enable();
@@ -141,7 +139,8 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(AgentSnapshotReader::class, tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']));
         $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
         $dispatcher = tick_dispatcher();
-        tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done', 'reviewer' => 'running']);
+        $state = (object) ['implementer' => 'done', 'reviewer' => 'running', 'sharedReviewer' => 'running'];
+        tick_relay_runtime($receipts, $dispatcher, $state);
 
         app(TaskScheduler::class)->tick();
 
@@ -151,7 +150,13 @@ describe('a thread that works outside the task phase', function (): void {
             ->and($group->fresh()?->assistance_requested)->toBeFalse()
             ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
             ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
-            ->and(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
+            ->and($dispatcher->commands)->toBe([]);
+
+        $state->reviewer = 'done';
+        $state->sharedReviewer = 'done';
+        app(TaskScheduler::class)->tick();
+
+        expect(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
     });
 
     it('leaves a running task alone while its implementer works', function (string $reviewerState): void {
@@ -239,7 +244,7 @@ describe('a thread that works outside the task phase', function (): void {
 
         app(TaskScheduler::class)->tick();
 
-        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('changes_requested')
+        expect($task->comments()->count())->toBe(0)
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
             ->and($task->fresh()?->communication_failures)->toBe(0)
             ->and($dispatcher->commands)->toBe([]);
@@ -274,7 +279,7 @@ describe('a thread that works outside the task phase', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($signer->messages)->toBe([])
-            ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+            ->and($task->comments()->count())->toBe(0)
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 
         $reader->states['implementer-thread'] = 'idle';

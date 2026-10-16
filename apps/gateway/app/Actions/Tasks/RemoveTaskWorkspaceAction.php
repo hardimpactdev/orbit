@@ -6,14 +6,20 @@ namespace App\Actions\Tasks;
 
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
+use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Domain\RemotePrograms\RemoteProgramFailure;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -22,6 +28,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 /**
@@ -99,6 +106,46 @@ final readonly class RemoveTaskWorkspaceAction
      */
     public function remove(Instance $instance): void
     {
+        $group = Task::topLevel()->where('taskable_id', $instance->id)->first()
+            ?? Task::topLevel()->where('project_id', $instance->project_id)->whereKey(is_string($instance->branch_override) ? (int) str_replace('task-', '', $instance->branch_override) : 0)->first();
+        if ($group instanceof Task) {
+            $group->setRelation('taskable', $instance);
+            $leases = app(TaskWorkspaceLease::class);
+            $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
+                try {
+                    $this->removeWithLease($instance);
+                } catch (Throwable $exception) {
+                    if ($this->uncertainRemoteRemoval($exception)) {
+                        // The synchronous holder also survives a Gateway crash. Keep it
+                        // after a caught transport loss while teardown may still run.
+                        $leases->remoteStarted($instance);
+                    }
+                    throw $exception;
+                }
+            });
+
+            return;
+        }
+        $this->removeWithLease($instance);
+    }
+
+    private function uncertainRemoteRemoval(Throwable $exception): bool
+    {
+        for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
+            if ($cause instanceof ProcessTimedOutException
+                || ($cause instanceof ResourceOperationException && ($cause->details['outcome'] ?? null) === 'unconfirmed')
+                || ($cause instanceof RuntimeConvergenceException && $cause->result !== null && in_array($cause->result->exitCode, [124, 137, 143, 255], true))
+                || ($cause instanceof RemoteProgramFailed && $cause->reason !== RemoteProgramFailure::Unreachable
+                    && ($cause->exitCode === null || in_array($cause->exitCode, [124, 137, 143, 255], true)))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function removeWithLease(Instance $instance): void
+    {
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
@@ -134,6 +181,9 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
     {
+        if ($exception instanceof TaskWorkspaceWaiting) {
+            return;
+        }
         TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
     }
 

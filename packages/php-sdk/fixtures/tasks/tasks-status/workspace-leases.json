@@ -1,0 +1,57 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTasksStatusRequest",
+    "route": "GET /api/v1/tasks/status",
+    "status": 200,
+    "body": {
+        "data": {
+            "enabled": false,
+            "assistance": [],
+            "last_tick_at": null,
+            "merges": [],
+            "workspace_leases": [
+                {
+                    "instance_id": 1,
+                    "instance_name": "lease-status",
+                    "group_id": 1,
+                    "project_code": "ORB",
+                    "holder": {
+                        "id": 1,
+                        "kind": "reviewer",
+                        "owner": "review:1",
+                        "acquired_at": "2026-10-16T07:52:07+00:00",
+                        "queued_at": null,
+                        "thread_id": null,
+                        "check_id": null,
+                        "remote_uncertain": true
+                    },
+                    "waiters": [
+                        {
+                            "id": 2,
+                            "kind": "check",
+                            "owner": "check:1",
+                            "acquired_at": null,
+                            "queued_at": "2026-10-16T07:52:07+00:00",
+                            "thread_id": null,
+                            "check_id": null,
+                            "remote_uncertain": false
+                        },
+                        {
+                            "id": 3,
+                            "kind": "publication",
+                            "owner": "publication:1",
+                            "acquired_at": null,
+                            "queued_at": "2026-10-16T07:52:07+00:00",
+                            "thread_id": null,
+                            "check_id": null,
+                            "remote_uncertain": false
+                        }
+                    ]
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

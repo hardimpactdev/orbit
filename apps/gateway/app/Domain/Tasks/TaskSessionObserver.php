@@ -144,7 +144,11 @@ final readonly class TaskSessionObserver
             $since = $started instanceof Carbon ? $started->toIso8601String() : null;
         }
 
-        return is_string($since) && $since !== '' && $this->diff->hasCommitsSince($instance, $since);
+        if (! is_string($since) || $since === '') {
+            return false;
+        }
+
+        return app(TaskWorkspaceLease::class)->inspect($group, fn (): bool => $this->diff->hasCommitsSince($instance, $since));
     }
 
     /** @param list<array{id: string, kind: string, label: string, text: string, at: string}> $entries

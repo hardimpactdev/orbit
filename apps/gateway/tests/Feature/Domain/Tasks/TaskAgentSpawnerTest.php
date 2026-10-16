@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -24,6 +26,7 @@ use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -33,11 +36,13 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
+use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskTurnReceipts;
 
@@ -104,7 +109,10 @@ function task_spawner_stack(?TaskWorkspaceMcp $mcp = null): array
         {
             expect($node->wireguard_ip)->toBe('10.44.0.110');
             if ($this->fail) {
-                throw new AgentDriverException('Agent refused the turn.');
+                $exception = new AgentDriverException('Agent refused the turn.');
+                $exception->turnRejected = true;
+
+                throw $exception;
             }
             $this->commands[] = $command;
 
@@ -112,7 +120,36 @@ function task_spawner_stack(?TaskWorkspaceMcp $mcp = null): array
         }
     };
 
-    return [new TaskAgentSpawner(test_snapshot_registry($dispatcher), app(TaskReviewPacketBuilder::class), $mcp ?? app(TaskWorkspaceMcp::class)), $dispatcher];
+    $reader = new class($dispatcher) implements AgentSnapshotReader
+    {
+        public function __construct(private AgentCommandDispatcher $dispatcher) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $turns = count(array_filter($this->dispatcher->commands, static fn (array $command): bool => ($command['threadId'] ?? null) === $threadId));
+
+            return ['thread' => ['id' => $threadId, 'session' => ['status' => 'done'], 'latestTurn' => ['id' => $threadId.':'.$turns, 'state' => 'completed']]];
+        }
+    };
+    $registry = test_snapshot_registry($dispatcher, $reader);
+    app()->instance(AgentDriverRegistry::class, $registry);
+
+    return [new TaskAgentSpawner($registry, app(TaskReviewPacketBuilder::class), $mcp ?? app(TaskWorkspaceMcp::class)), $dispatcher];
+}
+
+function task_spawner_fake_driver(): FakeAgentDriver
+{
+    $driver = new class('pi') extends FakeAgentDriver
+    {
+        #[Override]
+        public function observe(AgentThread $thread): AgentObservation
+        {
+            return new AgentObservation(AgentThreadState::Done, turnId: $thread->external_id.':'.count($this->calls));
+        }
+    };
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+
+    return $driver;
 }
 
 it('spawns fresh role threads on the workspace Node with the configured model and opening prompt', function (): void {
@@ -281,7 +318,7 @@ it('uses the container diff reader when the reviewer spawner is resolved', funct
             ];
         }
     };
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     app()->instance(TaskReviewDiff::class, $diff);
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
@@ -326,7 +363,7 @@ it('does not open a review when the bound diff reader fails', function (): void 
         ->and($dispatcher->commands)->toBe([]);
 });
 
-it('deletes a reserved reviewer when creating the conversation throws', function (): void {
+it('retains the reserved reviewer and lease when conversation creation has an unknown outcome', function (): void {
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
         public function read(Instance $instance, string $startCommit): array
@@ -340,7 +377,7 @@ it('deletes a reserved reviewer when creating the conversation throws', function
             ];
         }
     });
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     $driver->failNextCreate = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
@@ -349,15 +386,19 @@ it('deletes a reserved reviewer when creating the conversation throws', function
     $task = $group->tasks->firstOrFail();
 
     expect(fn () => app(AgentSpawner::class)->spawnReviewer($task))
-        ->toThrow(RuntimeException::class, 'serialization failure')
-        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0);
+        ->toThrow(RuntimeException::class, 'serialization failure');
 
-    $id = app(AgentSpawner::class)->spawnReviewer($task->fresh() ?? $task);
+    $reserved = AgentThread::query()->where('task_group_id', $group->id)->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->where('thread_id', $reserved->id)->sole();
+    expect($lease->status)->toBe('held')
+        ->and($lease->dispatch_started_at)->not->toBeNull();
 
-    expect($id)->toBeInt()
-        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1)
-        ->and(AgentThread::query()->find($id)?->external_id)->not->toStartWith(TaskAgentSpawner::PendingPrefix)
-        ->and(array_column($driver->calls, 'operation'))->toBe(['create', 'create']);
+    expect(fn () => app(AgentSpawner::class)->spawnReviewer($task->fresh() ?? $task))
+        ->toThrow(TaskWorkspaceWaiting::class);
+
+    expect(AgentThread::query()->where('task_group_id', $group->id)->sole()->id)->toBe($reserved->id)
+        ->and($lease->fresh()?->status)->toBe('held')
+        ->and(array_column($driver->calls, 'operation'))->toBe(['create']);
 });
 
 it('does not start a replacement reviewer when the turn file cannot be written', function (): void {
@@ -366,7 +407,8 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     $reviewer = test_agent_thread($group, 'reviewer-existing');
     $reviewer->update(['task_id' => $task->id]);
     $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'prior-rejected-review');
     $driver->failNextSend = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
@@ -402,7 +444,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
 it('deletes a reserved reviewer when preparing the turn throws', function (): void {
     $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
@@ -449,7 +491,7 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
             ];
         }
     });
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
@@ -642,7 +684,7 @@ it('gives a fresh reviewer the questions and answers from earlier consults', fun
         }
     });
     app()->forgetInstance(TaskReviewPacketBuilder::class);
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
 
     expect($spawner->spawnReviewer($task))->not->toBeNull();
@@ -697,7 +739,7 @@ it('installs relay mode for a new reviewer and keeps relay or cause-required mod
     $task = $group->tasks->sole();
     $receipts = new FakeTaskTurnReceipts;
     app()->instance(TaskTurnReceipts::class, $receipts);
-    $driver = new FakeAgentDriver('pi');
+    $driver = task_spawner_fake_driver();
     $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
 
     $started = $spawner->relay($task, 'Use the mirror. '.TaskTurnInstructions::relay());

@@ -42,6 +42,7 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
                 ),
                 'task-workspace-commit',
                 'tasks.commit_failed',
+                mutates: true,
             );
         } catch (RuntimeConvergenceException) {
             return null;

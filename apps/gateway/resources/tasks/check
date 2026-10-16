@@ -821,6 +821,8 @@ def snapshot(checkout):
         'head': git(checkout, 'rev-parse', 'HEAD'),
         'tree': working_tree(checkout),
         'parent': optional_rev(checkout, 'HEAD^'),
+        'parent_tree': optional_rev(checkout, 'HEAD^^{tree}'),
+        'second_parent': optional_rev(checkout, 'HEAD^2'),
         'commit_tree': git(checkout, 'rev-parse', 'HEAD^{tree}'),
     }))
 

@@ -17,7 +17,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskWorkspaceHead;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -65,11 +65,15 @@ final readonly class RetryTaskBaselineAction
      */
     public function recover(Task $task): bool
     {
+        return app(TaskWorkspaceLease::class)->run($task->parent, 'check', 'baseline-retry:'.$task->id, fn () => $this->recoverWithLease($task), taskId: $task->id);
+    }
+
+    private function recoverWithLease(Task $task): bool
+    {
         $group = Task::topLevel()->findOrFail($task->parent_id);
         $fresh = Task::query()->findOrFail($task->id);
         $check = $this->failedBaseline($group, $fresh);
-        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)
-            || app(TaskWorkspaceHead::class)->held($group)) {
+        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)) {
             return false;
         }
 

@@ -27,9 +27,11 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
@@ -153,10 +155,11 @@ function tick_group(): Task
 }
 
 /** @return array{thread: array<string, mixed>} */
-function tick_checked_thread(string $status): array
+function tick_checked_thread(string $status, ?string $threadId = null): array
 {
     return ['thread' => [
         'session' => ['status' => $status],
+        'latestTurn' => ['id' => tick_observed_turn($threadId ?? 'checked-thread'), 'state' => 'done'],
         'activities' => [[
             'id' => 'check-1',
             'kind' => 'command.completed',
@@ -165,6 +168,15 @@ function tick_checked_thread(string $status): array
             'createdAt' => '2026-09-22T12:00:00Z',
         ]],
     ]];
+}
+
+/** A completed turn reported by the fake runtime, advanced only after an accepted command. */
+function tick_observed_turn(string $threadId, ?string $fallback = null): string
+{
+    $turns = app()->bound(AgentCommandDispatcher::class)
+        ? (get_object_vars(app(AgentCommandDispatcher::class))['turnIds'] ?? []) : [];
+
+    return $turns[$threadId] ?? $fallback ?? $threadId.'-turn';
 }
 
 function tick_workspace(?string $branch = null): void
@@ -249,9 +261,15 @@ function tick_dispatcher(): AgentCommandDispatcher
         /** @var list<array<string, mixed>> */
         public array $commands = [];
 
+        /** @var array<string, string> */
+        public array $turnIds = [];
+
         public function dispatch(Node $node, array $command): array
         {
             $this->commands[] = $command;
+            if (in_array($command['type'] ?? null, ['create', 'send'], true) && ! ($command['deferOpeningTurn'] ?? false)) {
+                $this->turnIds[(string) ($command['threadId'] ?? '')] = (string) ($command['commandId'] ?? 'accepted-'.count($this->commands));
+            }
 
             return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
@@ -295,7 +313,7 @@ function tick_relay_runtime(FakeTaskTurnReceipts $receipts, AgentCommandDispatch
         public function snapshot(Node $node, string $threadId): ?array
         {
             if ($threadId === 'implementer-thread') {
-                $turnId = isset($this->state->turnId) && is_string($this->state->turnId) ? $this->state->turnId : '';
+                $turnId = property_exists($this->state, 'turnId') ? $this->state->turnId : tick_observed_turn($threadId);
                 $messageId = isset($this->state->messageId) && is_string($this->state->messageId) ? $this->state->messageId : null;
                 $thread = ['session' => ['status' => $this->state->implementer]];
                 if ($turnId !== '') {
@@ -309,10 +327,13 @@ function tick_relay_runtime(FakeTaskTurnReceipts $receipts, AgentCommandDispatch
             }
 
             $reviewer = isset($this->state->reviewer) && is_string($this->state->reviewer) ? $this->state->reviewer : 'done';
+            if ($threadId === 'reviewer-thread' && AgentThread::query()->where('external_id', $threadId)->whereNull('task_id')->exists()) {
+                $reviewer = $this->state->sharedReviewer ?? 'done';
+            }
 
             return ['thread' => [
                 'session' => ['status' => $reviewer],
-                'latestTurn' => ['id' => $this->state->reviewerTurnId ?? 'relay-turn', 'state' => 'done'],
+                'latestTurn' => ['id' => $this->state->reviewerTurnId ?? tick_observed_turn($threadId), 'state' => 'done'],
             ]];
         }
     };
@@ -540,6 +561,9 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
         /** @var list<int> */
         public array $spawned = [];
 
+        /** @var array<string, string> */
+        public array $spawnedTurns = [];
+
         /** @var list<string> */
         public array $fetched = [];
 
@@ -558,7 +582,13 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             $this->spawned[] = $task->id;
             $this->events[] = 'spawn';
 
-            return test_agent_thread($task->parent, 'fixup-implementer-'.$task->id, $task)->id;
+            $thread = AgentThread::query()->find($task->implementer_agent_thread_id)
+                ?? test_agent_thread($task->parent, 'fixup-implementer-'.$task->id, $task);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+            app(TaskWorkspaceLease::class)->dispatch($thread);
+            $this->spawnedTurns[$thread->external_id] = 'spawned-implementer-'.$task->id;
+
+            return $thread->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -617,13 +647,21 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
     app()->instance(TaskBaseBranchFetcher::class, $agents);
     // The previous review has settled. A generic running/null snapshot in these
     // implementer fixtures must not describe the group's old shared reviewer.
-    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(reader: new class implements AgentSnapshotReader
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(reader: new class($agents) implements AgentSnapshotReader
     {
+        public function __construct(private object $agents) {}
+
         public function snapshot(Node $node, string $threadId): ?array
         {
+            if (isset($this->agents->spawnedTurns[$threadId])) {
+                $snapshot = tick_checked_thread('done', $threadId);
+                $snapshot['thread']['latestTurn'] = ['id' => $this->agents->spawnedTurns[$threadId], 'state' => 'completed'];
+
+                return $snapshot;
+            }
             $thread = AgentThread::query()->where('external_id', $threadId)->first();
             if ($thread?->role === 'reviewer' && ! Task::query()->where('parent_id', $thread->task_group_id)->where('status', TaskStatus::Reviewing)->exists()) {
-                return tick_checked_thread('done');
+                return tick_checked_thread('done', $threadId);
             }
 
             return app(AgentSnapshotReader::class)->snapshot($node, $threadId);
@@ -696,7 +734,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'review-turn', 'state' => 'completed']]];
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => tick_observed_turn($threadId, 'review-turn'), 'state' => 'completed']]];
         }
     });
     tick_workspace(branch: $onBranch ? 'task-'.$group->id : 'main');
@@ -840,7 +878,7 @@ function tick_checking(array $readings): array
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('done');
+            return tick_checked_thread('done', $threadId);
         }
     });
     $checks = new FakeTaskCheckRunner($readings);
@@ -879,7 +917,7 @@ function tick_thread_states(array $states): AgentSnapshotReader
         {
             return ['thread' => [
                 'session' => ['status' => $this->states[$threadId] ?? 'idle'],
-                'latestTurn' => ['id' => $threadId.'-turn', 'state' => 'completed'],
+                'latestTurn' => ['id' => tick_observed_turn($threadId), 'state' => 'completed'],
             ]];
         }
     };

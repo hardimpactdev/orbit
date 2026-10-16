@@ -61,6 +61,7 @@ use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\TaskWorkspaceLeaseRecord;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\UpCloudTaskVmImageBuild;
@@ -89,6 +90,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteCustomProxy::class => DoctorFamily::Route,
     ];
     $ownerInputs = [
+        TaskWorkspaceLeaseRecord::class,
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,

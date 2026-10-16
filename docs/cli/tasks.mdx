@@ -15,7 +15,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 
 | Command | Result |
 | --- | --- |
-| [`tasks:status`](#orbit-tasksstatus) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks. |
+| [`tasks:status`](#orbit-tasksstatus) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks and workspace leases. |
 | [`tasks:list`](#orbit-taskslist) | List tasks, optionally for one Project or status. |
 | [`tasks:show`](#orbit-tasksshow) | Show one task with its brief and subtasks. |
 | [`tasks:create`](#orbit-taskscreate) | Create a task in Backlog or Todo. |
@@ -62,6 +62,9 @@ orbit tasks:status [--json]
 JSON returns `enabled` as `true` or `false`, `last_tick_at`, and `assistance` as a list in ascending task id order. `last_tick_at` is the time the latest `tasks:tick` took the tick lock and started its work, or `null` when the Gateway remembers no tick. The human output shows it as `Last tick`, or `not recorded`. The [scheduler](/reference/tasks#scheduler) explains the record. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human output shows direction requests first, under `Needs your direction`, with the task reference, title, status, and question. Failures follow under `Failures`, with the task reference, title, status, and reason. An empty list says `No groups are asking for assistance.` The [tasks reference](/reference/tasks#direction-requests) defines the two kinds.
 
 JSON also returns `merges`: each open task of a review-and-merge Project, or with an incoming pull request, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `pr_url`, `pr_branch`, `merge_status`, and `merge_reason`. The human output lists them under `Review and merge` with the task reference, title, status, merge status, and reason, and omits the section when the list is empty. [Merge on green](/reference/tasks#merge-on-green) defines the merge status.
+
+`workspace_leases` lists each Instance with an active holder or queued waiter. Each entry names the Instance and task group, the holder kind, owner key, acquisition time, and optional thread or check id. Waiters appear in queue order with their kind, owner key, queue time, and optional thread or check id. The holder also reports `remote_uncertain` when a remote mutation has no confirmed result; human output names that retained uncertainty. Human output shows the same holder and queue. An empty list means no actor holds or waits for a workspace lease. Status only reads these records; it does not release a lease or reconcile an actor.
+
 
 ## orbit tasks:list
 

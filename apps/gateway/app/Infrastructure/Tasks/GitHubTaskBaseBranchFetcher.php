@@ -100,7 +100,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: $arguments,
                 input: $script,
-            ), 'task-branch-sync', 'tasks.fetch_failed');
+            ), 'task-branch-sync', 'tasks.fetch_failed', mutates: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The task branch could not be fetched.', previous: $exception);
         }
@@ -138,7 +138,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $local],
                 input: $script,
-            ), 'task-baseline-reset', 'tasks.baseline_reset_failed');
+            ), 'task-baseline-reset', 'tasks.baseline_reset_failed', mutates: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The baseline workspace could not be reset.', previous: $exception);
         }
@@ -197,7 +197,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, 'task-'.$group->id],
                 input: $script,
-            ), 'task-base-merge', 'tasks.merge_failed');
+            ), 'task-base-merge', 'tasks.merge_failed', mutates: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The default branch could not be merged.', previous: $exception);
         }
@@ -281,7 +281,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $script,
-            ), $step, 'tasks.fetch_failed');
+            ), $step, 'tasks.fetch_failed', mutates: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException($failure, previous: $exception);
         }
@@ -397,7 +397,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                     throw new TaskPullRequestException($failure." The repository has no branch [{$branch}].");
                 }
             }
-            $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed'), 'tasks.fetch_failed');
+            $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed', mutates: true), 'tasks.fetch_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException($failure, previous: $exception);
         }

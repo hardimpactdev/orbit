@@ -43,6 +43,21 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
+        $dispatched = false;
+        try {
+            return $this->startPrepared($instance, $command, $setup, $deliverables, $dispatched);
+        } catch (TaskCheckException $exception) {
+            $exception->startNotDispatched = ! $dispatched;
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool, base_merge?: bool}|null  $deliverables
+     */
+    private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched): TaskCheckProcess
+    {
         $instance->refresh();
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
@@ -81,7 +96,9 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 }
             }
         }
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true, composerAuth: $auth);
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true, composerAuth: $auth, beforeDispatch: static function () use (&$dispatched): void {
+            $dispatched = true;
+        });
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -126,12 +143,16 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
         $parent = $data['parent'] ?? null;
         $commitTree = $data['commit_tree'] ?? null;
+        $parentTree = $data['parent_tree'] ?? null;
+        $secondParent = $data['second_parent'] ?? null;
 
         return new TaskWorkspaceSnapshot(
             $head,
             $tree,
             is_string($parent) && $parent !== '' ? $parent : null,
             is_string($commitTree) && $commitTree !== '' ? $commitTree : null,
+            is_string($parentTree) && $parentTree !== '' ? $parentTree : null,
+            is_string($secondParent) && $secondParent !== '' ? $secondParent : null,
         );
     }
 
@@ -163,6 +184,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     /**
      * @param  list<string>  $arguments
+     * @param  (\Closure(): void)|null  $beforeDispatch
      * @return array<string, mixed>
      */
     private function run(
@@ -174,6 +196,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         bool $withVpHome = false,
         bool $allocateTemporary = false,
         #[\SensitiveParameter] ?string $composerAuth = null,
+        ?\Closure $beforeDispatch = null,
     ): array {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
@@ -215,6 +238,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                     ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
                     : '').
                 $command."\n";
+            $beforeDispatch?->__invoke();
             $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $composerAuth === null ? $input : null,

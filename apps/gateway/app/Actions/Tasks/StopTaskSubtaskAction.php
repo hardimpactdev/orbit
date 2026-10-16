@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
@@ -66,6 +67,7 @@ final readonly class StopTaskSubtaskAction
             }
             try {
                 $this->checks->cancel($instance, $check->process());
+                app(TaskWorkspaceLease::class)->invalidateCheck($instance, $check->process());
             } catch (TaskCheckException $exception) {
                 throw $this->stopFailed($exception->getMessage());
             }

@@ -23,12 +23,10 @@ final readonly class TaskPublication
         private TaskPullRequestWatcher $pullRequestWatcher,
         private CoderSettleNotifier $coder,
         private TaskPullRequestPublisher $publisher,
-        private TaskCheckRunner $checks,
         private TaskBroadcasts $broadcasts,
         private TaskBaseBranchFetcher $bases,
         private TaskTurnFetcher $turnFetcher,
         private TaskPullRequestMerger $merger,
-        private TaskWorkspaceHead $head,
     ) {}
 
     /**
@@ -38,6 +36,11 @@ final readonly class TaskPublication
      * A failed push or open leaves the subtask in review and keeps commit_sha.
      */
     public function publishApprovedCommit(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
+    {
+        app(TaskWorkspaceLease::class)->run($group, 'publication', 'approval:'.$receipt->id, fn () => $this->publishApprovedCommitWithWorkspace($scheduler, $group, $task, $receipt), taskId: $task->id);
+    }
+
+    private function publishApprovedCommitWithWorkspace(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
     {
         $commit = $receipt->commit_sha;
         if (! is_string($commit) || $commit === '') {
@@ -247,6 +250,11 @@ final readonly class TaskPublication
      */
     public function mergeWhenReady(TaskScheduler $scheduler, Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
+        app(TaskWorkspaceLease::class)->run($group, 'publication', 'merge-ready:'.$group->id, fn () => $this->mergeWhenReadyWithWorkspace($scheduler, $group, $health, $reviews));
+    }
+
+    private function mergeWhenReadyWithWorkspace(TaskScheduler $scheduler, Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
+    {
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         $head = $health->headSha;
         if ($group->assistance_requested && TaskFinalReview::isUnreviewedHeadReason($group->assistance_reason)
@@ -289,6 +297,21 @@ final readonly class TaskPublication
             $this->recordMerge($group, TaskMergeStatus::Waiting, 'GitHub has not reported '.$group->pr_url.' mergeable.');
 
             return;
+        }
+        // Reconciliation can finish the detached gate before this evaluation. Continue its
+        // exact workspace result before the GitHub throttle or any merge of a newer main.
+        $finishedMerge = TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
+            ->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first();
+        if ($finishedMerge instanceof TaskCheck && $finishedMerge->status !== TaskCheckStatus::Running) {
+            $current = $scheduler->workspaceSnapshot($group);
+            $finishedHead = $finishedMerge->head_after ?? $finishedMerge->head_before;
+            $finishedTree = $finishedMerge->tree_after ?? $finishedMerge->tree_before;
+            if ($finishedHead === $current->head && $finishedTree === $current->tree
+                && ! TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $current->head)->whereNotNull('pushed_at')->exists()) {
+                $this->appendBaseMerge($scheduler, $group, (string) $default);
+
+                return;
+            }
         }
         // One full evaluation per head and minute. The pull request read above already runs every tick.
         if (! Cache::add('tasks.merge-gate.'.$group->id.'.'.$head, true, 60)) {
@@ -340,6 +363,11 @@ final readonly class TaskPublication
      */
     public function appendBaseMerge(TaskScheduler $scheduler, Task $group, string $base): void
     {
+        app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'base-merge:'.$group->id, fn () => $this->appendBaseMergeWithWorkspace($scheduler, $group, $base));
+    }
+
+    private function appendBaseMergeWithWorkspace(TaskScheduler $scheduler, Task $group, string $base): void
+    {
         TaskExecutionHold::run($group, function () use ($scheduler, $group, $base): void {
             $task = $group->tasks()->whereHas('checks', static fn ($query) => $query
                 ->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Running))->reorder('position', 'desc')->first()
@@ -350,11 +378,6 @@ final readonly class TaskPublication
                 return;
             }
             try {
-                if ($this->head->held($group, ownCheck: $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first()?->id)) {
-                    $this->recordMerge($group, TaskMergeStatus::Waiting, 'The main merge waits for the workspace review or handoff check to settle.');
-
-                    return;
-                }
                 $this->turnFetcher->fetch($group);
                 $current = $scheduler->workspaceSnapshot($group);
                 $pending = $task->checks()->where('kind', TaskCheckKind::BaseMerge)
@@ -460,30 +483,28 @@ final readonly class TaskPublication
      */
     public function prepareBaseMerge(TaskScheduler $scheduler, Task $group, Task $task, ?TaskComment $receipt = null, bool $refreshPassed = false): string
     {
+        return app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'prepare-merge:'.$task->id, fn () => $this->prepareBaseMergeWithWorkspace($scheduler, $group, $task, $receipt, $refreshPassed), taskId: $task->id);
+    }
+
+    /** @return 'passed'|'waiting'|'conflict' */
+    private function prepareBaseMergeWithWorkspace(TaskScheduler $scheduler, Task $group, Task $task, ?TaskComment $receipt = null, bool $refreshPassed = false): string
+    {
         $query = $task->checks()->where('kind', TaskCheckKind::BaseMerge);
         if (! $refreshPassed) {
             $query->where('task_comment_id', $receipt?->id);
         }
         $check = $query->latest('id')->first();
-        if ($this->head->held($group, $receipt, $check?->id)) {
-            return 'waiting';
-        }
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskCheckException('The task workspace is unavailable.');
         }
         $snapshot = $scheduler->workspaceSnapshot($group);
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $check->pid > 0) {
-            $reading = $this->checks->read($instance, $check->process());
+            $reading = app(TaskWorkspaceLease::class)->readCheck($instance, $check->process());
             if ($reading->state === 'running') {
                 return 'waiting';
             }
             $this->runner->recordReading($check, $reading);
-            if ($check->status === TaskCheckStatus::Failed) {
-                // The helper distinguishes missing executables from source failures before comparing both parents.
-                // Keep its classification: a missing source resource is not a missing executable.
-                $check->update(['failed_step' => $check->exit_code !== 127 && $reading->failedStep === 'gate' ? 'gate' : 'environment']);
-            }
             $snapshot = $scheduler->workspaceSnapshot($group);
             if ($check->status === TaskCheckStatus::Passed && $check->head_after === $snapshot->head && $check->tree_after === $snapshot->tree) {
                 return 'passed';
@@ -525,7 +546,10 @@ final readonly class TaskPublication
                 if ($check->head_after !== $snapshot->head || $check->tree_after !== $snapshot->tree) {
                     throw new TaskCheckException('The workspace changed after the main merge Project check #'.$check->id.'.');
                 }
-                if (! $refreshPassed) {
+                $published = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $snapshot->head)->whereNotNull('pushed_at')->exists();
+                if (! $refreshPassed || ! $published) {
+                    // Reconciliation may have finished this gate before entering here.
+                    // Publish its exact checked head before considering a newer main tip.
                     return 'passed';
                 }
             }
@@ -561,7 +585,7 @@ final readonly class TaskPublication
             // Approval commits the handoff tree. The helper verifies it against the first parent's tree before reuse.
             $deliverables['base_merge_passed_tree'] = $handoff->tree_after;
         }
-        $process = $this->checks->start($instance, $group->project->taskCheckCommand(), deliverables: $deliverables);
+        $process = app(TaskWorkspaceLease::class)->startCheck($group, $task, $group->project->taskCheckCommand(), deliverables: $deliverables);
         $check->update(['pid' => $process->pid, 'process_started' => $process->started,
             'head_before' => $process->head, 'tree_before' => $process->tree]);
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
@@ -69,7 +70,7 @@ function observer_group(): Task
  */
 function observer_reader(array $snapshots): AgentSnapshotReader
 {
-    return new class($snapshots) implements AgentSnapshotReader
+    $reader = new class($snapshots) implements AgentSnapshotReader
     {
         /** @param array<string, array<string, mixed>> $snapshots */
         public function __construct(private array $snapshots) {}
@@ -79,6 +80,9 @@ function observer_reader(array $snapshots): AgentSnapshotReader
             return $this->snapshots[$threadId] ?? null;
         }
     };
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(reader: $reader));
+
+    return $reader;
 }
 
 it('marks an idle implementer observation with the last turn text', function (): void {

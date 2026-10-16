@@ -61,6 +61,7 @@ use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -84,6 +85,16 @@ use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     tick_bind_defaults();
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => 'done'],
+                'latestTurn' => ['id' => 'settled-'.$threadId, 'state' => 'completed'],
+            ]];
+        }
+    });
 });
 
 it('deletes stale pending thread rows for finished tasks', function (): void {
@@ -289,7 +300,7 @@ it('preserves unresolved review assistance while CI and conflict fixes activate 
         {
             $this->reads++;
 
-            return tick_checked_thread('running');
+            return tick_checked_thread($threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'done' : 'running');
         }
     };
     app()->instance(AgentSnapshotReader::class, $snapshots);
@@ -2227,11 +2238,14 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
 
     $blocked = $task->comments()->where('type', 'blocked')->sole();
     $sendKey = $task->fresh()?->direction_answer_key;
+    $reserved = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
         ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
         ->and($sendKey)->not->toBeNull()
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
-        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->count())->toBe(0)
+        ->and($reserved->isPending())->toBeTrue()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->kind)->toBe('check')
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->thread_id)->toBe($reserved->id)
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
@@ -2239,6 +2253,7 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
         ->and($task->fresh()?->direction_answer_key)->toBe($sendKey)
+        ->and($reserved->fresh()?->isPending())->toBeTrue()
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
@@ -2249,6 +2264,7 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
     $starts = tick_reviewer_starts($dispatcher);
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
         ->and($starts)->toHaveCount(1)
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole()->id)->toBe($reserved->id)
         ->and($starts[0]['commandId'])->toBe($sendKey)
         ->and($starts[0]['message']['text'])->toContain('Which contract should I use?')
         ->and($receipts->modes)->toBe(['consult', 'consult'])

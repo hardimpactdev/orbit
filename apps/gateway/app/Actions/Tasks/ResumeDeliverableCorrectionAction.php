@@ -16,6 +16,8 @@ use App\Domain\Tasks\TaskTurnFetcher;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -72,24 +74,27 @@ final readonly class ResumeDeliverableCorrectionAction
                 return;
             }
             try {
-                $this->fetcher->beforeTurn($group);
-                $task->refresh();
-                $group->refresh();
-                if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
-                    || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
-                    return;
-                }
-                // The remote metadata commit is keyed too. A lost prepare reply cannot erase a resumed receipt.
-                $this->receipts->prepare($instance, TaskThreadRole::Implementer, false, $task->deliverableList(), $thread->id, new TaskTurnMode(deliveryKey: $resume['key']));
-                $task->refresh();
-                $group->refresh();
-                if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
-                    || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
-                    return;
+                if (! app(TaskWorkspaceLease::class)->retrying($thread, $resume['key'], $resume['message'])) {
+                    app(TaskWorkspaceLease::class)->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+                    $this->fetcher->beforeTurn($group);
+                    $task->refresh();
+                    $group->refresh();
+                    if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
+                        || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
+                        return;
+                    }
+                    // The remote metadata commit is keyed too. A lost prepare reply cannot erase a resumed receipt.
+                    $this->receipts->prepare($instance, TaskThreadRole::Implementer, false, $task->deliverableList(), $thread->id, new TaskTurnMode(deliveryKey: $resume['key']));
+                    $task->refresh();
+                    $group->refresh();
+                    if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
+                        || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
+                        return;
+                    }
                 }
                 // Pi reconciles acceptance with the same key, even when both replies to a send were lost.
                 $this->drivers->get($thread->driver)->send($thread, $resume['message'], $resume['key']);
-            } catch (AgentDriverException|TaskTurnReceiptException) {
+            } catch (TaskWorkspaceWaiting|AgentDriverException|TaskTurnReceiptException) {
                 return;
             }
 

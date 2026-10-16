@@ -62,12 +62,16 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
@@ -80,6 +84,7 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -106,6 +111,13 @@ beforeEach(function (): void {
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => tick_observed_turn($threadId), 'state' => 'completed']]];
+        }
+    });
 });
 
 function scheduler_app(string $slug): Project
@@ -199,7 +211,11 @@ function scheduler_recording_spawner(): AgentSpawner
         {
             $this->events[] = 'implementer:'.$task->position;
 
-            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
+            $thread = test_agent_thread($task->parent, 'implementer-'.$task->position, $task);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+            app(TaskWorkspaceLease::class)->dispatch($thread);
+
+            return $thread->id;
         }
 
         public function requestReview(Task $task): void
@@ -402,6 +418,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
     $task = $group->tasks()->sole();
+    app(TaskWorkspaceLease::class)->dispatch($task->implementerThread);
     app(TaskScheduler::class)->settleImplementer($task);
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
@@ -978,6 +995,15 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
     ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'],
+                'latestTurn' => ['id' => $threadId.'-finished', 'state' => 'completed']]];
+        }
+    });
+
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
     $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
@@ -1175,7 +1201,7 @@ it('reviews the first subtask with a missing start commit from the workspace sta
         ->and($opening)->toContain('+reviewed');
 });
 
-it('records a missing start commit on a later tick', function (): void {
+it('defers a missing start commit while assistance blocks admission', function (): void {
     $project = scheduler_app('retry-start');
     $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
     $group = Task::topLevel()->create([
@@ -1216,10 +1242,10 @@ it('records a missing start commit on a later tick', function (): void {
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->subtask_start_commit)->toBe($head);
+    expect($task->fresh()?->subtask_start_commit)->toBeNull();
 });
 
-it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
+it('defers a migrated continuation boundary until admission', function (): void {
     $project = scheduler_app('continuation-start');
     $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
     $group = Task::topLevel()->create([
@@ -1270,7 +1296,8 @@ it('keeps a migrated continuation on its source subtask start after the source c
 
     app(TaskScheduler::class)->tick();
 
-    expect($continuation->fresh()?->subtask_start_commit)->toBe($start);
+    expect($continuation->fresh()?->subtask_start_commit)->toBeNull()
+        ->and($source->fresh()?->subtask_start_commit)->toBe($start);
 });
 
 it('does not record a later head after the implementer starts and commits', function (): void {
@@ -1327,7 +1354,7 @@ it('does not record a later head after the implementer starts and commits', func
     expect($task->fresh()?->subtask_start_commit)->toBeNull();
 });
 
-it('records a start commit on a later tick while the implementer is only reserved', function (): void {
+it('does not sample the workspace for a reserved implementer while assistance blocks admission', function (): void {
     $project = scheduler_app('reserved-start');
     $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
     $group = Task::topLevel()->create([
@@ -1376,7 +1403,8 @@ it('records a start commit on a later tick while the implementer is only reserve
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->subtask_start_commit)->toBe($later);
+    expect($task->fresh()?->subtask_start_commit)->toBeNull()
+        ->and($reads)->toBe(0);
 });
 
 it('records a review-request failure and still reviews the other group', function (): void {
@@ -1679,6 +1707,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     expect($driver->calls)->toHaveCount(1)
         ->and($first->fresh()?->review_notified_attempt)->not->toBe($first->fresh()?->review_attempt);
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-1');
     $first->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh());
@@ -1695,6 +1724,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
         ->and(mb_strlen($continued))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-2');
     $driver->failNextSend = true;
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
@@ -1709,6 +1739,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-3');
     $second->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     TaskCheck::query()->create([
@@ -1802,6 +1833,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     app()->instance(CoderSettleNotifier::class, $notifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
     $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
     $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
@@ -1854,11 +1886,21 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
         new CommandResult(42, '', '', 1, false),
         new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false),
     ]);
-    $transport = new AppDevFakeSshExecutor([
-        new CommandResult(0, json_encode([
-            'pid' => 4100, 'started' => 'started', 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
-        ], JSON_THROW_ON_ERROR), '', 1, false),
-    ]);
+    $transport = new class implements SshExecutor
+    {
+        public int $starts = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            if (str_contains($command->input ?? '', ' start "$checkout"')) {
+                $this->starts++;
+            }
+
+            return new CommandResult(0, json_encode([
+                'pid' => 4100, 'started' => 'started', 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
+            ], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
     app()->instance(TaskCheckRunner::class, new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(
         new DevelopmentSshExecutor(
             $transport,
@@ -1873,7 +1915,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     app(TaskScheduler::class)->claimNext();
 
     expect(TaskCheck::query()->count())->toBe(0);
-    expect($transport->commands)->toBeEmpty();
+    expect($transport->starts)->toBe(0);
     expect($group->tasks()->firstOrFail()->communication_failures)->toBe(1);
     expect($group->fresh()?->assistance_requested)->toBeFalse();
     expect($spawner->events)->toBe([]);
@@ -1881,7 +1923,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     test_pass_baseline();
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
-    expect($transport->commands)->toHaveCount(1);
+    expect($transport->starts)->toBe(1);
     expect($probe->commands)->toHaveCount(2);
     expect($group->tasks()->firstOrFail()->communication_failures)->toBe(0);
     expect($group->fresh()?->assistance_requested)->toBeFalse();
@@ -2587,6 +2629,9 @@ function scheduler_review(array $receipts, bool $notified = true): array
         {
             $this->reviewBases[] = TaskReviewBase::reviewBase($task);
 
+            $snapshot = app(TaskCheckRunner::class)->snapshot($task->parent->taskable);
+            $task->update(['review_workspace_head' => $snapshot->head, 'review_workspace_tree' => $snapshot->tree]);
+
             return test_agent_thread($task->parent, 'spawned-reviewer')->id;
         }
 
@@ -2601,6 +2646,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
         public function requestReview(Task $task): void
         {
             $this->reviewBases[] = TaskReviewBase::reviewBase($task);
+            $snapshot = app(TaskCheckRunner::class)->snapshot($task->parent->taskable);
+            $task->update(['review_workspace_head' => $snapshot->head, 'review_workspace_tree' => $snapshot->tree]);
         }
     });
     $receipts = new FakeTaskTurnReceipts($receipts);
@@ -2700,7 +2747,7 @@ it('waits for a workspace check before taking the review baseline', function (Ta
         ->and($task->fresh()?->assistance_requested)->toBeFalse();
 })->with(TaskCheckKind::cases());
 
-it('does not blame a reviewer for untracked files from an overlapping legacy check', function (): void {
+it('does not infer mutation provenance from an overlapping legacy check', function (): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
@@ -2723,12 +2770,13 @@ it('does not blame a reviewer for untracked files from an overlapping legacy che
     app(TaskScheduler::class)->tick();
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Changed)
-        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($changedTree)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($signer->messages)->toBe([])
-        ->and($dispatcher->commands)->toBe([]);
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
 });
 
 it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
@@ -2759,7 +2807,7 @@ it('queues a reviewer resolution behind a running workspace check', function (As
         ->and($task->fresh()?->assistance_requested)->toBeFalse();
 })->with([AssistanceKind::Failure, AssistanceKind::Direction]);
 
-it('recovers old workspace-change assistance when a finished check records the current tree', function (): void {
+it('keeps assistance when a legacy check only observed the changed tree', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
     $task->update($failure);
@@ -2774,10 +2822,10 @@ it('recovers old workspace-change assistance when a finished check records the c
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($signer->messages)->toBe([])
         ->and($dispatcher->commands)->toBe([]);
 });
@@ -2849,6 +2897,17 @@ it('refuses a review when the working tree differs and asks for assistance after
         ->and($dispatcher->commands)->toHaveCount(1);
 });
 
+function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks): void
+{
+    TaskWorkspaceLeaseRecord::query()->create([
+        'instance_id' => $group->taskable_id, 'group_id' => $group->id,
+        'kind' => 'main_merge', 'owner' => 'main-merge:'.$group->id, 'status' => 'released', 'orbit_mutation' => true,
+        'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'acquired_at' => now()->subMinute(), 'released_at' => now(),
+    ]);
+}
+
 it('re-requests a review on an Orbit main merge with a fresh baseline and delta scope', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Reviewed before the merge.'),
@@ -2865,6 +2924,8 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
     ]);
 
+    scheduler_record_merge_lease($group, $checks);
+
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
@@ -2873,7 +2934,7 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)])
-        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->sole()->properties['cause'])->toBe('orbit_main_merge')
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->sole()->properties['cause'])->toBe('orbit_workspace_lease')
         ->and($dispatcher->commands)->toBe([])
         ->and($signer->messages)->toBe([]);
 
@@ -2910,6 +2971,9 @@ it('recovers an assistance-blocked stale final review on the next tick only from
             'head_after' => $checks->head, 'tree_after' => $checks->tree,
             'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
         ]);
+    }
+    if ($recorded) {
+        scheduler_record_merge_lease($group, $checks);
     }
     if ($agentEdit) {
         $checks->tree = str_repeat('f', 40);
@@ -3029,7 +3093,6 @@ it('does not relay findings or accept a blocked question when the working tree d
 it('treats a newer implementer turn during review as a new handoff without reminding the reviewer', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'Operator follow-up.'),
     ]);
     $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
@@ -3044,7 +3107,7 @@ it('treats a newer implementer turn during review as a new handoff without remin
         ->and($dispatcher->commands)->toBe([])
         ->and($signer->messages)->toBe([])
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->comments()->sole()->commit_sha)->toBeNull();
+        ->and($task->comments()->count())->toBe(0);
 
     $reader->implementerState = 'completed';
     app(TaskScheduler::class)->tick();
@@ -3233,10 +3296,9 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         ->and($task->comments()->count())->toBe(1);
 });
 
-it('restarts on an unexpected head with the previous review tree as delta scope and no assistance', function (string $outcome, ?string $question): void {
+it('asks for assistance for an unexplained head change without accepting the old receipt', function (string $outcome, ?string $question): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents($outcome, 'The old head was reviewed.', $question),
-        FakeTaskTurnReceipts::contents('approved', 'The new head was reviewed.'),
     ]);
     $checks->head = str_repeat('d', 40);
     $checks->parent = str_repeat('a', 40);
@@ -3247,27 +3309,25 @@ it('restarts on an unexpected head with the previous review tree as delta scope 
     expect($signer->messages)->toBe([])
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_head)->toBe($checks->head)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
-        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands)->toBe([]);
-    expect(app(AgentSpawner::class))->reviewBases->toBe([str_repeat('b', 40)]);
+        ->and($dispatcher->commands)->toHaveCount(1);
+    expect(app(AgentSpawner::class))->reviewBases->toBe([]);
 
-    // Polling the old turn must not apply its receipt or request the review again.
     app(TaskScheduler::class)->tick();
-    expect($task->comments()->count())->toBe(1);
-    expect(app(AgentSpawner::class))->reviewBases->toHaveCount(1);
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toHaveCount(1);
 
-    $reader->turnId = 'new-head-review';
+    $reader->turnId = 'unexplained-head-followup';
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($signer->messages)->toBe([$task->title."\n\nThe new head was reviewed."]);
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($signer->messages)->toBe([]);
 })->with([
     'approved' => ['approved', null],
     'changes requested' => ['changes_requested', null],

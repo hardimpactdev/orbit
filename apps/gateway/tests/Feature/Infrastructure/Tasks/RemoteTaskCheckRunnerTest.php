@@ -189,7 +189,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     $group->save();
     $group = test_vm_group($group);
     $task = Task::query()->create([
-        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running,
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running, 'subtask_start_commit' => 'abc',
     ]);
     $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
     $probe = new class($timeout) implements SshExecutor
@@ -209,6 +209,8 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
         }
     };
     $transport = new AppDevFakeSshExecutor([
+        // Releasing the proven unstarted claim records an informational snapshot.
+        new CommandResult(0, '{"head":"abc","tree":"def"}', '', 1, false),
         new CommandResult(0, '{"pid":4100,"started":"started","head":"abc","tree":"def"}', '', 1, false),
     ]);
     app()->instance(TaskCheckRunner::class, check_runner($transport, probe: $probe));
@@ -216,7 +218,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     test_pass_baseline();
 
     expect(TaskCheck::query()->count())->toBe(0);
-    expect($transport->commands)->toBeEmpty();
+    expect($transport->commands)->toHaveCount(1);
     expect($task->fresh()->communication_failures)->toBe(1);
     expect($group->fresh()->assistance_requested)->toBeFalse();
 
@@ -224,7 +226,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
     expect($probe->calls)->toBe(2);
-    expect($transport->commands)->toHaveCount(1);
+    expect($transport->commands)->toHaveCount(2);
     expect($task->fresh()->communication_failures)->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
 });
@@ -1622,3 +1624,21 @@ it('bounds output draining after an escaped grandchild outlives the setup shell'
         }
     }
 })->with(['configured timeout' => [30], 'no configured timeout' => [null]]);
+
+it('reads both merge parents and the parent tree for historical mutation proof', function (): void {
+    $checkout = check_runner_checkout('echo ok');
+    $git = static fn (array $args): string => trim((new Process(['git', '-C', $checkout, ...$args]))->mustRun()->getOutput());
+    $git(['add', '--all']);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'clean baseline']);
+    $parent = $git(['rev-parse', 'HEAD']);
+    $parentTree = $git(['rev-parse', 'HEAD^{tree}']);
+    $git(['checkout', '-b', 'incoming']);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'incoming']);
+    $second = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '--detach', $parent]);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '--no-ff', '--no-edit', $second]);
+    $snapshot = check_runner(new LocalShellSshExecutor)->snapshot(check_runner_instance($checkout));
+
+    expect($snapshot->parent)->toBe($parent)->and($snapshot->parentTree)->toBe($parentTree)
+        ->and($snapshot->secondParent)->toBe($second)->and($snapshot->commitTree)->toBe($snapshot->tree);
+});

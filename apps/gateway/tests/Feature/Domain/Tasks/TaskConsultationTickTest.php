@@ -498,6 +498,10 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages[0]['session'])->toBe('implementer-thread')
         ->and($messages[0]['key'])->toBe($implementerKey);
 
+    // The admitted implementer turn must finish before review can own the checkout.
+    $implementer->state = 'idle';
+    $implementer->error = null;
+    $implementer->turnId = (string) $implementerKey;
     $task->parent->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update([
         'status' => TaskStatus::Reviewing,
@@ -780,7 +784,7 @@ it('dispatches nothing when Jev selects noop', function (): void {
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
@@ -942,7 +946,7 @@ it('reminds the implementer with the failing check output once, then asks for as
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
@@ -978,7 +982,7 @@ it('shows an unexpected check error as a failed check whose output ends with the
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $output = "composer check\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'gateway'\n";
@@ -1008,7 +1012,7 @@ it('keeps an unexpected check error failed when the tree changed during the run'
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $output = "rm -rf app\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory\n";
@@ -1178,7 +1182,9 @@ it('retries review findings until the implementer receives them', function (): v
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
         ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
-        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
+        ->and($dispatcher->commands[1]['commandId'])->toBe($dispatcher->commands[0]['commandId'])
+        // Retry the admitted send without recapturing metadata or the review baseline.
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer']);
 });
 
 it('repeated reminder send failures reach assistance', function (): void {
@@ -1188,6 +1194,10 @@ it('repeated reminder send failures reach assistance', function (): void {
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
+            if ($threadId === 'reviewer-thread') {
+                return tick_checked_thread('done', $threadId);
+            }
+
             return ['thread' => ['session' => ['status' => 'waiting'], 'pendingApprovals' => [['requestId' => 'pending-1']]]];
         }
     });
@@ -1309,6 +1319,7 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect(app(AgentCommandDispatcher::class)->commands[1]['message']['text'])->toContain('No turn receipt was found.');
 
+    $reader->turnId = 'after-reminder';
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running)
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running);
