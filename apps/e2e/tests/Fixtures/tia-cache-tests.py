@@ -671,7 +671,7 @@ class MainCacheTest(CacheFixture):
         (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
         for project in cache.PROJECTS:
             (root / project).mkdir(parents=True)
-        for name in ('gateway-app-key', 'worktree-cache', 'tia-cache'):
+        for name in ('gateway-app-key', 'worktree-cache', 'tia-cache', 'generated-merge'):
             script = root / 'bin' / name
             script.write_text('#!/bin/sh\nexit 0\n')
             script.chmod(0o755)
