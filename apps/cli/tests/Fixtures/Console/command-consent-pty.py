@@ -6,6 +6,7 @@ import json
 import os
 import pty
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -42,7 +43,25 @@ while process.poll() is None:
     ready = ready or configuration['prompt'].encode() in output
     pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
     if ready and keys and not awaiting_output and pending_input == 0:
-        os.write(master, keys.pop(0))
+        # PTY input delivery is asynchronous. An empty FIONREAD snapshot can
+        # precede delivery, so first observe the complete key queued while the
+        # reader is stopped. After resuming, zero proves it has consumed it.
+        os.kill(process.pid, signal.SIGSTOP)
+        _, status = os.waitpid(process.pid, os.WUNTRACED)
+        if not os.WIFSTOPPED(status):
+            process.returncode = os.waitstatus_to_exitcode(status)
+            break
+        try:
+            key = keys.pop(0)
+            if os.write(master, key) != len(key):
+                raise RuntimeError('Incomplete PTY key write')
+            deadline = time.monotonic() + idle_timeout
+            while struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0] < len(key):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([slave], [], [], remaining)[0]:
+                    raise RuntimeError('PTY key was not delivered')
+        finally:
+            os.kill(process.pid, signal.SIGCONT)
         awaiting_output = True
 while select.select([master], [], [], 0.02)[0]:
     try:

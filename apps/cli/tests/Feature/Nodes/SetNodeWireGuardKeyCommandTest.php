@@ -86,7 +86,7 @@ describe('node:wireguard-key', function (): void {
         $process->mustRun();
         $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         $raw = base64_decode($result['raw'], strict: true);
-        expect($result['status'])->toBe($outcome === 'success' ? 0 : 1)
+        expect($result['status'])->toBe($outcome === 'success' ? 0 : 1, $raw)
             ->and($result['restored'])->toBeTrue()->and($result['keys_remaining'])->toBe(0);
         $requests = (string) file_get_contents($directory.'/requests.jsonl');
 
