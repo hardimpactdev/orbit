@@ -78,7 +78,20 @@ it('claimNext continues after provision null', function (): void {
         {
             $this->calls++;
 
-            return $this->calls === 1 ? null : $this->instance;
+            if ($this->calls === 1) {
+                return null;
+            }
+
+            if ($this->calls === 2) {
+                return $this->instance;
+            }
+
+            $instance = $this->instance->replicate();
+            $instance->name = 'claim-hol-'.$intent->group->id;
+            $instance->checkout_path = '/tmp/claim-hol-'.$intent->group->id;
+            $instance->save();
+
+            return $instance;
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -119,7 +132,8 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->fresh()?->assistance_requested)->toBeFalse()
         ->and($oldest->fresh()?->assistance_reason)->toBeNull()
         ->and($oldest->tasks()->sole()->fresh()?->status)->toBe(TaskStatus::Running)
-        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
+        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull()
+        ->and($oldest->fresh()?->taskable_id)->not->toBe($second->fresh()?->taskable_id);
 });
 
 it('leaves every waiting group in todo, tries each once, and clears a provisioning failure', function (): void {

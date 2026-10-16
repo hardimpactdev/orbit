@@ -144,19 +144,22 @@ describe('a thread that works outside the task phase', function (): void {
 
         app(TaskScheduler::class)->tick();
 
-        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
-            ->and($receipts->cleared)->toHaveCount(1)
+        expect($task->comments()->count())->toBe(0)
+            ->and($receipts->cleared)->toBe([])
             ->and($task->fresh()?->assistance_requested)->toBeFalse()
             ->and($group->fresh()?->assistance_requested)->toBeFalse()
-            ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
-            ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+            ->and(TaskQuestion::query()->exists())->toBeFalse()
             ->and($dispatcher->commands)->toBe([]);
 
         $state->reviewer = 'done';
         $state->sharedReviewer = 'done';
         app(TaskScheduler::class)->tick();
 
-        expect(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
+        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
+            ->and($receipts->cleared)->toHaveCount(1)
+            ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
+            ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+            ->and(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
     });
 
     it('leaves a running task alone while its implementer works', function (string $reviewerState): void {
@@ -966,12 +969,18 @@ it('advances rework tests only to the latest passed handoff tree of the same sub
     $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
         'fixup_problem' => $fixup ? 'final-review' : null]);
     foreach ([TaskCheckStatus::Passed, TaskCheckStatus::Failed, TaskCheckStatus::Changed, TaskCheckStatus::Lost, TaskCheckStatus::Cancelled] as $index => $status) {
-        TaskCheck::query()->create([
+        $historical = TaskCheck::query()->create([
             'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => $status,
             'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40),
             'tree_before' => str_repeat('b', 40), 'tree_after' => str_repeat((string) ($index + 1), 40),
             'started_at' => now(),
         ]);
+        if ($status === TaskCheckStatus::Lost) {
+            // This historical process was confirmed stopped before the current rework attempt.
+            TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+                'kind' => 'check', 'owner' => 'historical:'.$historical->id, 'check_id' => $historical->id,
+                'status' => 'released', 'released_at' => now()]);
+        }
     }
     $other = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Other', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
     TaskCheck::query()->create(['task_id' => $other->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,

@@ -1609,8 +1609,8 @@ describe('main moving during final review', function (): void {
             ->and($runtime->pushes)->toBe([])
             ->and($runtime->implementers)->toBe([])
             ->and($runtime->reviewers)->toBe([])
-            // Without authoritative completion, this running check cannot admit another command.
-            ->and($final->checks()->sole()->status)->toBe(TaskCheckStatus::Running)
+            // A lost result retains ownership until authoritative completion proves the children stopped.
+            ->and($final->checks()->sole()->status)->toBe(TaskCheckStatus::Lost)
             ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->pid)->toBe(4001)
             ->and($final->fresh()?->status)->toBe(TaskStatus::Reviewing);
     });

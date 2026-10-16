@@ -89,6 +89,16 @@ final readonly class TaskSubtaskRunner
             return true;
         }
 
+        $handoff = $scheduler->pendingReceipt($task, TaskThreadRole::Implementer);
+        if ($handoff instanceof TaskComment && $scheduler->receiptOutcome($handoff) === TaskTurnOutcome::ReadyForReview
+            && $task->checks()->where('task_comment_id', $handoff->id)->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Running)->exists()) {
+            // The durable receipt already admitted this check. Observe its process before
+            // asking to read another receipt from the checkout that the check still owns.
+            $this->checkHandoff($scheduler, $group, $task, $implementer, $handoff, $observation);
+
+            return true;
+        }
+
         try {
             $read = $scheduler->collectReceipt($group, $task, TaskThreadRole::Implementer);
         } catch (TaskTurnReceiptException $exception) {
