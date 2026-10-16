@@ -1285,7 +1285,7 @@
     },
     {
       "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
-      "destination": "/reference/processes-and-schedules#presets"
+      "destination": "/reference/web-app#annotations-outside-the-gateway"
     },
     {
       "source": "/decisions/0120-extract-agent-annotation-package",
@@ -1554,10 +1554,6 @@
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
-    },
-    {
-      "source": "/decisions/0219-remove-annotations-from-orbit",
-      "destination": "/reference/web-app#annotations-outside-the-gateway"
     }
   ]
 }

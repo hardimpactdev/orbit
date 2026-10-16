@@ -917,3 +917,27 @@ function claim_hol_fail_first_start(int $groupId): void
         throw new QueryException('sqlite', 'update "task_groups" set "status" = ?', ['running'], new PDOException('database is locked'));
     });
 }
+
+it('releases only expired top-level reservations without an execution mode', function (): void {
+    $this->freezeTime();
+    claim_hol_enable();
+    $project = claim_hol_app();
+    foreach ([
+        ['Expired', TaskGroupStatus::Reserved, now()->subSeconds(3601)],
+        ['Missing time', TaskGroupStatus::Reserved, null],
+        ['Recent', TaskGroupStatus::Reserved, now()],
+        ['Running', TaskGroupStatus::Running, now()->subSeconds(3601)],
+        ['Backlog', TaskGroupStatus::Backlog, null],
+    ] as [$title, $status, $reservedAt]) {
+        $group = claim_hol_group($project, $title);
+        $group->forceFill(['status' => $status, 'reserved_at' => $reservedAt])->save();
+    }
+
+    expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(2);
+
+    expect(Task::topLevel()->orderBy('id')->pluck('status')->all())->toBe([
+        TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Reserved,
+        TaskGroupStatus::Running, TaskGroupStatus::Backlog,
+    ]);
+    expect(Task::query()->whereNotNull('parent_id')->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
+});

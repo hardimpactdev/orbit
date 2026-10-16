@@ -221,10 +221,10 @@ it('projects a persisted systemd environment map after the environment file', fu
             'environment_file' => '',
             'environment' => [
                 'PROXYCLI_CACHE_HOST' => '10.44.0.8',
-                'ANNOTATOR_URL' => 'http://127.0.0.1:4848',
-                'ORBIT_ANNOTATOR_PORT' => '4848',
-                'AGENTATION_URL' => 'http://127.0.0.1:4747',
-                'ORBIT_AGENTATION_PORT' => '4747',
+                'CACHE_URL' => 'http://127.0.0.1:4848',
+                'CACHE_PORT' => '4848',
+                'SERVICE_URL' => 'http://127.0.0.1:4747',
+                'SERVICE_PORT' => '4747',
                 'PROXYCLI_MANAGEMENT_KEY' => 'management key',
                 'PROXYCLI_READ_TOKEN' => 'read-token',
             ],
@@ -244,10 +244,10 @@ it('projects a persisted systemd environment map after the environment file', fu
 
     expect($unit)
         ->toContain('Environment=PROXYCLI_CACHE_HOST=10.44.0.8')
-        ->toContain('Environment=ANNOTATOR_URL=http://127.0.0.1:4848')
-        ->toContain('Environment=ORBIT_ANNOTATOR_PORT=4848')
-        ->toContain('Environment=AGENTATION_URL=http://127.0.0.1:4747')
-        ->toContain('Environment=ORBIT_AGENTATION_PORT=4747')
+        ->toContain('Environment=CACHE_URL=http://127.0.0.1:4848')
+        ->toContain('Environment=CACHE_PORT=4848')
+        ->toContain('Environment=SERVICE_URL=http://127.0.0.1:4747')
+        ->toContain('Environment=SERVICE_PORT=4747')
         ->toContain('Environment=PROXYCLI_MANAGEMENT_KEY=management\\x20key')
         ->toContain('Environment=PROXYCLI_READ_TOKEN=read-token')
         ->toContain('ExecStart="/usr/bin/python3" "/var/lib/orbit/proxycli/server.py"')

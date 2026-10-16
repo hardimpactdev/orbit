@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -168,7 +169,7 @@ class StoreProcessRequest extends FormRequest
             volumes: $volumes,
             restartPolicy: is_string($validated['restart_policy'] ?? null)
                 ? $validated['restart_policy']
-                : (isset($validated['preset']) ? 'on-failure' : 'never'),
+                : (isset($validated['preset']) ? VpDevPreset::RestartPolicy : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
             restartOnDeploy: ($validated['restart_on_deploy'] ?? true) === true,

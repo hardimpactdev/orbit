@@ -205,5 +205,4 @@ return [
         '0208-scan-monorepo-dependencies-per-sub-project',
         '0208-deploy-the-gateway-with-laravel-migrations',
     ],
-    '0219' => ['0219-remove-annotations-from-orbit'],
 ];

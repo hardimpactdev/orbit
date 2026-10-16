@@ -42,7 +42,7 @@ The Gateway owns the definitions, the copies, and the point at which it makes th
 
 - `environments` accepts `development` and `production`, alone or together. The CLI flag is `--for=development`, `--for=production`, or `--for=development,production`.
 - A Process definition `spec` takes either a runtime specification, as today, or `preset`. A preset spec holds `preset` and, where the preset allows them, `restart_policy` and `keep_alive`. It refuses `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, and `volumes`, as `process:create --preset` does.
-- Every preset is accepted; `vp-dev` is the only preset. A preset definition must list only `development`; one that lists `production` is refused with HTTP 422.
+- `vp-dev` is accepted. A preset definition must list only `development`; one that lists `production` is refused with HTTP 422.
 - A Project has at most one definition for each preset, because an Instance has at most one Process for each preset.
 - Schedule definitions keep accepting only `production`. A development Schedule definition is refused with HTTP 422. This record does not rule development Schedules out: a new ADR can add them when a Project needs one.
 - A definition change still touches only the Project. It changes no existing copy, in either environment.

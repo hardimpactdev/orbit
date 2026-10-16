@@ -475,16 +475,16 @@ it('docs impact maps grouped middleware routes to exact prefixed operations and 
 <?php
 Route::prefix('v1')->group(function (): void {
     Route::middleware([Auth::class])->get('realtime', [RealtimeConfigController::class, 'show']);
-    Route::middleware([Auth::class])->prefix('instances/{instance}/annotations')->group(function (): void {
-        Route::get('', [AnnotationsController::class, 'index']);
-        Route::post('', [AnnotationsController::class, 'store']);
+    Route::middleware([Auth::class])->prefix('instances/{instance}/entries')->group(function (): void {
+        Route::get('', [EntriesController::class, 'index']);
+        Route::post('', [EntriesController::class, 'store']);
     });
     Route::middleware([Auth::class])->get('nodes', [NodesController::class, 'index']);
 });
 PHP);
     $paths = [
         '/api/v1/realtime' => ['get' => []],
-        '/api/v1/instances/{instance}/annotations' => ['get' => [], 'post' => []],
+        '/api/v1/instances/{instance}/entries' => ['get' => [], 'post' => []],
         '/api/v1/nodes' => ['get' => []],
         '/api/v1/nodes/{node}/access/{consumer_node}' => ['put' => []],
     ];
@@ -497,15 +497,15 @@ PHP);
     }
     file_put_contents($root.'/docs/docs.json', json_encode(['navigation' => ['tabs' => [['groups' => [['openapi' => '/openapi.json', 'pages' => $navigationKeys]]]]]], JSON_THROW_ON_ERROR));
     file_put_contents($root.'/apps/gateway/app/Http/Controllers/Api/RealtimeConfigController.php', '<?php class RealtimeConfigController { public function show() {} }\\n');
-    file_put_contents($root.'/apps/gateway/app/Http/Controllers/Api/AnnotationsController.php', '<?php class AnnotationsController { public function index() {} public function store() {} }\\n');
+    file_put_contents($root.'/apps/gateway/app/Http/Controllers/Api/EntriesController.php', '<?php class EntriesController { public function index() {} public function store() {} }\\n');
     file_put_contents($root.'/apps/gateway/app/Http/Controllers/Api/NodesController.php', '<?php class NodesController { public function index() {} }\\n');
 
     $realtime = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Controllers/Api/RealtimeConfigController.php']);
-    $annotations = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Controllers/Api/AnnotationsController.php']);
+    $entries = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Controllers/Api/EntriesController.php']);
     $nodes = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Controllers/Api/NodesController.php']);
 
     expect(collect($realtime['impacted_pages'])->pluck('page'))->toContain('GET /api/v1/realtime')
-        ->and(collect($annotations['impacted_pages'])->pluck('page'))->toContain('GET /api/v1/instances/{instance}/annotations', 'POST /api/v1/instances/{instance}/annotations')
+        ->and(collect($entries['impacted_pages'])->pluck('page'))->toContain('GET /api/v1/instances/{instance}/entries', 'POST /api/v1/instances/{instance}/entries')
         ->and(collect($nodes['impacted_pages'])->pluck('page'))->toContain('GET /api/v1/nodes')
         ->and(collect($nodes['impacted_pages'])->pluck('page'))->not->toContain('PUT /api/v1/nodes/{node}/access/{consumer_node}');
 });

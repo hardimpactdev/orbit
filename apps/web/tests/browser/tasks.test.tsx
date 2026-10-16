@@ -10,7 +10,6 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
     return {
         id,
         project_id: 999,
-        execution_mode: "managed",
         capacity_wait_reason: null,
         vm_power: null,
         preview: false,

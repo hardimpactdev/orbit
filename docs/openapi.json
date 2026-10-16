@@ -33202,12 +33202,6 @@
               "$ref": "#/components/schemas/Task"
             }
           },
-          "execution_mode": {
-            "type": "string",
-            "enum": [
-              "managed"
-            ]
-          },
           "capacity_wait_reason": {
             "type": [
               "string",

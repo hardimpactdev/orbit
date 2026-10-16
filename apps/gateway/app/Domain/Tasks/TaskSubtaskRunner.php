@@ -459,7 +459,7 @@ final readonly class TaskSubtaskRunner
     {
         return DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
             $tasks = $this->lockedTasks($group);

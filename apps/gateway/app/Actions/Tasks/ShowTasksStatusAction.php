@@ -7,7 +7,6 @@ namespace App\Actions\Tasks;
 use App\Data\Tasks\TaskAssistanceData;
 use App\Data\Tasks\TaskMergeData;
 use App\Data\Tasks\TasksStatusData;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskTickClock;
@@ -29,7 +28,6 @@ final readonly class ShowTasksStatusAction
 
         $merges = array_values(Task::topLevel()
             ->with('project')
-            ->where('execution_mode', TaskExecutionMode::Managed)
             ->whereNotIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed])
             ->where(static fn ($query) => $query->whereHas('project', static fn ($project) => $project->where('review_and_merge', true))->orWhereNotNull('pr_branch'))
             ->orderBy('id')

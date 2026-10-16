@@ -4740,8 +4740,6 @@ export interface components {
             questions?: number;
             escalations?: number;
             tasks?: components["schemas"]["Task"][];
-            /** @enum {string} */
-            execution_mode?: "managed";
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
             vm_power?: "running" | "stopped" | "destroyed" | null;

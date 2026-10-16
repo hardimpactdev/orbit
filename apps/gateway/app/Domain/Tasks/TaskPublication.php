@@ -579,7 +579,7 @@ final readonly class TaskPublication
             return;
         }
         $appended = DB::transaction(function () use ($group, $base, $gate): bool {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $tasks = $this->runner->lockedTasks($locked);
             if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked) || $locked->assistance_requested
                 || $tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {

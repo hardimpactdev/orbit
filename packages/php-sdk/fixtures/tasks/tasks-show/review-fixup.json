@@ -154,7 +154,6 @@
                     "fixup_problem": "review:42"
                 }
             ],
-            "execution_mode": "managed",
             "capacity_wait_reason": null,
             "vm_power": null,
             "preview": false,

@@ -87,8 +87,7 @@
                         "completion_summary": null,
                         "check": null
                     }
-                ],
-                "execution_mode": "managed"
+                ]
             },
             {
                 "id": 13,
@@ -98,7 +97,6 @@
                 "title": "Repair the checkout build",
                 "brief": "Restore the failing checkout build before releasing the discount feature.",
                 "status": "running",
-                "execution_mode": "managed",
                 "taskable_type": null,
                 "taskable_id": null,
                 "reviewer_agent_thread_id": null,

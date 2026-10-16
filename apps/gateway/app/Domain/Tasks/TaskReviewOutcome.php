@@ -335,7 +335,7 @@ final readonly class TaskReviewOutcome
     public function replaceFinalReviewWithFixup(Task $group, Task $task, TaskComment $receipt, string $title, string $brief): ?Task
     {
         return DB::transaction(function () use ($group, $task, $receipt, $title, $brief): ?Task {
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
                 return null;
@@ -373,7 +373,7 @@ final readonly class TaskReviewOutcome
     {
         $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or complete the task.';
         $stopped = DB::transaction(function () use ($group, $task, $receipt, $reason): bool {
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
                 return false;
@@ -398,7 +398,7 @@ final readonly class TaskReviewOutcome
     public function beginFinalReview(TaskScheduler $scheduler, Task $group, ?string $head = null): void
     {
         $appended = DB::transaction(function () use ($group, $head): bool {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked)
                 || ($locked->assistance_requested && TaskFinalReview::isCapReason($locked->assistance_reason))) {
                 return false;
@@ -478,7 +478,7 @@ final readonly class TaskReviewOutcome
         }
         $started = DB::transaction(function () use ($task, $base): bool {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($locked->parent_id);
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($locked->parent_id);
             if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Running) {
                 return false;
             }
@@ -910,7 +910,7 @@ final readonly class TaskReviewOutcome
     {
         $group = DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
@@ -944,7 +944,7 @@ final readonly class TaskReviewOutcome
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);

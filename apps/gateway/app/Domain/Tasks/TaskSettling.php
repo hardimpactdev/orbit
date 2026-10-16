@@ -379,7 +379,6 @@ final readonly class TaskSettling
                             });
                     });
             })
-            ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
@@ -414,7 +413,7 @@ final readonly class TaskSettling
         if ($candidate->status === TaskStatus::Todo) {
             $group = DB::transaction(function () use ($parent, $task): Task {
                 $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
 
@@ -466,7 +465,7 @@ final readonly class TaskSettling
         $next = null;
         $group = DB::transaction(function () use ($parent, $task, &$next): Task {
             $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
@@ -1034,7 +1033,7 @@ final readonly class TaskSettling
     private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha, ?TaskReviewCandidate $candidate = null): ?Task
     {
         return DB::transaction(function () use ($group, $plan, $headSha, $candidate): ?Task {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $locked = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($group->id);
             if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || $this->otherAssistance($locked)) {
@@ -1203,7 +1202,7 @@ final readonly class TaskSettling
         try {
             return DB::transaction(function () use ($todo): ?Task {
                 $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
                 if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {

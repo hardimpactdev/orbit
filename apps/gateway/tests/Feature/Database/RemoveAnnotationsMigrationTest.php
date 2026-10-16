@@ -53,6 +53,7 @@ function removal_assert_untouched(): void
     expect(Schema::hasColumn('instances', 'annotator_port'))->toBeTrue();
     expect(Schema::hasColumn('processes', 'endpoint_withdrawn_at'))->toBeTrue();
     expect(Schema::hasColumn('tasks', 'target_thread_id'))->toBeTrue();
+    expect(Schema::hasColumn('tasks', 'execution_mode'))->toBeTrue();
 }
 
 it('removes seeded annotation state while preserving managed tasks, Instances and hand-made Processes', function (): void {
@@ -72,8 +73,12 @@ it('removes seeded annotation state while preserving managed tasks, Instances an
     expect(Schema::hasColumn('instances', 'annotator_port'))->toBeFalse();
     expect(Schema::hasColumn('processes', 'endpoint_withdrawn_at'))->toBeFalse();
     expect(Schema::hasColumn('tasks', 'target_thread_id'))->toBeFalse();
+    expect(Schema::hasColumn('tasks', 'execution_mode'))->toBeFalse();
 
     removal_migration()->down();
+    expect(DB::table('tasks')->where('id', 3)->value('execution_mode'))->toBe('managed');
+    expect(DB::table('tasks')->where('id', 4)->value('execution_mode'))->toBeNull();
+    expect(Schema::hasIndex('tasks', 'tasks_execution_mode_index'))->toBeTrue();
     expect(DB::table('annotations')->count())->toBe(0);
     expect(DB::table('annotation_events')->count())->toBe(0);
     removal_migration()->up();
@@ -84,8 +89,16 @@ it('refuses every retired preset before changing schema or data', function (stri
     removal_fixture();
     DB::table('processes')->where('id', 168)->update(['runtime_config' => json_encode(['preset' => $preset], JSON_THROW_ON_ERROR)]);
 
+    $writes = [];
+    DB::connection()->beforeExecuting(function (string $query) use (&$writes): void {
+        if (preg_match('/^\s*(insert|update|delete|create|alter|drop|replace)\b/i', $query)) {
+            $writes[] = $query;
+        }
+    });
+
     expect(fn () => removal_migration()->up())->toThrow(RuntimeException::class, 'retired preset Processes remain: 168');
 
+    expect($writes)->toBe([]);
     removal_assert_untouched();
     expect(DB::table('processes')->count())->toBe(1);
 })->with(['annotator', 'agentation-mcp', 'antigravity-watch']);
@@ -100,14 +113,22 @@ it('refuses ambiguous task ownership before removing data', function (string $ca
         'vm' => DB::table('task_vms')->insert(['group_id' => 1, 'host_node_id' => 1, 'provider' => 'incus', 'name' => 'task-1', 'state' => 'destroyed', 'wireguard_ip' => '10.9.0.1', 'pi_token' => 'token']),
     };
 
+    $writes = [];
+    DB::connection()->beforeExecuting(function (string $query) use (&$writes): void {
+        if (preg_match('/^\s*(insert|update|delete|create|alter|drop|replace)\b/i', $query)) {
+            $writes[] = $query;
+        }
+    });
+
     expect(fn () => removal_migration()->up())->toThrow(RuntimeException::class, 'mixed ownership or a Task VM');
 
+    expect($writes)->toBe([]);
     removal_assert_untouched();
 })->with(['outside', 'mixed', 'null type', 'unrelated', 'vm']);
 
 it('rolls back earlier schema and data changes when a later schema operation fails', function (): void {
     removal_fixture();
-    DB::statement('CREATE VIEW retained_port_reader AS SELECT annotator_port FROM instances');
+    DB::statement('CREATE VIEW retained_mode_reader AS SELECT execution_mode FROM tasks');
 
     expect(fn () => removal_migration()->up())->toThrow(QueryException::class);
 

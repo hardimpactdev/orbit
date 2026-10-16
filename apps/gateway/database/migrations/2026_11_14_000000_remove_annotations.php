@@ -49,12 +49,18 @@ return new class extends Migration
             DB::statement('ALTER TABLE processes DROP COLUMN endpoint_withdrawn_at');
             Schema::table('tasks', fn (Blueprint $table) => $table->dropIndex('tasks_target_thread_id_index'));
             DB::statement('ALTER TABLE tasks DROP COLUMN target_thread_id');
+            Schema::table('tasks', fn (Blueprint $table) => $table->dropIndex('tasks_execution_mode_index'));
+            DB::statement('ALTER TABLE tasks DROP COLUMN execution_mode');
         });
     }
 
     public function down(): void
     {
-        Schema::table('tasks', fn (Blueprint $table) => $table->string('target_thread_id', 128)->nullable()->index());
+        Schema::table('tasks', function (Blueprint $table): void {
+            $table->string('target_thread_id', 128)->nullable()->index();
+            $table->string('execution_mode')->nullable()->index();
+        });
+        DB::table('tasks')->whereNull('parent_id')->update(['execution_mode' => 'managed']);
         Schema::table('instances', function (Blueprint $table): void {
             $table->unsignedInteger('agentation_port')->nullable();
             $table->unsignedInteger('annotator_port')->nullable();
