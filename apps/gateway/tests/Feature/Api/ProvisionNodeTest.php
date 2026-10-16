@@ -425,6 +425,7 @@ describe('POST /api/v1/nodes', function (): void {
         'the private space' => [null, 'orbit'],
         'the private space with a leading dot' => [null, '.ORBIT'],
         'the private space under VPN domain corp' => ['corp', 'orbit'],
+        'an ancestor of the VPN domain' => ['vpn.corp', 'corp'],
         'VPN domain corp' => ['corp', 'corp'],
     ]);
 

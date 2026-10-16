@@ -271,6 +271,7 @@ describe('Cluster lifecycle', function (): void {
         'the private space' => [null, 'orbit'],
         'the private space, padded and uppercase' => [null, ' ORBIT '],
         'the private space under VPN domain corp' => ['corp', 'orbit'],
+        'an ancestor of the VPN domain' => ['vpn.corp', 'corp'],
         'VPN domain corp' => ['corp', 'corp'],
     ]);
 

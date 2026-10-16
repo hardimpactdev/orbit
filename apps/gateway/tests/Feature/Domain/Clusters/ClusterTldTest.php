@@ -25,4 +25,12 @@ describe(ClusterTld::class, function (): void {
             ->and(ClusterTld::isValid('orbit'))->toBeFalse()
             ->and(ClusterTld::isValid('test'))->toBeTrue();
     });
+    it('refuses ancestors of the VPN domain without rejecting other suffixes', function (): void {
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'vpn.corp');
+
+        expect(ClusterTld::isValid('corp'))->toBeFalse()
+            ->and(ClusterTld::isValid('orp'))->toBeTrue()
+            ->and(ClusterTld::isValid('test'))->toBeTrue();
+    });
+
 });

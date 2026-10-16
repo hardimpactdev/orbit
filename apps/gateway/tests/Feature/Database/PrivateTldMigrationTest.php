@@ -43,3 +43,15 @@ it('refuses to upgrade over a stored TLD that covers private names', function ()
     expect(fn () => private_tld_migration()->up())
         ->toThrow(RuntimeException::class, 'Cluster [lab] has the TLD [orbit]; Node [corp-node] has the TLD [corp]. A TLD may not cover private names. Change it on the current release, then deploy again.');
 });
+
+it('refuses stored Cluster and Node ancestors of the VPN domain without changing them', function (): void {
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'vpn.corp');
+    $cluster = Cluster::query()->create(['name' => 'lab', 'tld' => 'corp', 'state' => ClusterState::Inactive]);
+    $node = private_tld_node('corp-node', 'corp');
+
+    expect(fn () => private_tld_migration()->up())
+        ->toThrow(RuntimeException::class, 'Cluster [lab] has the TLD [corp]; Node [corp-node] has the TLD [corp]. A TLD may not cover private names.');
+
+    expect($cluster->refresh()->tld)->toBe('corp')
+        ->and($node->refresh()->tld)->toBe('corp');
+});

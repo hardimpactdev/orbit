@@ -94,12 +94,14 @@ final class ReservedPrivateHostname
 
     /**
      * Whether a normalized Cluster or Node TLD covers private names. Private DNS answers every name under a TLD, so
-     * no TLD may be the private space, where the reserved names live, or the configured private VPN domain, where the
-     * Node names live.
+     * no TLD may be the private space, where the reserved names live, or the configured private VPN domain or an
+     * ancestor of it, where the Node names live.
      */
     public static function isPrivateTld(string $tld): bool
     {
-        return $tld === self::PrivateSpace || $tld === strtolower(app(VpnSettings::class)->domain());
+        $vpnDomain = strtolower(app(VpnSettings::class)->domain());
+
+        return $tld === self::PrivateSpace || $tld === $vpnDomain || str_ends_with($vpnDomain, '.'.$tld);
     }
 
     public static function assertAvailable(string $domain): void

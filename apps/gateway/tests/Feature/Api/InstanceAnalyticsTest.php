@@ -7,6 +7,7 @@ use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedReservedHostnames;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
@@ -289,6 +290,16 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.hosts.0.publication', 'public');
         expect($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($this->projector->routeIds)->toBe([$route->id]);
+    });
+
+    it('accepts a public tracking host despite an unrelated malformed reservation contribution', function (): void {
+        app()->tag([stdClass::class], ContributedReservedHostnames::class);
+
+        $this->postJson($this->url, ['hosts' => ['analytics.shop.example.com']])
+            ->assertOk()
+            ->assertJsonPath('data.hosts.0.domain', 'analytics.shop.example.com');
+
+        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(1);
     });
 
     it('refuses malformed hosts and creates nothing', function (mixed $hosts, string $field): void {
