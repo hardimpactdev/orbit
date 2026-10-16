@@ -19,15 +19,21 @@ const stepColumns: Column<OperationStep>[] = [
     { header: "Error", width: 30, value: (step) => step.error_code ?? "—" },
 ];
 
+/** The pane title for each operation kind that runs on an Instance. */
+const TITLES: Record<string, string> = {
+    "instance.deploy": "Deploy",
+    "instance.rollback": "Rollback",
+};
+
 const headline = (operation: Operation): string =>
     operation.failed_step === null
         ? `Operation ${operation.id} · ${operation.status}`
         : `Operation ${operation.id} · ${operation.status} at ${operation.failed_step}`;
 
 /**
- * The newest deploy of the Instance and its steps, followed live over the operation's own channel
- * (docs/reference/web-app.md). It shows while a deploy runs, also one that another client started, and keeps
- * showing the result of a deploy this page followed. The steps and the output tail come from the Gateway's record.
+ * The newest deploy or rollback of the Instance and its steps, followed live over the operation's own channel
+ * (docs/reference/web-app.md). It shows while one runs, also one that another client started, and keeps showing
+ * the result of one this page followed. The steps and the output tail come from the Gateway's record.
  */
 export function OperationPanel({ instance }: { instance: Instance }) {
     const operations = useQuery({
@@ -35,7 +41,7 @@ export function OperationPanel({ instance }: { instance: Instance }) {
         refetchInterval: useFallbackPoll(),
     });
     const newest = operations.data?.[0] ?? null;
-    // Follow a deploy once it is seen running, and keep its result on the page after it ends.
+    // Follow an operation once it is seen running, and keep its result on the page after it ends.
     const [tracked, setTracked] = useState<number | null>(null);
     useEffect(() => {
         if (newest !== null && !isTerminal(newest)) {
@@ -60,7 +66,7 @@ export function OperationPanel({ instance }: { instance: Instance }) {
             <Pane
                 name="operation"
                 order={0.5}
-                title="Deploy"
+                title={TITLES[operation.kind] ?? "Operation"}
                 testId="operation-steps"
                 className="w-full min-h-[120px] max-h-[30vh] md:max-h-none"
                 columns={stepColumns}

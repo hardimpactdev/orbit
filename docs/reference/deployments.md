@@ -3,10 +3,9 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
-  - apps/gateway/app/Http/Streaming/**
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep}.php
   - packages/php-sdk/src/{Requests,Responses}/Projects/*DevelopmentDeployStep*.php
@@ -153,12 +152,12 @@ A missing runtime or package manager that cannot be installed fails with `deploy
 
 ## Deploy through the API
 
-A deployment runs as an [operation](/reference/operations) on the Gateway queue. A rollback still runs inside its request and streams its progress.
+A deployment and a rollback each run as an [operation](/reference/operations) on the Gateway queue.
 
 | Request | Body | Result |
 | --- | --- | --- |
 | `POST /api/v1/instances/{instance}/deploy` | `{}` | `202` with an `instance.deploy` operation. Follow it with `GET /api/v1/operations/{operation}`. |
-| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | Selects one retained release and streams its progress. |
+| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | `202` with an `instance.rollback` operation that selects one retained release. Follow it with `GET /api/v1/operations/{operation}`. |
 | `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. A development default has none. |
 
 ### The deploy operation
@@ -186,21 +185,22 @@ When the operation ends, `result` holds `deployment_id`, `release`, `selected_re
 
 A lost worker resumes a resumable step and fails any other step with `operation.worker_lost`, as [Recover a lost worker](/reference/operations#recover-a-lost-worker) describes. The failed boundary decides the selected release, as for any failure.
 
-### The rollback stream
+### The rollback operation
 
-After it validates the request and the access grant, the rollback answers `application/x-ndjson`. A refusal before that uses the normal JSON error envelope. Each line is one event of at most 32 KiB with `type`, an increasing `sequence`, and the `request_id`.
+The Gateway validates the request and the access grant, checks that the Instance is a production Instance, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is not a production Instance, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue. A rollback cancels a deploy that waits in the queue, as [One operation at a time](#one-operation-at-a-time) describes.
 
-| Event type | Fields |
-| --- | --- |
-| `phase` | `phase` is `rollback` or `process_restart`. |
-| `output` | `stream` is `stdout` or `stderr`. `data_base64` holds at most 16 KiB of output. |
-| `result` | `status` is `succeeded` or `failed`, with `failed_step`, `error_code`, and `selected_release`, each nullable. This is always the last line. |
+| Step | Resumable | Failed boundary |
+| --- | --- | --- |
+| `rollback` | yes | `rollback_selection` |
+| `activation` | yes | `activation` |
+| `php_refresh` | yes | `cache_refresh` |
+| `process_restart` | yes | `after_activation` |
 
-`failed_step` names the boundary that failed: `activation`, `cache_refresh`, `after_activation`, `rollback_selection`, or `operation`. An error after the stream opens ends the stream with a failed `result` and no second HTTP error.
+The `rollback` step reads the current selection and finds the retained release. It changes nothing. `php_refresh` appears only for an Instance that serves PHP.
 
-The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out.
+When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is its commit. A failed operation names the step in `failed_step` and the error code in `error_code`, such as `rollback.release_invalid`.
 
-Before activation, a disconnect stops the rollback and sends no result. Once the release is selected, the Gateway finishes PHP refresh and Process restarts even after a disconnect. Read the deployment history for the final outcome. The Gateway never replays events or rolls back by itself.
+A rollback ignores a cancel request once its `activation` step succeeded: it still refreshes PHP and restarts Processes. Before that, a cancel stops it before its next step, and the history row ends `failed` with `deployment.cancelled`.
 
 ## Deploy
 
@@ -225,7 +225,7 @@ To opt out, set `restart_on_deploy: false` in the complete Process create or upd
 
 Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no deploy steps, Orbit runs only its runtime operations. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, at most 1,600 seconds, the [deadline of an operation](/reference/operations#how-an-operation-runs). A rollback never exceeds its request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, at most 1,600 seconds, the [deadline of an operation](/reference/operations#how-an-operation-runs). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
 ## Failures
 
@@ -253,7 +253,7 @@ Rollback and the release list report the same two repository codes.
 
 A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption.
 
-After PHP refresh, a rollback restarts the same active, opted-in Instance Processes as a deployment. The `process_restart` phase and output events record the results. A restart failure fails the rollback at `after_activation` and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
+After PHP refresh, a rollback restarts the same active, opted-in Instance Processes as a deployment. The `process_restart` step and its output record the results. A restart failure fails the rollback at `process_restart`, with the failed boundary `after_activation`, and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
 
 ## Automatic deployments
 
@@ -320,7 +320,7 @@ Resuming continues from the commit that is live then. The commit a rollback move
 
 A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
 
-An automatic deployment checks for a pause again under the Instance lock, which a rollback takes too. A rollback that came after the tick queued the deployment wins: the operation ends with `deployment.paused`, deploys nothing, and writes no history row.
+A rollback that came after the tick queued the deployment wins. While no worker started the deployment, the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused`; it deploys nothing and writes no history row.
 
 **Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head that waited 30 minutes once per commit, and a pause.
 
@@ -328,7 +328,7 @@ An automatic deployment checks for a pause again under the Instance lock, which 
 
 ## History
 
-The Gateway records one row for each deployment and each rollback. It writes the row when the run starts, which for a deployment is when a worker first starts its operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
+The Gateway records one row for each deployment and each rollback. It writes the row when a worker first starts the deploy or rollback operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
 Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `orbit:auto-deploy` for an [automatic deployment](#automatic-deployments)), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
@@ -339,9 +339,19 @@ Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `dura
 
 ## One operation at a time
 
-Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. A deployment holds the lock while its job runs; an interrupted job releases it after its running command stops.
+Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. A deployment or a rollback holds the lock while its job runs; an interrupted job releases it after its running command stops.
 
-A deploy operation also holds the Instance from its start request to its end, so a second deploy request answers `operation.target_busy` with the first operation's ID, also while the first one waits in the queue.
+A deploy or rollback operation also holds the Instance from its start request to its end. A second start answers `operation.target_busy` with the first operation's ID, also while the first one waits in the queue.
+
+A rollback is the one exception. It wins over a deploy of the Instance that no worker has started, manual or automatic:
+
+- The deploy ends `cancelled`.
+- The deploy's `error_code` is `operation.superseded`, and its `cancel_requested` is true.
+- The rollback takes the Instance.
+
+A deploy that a worker started keeps the Instance, also while it waits to resume after a lost worker. The rollback then answers `operation.target_busy` with the deploy's ID. Cancel the deploy with [`operation:cancel`](/cli/operation), or wait for it to end. Then start the rollback again.
+
+The Gateway cancels the deploy and creates the rollback in one database transaction. When a worker claims the deploy first, the deploy runs, and the rollback is busy. One operation holds the Instance in every case.
 
 ## Inspect release placement with Doctor
 
@@ -385,7 +395,7 @@ The Gateway reads the branch head every minute instead of receiving a GitHub pus
 
 ### One operations worker for every deployment
 
-Automatic deployments run as operations on the one `operations` worker, like manual ones. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A deployment of one Instance can wait for another's, and Instances behind one Route deploy in turn.
+Automatic deployments and rollbacks run as operations on the one `operations` worker, like manual deployments. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A deployment or a rollback of one Instance can wait for another Instance's deployment, and Instances behind one Route deploy in turn.
 
 ### Three releases per home
 
@@ -396,6 +406,10 @@ A release that a running process uses outranks the limit: deleting it would pull
 ### Rollback selects code only
 
 Older code can need a data recovery that only the application knows. So a rollback switches code and nothing else. Coupling it to a database rollback is a rejected alternative.
+
+### A rollback wins over a queued deploy
+
+A rollback undoes a bad release, often while users see errors. A deploy that no worker started has changed nothing yet, so the rollback cancels it instead of waiting behind it. A deploy that runs has already changed the Instance. A rollback that stopped it would leave it at a step boundary, half done. So the rollback refuses, and a person decides whether to cancel the deploy or let it end. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) records this rule for automatic deployments.
 
 ### Steps as named records
 

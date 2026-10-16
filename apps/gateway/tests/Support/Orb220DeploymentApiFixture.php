@@ -18,7 +18,6 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Http\Streaming\DeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
@@ -35,7 +34,6 @@ final readonly class Orb220DeploymentApiFixture
         public Node $owner,
         public Instance $instance,
         public Orb220ProductionDeployment $deployment,
-        public Orb220StreamConnection $connection,
     ) {}
 
     /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}>|null $steps */
@@ -99,16 +97,13 @@ final readonly class Orb220DeploymentApiFixture
             ],
         ]);
         $deployment = new Orb220ProductionDeployment;
-        $connection = new Orb220StreamConnection;
-        $deployment->connection = $connection;
 
         app()->instance(ProductionDeployment::class, $deployment);
-        app()->instance(DeploymentStreamConnection::class, $connection);
         app()->instance(InstanceEnvironmentOperationLock::class, new Orb220DeploymentLock);
         app()->instance(InstanceEnvironmentSynchronizer::class, new Orb220EnvironmentSynchronizer);
         app()->instance(ProductionPhpRuntimeManager::class, new Orb220PhpRuntimeManager);
 
-        return new self($caller, $owner, $instance->fresh(), $deployment, $connection);
+        return new self($caller, $owner, $instance->fresh(), $deployment);
     }
 }
 
@@ -118,11 +113,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public bool $failPreparation = false;
 
-    public bool $disconnectAfterSilentStep = false;
-
     public int $activations = 0;
-
-    public ?Orb220StreamConnection $connection = null;
 
     public ?string $requestedRelease = null;
 
@@ -130,6 +121,9 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     /** Runs inside source preparation, such as a cancel request that lands while the deployment works. */
     public ?Closure $duringPrepare = null;
+
+    /** Runs inside a rollback's release lookup, before activation. */
+    public ?Closure $duringRetained = null;
 
     /** Runs inside activation, after `current` points at the new release. */
     public ?Closure $duringActivation = null;
@@ -173,14 +167,6 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     ): CommandResult {
         $this->steps[] = $step->name;
 
-        if ($this->disconnectAfterSilentStep) {
-            if ($this->connection !== null) {
-                $this->connection->disconnectOnNextPhase = true;
-            }
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-
         for ($chunk = 0; $chunk < ($step->name === 'prepare' ? $this->prepareOutputChunks : 1); $chunk++) {
             $request->emit(new DeploymentEvent(
                 $step->name,
@@ -223,6 +209,10 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         $this->invocations++;
         $this->requestedRelease = $name;
 
+        if ($this->duringRetained !== null) {
+            ($this->duringRetained)();
+        }
+
         if ($this->failRollback) {
             throw new ResourceOperationException('deployment.release_missing', 'Injected rollback failure.', 409);
         }
@@ -247,46 +237,6 @@ final class Orb220ProductionDeployment implements ProductionDeployment
             "/home/deployment-stream/releases/{$name}",
             $commit ?? str_repeat('a', 40),
         );
-    }
-}
-
-final class Orb220StreamConnection implements DeploymentStreamConnection
-{
-    public bool $disconnected = false;
-
-    public bool $disconnectOnOutput = false;
-
-    public bool $disconnectOnNextPhase = false;
-
-    public int $phaseProbeWrites = 0;
-
-    /** @var list<string> */
-    public array $lines = [];
-
-    public function disconnected(): bool
-    {
-        return $this->disconnected;
-    }
-
-    public function send(string $line): void
-    {
-        $this->lines[] = $line;
-        echo $line;
-
-        if ($this->disconnectOnOutput && str_contains($line, '"type":"output"')) {
-            $this->disconnected = true;
-        }
-
-        if ($this->disconnectOnNextPhase) {
-            $this->phaseProbeWrites++;
-
-            if ($this->phaseProbeWrites < 5) {
-                return;
-            }
-
-            $this->disconnectOnNextPhase = false;
-            $this->disconnected = true;
-        }
     }
 }
 

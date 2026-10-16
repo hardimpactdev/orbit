@@ -10,14 +10,21 @@ use App\Domain\Instances\Deployment\DeploymentProgressPhase;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\DeploymentStepName;
+use App\Domain\Instances\Deployment\DeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
 use Throwable;
 
+/**
+ * Rolls a production Instance back to a retained release as named steps (docs/reference/deployments.md#roll-back).
+ * The steps run through {@see DeploymentSteps}, so an `instance.rollback` operation that resumes after a lost worker
+ * skips the steps that already succeeded.
+ */
 final readonly class RollbackInstanceAction
 {
     public function __construct(
@@ -29,19 +36,44 @@ final readonly class RollbackInstanceAction
         private ?RestartInstanceProcessesAction $processes = null,
     ) {}
 
+    /**
+     * The steps a rollback of this Instance runs, in order.
+     *
+     * @return list<DeploymentStepName>
+     *
+     * @throws ResourceOperationException `deployment_config.unavailable` when the Instance cannot be rolled back
+     */
+    public function plan(Instance $instance): array
+    {
+        $this->configs->assertAvailable($instance->refresh());
+        $plan = [
+            new DeploymentStepName(DeploymentProgressPhase::Rollback),
+            new DeploymentStepName(DeploymentProgressPhase::Activation),
+        ];
+
+        if (is_string($instance->selected_php_version)) {
+            $plan[] = new DeploymentStepName(DeploymentProgressPhase::PhpRefresh);
+        }
+
+        return [...$plan, new DeploymentStepName(DeploymentProgressPhase::ProcessRestart)];
+    }
+
+    /**
+     * Runs the rollback's steps through `$steps`: the steps of an `instance.rollback` operation. The `rollback` step
+     * finds the retained release, and the `activation` step selects it.
+     */
     public function execute(
         Instance $instance,
         string $releaseName,
-        ?DeploymentRequest $request = null,
+        DeploymentSteps $steps,
+        DeploymentRequest $request,
     ): DeploymentResult {
-        $request ??= DeploymentRequest::withoutOutput();
-
         try {
             $this->configs->assertAvailable($instance->refresh());
 
             return $this->operations->run(
                 [$instance->id],
-                fn (): DeploymentResult => $this->deadline->within(900, fn (): DeploymentResult => $this->rollback($instance->refresh(), $releaseName, $request)),
+                fn (): DeploymentResult => $this->deadline->within(900, fn (): DeploymentResult => $this->rollback($instance->refresh(), $releaseName, $request, $steps)),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(
@@ -57,30 +89,51 @@ final readonly class RollbackInstanceAction
         Instance $instance,
         string $releaseName,
         DeploymentRequest $request,
+        DeploymentSteps $steps,
     ): DeploymentResult {
         $boundary = DeploymentFailureBoundary::RollbackSelection;
         $release = null;
         $selected = null;
 
         try {
-            $request->emitPhase(DeploymentProgressPhase::Rollback);
-            $this->assertNotCancelled($request);
-            $selected = $this->deployment->selected($instance);
-            $release = $this->deployment->retained($instance, $releaseName);
+            $found = $steps->run(new DeploymentStepName(DeploymentProgressPhase::Rollback), $request, function () use ($instance, $releaseName, &$selected): array {
+                // A failed selection reports the selection it found.
+                $selected = $this->deployment->selected($instance);
+
+                return [
+                    'previous' => DeployInstanceAction::storableRelease($selected),
+                    'release' => DeployInstanceAction::storableRelease($this->deployment->retained($instance, $releaseName)),
+                ];
+            });
+            // A resumed attempt reads the releases that the step stored.
+            $selected = DeployInstanceAction::storedRelease(is_array($found) ? ($found['previous'] ?? null) : null);
+            $release = DeployInstanceAction::storedRelease(is_array($found) ? ($found['release'] ?? null) : null)
+                ?? throw new ResourceOperationException('deployment.interrupted', 'The retained release is missing.', 500);
             $boundary = DeploymentFailureBoundary::Activation;
-            $this->assertNotCancelled($request);
-            $selected = $this->deployment->activate($instance, $release);
-            $instance->update(['checkout_path' => $selected->path]);
+            $activated = $steps->run(new DeploymentStepName(DeploymentProgressPhase::Activation), $request, function () use ($instance, $release, &$selected): ?array {
+                $selected = $this->deployment->activate($instance, $release);
+                $instance->update(['checkout_path' => $selected->path]);
+
+                return DeployInstanceAction::storableRelease($selected);
+            });
+            $selected = DeployInstanceAction::storedRelease($activated) ?? $selected;
 
             if (is_string($instance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
-                $this->runtime->converge($instance);
-                $this->runtime->refreshCache($instance);
+                $steps->run(new DeploymentStepName(DeploymentProgressPhase::PhpRefresh), $request, function () use ($instance): null {
+                    $this->runtime->converge($instance);
+                    $this->runtime->refreshCache($instance);
+
+                    return null;
+                });
             }
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
-            $request->emitPhase(DeploymentProgressPhase::ProcessRestart);
-            ($this->processes ?? app(RestartInstanceProcessesAction::class))->execute($instance, $request);
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::ProcessRestart), $request, function () use ($instance, $request): null {
+                ($this->processes ?? app(RestartInstanceProcessesAction::class))->execute($instance, $request);
+
+                return null;
+            });
 
             return DeploymentResult::succeeded($release);
         } catch (Throwable $exception) {
@@ -116,12 +169,5 @@ final readonly class RollbackInstanceAction
         }
 
         return $selected;
-    }
-
-    private function assertNotCancelled(DeploymentRequest $request): void
-    {
-        if ($request->cancellation->requested()) {
-            throw new ProcessCancelledException;
-        }
     }
 }

@@ -104,8 +104,6 @@ def tool(method, path, operation, components):
 
     summary = operation.get('summary', name).strip()
     description = operation.get('description', '').strip()
-    responses = operation.get('responses', {})
-    streams = any('application/x-ndjson' in (response.get('content') or {}) for response in responses.values())
 
     schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
@@ -124,7 +122,6 @@ def tool(method, path, operation, components):
         'path': path,
         'path_inputs': path_inputs,
         'query_inputs': query_inputs,
-        'streams': streams,
         'starts_operation': operation.get('x-orbit-operation') == 'start',
         'input_schema': schema,
     }

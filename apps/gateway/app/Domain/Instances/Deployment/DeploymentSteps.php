@@ -8,8 +8,8 @@ use App\Domain\Operations\OperationStepFailed;
 use Closure;
 
 /**
- * Runs the named steps of one deployment. In a request or the scheduled development deploy, each step simply runs;
- * in an operation, a step that already succeeded on an earlier attempt returns the value it stored instead.
+ * Runs the named steps of one deployment or rollback. In an operation, a step that already succeeded on an earlier
+ * attempt returns the value it stored instead of running again; {@see InlineDeploymentSteps} runs each step directly.
  */
 interface DeploymentSteps
 {

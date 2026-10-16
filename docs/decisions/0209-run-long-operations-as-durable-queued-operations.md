@@ -112,7 +112,7 @@ The agent calls `operation-show` with `after_sequence` after `poll.after_seconds
 
 This pull request moves the API, MCP, CLI, and web deploy of an Instance onto operations. These follow, each in its own pull request:
 
-1. **Rollback.** `instance:rollback` keeps its NDJSON stream until it moves. The stream code goes with it.
+1. **Rollback.** Done: `instance.rollback` runs as an operation with the steps `rollback`, `activation`, `php_refresh`, and `process_restart`, and the NDJSON stream code is gone. A rollback needs the queue and can wait behind an operation on another Instance. The maintainer decided on 16 Oct 2026 that a rollback cancels a deploy of the same Instance that waits in the queue, and is busy while a worker runs one ([One operation at a time](/reference/deployments#one-operation-at-a-time)).
 2. **Instance create and remove.** Their operations replace `InstanceCreationRecovery` and `InstanceRemovalMember`.
 3. **Route convergence.** Its operation replaces `RouteRemovalResidue`.
 4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) does this: `orbit:auto-deploy` starts a pinned `instance.deploy` operation only for a changed commit, so an unchanged commit still creates no record.
@@ -138,7 +138,7 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 - A lost client, a closed laptop, or a lost MCP context costs nothing: one read finds the operation.
 - A Gateway release waits for running deploys, because Horizon finishes running jobs before it restarts. A release during a long deploy takes longer.
 - One operation runs at a time in the fleet. A deploy of a second Instance waits until the first ends; its record stays `queued` meanwhile.
-- A Gateway without the queue cannot deploy an Instance until it sets `ORBIT_GATEWAY_QUEUE_CONNECTION`.
+- A Gateway without the queue cannot deploy or roll back an Instance until it sets `ORBIT_GATEWAY_QUEUE_CONNECTION`.
 - The API contract of `POST /api/v1/instances/{instance}/deploy` changes from an NDJSON stream to `202` with an operation. The CLI, SDK, MCP, and web app change in the same pull request.
 - Output of an attempt that a lost worker interrupted is kept only up to the last flush, at most one second of output. The maintainer accepted this loss on 15 Oct 2026, so the runner writes no extra flushes.
 
@@ -147,4 +147,4 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 - Components: apps/gateway, apps/web, apps/cli, packages/php-sdk, apps/docs
 - ADRs: none
 - Detail: [Operations](/reference/operations); [Instance releases: Deploy through the API](/reference/deployments#deploy-through-the-api); [Realtime events: Operation](/reference/events#operation); [MCP: Operations](/reference/mcp#operations); [Gateway queue: Queues](/reference/gateway-queue#queues); [operation](/cli/operation)
-- Verify: `tests/Feature/Domain/Operations`, `tests/Feature/Api/OperationsTest.php`, and `tests/Feature/Api/InstanceDeploymentsTest.php` in apps/gateway; the operation request tests in packages/php-sdk; the deploy and operation command tests in apps/cli; the operation tests in apps/web. On Incus: a deploy that answers 202, finishes on Horizon, survives a killed worker in a resumable step, and fails with `operation.worker_lost` in a deploy step.
+- Verify: `tests/Feature/Domain/Operations`, `tests/Feature/Api/OperationsTest.php`, `tests/Feature/Api/InstanceRollbackOperationTest.php`, and `tests/Feature/Api/InstanceDeploymentsTest.php` in apps/gateway; the operation request tests in packages/php-sdk; the deploy, rollback, and operation command tests in apps/cli; the operation tests in apps/web. On Incus: a deploy that answers 202, finishes on Horizon, survives a killed worker in a resumable step, and fails with `operation.worker_lost` in a deploy step.

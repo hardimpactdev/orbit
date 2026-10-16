@@ -18,7 +18,6 @@ use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\DeploymentSteps;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -72,10 +71,8 @@ final readonly class DeployDefaultInstanceAction
      * Deploys the branch's newest commit, or `$commit` when the branch contains it. The `instance.deploy` operation
      * records its history row; the automatic deployment tick starts that operation only for a changed commit.
      */
-    public function execute(Instance $instance, ?DeploymentRequest $request = null, ?DeploymentSteps $steps = null, ?string $commit = null): DeploymentResult
+    public function execute(Instance $instance, DeploymentRequest $request, DeploymentSteps $steps, ?string $commit = null): DeploymentResult
     {
-        $request ??= DeploymentRequest::withoutOutput();
-        $steps ??= new InlineDeploymentSteps;
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $request, $steps, $commit): DeploymentResult {
                 $instance->refresh()->loadMissing(['project', 'node']);

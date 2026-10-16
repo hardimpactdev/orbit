@@ -13,7 +13,6 @@ use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
-use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -129,28 +128,6 @@ describe('deployment requests', function (): void {
         );
     });
 
-    it('returns a rollback as a typed stream', function (): void {
-        $requestId = deployment_request_id();
-        $result = json_encode([
-            'type' => 'result',
-            'sequence' => 1,
-            'request_id' => $requestId,
-            'status' => 'succeeded',
-            'failed_step' => null,
-            'error_code' => null,
-            'selected_release' => 'release-a',
-        ], JSON_THROW_ON_ERROR)."\n";
-        $mock = new MockClient([
-            RollbackInstanceRequest::class => MockResponse::make($result, headers: [
-                'Content-Type' => 'application/x-ndjson',
-                'X-Orbit-Request-Id' => $requestId,
-            ]),
-        ]);
-
-        expect(deployment_connector($mock)->send(new RollbackInstanceRequest(17, 'release-a'))->dto())
-            ->toBeInstanceOf(DeploymentStream::class);
-    });
-
     it('returns a started deploy as its queued operation', function (): void {
         $requestId = deployment_request_id();
         $mock = new MockClient([
@@ -174,6 +151,32 @@ describe('deployment requests', function (): void {
             ->and($operation->terminal())->toBeFalse()
             ->and($operation->pollAfterSeconds)->toBe(2)
             ->and($operation->requestId)->toBe($requestId)
+            ->and($mock->getLastPendingRequest()?->headers()->get('Accept'))->toBe('application/json');
+    });
+
+    it('returns a started rollback as its queued operation', function (): void {
+        $requestId = deployment_request_id();
+        $mock = new MockClient([
+            RollbackInstanceRequest::class => MockResponse::make([
+                'data' => [
+                    'id' => 43, 'kind' => 'instance.rollback', 'target_type' => 'instance', 'target_id' => 17, 'input' => ['release' => 'release-a'],
+                    'status' => 'queued', 'sequence' => 1, 'current_step' => null, 'failed_step' => null, 'error_code' => null,
+                    'result' => null, 'cancel_requested' => false, 'attempts' => 0, 'triggered_by' => 'laptop',
+                    'created_at' => '2026-10-16T10:00:00+00:00', 'started_at' => null, 'finished_at' => null, 'poll_after_seconds' => 2,
+                ],
+                'meta' => ['request_id' => $requestId],
+            ], 202, ['X-Orbit-Request-Id' => $requestId]),
+        ]);
+
+        $operation = deployment_connector($mock)->send(new RollbackInstanceRequest(17, 'release-a'))->dto();
+
+        expect($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(43)
+            ->and($operation->kind)->toBe('instance.rollback')
+            ->and($operation->input)->toBe(['release' => 'release-a'])
+            ->and($operation->status)->toBe('queued')
+            ->and($operation->requestId)->toBe($requestId)
+            ->and($mock->getLastPendingRequest()?->body()?->all())->toBe(['release' => 'release-a'])
             ->and($mock->getLastPendingRequest()?->headers()->get('Accept'))->toBe('application/json');
     });
 });

@@ -54,7 +54,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -424,7 +423,6 @@
             "concepts": [
                 "Activity",
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1764,7 +1762,9 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0217"
+            ]
         },
         {
             "path": "docs/reference/desktop-app.md",

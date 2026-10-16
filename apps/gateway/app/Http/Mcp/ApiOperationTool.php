@@ -42,10 +42,6 @@ final class ApiOperationTool extends Tool
             return Response::json(self::startedOperation($json));
         }
 
-        if ($this->definition->streams && is_array($json['events'] ?? null) && array_is_list($json['events'])) {
-            $json['events'] = StreamedOutputBudget::fromConfig()->apply($json['events']);
-        }
-
         return Response::json($json);
     }
 

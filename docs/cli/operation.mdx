@@ -1,12 +1,12 @@
 ---
 title: "operation"
-description: "List, show, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy."
+description: "List, show, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy or rollback."
 covers:
   - apps/cli/app/Commands/Operations/**
   - apps/cli/app/Support/Operations/**
 ---
 
-An [operation](/reference/operations) is a long piece of work, such as an Instance deploy, that the Gateway runs on its queue. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy), returns or stops following without stopping the operation. These commands find it again.
+An [operation](/reference/operations) is a long piece of work, such as an Instance deploy or rollback, that the Gateway runs on its queue. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy) or [`instance:rollback`](/cli/instance#orbit-instancerollback), returns or stops following without stopping the operation. These commands find it again.
 
 ## Commands
 
@@ -16,7 +16,7 @@ An [operation](/reference/operations) is a long piece of work, such as an Instan
 | [`operation:show`](#orbit-operationshow) | Show one operation with its steps and their output. |
 | [`operation:cancel`](#orbit-operationcancel) | Ask one operation to stop. |
 
-Every command accepts `--json`. A production deploy includes a `process_restart` step. The progress tree labels it `Restart Processes`, `Restarting Processes`, or `Restarted Processes` as its state changes.
+Every command accepts `--json`. A production deploy and a rollback include a `process_restart` step. The progress tree labels it `Restart Processes`, `Restarting Processes`, or `Restarted Processes` as its state changes. A rollback's `rollback` step reads `Find retained release`, `Finding retained release`, or `Found retained release`.
 
 ## orbit operation:list
 
@@ -58,7 +58,7 @@ orbit operation:show 42
 
 ## orbit operation:cancel
 
-Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. A deploy whose new release is already active finishes instead. Orbit never undoes the steps that ran.
+Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. A deploy or rollback whose release is already active finishes instead. Orbit never undoes the steps that ran.
 
 ```bash
 orbit operation:cancel <operation> [--json]

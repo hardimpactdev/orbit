@@ -250,7 +250,7 @@ it('keeps the live runtime through an upgrade build failure and retains it for r
     expect($ssh->managedRuntimes)->toEqualCanonicalizing([...$oldRuntimes, ...$newRuntimes]);
     $operationsBeforeRollback = $ssh->operations;
 
-    $rollback = app(RollbackInstanceAction::class)->execute($instance, 'initial');
+    $rollback = app(RollbackInstanceAction::class)->execute($instance, 'initial', new InlineDeploymentSteps, DeploymentRequest::withoutOutput());
 
     expect($rollback->succeeded)->toBeTrue();
     expect($instance->fresh()->checkout_path)->toBe($live->path);

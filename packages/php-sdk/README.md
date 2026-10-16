@@ -56,7 +56,7 @@ that package may be adopted.
 
 ## Instance deployment and environment
 
-The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations. Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed. Configuration commands and application output stay out of generic diagnostics.
+The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations. Deploy and rollback return the queued operation, which the operation requests follow. Configuration commands and application output stay out of generic diagnostics.
 
 The SDK exposes typed import, update, and synchronization requests for
 Instance environment configuration. Import preserves omission and explicit

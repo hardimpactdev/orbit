@@ -622,7 +622,7 @@ TAGS = [
     ('extension', 'Extensions', 'Gateway-owned extension switches.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
-    ('operation', 'Operations', 'Long operations, such as an Instance deploy, that run on the Gateway queue as named steps.'),
+    ('operation', 'Operations', 'Long operations, such as an Instance deploy or rollback, that run on the Gateway queue as named steps.'),
     ('proxycli', 'proxycli', 'CLIProxyAPI quota snapshots, provider pools, and account controls.'),
     ('vault', 'Vaultwarden', 'The copy of database credentials into a Vaultwarden collection.'),
     ('conn', 'Conn', 'Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node.'),
@@ -708,6 +708,7 @@ DESCRIPTIONS = {
     'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
     'gateway:release:deploy': 'Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.',
     'instance:deploy': 'Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.',
+    'instance:rollback': 'Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A deploy of the Instance that waits in the queue ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a running deploy, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#roll-back.',
     'operation:show': 'Returns one operation and its steps from one database read. With `after_sequence`, returns only the steps whose `sequence` is greater. `poll_after_seconds` says when to read again; it is null once `status` is terminal. A finished operation carries `result`, or `failed_step` and `error_code`. See /reference/operations#read-an-operation.',
     'operation:list': 'Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.',
     'operation:cancel': 'Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A finished operation stays as it is. Returns the operation with its steps.',
@@ -1335,7 +1336,7 @@ def php_literal(v):
     return "'" + str(v).replace("'", "\\'") + "'"
 
 
-def php_sample(sdkreq, stream, tag):
+def php_sample(sdkreq, tag):
     ns = 'Orbit\\Sdk\\Requests\\' + sdkreq['file'].replace('.php', '').replace('/', '\\')
     imports = ['Orbit\\Sdk\\GatewayConnector', ns]
     ctor = re.sub(r'#\[[^\]]*\]', '', sdkreq['ctor'])
@@ -1381,10 +1382,7 @@ def php_sample(sdkreq, stream, tag):
     if len(', '.join(args)) > 60:
         call = f'new {sdkreq["class"]}(\n    ' + ',\n    '.join(args) + ',\n)'
     lines = ['<?php', ''] + [f'use {i};' for i in dict.fromkeys(imports)] + ['', '$connector = new GatewayConnector(', "    baseUrl: 'https://gateway.orbit',", "    caPemPath: '/path/to/orbit-root-ca.pem',", ');', '']
-    if stream:
-        lines += [f'$stream = $connector->send({call})->dto();', '', 'foreach ($stream as $event) {', '    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent', '}']
-    else:
-        lines += [f'$response = $connector->send({call})->dto();']
+    lines += [f'$response = $connector->send({call})->dto();']
     return '\n'.join(lines) + '\n'
 
 
@@ -1604,11 +1602,6 @@ CTRL_DATA_OVERRIDES = {
     'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
-NDJSON_SCHEMA = {'oneOf': [
-    {'title': 'Phase event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'phase'], 'properties': {'type': {'type': 'string', 'enum': ['phase']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'phase': {'type': 'string', 'enum': ['source_preparation', 'environment_sync', 'before_activation', 'activation', 'php_refresh', 'process_restart', 'after_activation', 'rollback']}, 'step_name': {'type': ['string', 'null']}}},
-    {'title': 'Output event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'stream', 'data_base64'], 'properties': {'type': {'type': 'string', 'enum': ['output']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'stream': {'type': 'string', 'enum': ['stdout', 'stderr']}, 'data_base64': {'type': 'string', 'description': 'At most 16 KiB of decoded bytes, base64-encoded.'}}},
-    {'title': 'Result event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'status'], 'properties': {'type': {'type': 'string', 'enum': ['result']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'status': {'type': 'string', 'enum': ['succeeded', 'failed']}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'selected_release': {'type': ['string', 'null']}}},
-]}
 
 
 def data_schema_for(route):
@@ -1816,21 +1809,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if 'oneOf' not in body_schema:
             body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
-    stream = route['name'] == 'instance:rollback'
     starts_operation = controllers.get(action, {}).get('starts_operation', False)
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
-    if stream:
-        responses['200'] = {'description': 'Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event.', 'content': {'application/x-ndjson': {'schema': NDJSON_SCHEMA}}}
-        if body_schema is None:
-            body = {'type': 'object', 'additionalProperties': False}
-            if route['name'] == 'instance:rollback':
-                body = {'type': 'object', 'properties': {'release': {'type': 'string', 'description': 'Retained release name to select.'}}, 'required': ['release'], 'additionalProperties': False}
-            op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': body}}}
-    elif route['name'] == 'annotation:events':
+    if route['name'] == 'annotation:events':
         responses['200'] = {'description': 'Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'tasks:agent-stream':
         responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
@@ -1947,7 +1932,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['404'] = error_response('No Node matches `node_id` (`http.404`).')
         responses['409'] = error_response('The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request.')
         responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
-    if params and not stream and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
+    if params and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
@@ -1982,7 +1967,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('A dependency of the extension is disabled (`extension.dependency_disabled`); `error.details.dependency` names it.')
     if route['name'] == 'extension:disable':
         responses['409'] = error_response('An enabled extension depends on this one (`extension.required`); `error.details.required_by` names it.')
-    if body_schema is not None or stream:
+    if body_schema is not None:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
     if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
         responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.')
@@ -2004,10 +1989,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['502'] = error_response('Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.')
             responses['503'] = error_response('Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.')
     op['responses'] = responses
-    request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if (stream or body_schema is not None) else None
+    request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if body_schema is not None else None
     samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]
     if sdkreq:
-        samples.append({'lang': 'php', 'label': 'PHP SDK', 'source': php_sample(sdkreq, stream, tag)})
+        samples.append({'lang': 'php', 'label': 'PHP SDK', 'source': php_sample(sdkreq, tag)})
     op['x-codeSamples'] = samples
     if not op['parameters']:
         op.pop('parameters')
