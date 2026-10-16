@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 
 describe('ValkeyAclUser', function (): void {
@@ -35,11 +34,16 @@ describe('ValkeyAclUser', function (): void {
         expect(ValkeyAclUser::fromAclListLine($line))->toBeNull();
     })->with(['', 'user', 'default on ~* +@all', 'ERR unknown command']);
 
-    it('writes an ACL file with only the default user, the admin password hash, and every right', function (): void {
-        $file = DatabaseServerProcess::valkeyAclFile('admin-secret');
+    it('compares users by name, password hashes, and rule tokens', function (): void {
+        $user = ValkeyAclUser::withPassword('queue', 'on sanitize-payload ~a:* ~b:* resetchannels -@all +@list +eval -@admin', 'secret');
 
-        expect($file)->toBe('user default on #'.hash('sha256', 'admin-secret')." ~* &* +@all\n")
-            ->and($file)->not->toContain('admin-secret')
-            ->and(ValkeyAclUser::fromAclListLine($file)?->hasOnlyPassword('admin-secret'))->toBeTrue();
+        expect($user->sameAs(new ValkeyAclUser('queue', 'sanitize-payload on resetchannels ~b:* ~a:* -@all +@list +eval -@admin', [hash('sha256', 'secret')])))->toBeTrue()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('other', $user->rules, 'secret')))->toBeFalse()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('queue', $user->rules, 'other')))->toBeFalse()
+            ->and($user->sameAs(new ValkeyAclUser('queue', $user->rules, [hash('sha256', 'secret'), hash('sha256', 'other')])))->toBeFalse()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('queue', 'on sanitize-payload ~a:* ~b:* resetchannels -@all +eval +@list -@admin', 'secret')))->toBeFalse()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('queue', 'on sanitize-payload ~a:* ~b:* resetchannels -@all +@list +eval', 'secret')))->toBeFalse()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('queue', 'on sanitize-payload ~a:* ~b:* &c -@all +@list +eval -@admin', 'secret')))->toBeFalse()
+            ->and($user->sameAs(ValkeyAclUser::withPassword('queue', 'off sanitize-payload ~a:* ~b:* resetchannels -@all +@list +eval -@admin', 'secret')))->toBeFalse();
     });
 });

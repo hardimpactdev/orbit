@@ -58,7 +58,7 @@ The Process publishes its port on the Node's WireGuard address to container port
 
 ### Retry and response
 
-A retry of the same request continues from the first step that did not finish. A request with the slug of an existing server and another Node, driver, tag, or port returns `database.server_slug_conflict`. A repeat of a finished request returns the server with status 200.
+A retry of the same request continues from the first step that did not finish. A request with the slug of an existing server and another Node, driver, tag, or port returns `database.server_slug_conflict`. A repeat of a finished request returns the server with status 200. On an active Valkey server, the repeat first [repairs the server](#repair-a-valkey-server).
 
 The response holds `id`, `slug`, `driver`, `node_id`, `process_id`, `tag`, `port`, `status`, and `databases_count`. `database:server:show` also returns `databases`, the connections on the server. No response, Activity entry, or error contains the password.
 
@@ -144,11 +144,16 @@ The Gateway checks an explicit index against the live server before it creates o
 The user is named after the slug. Orbit generates its password and runs:
 
 ```text
-ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous
+ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script
 ACL SAVE
 ```
 
-Orbit adds every part except the patterns and the rules. So a user never has pub/sub channels or another user's password, and the final `-@admin -@dangerous` removes every admin and dangerous command, also one that a category such as `@keyspace` holds. No user can change the ACL or the server's configuration.
+Orbit adds every part except the patterns and the rules. So a user never has pub/sub channels or another user's password. The final `-@admin -@dangerous` removes every admin and dangerous command, also one that a category such as `@keyspace` holds. The final `-function -script` removes the `FUNCTION` and `SCRIPT` commands, such as `FUNCTION FLUSH` and `SCRIPT FLUSH`. They act on the whole server, and `@write` and `@slow` hold some of them. `EVAL` stays available when a rule allows it. No user can change the ACL or the server's configuration.
+
+The Gateway refuses these inputs with `validation.failed`:
+
+- A key pattern that starts with a glob character, `*`, `?`, `[`, or `\`, such as `*`. Each pattern starts with a literal key prefix, so no user reaches every key.
+- The rule `@all` or `@scripting`. A user gets only the categories and commands its clients need.
 
 The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-valkey-server-with-doctor) can compare them. `database:user:list` shows those rules.
 
@@ -174,7 +179,7 @@ A read-only user gets `SELECT` on the database. Any other user gets all privileg
 
 On a MySQL server, every admin command runs `mysql` or `mysqldump` inside the server's container with `docker exec`, over SSH. The root password travels on protected standard input, and the remote script hands it to `docker exec` as `MYSQL_PWD` through the environment. The SQL follows it on standard input. Neither appears as an argument, in a file, or in a log.
 
-On a Valkey server, the Gateway connects to the Node's WireGuard address and the server's port, as every client does, and logs in as `default`. A user's password goes to Valkey only as a SHA-256 hash. The only Node program is the one that writes the first ACL file. It receives the file on standard input and writes it through a short-lived container that mounts the volume. The file holds only the hash.
+On a Valkey server, the Gateway connects to the Node's WireGuard address and the server's port, as every client does, and logs in as `default`. A user's password goes to Valkey only as a SHA-256 hash. The only Node program writes the ACL file, when a server is created and when a [repair](#repair-a-valkey-server) rebuilds it. It receives the file on standard input and writes it through a short-lived container that mounts the volume. The file holds only password hashes.
 
 ## Remove a database
 
@@ -194,14 +199,31 @@ A Node that runs a server cannot be removed. [Node removal](/reference/node-prov
 
 The [Doctor](/cli/doctor) family `database_server` checks each Valkey server whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
 
-| Code | Meaning |
-| --- | --- |
-| `database_server.open` | A client without a password can run a command. |
-| `database_server.acl_file_missing` | Valkey does not run with the ACL file `/data/users.acl`. |
-| `database_server.acl_mismatch` | The live users differ from the recorded users. |
-| `database_server.inspection_failed` | Doctor could not connect, or `default` could not log in with the admin password. |
+| Code | Meaning | Remedy |
+| --- | --- | --- |
+| `database_server.open` | A client without a password can run a command. | On an adopted server, [close it](#close-an-adopted-server) after its clients have moved. On another server, [repair it](#repair-a-valkey-server). |
+| `database_server.acl_file_missing` | Valkey does not run with the ACL file `/data/users.acl`. | [Repair the server](#repair-a-valkey-server). |
+| `database_server.acl_mismatch` | The live users differ from the recorded users. | [Repair the server](#repair-a-valkey-server). |
+| `database_server.inspection_failed` | Doctor could not connect, or `default` could not log in with the admin password. | Check that the Node and the server's Process run, then [repair the server](#repair-a-valkey-server). |
 
-The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. An adopted server that is not closed yet reports `database_server.open` and `database_server.acl_mismatch`. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. Doctor compares rules by token: the order of flags, key patterns, and channel rules does not matter, and the order of command rules does. An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+
+## Repair a Valkey server
+
+Run the server's `database:server:create` command again to make an active Valkey server match its records. The arguments must match the server, as for any [retry](#retry-and-response).
+
+```bash
+orbit database:server:create beast-valkey --node=beast --driver=redis
+```
+
+The Gateway takes these steps:
+
+1. It checks that `default` logs in with the admin password and that Valkey runs with `/data/users.acl`.
+2. When either check fails, Valkey cannot be repaired through its own commands, for example because its ACL file is lost and it does not start. The Gateway then writes the ACL file again from the records, restarts the Process as [`process:restart`](/cli/process) does, and waits until `default` logs in. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`.
+3. It runs `ACL SETUSER <name> reset <rules> #<hash>` for each recorded user that is missing or differs. It runs `ACL DELUSER` for each other user, except the `default` of an open server.
+4. It runs `ACL SAVE`.
+
+A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server changes nothing.
 
 ## Errors
 
@@ -253,7 +275,11 @@ A Valkey user limits keys and commands, not databases. A client reaches Valkey t
 
 ### Orbit owns the frame of each user
 
-The caller names only key patterns and allowed commands. Orbit adds the reset, the password, no channels, and the final deny of `@admin` and `@dangerous`. So no input can give a user the ACL commands, the configuration, or another password. A raw rule string as input was rejected for the same reason.
+The caller names only key patterns and allowed commands. Orbit adds the reset, the password, no channels, and the final deny of `@admin`, `@dangerous`, `FUNCTION`, and `SCRIPT`. So no input can give a user the ACL commands, the configuration, another password, or a command that flushes the functions or scripts of every client. A raw rule string as input was rejected for the same reason. Refusing only `@scripting` was not enough, because `@write` and `@slow` also hold `FUNCTION FLUSH`.
+
+### A repair rebuilds from the records
+
+The Gateway holds the admin password and each user's password and rules, so the records are enough to rebuild a server's ACL. A repair writes the ACL file through the same program that created it, and Doctor, the repair, and the file all derive the users from the records in one place. So a lost file or a hand-made change is a repeat of one command, not a manual runbook. The repair is a repeat of `database:server:create`, because that command already brings a server to its record: a separate converge command would be a second way to do one thing.
 
 ### Valkey admin over WireGuard
 

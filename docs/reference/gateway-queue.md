@@ -153,7 +153,7 @@ After setup, the queue and Horizon log in to the [Valkey Database server](/refer
 | `default` | All | All | The admin user. The [ProxyCli collector](/reference/proxycli#collection) and the Gateway's [snapshot reads](/reference/proxycli#clients) also use it, through the Database connection `services-valkey`, until the collector [gets its own user](#not-built) |
 | `gateway-queue` | `orbit-gateway:*` and `orbit-gateway-horizon:*` | The rules in the table below | The queue and Horizon, through the Database connection `gateway-queue` |
 
-[`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server) creates the user from key patterns and allowed commands. Orbit adds `resetchannels`, `-@all`, and the final `-@admin -@dangerous`, so the user has no pub/sub channel and no admin or dangerous command:
+[`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server) creates the user from key patterns and allowed commands. Orbit adds `resetchannels`, `-@all`, and the final `-@admin -@dangerous -function -script`, so the user has no pub/sub channel, no admin or dangerous command, and no `FUNCTION` or `SCRIPT` command:
 
 | Input | Why |
 | --- | --- |
@@ -162,10 +162,10 @@ After setup, the queue and Horizon log in to the [Valkey Database server](/refer
 | `--allow=@transaction` | `horizon:snapshot` and the dashboard use `MULTI` and `EXEC` |
 | `--allow=@keyspace` | Horizon sets expiry times on jobs and deletes them. `horizon:clear-metrics` finds metrics with `SCAN` |
 | `--allow=@string`, `@list`, `@hash`, `@set`, `@sortedset` | The queue keeps jobs in lists and sorted sets, and an idle worker waits with `BLPOP`. Horizon keeps jobs, metrics, and tags in strings, hashes, sets, and sorted sets |
-| `--allow=eval` | The queue's Lua scripts push, pop, and move jobs. Valkey checks each `redis.call` in a script against the same rules. `@scripting` would also allow `SCRIPT FLUSH` and `FUNCTION FLUSH` |
+| `--allow=eval` | The queue's Lua scripts push, pop, and move jobs. Valkey checks each `redis.call` in a script against the same rules. Orbit refuses `@scripting` |
 | `--allow=time` | The dashboard's Lua scripts for pending jobs call `TIME`. `TIME` is only in `@fast`, which would allow many more commands |
 
-The final `-@admin -@dangerous` removes commands that the categories above hold, such as `KEYS`, `SORT`, `FLUSHDB`, `CLIENT LIST`, and `CLIENT KILL`. The Gateway sends none of them. Key patterns do not limit the database index, and Valkey has no memory limit, so a leaked `gateway-queue` password can still fill the server's memory.
+The final `-@admin -@dangerous -function -script` removes commands that the categories above hold, such as `KEYS`, `SORT`, `FLUSHDB`, `CLIENT LIST`, `CLIENT KILL`, `FUNCTION FLUSH`, and `SCRIPT FLUSH`. The Gateway sends none of them. Key patterns do not limit the database index, and Valkey has no memory limit, so a leaked `gateway-queue` password can still fill the server's memory.
 
 ### Set up the queue user
 
@@ -177,7 +177,7 @@ First, adopt the Process as a Valkey Database server. `<id>` is the ID of the `v
 orbit database:server:create services-valkey --node=services --driver=redis --process=<id> --connection=services-valkey
 ```
 
-The Gateway takes the password of `services-valkey` as the admin password, writes the ACL file, and restarts Valkey with it. Valkey reads its append-only file again, so the queued jobs stay. The queue and the collector keep logging in as `default` with the same password. [When Redis is down](#when-redis-is-down) describes the Gateway during the restart.
+The Gateway takes the password of `services-valkey` as the admin password, writes the ACL file, and restarts Valkey with it. The server runs `valkey/valkey:8.1`, so the restart also moves the Process from `valkey/valkey:8` to 8.1. Valkey reads its append-only file again, so the queued jobs stay. The queue and the collector keep logging in as `default` with the same password. [When Redis is down](#when-redis-is-down) describes the Gateway during the restart.
 
 Then create the queue's user and its connection:
 

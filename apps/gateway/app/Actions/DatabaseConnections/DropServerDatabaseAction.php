@@ -7,13 +7,12 @@ namespace App\Actions\DatabaseConnections;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use Closure;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * Drops the database behind a connection on a Database server: the database, its test databases,
@@ -42,21 +41,14 @@ final readonly class DropServerDatabaseAction
             return;
         }
 
-        $lock = Cache::lock('database-server:'.$server->id.':acl', 120);
-        if (! $lock->get()) {
-            throw new ResourceOperationException('database.server_in_use', 'Another ACL change is in progress.', 409);
-        }
-
-        try {
+        ValkeyAclLock::run($server, function () use ($connection, $afterDrop): void {
             $current = $connection->fresh(['server', 'users']);
             if ($current === null) {
                 return;
             }
             $this->drop($current);
             $afterDrop?->__invoke();
-        } finally {
-            $lock->release();
-        }
+        });
     }
 
     private function drop(DatabaseConnection $connection): void

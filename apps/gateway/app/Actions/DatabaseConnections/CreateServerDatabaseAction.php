@@ -12,6 +12,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,7 +21,6 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Instance;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -57,20 +57,7 @@ final readonly class CreateServerDatabaseAction
         $server = $this->server($data->server);
 
         if ($server->driver === DatabaseDriver::Redis && $data->instanceId === null) {
-            $lock = Cache::lock("database-server:{$server->id}:acl", 120);
-            if (! $lock->get()) {
-                throw new ResourceOperationException(
-                    errorCode: 'database.server_in_use',
-                    message: "Database server [{$server->slug}] is changing ACL users. Try again.",
-                    status: 409,
-                );
-            }
-
-            try {
-                return $this->createAclUser($server->refresh(), $data, $createdBy);
-            } finally {
-                $lock->release();
-            }
+            return ValkeyAclLock::run($server, fn (): DatabaseConnection => $this->createAclUser($server->refresh(), $data, $createdBy));
         }
 
         $instance = $data->instanceId === null
@@ -352,7 +339,6 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $slug,
-                    'password' => $password,
                     'privileges' => $rules,
                     'created_by' => $createdBy,
                 ]);

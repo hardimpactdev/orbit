@@ -126,7 +126,7 @@ describe('database:create --server on a Valkey server', function (): void {
 
         $connection = DatabaseConnection::query()->sole();
         $password = (string) $connection->password;
-        $rules = 'on ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous';
+        $rules = 'on sanitize-payload ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous -function -script';
         $live = $this->valkey->users['gateway-queue'];
 
         expect(strlen($password))->toBe(40)
@@ -137,12 +137,12 @@ describe('database:create --server on a Valkey server', function (): void {
             ->and($this->admin->statements)->toBe([]);
 
         $user = DatabaseUser::query()->sole();
-        $stored = DB::table('database_users')->where('id', $user->id)->value('password');
+        $stored = DB::table('database_connections')->where('id', $connection->id)->value('password');
 
         expect($user->database_connection_id)->toBe($connection->id)
             ->and($user->username)->toBe('gateway-queue')
             ->and($user->privileges)->toBe($rules)
-            ->and($user->password)->toBe($password)
+            ->and($user->password)->toBeNull()
             ->and($stored)->toBeString()->not->toContain($password)
             ->and($user->created_by)->toBe('gateway');
 
@@ -326,6 +326,10 @@ describe('database:create --server on a Valkey server', function (): void {
         'a pattern that starts with ~' => [['patterns' => ['~orbit-gateway:*']], 'patterns.0'],
         'a read pattern' => [['patterns' => ['%R~orbit-gateway:*']], 'patterns.0'],
         'a channel pattern' => [['patterns' => ['&orbit-gateway:*']], 'patterns.0'],
+        'every key' => [['patterns' => ['*']], 'patterns.0'],
+        'a pattern that starts with a glob' => [['patterns' => ['?rbit-gateway:*']], 'patterns.0'],
+        'a pattern that starts with a character class' => [['patterns' => ['[o]rbit-gateway:*']], 'patterns.0'],
+        'a pattern that starts with an escape' => [['patterns' => ['\\*']], 'patterns.0'],
         'a long pattern' => [['patterns' => [str_repeat('k', 256)]], 'patterns.0'],
         'no rules' => [['allow' => []], 'allow'],
         '65 rules' => [['allow' => array_fill(0, 65, 'get')], 'allow'],
@@ -336,6 +340,8 @@ describe('database:create --server on a Valkey server', function (): void {
         'a key pattern as a rule' => [['allow' => ['~*']], 'allow.0'],
         'an empty subcommand' => [['allow' => ['client|']], 'allow.0'],
         'a password rule' => [['allow' => ['>secret']], 'allow.0'],
+        'every command' => [['allow' => ['@all']], 'allow.0'],
+        'the scripting commands' => [['allow' => ['@scripting']], 'allow.0'],
         'a string index' => [['database' => '1'], 'database'],
         'a negative index' => [['database' => -1], 'database'],
         'a large index' => [['database' => 1000], 'database'],

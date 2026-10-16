@@ -11,6 +11,8 @@ from harness import execute, result
 
 NAME = 'database-servers.write-valkey-acl'
 ACL = 'user default on #' + '0123456789abcdef' * 4 + ' ~* &* +@all\n'
+USER = ('user gateway-queue #' + 'fedcba9876543210' * 4 + ' on sanitize-payload ~orbit-gateway:* ~orbit-gateway-horizon:*'
+        ' resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous -function -script\n')
 FAKES = {
     'sudo': '[ "$1" = -n ] || exit 64; shift; exec "$@"',
     'docker': 'printf "%s\\n" "$@" > "$STATE/argv"; '
@@ -61,6 +63,11 @@ class WriteValkeyAclTest(unittest.TestCase):
         self.assertEqual(self.write(acl=acl), ('written', {}))
         self.assertEqual((self.volume / 'users.acl').read_text(), acl)
 
+    def test_writes_managed_users_after_default(self):
+        acl = ACL + USER + USER.replace('gateway-queue', 'collector').replace(' +@list +eval +client|setname', '')
+        self.assertEqual(self.write(acl=acl), ('written', {}))
+        self.assertEqual((self.volume / 'users.acl').read_text(), acl)
+
     def test_replaces_an_existing_file(self):
         self.volume.mkdir(parents=True)
         (self.volume / 'users.acl').write_text('user default on nopass ~* &* +@all\n')
@@ -88,7 +95,17 @@ class WriteValkeyAclTest(unittest.TestCase):
             'another image': {'image': 'redis:8'},
             'an image without a tag': {'image': 'valkey/valkey'},
             'an argument in the image': {'image': 'valkey/valkey:8.1 --privileged'},
-            'a second user': {'acl': ACL + 'user queue on #' + 'a' * 64 + ' ~queue:* +@list\n'},
+            'a user outside the frame': {'acl': ACL + 'user queue on #' + 'a' * 64 + ' ~queue:* +@list\n'},
+            'a user before default': {'acl': USER + ACL},
+            'a second default': {'acl': ACL + ACL},
+            'a managed line for default': {'acl': ACL + USER.replace('gateway-queue', 'default')},
+            'a user without a password': {'acl': ACL + USER.replace('#' + 'fedcba9876543210' * 4, 'nopass')},
+            'a user with two passwords': {'acl': ACL + USER.replace(' on ', ' #' + 'a' * 64 + ' on ', 1)},
+            'a user with channels': {'acl': ACL + USER.replace('resetchannels', '&*')},
+            'a user without the final deny': {'acl': ACL + USER.replace(' -function -script', '')},
+            'a user without a key pattern': {'acl': ACL + USER.replace(' ~orbit-gateway:* ~orbit-gateway-horizon:*', '')},
+            'a user line that hides another line': {'acl': ACL + USER.replace('+eval', '+eval\nuser x on nopass ~* +@all')},
+            'an uppercase user name': {'acl': ACL + USER.replace('gateway-queue', 'Gateway')},
             'a file without its newline': {'acl': ACL.rstrip('\n')},
             'an uppercase hash': {'acl': ACL.upper()},
         }

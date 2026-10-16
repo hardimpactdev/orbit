@@ -8,7 +8,7 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
-use App\Domain\DatabaseServers\ValkeyAclUser;
+use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\DatabaseServerDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
@@ -51,7 +51,7 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
                         'Valkey does not run with Orbit\'s ACL file.', 'managed ACL file', 'missing or different');
                 }
 
-                if (! $this->usersMatch($server, $this->admin->aclUsers($server))) {
+                if (ValkeyAcl::changes($server, $this->admin->aclUsers($server)) !== ['set' => [], 'delete' => []]) {
                     $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::AclMismatch,
                         'The live ACL users differ from the recorded users.', 'recorded users', 'different');
                 }
@@ -62,33 +62,6 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues($this->family(), $servers->count(), $issues);
-    }
-
-    /** @param array<string, ValkeyAclUser> $users */
-    private function usersMatch(DatabaseServer $server, array $users): bool
-    {
-        $admin = $users[ValkeyAclUser::ADMIN] ?? null;
-        if ($admin === null || $admin->rules !== 'on sanitize-payload ~* &* +@all' || ! $admin->hasOnlyPassword($server->root_password)) {
-            return false;
-        }
-        unset($users[ValkeyAclUser::ADMIN]);
-
-        foreach ($server->databaseConnections as $connection) {
-            $username = $connection->username;
-            if ($username === null || $username === '' || $username === ValkeyAclUser::ADMIN) {
-                continue;
-            }
-            $live = $users[$username] ?? null;
-            $recorded = $connection->users->where('username', $username);
-            if ($live === null || $recorded->count() !== 1 || $connection->password === null
-                || ! $live->hasOnlyPassword($connection->password)
-                || $live->rules !== $recorded->first()?->privileges) {
-                return false;
-            }
-            unset($users[$username]);
-        }
-
-        return $users === [];
     }
 
     private function issue(

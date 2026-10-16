@@ -20,12 +20,8 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
@@ -43,13 +39,12 @@ use SensitiveParameter;
  * Process. A Valkey server takes the record with a generated admin password, the ACL file in its volume, the Process,
  * and the wait for the admin login. An adoption of a Valkey Process takes the connection's password, replaces the
  * Process specification instead of creating one, and links the connection at the end. Each step leaves state that a
- * retry of the same request reads, so a retry continues from the first step that did not finish.
+ * retry of the same request reads, so a retry continues from the first step that did not finish. A retry for an
+ * active Valkey server repairs it to its records ({@see ConvergeValkeyServerAction}).
  */
 final readonly class CreateDatabaseServerAction
 {
     public const int READY_TIMEOUT_SECONDS = 120;
-
-    public const string WRITE_ACL_PROGRAM = 'database-servers.write-valkey-acl';
 
     private const int ROOT_PASSWORD_LENGTH = 48;
 
@@ -62,8 +57,8 @@ final readonly class CreateDatabaseServerAction
         private DatabaseServerAdmin $admin,
         private ValkeyServerAdmin $valkey,
         private ValkeyProcessAdoption $adoption,
-        private RemoteProgramRunner $programs,
-        private RemoteProgramCatalog $catalog,
+        private WriteValkeyAclFileAction $aclFile,
+        private ConvergeValkeyServerAction $converge,
     ) {}
 
     /** @return array{server: DatabaseServer, created: bool} */
@@ -117,6 +112,8 @@ final readonly class CreateDatabaseServerAction
             } else {
                 $this->provision($server, $node);
             }
+        } elseif ($server->driver === DatabaseDriver::Redis) {
+            $this->converge->execute($server);
         }
 
         return ['server' => $server->refresh(), 'created' => $reserved['created']];
@@ -249,7 +246,7 @@ final readonly class CreateDatabaseServerAction
             || ! $this->specifications->matches($process, $attributes)
         ) {
             if (! $aclFileWritten) {
-                $this->step($server, 'acl_file', fn () => $this->writeAclFile($server, $node, $volume));
+                $this->step($server, 'acl_file', fn () => $this->aclFile->execute($server, $volume));
             }
 
             $process = $this->step($server, 'process', fn (): Process => $process instanceof Process
@@ -299,11 +296,7 @@ final readonly class CreateDatabaseServerAction
                 return;
             }
 
-            throw new ResourceOperationException(
-                errorCode: 'database.server_start_failed',
-                message: "Database server [{$server->slug}] did not accept the admin login within ".self::READY_TIMEOUT_SECONDS.' seconds.',
-                status: 502,
-            );
+            throw self::startFailed($server);
         }
 
         if ($this->admin->waitUntilReady($server, self::READY_TIMEOUT_SECONDS)) {
@@ -317,34 +310,13 @@ final readonly class CreateDatabaseServerAction
         );
     }
 
-    /**
-     * Write `/data/users.acl` into the volume with the remote program. The file holds only the hash of the admin
-     * password, except during explicit open adoption. Failures never retain remote output.
-     */
-    private function writeAclFile(DatabaseServer $server, Node $node, string $volume): void
+    /** A Valkey server whose `default` did not log in with the admin password in time. */
+    public static function startFailed(DatabaseServer $server): ResourceOperationException
     {
-        try {
-            $result = $this->programs->run($node, $this->catalog->program(self::WRITE_ACL_PROGRAM), [
-                'volume' => $volume,
-                'image' => DatabaseServerProcess::valkeyImage($server->tag),
-                'acl' => DatabaseServerProcess::valkeyAclFile($server->root_password, $server->default_open),
-            ]);
-        } catch (RemoteProgramFailed $exception) {
-            throw $this->aclFileFailed($server, new CommandResult($exception->exitCode ?? 1, '', 'ACL file write failed.', 0, false));
-        }
-
-        if ($result->outcome !== 'written') {
-            throw $this->aclFileFailed($server, new CommandResult(1, '', 'ACL file write failed.', 0, false));
-        }
-    }
-
-    private function aclFileFailed(DatabaseServer $server, CommandResult $output): ProcessOperationException
-    {
-        return new ProcessOperationException(
-            step: 'acl_file',
-            errorCode: 'database.server_command_failed',
-            message: "Database server [{$server->slug}] could not write its ACL file.",
-            result: $output,
+        return new ResourceOperationException(
+            errorCode: 'database.server_start_failed',
+            message: "Database server [{$server->slug}] did not accept the admin login within ".self::READY_TIMEOUT_SECONDS.' seconds.',
+            status: 502,
         );
     }
 

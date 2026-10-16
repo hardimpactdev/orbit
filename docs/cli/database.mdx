@@ -58,8 +58,8 @@ orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE 
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
 | `--server=SERVER` | Server slug. Creates a MySQL database and user, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
 | `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
-| `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. Required there. Repeat it for more patterns. |
-| `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. Required there. Repeat it for more rules. |
+| `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. It starts with a literal key prefix, not a glob character. Required there. Repeat it for more patterns. |
+| `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. `@all` and `@scripting` are refused. Required there. Repeat it for more rules. |
 
 | Driver | Required fields | Optional fields |
 | --- | --- | --- |
@@ -154,7 +154,7 @@ orbit database:server:create beast-mysql --node=beast
 orbit database:server:create beast-valkey --node=beast --driver=redis
 ```
 
-[Database servers](/reference/database-servers#create-a-server) describes the steps, retry, adoption, and errors.
+Run the same command again to continue a failed create, or to [repair](/reference/database-servers#repair-a-valkey-server) an active Valkey server whose ACL differs from its records. [Database servers](/reference/database-servers#create-a-server) describes the steps, retry, adoption, and errors.
 
 ## orbit database:server:list
 

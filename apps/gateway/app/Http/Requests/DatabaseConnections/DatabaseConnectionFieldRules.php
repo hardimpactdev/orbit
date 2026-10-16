@@ -24,8 +24,14 @@ final readonly class DatabaseConnectionFieldRules
     /** A Valkey key pattern: printable ASCII without spaces. Orbit adds the `~`. */
     public const string ACL_KEY_PATTERN = '/\A[\x21-\x7E]+\z/D';
 
-    /** A Valkey key pattern never starts with the prefix of another rule, such as `%R~` or a channel's `&`. */
-    public const string ACL_KEY_PREFIX_PATTERN = '/\A[~%&]/';
+    /**
+     * A Valkey key pattern starts with a literal key prefix, such as `orbit-gateway:`. It never starts with a glob
+     * character, so no user reaches every key, nor with the prefix of another rule, such as `%R~` or a channel's `&`.
+     */
+    public const string ACL_KEY_PREFIX_PATTERN = '/\A[~%&*?\[\\\\]/';
+
+    /** Categories that a Valkey user never gets: every command, or the server-wide scripting commands. */
+    public const array ACL_REFUSED_RULES = ['@all', '@scripting'];
 
     /** A command category such as `@list`, or a command such as `eval` or `client|setname`. Orbit adds the `+`. */
     public const string ACL_RULE_PATTERN = '/\A(?:@[a-z]+|[a-z][a-z0-9_.-]*(?:\|[a-z][a-z0-9_.-]*)?)\z/D';
@@ -96,7 +102,7 @@ final readonly class DatabaseConnectionFieldRules
                 'patterns' => ['required', 'array', 'list', 'min:1', 'max:32'],
                 'patterns.*' => ['required', 'string', 'max:255', 'regex:'.self::ACL_KEY_PATTERN, 'not_regex:'.self::ACL_KEY_PREFIX_PATTERN],
                 'allow' => ['required', 'array', 'list', 'min:1', 'max:64'],
-                'allow.*' => ['required', 'string', 'max:128', 'regex:'.self::ACL_RULE_PATTERN],
+                'allow.*' => ['required', 'string', 'max:128', 'regex:'.self::ACL_RULE_PATTERN, Rule::notIn(self::ACL_REFUSED_RULES)],
             ],
             default => [...$rules, 'patterns' => ['missing'], 'allow' => ['missing']],
         };

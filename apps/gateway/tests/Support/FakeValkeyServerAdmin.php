@@ -13,7 +13,8 @@ use SensitiveParameter;
 
 /**
  * An in-memory Valkey server for tests. `$users` holds the live users by name, and `$passwords` the passwords that log
- * in as `default` at an address, keyed `<host>:<port>`. Every call is recorded in `$calls`, without a password.
+ * in as `default` at an address, keyed `<host>:<port>`. A server that becomes ready gets `default` from its ACL file.
+ * Every call is recorded in `$calls`, without a password.
  */
 final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 {
@@ -49,11 +50,21 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
     /** Runs after `setUser` made the user, such as a concurrent create that takes the slug. */
     public ?Closure $afterSetUser = null;
 
+    /** A server that becomes ready has started from Orbit's ACL file: `default` logs in with the admin password. */
     public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
     {
         $this->readyChecks[] = $server->slug;
 
-        return array_shift($this->readiness) ?? true;
+        if (! (array_shift($this->readiness) ?? true)) {
+            return false;
+        }
+
+        $this->passwords["{$server->node->wireguard_ip}:{$server->port}"] = $server->root_password;
+        $this->users['default'] = $server->default_open
+            ? new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', [])
+            : ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, $server->root_password);
+
+        return true;
     }
 
     public function acceptsAdminLogin(DatabaseServer $server): bool
@@ -92,11 +103,11 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         }
 
         $rules = implode(' ', [
-            'on',
+            'on sanitize-payload',
             ...array_map(static fn (string $pattern): string => '~'.$pattern, $patterns),
             'resetchannels -@all',
             ...array_map(static fn (string $rule): string => '+'.$rule, $allow),
-            '-@admin -@dangerous',
+            '-@admin -@dangerous -function -script',
         ]);
         $this->users[$username] = new ValkeyAclUser($username, $rules, [ValkeyAclUser::passwordHash($password)]);
 
@@ -113,6 +124,21 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         unset($this->users[$username]);
     }
 
+    public function applyUsers(DatabaseServer $server, array $set, array $delete): void
+    {
+        foreach ($set as $user) {
+            $this->command($server, "setuser {$user->name}");
+            $this->users[$user->name] = $user;
+        }
+
+        foreach ($delete as $username) {
+            $this->command($server, "deluser {$username}");
+            unset($this->users[$username]);
+        }
+
+        $this->command($server, 'acl save');
+    }
+
     public function aclUsers(DatabaseServer $server): array
     {
         $this->command($server, 'acl list');
@@ -127,7 +153,7 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
             throw new ResourceOperationException('database.server_in_use', count($this->defaultClients).' clients still use default: '.implode(', ', $this->defaultClients).'.', 409);
         }
         $this->anonymous = false;
-        $this->users['default'] = new ValkeyAclUser('default', 'on sanitize-payload ~* &* +@all', [ValkeyAclUser::passwordHash($server->root_password)]);
+        $this->users['default'] = ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, $server->root_password);
     }
 
     public function aclFile(DatabaseServer $server): ?string

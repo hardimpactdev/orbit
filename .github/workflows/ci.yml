@@ -601,7 +601,10 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
+      # ORBIT_TEST_DOCKER runs the Valkey Database server tests against a real valkey/valkey:8.1 in Docker.
       - name: Run every privileged test
+        env:
+          ORBIT_TEST_DOCKER: '1'
         run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
       # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
       # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
@@ -631,7 +634,10 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/ruff"
           "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+      # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Lint and test the remote programs
+        env:
+          ORBIT_TEST_DOCKER: '1'
         run: bin/remote-programs-check
 
   docs-merge-ref:

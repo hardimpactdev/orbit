@@ -91,7 +91,7 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
                 ...array_map(static fn (string $pattern): string => '~'.$pattern, $patterns),
                 '-@all',
                 ...array_map(static fn (string $rule): string => '+'.$rule, $allow),
-                '-@admin', '-@dangerous',
+                '-@admin', '-@dangerous', '-function', '-script',
             ], $error);
 
             if ($error === true) {
@@ -128,10 +128,7 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
             } catch (ResourceOperationException $exception) {
                 if ($previous instanceof ValkeyAclUser) {
                     try {
-                        $this->command($server, $client, ['ACL', 'SETUSER', $username, 'reset',
-                            ...explode(' ', $previous->rules),
-                            ...array_map(static fn (string $hash): string => '#'.$hash, $previous->passwordHashes),
-                        ]);
+                        $this->command($server, $client, self::setUserArguments($previous));
                         $this->command($server, $client, ['ACL', 'SAVE']);
                     } catch (ResourceOperationException) {
                         // The record remains available for retry and Doctor reports any live drift.
@@ -139,6 +136,21 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
                 }
                 throw $exception;
             }
+        });
+    }
+
+    public function applyUsers(DatabaseServer $server, array $set, array $delete): void
+    {
+        $this->connected($server, true, function (Client $client) use ($server, $set, $delete): void {
+            foreach ($set as $user) {
+                $this->command($server, $client, self::setUserArguments($user));
+            }
+
+            foreach ($delete as $username) {
+                $this->command($server, $client, ['ACL', 'DELUSER', $username]);
+            }
+
+            $this->command($server, $client, ['ACL', 'SAVE']);
         });
     }
 
@@ -222,6 +234,20 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
 
             return ! ($error === true && is_string($reply) && str_starts_with($reply, 'NOAUTH'));
         });
+    }
+
+    /**
+     * `ACL SETUSER` that makes the live user exactly this one: its rules and its password hashes.
+     *
+     * @return list<string>
+     */
+    private static function setUserArguments(ValkeyAclUser $user): array
+    {
+        return [
+            'ACL', 'SETUSER', $user->name, 'reset',
+            ...explode(' ', $user->rules),
+            ...array_map(static fn (string $hash): string => '#'.$hash, $user->passwordHashes),
+        ];
     }
 
     /** @return array<string, ValkeyAclUser> */

@@ -64,15 +64,36 @@ it('reports matching ACL users as healthy through the Doctor endpoint without wr
     expect($this->admin->calls)->toBe(['anonymous ping', 'config get aclfile', 'acl list']);
 });
 
-it('reports an open adopted server with both open and ACL mismatch issues', function (): void {
+it('reports an open adopted server once and compares only its other users', function (): void {
+    $this->server->update(['default_open' => true]);
     $this->admin->anonymous = true;
-    $this->admin->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
+    $this->admin->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
 
+    $response = $this->postJson('/api/v1/doctor', $this->request)->assertOk();
+
+    expect(array_column($response->json('data.nodes.0.families.0.issues'), 'code'))->toBe(['database_server.open']);
+
+    $this->admin->users['unrecorded'] = new ValkeyAclUser('unrecorded', 'on nopass ~* &* +@all', []);
     $response = $this->postJson('/api/v1/doctor', $this->request)->assertOk();
 
     expect(array_column($response->json('data.nodes.0.families.0.issues'), 'code'))
         ->toBe(['database_server.open', 'database_server.acl_mismatch']);
 });
+
+it('compares rules by token, so only the order of command rules matters', function (string $rules, bool $healthy): void {
+    DatabaseUser::query()->update(['privileges' => 'on sanitize-payload ~private:* ~shared:* resetchannels -@all +get +@list -@admin']);
+    $this->admin->users['private-client'] = new ValkeyAclUser('private-client', $rules, [hash('sha256', 'doctor-client-secret')]);
+
+    $this->postJson('/api/v1/doctor', $this->request)->assertOk()
+        ->assertJsonPath('data.healthy', $healthy);
+})->with([
+    'the same rules' => ['on sanitize-payload ~private:* ~shared:* resetchannels -@all +get +@list -@admin', true],
+    'flags, keys, and channels in another order' => ['sanitize-payload on resetchannels ~shared:* ~private:* -@all +get +@list -@admin', true],
+    'extra spaces' => ['on  sanitize-payload ~private:* ~shared:*   resetchannels -@all +get +@list -@admin', true],
+    'command rules in another order' => ['on sanitize-payload ~private:* ~shared:* resetchannels -@all -@admin +get +@list', false],
+    'another key pattern' => ['on sanitize-payload ~private:* ~other:* resetchannels -@all +get +@list -@admin', false],
+    'a missing flag' => ['on ~private:* ~shared:* resetchannels -@all +get +@list -@admin', false],
+]);
 
 it('reports a missing or different live ACL file without exposing its path', function (?string $file): void {
     $this->admin->aclFile = $file;
@@ -92,8 +113,6 @@ it('reports ACL drift without exposing users rules passwords or hashes', functio
         'client password' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on ~private:* resetchannels -@all +get', [hash('sha256', 'wrong')]),
         'extra password' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on ~private:* resetchannels -@all +get', [hash('sha256', 'doctor-client-secret'), hash('sha256', 'wrong')]),
         'client rules' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on sanitize-payload ~* &* +@all', [hash('sha256', 'doctor-client-secret')]),
-        'missing record' => DatabaseUser::query()->delete(),
-        'missing password' => $this->connection->update(['password' => null]),
     };
 
     $response = $this->postJson('/api/v1/doctor', $this->request)->assertOk()
@@ -102,7 +121,7 @@ it('reports ACL drift without exposing users rules passwords or hashes', functio
     foreach (['private-client', 'unrecorded', '~private:*', 'doctor-client-secret', 'doctor-admin-secret', hash('sha256', 'doctor-client-secret'), hash('sha256', 'doctor-admin-secret')] as $secret) {
         expect($response->getContent())->not->toContain($secret);
     }
-})->with(['missing admin', 'missing client', 'extra user', 'admin rights', 'admin password', 'client password', 'extra password', 'client rules', 'missing record', 'missing password']);
+})->with(['missing admin', 'missing client', 'extra user', 'admin rights', 'admin password', 'client password', 'extra password', 'client rules']);
 
 it('reports connection failures as unverifiable', function (): void {
     $this->admin->failCommands = true;

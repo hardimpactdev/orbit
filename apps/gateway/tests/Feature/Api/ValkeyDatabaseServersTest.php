@@ -6,6 +6,7 @@ use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
@@ -613,6 +614,128 @@ describe('database:server:create --process --connection', function (): void {
             $this->valkey->passwords['10.44.0.80:6379'] = 'rotated-secret';
         }, 'The password of Database connection [services-valkey] does not log in as default.'],
     ]);
+});
+
+describe('database:server:create on an active Valkey server', function (): void {
+    beforeEach(function (): void {
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
+        $this->postJson('/api/v1/database-connections', [
+            'slug' => 'gateway-queue',
+            'server' => 'beast-valkey',
+            'patterns' => ['orbit-gateway:*'],
+            'allow' => ['@list', 'eval'],
+        ])->assertCreated();
+        $this->server = DatabaseServer::query()->sole();
+        $this->clientPassword = (string) DatabaseConnection::query()->where('slug', 'gateway-queue')->value('password');
+        $this->recorded = $this->valkey->users;
+        $this->valkey->calls = [];
+        $this->valkey->readyChecks = [];
+        $this->programs->runs = [];
+    });
+
+    it('only saves the ACL of a server that matches its records', function (): void {
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'active');
+
+        expect($this->valkey->calls)->toBe(['login 10.44.0.80:6379', 'config get aclfile', 'acl list', 'acl save'])
+            ->and($this->valkey->users)->toEqual($this->recorded)
+            ->and($this->programs->runs)->toBe([])
+            ->and($this->runtime->restarted)->toBe([]);
+    });
+
+    it('sets each missing or changed user, deletes every other user, and saves, without a restart', function (): void {
+        unset($this->valkey->users['gateway-queue']);
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on sanitize-payload ~* &* -@all', [
+            hash('sha256', $this->server->root_password),
+            hash('sha256', 'second-admin-password'),
+        ]);
+        $this->valkey->users['manual'] = ValkeyAclUser::withPassword('manual', 'on ~* +@all', 'manual-secret');
+
+        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
+
+        expect($this->valkey->users)->toEqual($this->recorded)
+            ->and($this->valkey->calls)->toBe([
+                'login 10.44.0.80:6379', 'config get aclfile', 'acl list',
+                'setuser default', 'setuser gateway-queue', 'deluser manual', 'acl save',
+            ])
+            ->and($this->programs->runs)->toBe([])
+            ->and($this->runtime->restarted)->toBe([]);
+        valkey_server_assert_no_secret($response, $this->server->root_password);
+        valkey_server_assert_no_secret($response, $this->clientPassword);
+    });
+
+    it('writes the ACL file from the records and restarts Valkey when it does not log in or runs without the file', function (string $fault): void {
+        if ($fault === 'lost file') {
+            // Without its ACL file Valkey does not start, so no login succeeds.
+            $this->valkey->passwords = [];
+            $this->valkey->users = [];
+        } else {
+            $this->valkey->aclFile = null;
+        }
+
+        $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
+        $this->valkey->aclFile = '/data/users.acl';
+
+        expect($this->programs->runs)->toBe([[
+            'node' => 'beast',
+            'input' => [
+                'volume' => 'orbit-beast-valkey-data',
+                'image' => 'valkey/valkey:8.1',
+                'acl' => valkey_acl_file($this->server->root_password)
+                    .'user gateway-queue #'.hash('sha256', $this->clientPassword).' '.$this->recorded['gateway-queue']->rules."\n",
+            ],
+        ]])
+            ->and($this->runtime->restarted)->toBe([$this->server->process_id])
+            ->and($this->valkey->readyChecks)->toBe(['beast-valkey'])
+            ->and($this->valkey->users)->toEqual($this->recorded)
+            ->and(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+            ->and(json_encode($this->programs->runs, JSON_THROW_ON_ERROR))->not->toContain($this->clientPassword);
+        valkey_server_assert_no_secret($response, $this->server->root_password);
+        valkey_server_assert_no_secret($response, $this->clientPassword);
+    })->with(['lost file', 'no ACL file in use']);
+
+    it('keeps the server active and changes no user when the repair fails', function (string $failure, int $status, string $code, bool $restarted): void {
+        $this->valkey->passwords = [];
+        match ($failure) {
+            'ACL file' => $this->programs->outcome = 'failed',
+            'restart' => $this->runtime->restartFailure = new ProcessOperationException('restart', 'process.restart_failed', 'The Process did not restart.'),
+            'readiness' => $this->valkey->readiness = [false],
+        };
+
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
+            ->assertStatus($status)
+            ->assertJsonPath('error.code', $code);
+
+        expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+            ->and($this->runtime->restarted)->toBe($restarted ? [$this->server->process_id] : [])
+            ->and($this->valkey->calls)->not->toContain('acl save')
+            ->and($this->valkey->users)->toEqual($this->recorded);
+
+        $this->programs->outcome = 'written';
+        $this->runtime->restartFailure = null;
+        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertOk();
+    })->with([
+        'the ACL file' => ['ACL file', 502, 'database.server_command_failed', false],
+        'the restart' => ['restart', 502, 'process.restart_failed', true],
+        'the admin login after the restart' => ['readiness', 502, 'database.server_start_failed', true],
+    ]);
+
+    it('refuses a repair while another ACL change runs', function (): void {
+        $lock = Cache::lock('database-server:'.$this->server->id.':acl', 60);
+        expect($lock->get())->toBeTrue();
+
+        try {
+            $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
+                ->assertConflict()
+                ->assertJsonPath('error.code', 'database.server_in_use');
+        } finally {
+            $lock->release();
+        }
+
+        expect($this->valkey->calls)->toBe([])
+            ->and($this->programs->runs)->toBe([]);
+    });
 });
 
 describe('database:server:close boundary', function (): void {

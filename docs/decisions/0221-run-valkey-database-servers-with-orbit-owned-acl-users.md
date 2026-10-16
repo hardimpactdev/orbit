@@ -39,7 +39,7 @@ A Database server has a `driver`: `mysql`, the default, or `redis`. A `redis` se
 3. It creates and starts a Docker Node Process named `<slug>` with image `valkey/valkey:<tag>` and the command `valkey-server --appendonly yes --dir /data --aclfile /data/users.acl`. The Process has no environment.
 4. It waits until `default` can log in with the admin password.
 
-`default` is the admin user, and it always has the Gateway's password. No Process command, environment, or Activity entry holds a password. Valkey refuses to start when the ACL file is missing or has a wrong line, so a damaged setup fails closed. A retry continues from the first step that did not finish.
+`default` is the admin user, and it always has the Gateway's password. No Process command, environment, or Activity entry holds a password. Valkey refuses to start when the ACL file is missing or has a wrong line, so a damaged setup fails closed. A retry continues from the first step that did not finish. A repeat on an active server repairs it (see [Repair a server](#repair-a-server)).
 
 ### Admin commands
 
@@ -49,10 +49,10 @@ The Gateway connects to the server's WireGuard address and published port, the a
 
 `orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX]` on a `redis` server:
 
-1. It generates a password and runs `ACL SETUSER <slug> reset on #<hash> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous`, then `ACL SAVE`.
+1. It generates a password and runs `ACL SETUSER <slug> reset on #<hash> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script`, then `ACL SAVE`.
 2. It records a `redis` connection with the Node's WireGuard address, the server's port, `--database`, the username `<slug>`, the encrypted password, and the server link. It also records the user with the rules that Valkey reports.
 
-Orbit adds `reset`, the password, `resetchannels`, `-@all`, and the final `-@admin -@dangerous`. So no user gets pub/sub channels, an `@admin` command, or a `@dangerous` command, and no user can change the ACL. `database:destroy` of the connection runs `ACL DELUSER` and `ACL SAVE`. The user's keys stay.
+Orbit adds `reset`, the password, `resetchannels`, `-@all`, and the final `-@admin -@dangerous -function -script`. So no user gets pub/sub channels, an `@admin` command, a `@dangerous` command, or `FUNCTION FLUSH` and `SCRIPT FLUSH`, which act on the whole server and are also in `@write` and `@slow`. No user can change the ACL. A key pattern must start with a literal key prefix, so `*` is refused, and the rules `@all` and `@scripting` are refused. `database:destroy` of the connection runs `ACL DELUSER` and `ACL SAVE`. The user's keys stay.
 
 `--instance`, `instance:create --database-server`, the Instance database clone, and `database:user:create` refuse a `redis` server with `database.driver_unsupported`.
 
@@ -66,7 +66,16 @@ A new Doctor family, `database_server`, checks each Valkey server whose Process 
 
 - A client without a password gets no access.
 - Valkey runs with the ACL file `/data/users.acl`.
-- The live users equal the recorded users: `default` with the admin password and all rights, and one user for each connection on the server, with its password hash and rules.
+- The live users equal the recorded users: `default` with the admin password and all rights, and one user for each connection on the server, with its password hash and rules. Rules compare by token, and the `default` of an open server is compared only after it is closed.
+
+### Repair a server
+
+A repeat of `database:server:create` on an active Valkey server makes it match its records. The Gateway holds everything this needs, so no drift or lost file needs a manual runbook:
+
+- When `default` logs in with the admin password and Valkey runs with `/data/users.acl`, the Gateway runs `ACL SETUSER` for each recorded user that is missing or differs, `ACL DELUSER` for each other user, and `ACL SAVE`.
+- Otherwise, as when the ACL file is lost and Valkey does not start, the Gateway writes the file again from the records with the same program, restarts the Process, waits for the admin login, and then does the same.
+
+The file holds `default` and one line per recorded user, with only password hashes. The repair is the remedy for each Doctor code of the family, except that an adopted open server is closed with `database:server:close`.
 
 ### Adopt an existing Valkey Process
 
@@ -104,6 +113,7 @@ The ProxyCli collector and the Gateway's snapshot reads keep using `services-val
 - A separate admin user with `default` switched off: a client that logs in with only a password, such as the collector, stops working. `default` with a password the Gateway holds is just as closed.
 - Admin commands through SSH and `valkey-cli` inside the container, as for MySQL: `valkey-cli` exits 0 on an error reply when it reads commands from standard input. The Gateway already reaches Valkey over WireGuard for the queue, so only the first ACL file needs a Node program.
 - `database:user:create` for Valkey users: it adds a user to a database that a connection has, and records no connection. On Valkey, one user is one connection.
+- A separate `database:server:converge` command for the repair: `database:server:create` already brings a server to its record, so a second command would be a second way to do one thing.
 - A raw ACL rule string as input: Orbit must own the reset, the password, the channels, and the final deny, so the input is the key patterns and the allowed commands only.
 - A new server for `services` and a move of the data: it needs a queue outage or a copy tool, a release, and a new setup of the collector, against one restart for adoption.
 - Closing an open server during adoption: every client that logs in without a password would stop at once, before it has its own connection.
@@ -122,4 +132,4 @@ The ProxyCli collector and the Gateway's snapshot reads keep using `services-val
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
 - ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) binds the collector's own connection at step 4
 - Detail: [Database servers](/reference/database-servers), [Database connections](/reference/database-connections), [Gateway queue: ACL users](/reference/gateway-queue#acl-users), [`doctor`](/cli/doctor)
-- Verify: Gateway tests for Valkey server creation, retry, adoption, the ACL user create and destroy, the `process:update` refusal, and the Doctor family; a test against a real Valkey container
+- Verify: Gateway tests for Valkey server creation, retry, repair, adoption, the ACL user create and destroy, the `process:update` refusal, and the Doctor family; tests against a real `valkey/valkey:8.1` container that CI runs with `ORBIT_TEST_DOCKER=1`

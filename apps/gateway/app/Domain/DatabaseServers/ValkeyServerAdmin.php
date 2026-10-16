@@ -27,8 +27,8 @@ interface ValkeyServerAdmin
     public function userExists(DatabaseServer $server, string $username): bool;
 
     /**
-     * Run `ACL SETUSER <username> reset on #<hash> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous`
-     * and `ACL SAVE`. When the save fails, it deletes the user again and fails.
+     * Run `ACL SETUSER <username> reset on #<hash> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous
+     * -function -script` and `ACL SAVE`. When the save fails, it deletes the user again and fails.
      *
      * @param  list<string>  $patterns  Key patterns, without the `~`.
      * @param  list<string>  $allow  Command categories or commands, without the `+`.
@@ -45,6 +45,15 @@ interface ValkeyServerAdmin
 
     /** Run `ACL DELUSER` and `ACL SAVE`; restore the user on save failure. A missing user is fine. */
     public function deleteUser(DatabaseServer $server, string $username): void;
+
+    /**
+     * Run `ACL SETUSER <name> reset <rules> #<hash>` for each user to set, `ACL DELUSER` for each name to delete, then
+     * `ACL SAVE`. A failure keeps the changes made before it, so a repeat continues from there.
+     *
+     * @param  list<ValkeyAclUser>  $set
+     * @param  list<string>  $delete
+     */
+    public function applyUsers(DatabaseServer $server, array $set, array $delete): void;
 
     /**
      * The live users, keyed by name.

@@ -16,7 +16,7 @@ use SensitiveParameter;
  * The Docker Node Process that runs a Database server. The MySQL image reads
  * MYSQL_ROOT_PASSWORD only when it initializes an empty data directory, so the variable is set
  * for the first start and removed afterwards. Valkey has no environment: it starts only from the
- * ACL file that Orbit writes into its volume, which holds the hash of the admin password.
+ * ACL file that Orbit writes into its volume ({@see ValkeyAcl::file()}), which holds only password hashes.
  */
 final readonly class DatabaseServerProcess
 {
@@ -87,15 +87,6 @@ final readonly class DatabaseServerProcess
     public static function valkeyImage(string $tag): string
     {
         return 'valkey/valkey:'.$tag;
-    }
-
-    /**
-     * The ACL file that a Valkey server starts from: `default`, the admin user, with the hash of the admin password and
-     * every right. Explicit adoption can preserve an open default until the operator closes it.
-     */
-    public static function valkeyAclFile(#[SensitiveParameter] string $adminPassword, bool $defaultOpen = false): string
-    {
-        return 'user default on '.($defaultOpen ? 'nopass' : '#'.ValkeyAclUser::passwordHash($adminPassword))." ~* &* +@all\n";
     }
 
     /** The Docker volume that a Process mounts at /data, or null when it mounts none there or a host path. */

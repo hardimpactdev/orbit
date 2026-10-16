@@ -19,7 +19,10 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class UpdateDatabaseConnectionAction
 {
-    public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
+    public function __construct(
+        private ValkeyServerAdmin $valkey,
+        private ?RecordEventBroadcaster $broadcaster = null,
+    ) {}
 
     public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): DatabaseConnection
     {
@@ -47,7 +50,7 @@ final readonly class UpdateDatabaseConnectionAction
                 }
             }
 
-            if ($locked->server?->driver === DatabaseDriver::Redis && $data->databaseProvided && $proposed->database !== null && (! ctype_digit($proposed->database) || (int) $proposed->database >= app(ValkeyServerAdmin::class)->databaseCount($locked->server))) {
+            if ($locked->server?->driver === DatabaseDriver::Redis && $data->databaseProvided && $proposed->database !== null && (! ctype_digit($proposed->database) || (int) $proposed->database >= $this->valkey->databaseCount($locked->server))) {
                 throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
             }
 
