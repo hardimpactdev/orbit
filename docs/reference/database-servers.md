@@ -66,7 +66,7 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 
 ## Adopt a Valkey Process
 
-`database:server:create` with `--process` and `--connection` brings an existing Valkey Process under Orbit, without a new volume and without a data move. The option exists only to adopt the `valkey` Process on `services` ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users)). A later version removes it.
+`database:server:create` with `--process` and `--connection` brings an existing Valkey Process under Orbit, without a new volume and without a data move. The option exists only to adopt the `valkey` Processes on `services` and `beast` ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users)). A later version removes it.
 
 ```bash
 orbit database:server:create services-valkey --node=services --driver=redis --process=162 --connection=services-valkey
@@ -77,9 +77,31 @@ The Gateway refuses with `database.server_adoption_refused` and changes nothing 
 - The driver is `redis`, and the Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - The Process publishes container port `6379` on the Node's WireGuard address. That host port becomes the server's port.
 - No server owns the Process yet.
-- The connection is a `redis` connection to that address and port with a password, and that password logs in as `default`.
+- The connection is a `redis` connection to that address and port.
+- The connection logs in as `default`, with its password or without a password.
 
-Then the Gateway uses the connection's password as the admin password. It writes `/data/users.acl` into the Process's volume, and replaces the Process specification with the one above. The Process keeps its ID, name, volume, and port. It waits for the login, and links the connection to the server. Valkey restarts once and reads its append-only file again, so its data stays. The connection's clients keep logging in as `default` with the same password.
+The adoption never locks out a client that works today:
+
+- When the connection has a password, that password becomes the admin password, and the ACL file's `default` line holds its hash.
+- When the connection has no password, the Gateway generates the admin password. The ACL file's `default` line is `user default on nopass ~* &* +@all`.
+- A server adopted without a password stays as open as it was until you [close it](#close-an-adopted-server).
+
+Then the Gateway writes `/data/users.acl` into the Process's volume, and replaces the Process specification with the one above. The Process keeps its ID, name, volume, and port. It waits for the admin login, and links the connection to the server. Valkey restarts once and reads its append-only file again, so its data stays. The connection's clients keep logging in as `default` as before.
+
+## Close an adopted server
+
+`database:server:close` gives `default` the admin password, so a client without a password gets no access. Run it after each client of an open server has [its own user](#create-an-acl-user-on-a-valkey-server).
+
+```bash
+orbit database:server:close beast-valkey
+```
+
+The Gateway runs `ACL SETUSER default resetpass #<sha256 of the admin password>` and `ACL SAVE`. It refuses with `database.server_in_use` (409) and changes nothing while either of these holds:
+
+- A connection on the server has no password. Its clients would be locked out. Destroy it, or move its clients first.
+- A client other than the Gateway is logged in as `default`. The message gives the number of clients and their addresses.
+
+A server whose `default` already has the admin password returns at once, so the command is safe to repeat. A client that is not connected at that moment is not seen, so move every client before you close the server. Like adoption, the command exists only for the two adopted Processes.
 
 ## Create a database on a server
 
@@ -174,7 +196,7 @@ The [Doctor](/cli/doctor) family `database_server` checks each Valkey server who
 | `database_server.acl_mismatch` | The live users differ from the recorded users. |
 | `database_server.inspection_failed` | Doctor could not connect, or `default` could not log in with the admin password. |
 
-The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. An adopted server that is not closed yet reports `database_server.open` and `database_server.acl_mismatch`. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
 
 ## Errors
 
@@ -185,7 +207,7 @@ The server commands return these codes.
 | `database.server_slug_conflict` | 409 | Another server has the slug. |
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
-| `database.server_in_use` | 409 | A connection still points to the server. |
+| `database.server_in_use` | 409 | A connection still points to the server, or `database:server:close` finds a client that would be locked out. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |

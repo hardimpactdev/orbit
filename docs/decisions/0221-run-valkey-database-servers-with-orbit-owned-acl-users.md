@@ -1,18 +1,18 @@
 ---
 title: "ADR 0221: Run Valkey Database servers with Orbit-owned ACL users"
 sidebarTitle: "0221 Valkey servers"
-description: "In progress. database:server:create --driver=redis runs Valkey as a Database server that starts only from an Orbit-owned ACL file. The Gateway holds the admin password, and database:create --server adds one ACL user per Redis Database connection. A one-time --process option adopts the Valkey Process on services."
+description: "In progress. database:server:create --driver=redis runs Valkey as a Database server that starts only from an Orbit-owned ACL file. The Gateway holds the admin password, and database:create --server adds one ACL user per Redis Database connection. A one-time --process option adopts the Valkey Processes on services and beast."
 ---
 
 # ADR 0221: Run Valkey Database servers with Orbit-owned ACL users
 
-`orbit database:server:create <slug> --driver=redis` runs Valkey as a [Database server](/reference/database-servers). The Gateway generates the admin password and keeps it encrypted. Valkey starts only from an ACL file that Orbit writes, so no path starts it without a password. `orbit database:create <slug> --server=<server>` adds one ACL user with the key patterns and commands that the caller names, and records a Redis Database connection for it. A one-time `--process` option brings the existing Valkey Process on `services` under Orbit without moving its data.
+`orbit database:server:create <slug> --driver=redis` runs Valkey as a [Database server](/reference/database-servers). The Gateway generates the admin password and keeps it encrypted. Valkey starts only from an ACL file that Orbit writes, so no path starts it without a password. `orbit database:create <slug> --server=<server>` adds one ACL user with the key patterns and commands that the caller names, and records a Redis Database connection for it. A one-time `--process` option brings the existing Valkey Processes on `services` and `beast` under Orbit without moving their data.
 
 ## Status
 
 In progress.
 
-Principle: [security fits the real threat model](/mission#principles) and [one way, one name](/mission#principles). Every Valkey client gets only the keys and commands it needs, and Valkey servers are set up the same way as MySQL servers. Exception, during the build only, to [no exceptions and no legacy](/mission#principles): the `--process` and `--connection` options of `database:server:create` exist only to adopt Process 162 on `services`. Once Process 162 is a Database server, a pull request removes them and retires this ADR.
+Principle: [security fits the real threat model](/mission#principles) and [one way, one name](/mission#principles). Every Valkey client gets only the keys and commands it needs, and Valkey servers are set up the same way as MySQL servers. Exception, during the build only, to [no exceptions and no legacy](/mission#principles): the `--process` and `--connection` options of `database:server:create` and the command `database:server:close` exist only to adopt Process 162 on `services` and Process 93 on `beast`. An adopted server without a password stays open until `database:server:close`, as it is today. Once both Processes are closed Database servers, a pull request removes the options and the command and retires this ADR.
 
 ## Context
 
@@ -68,16 +68,30 @@ A new Doctor family, `database_server`, checks each Valkey server whose Process 
 - Valkey runs with the ACL file `/data/users.acl`.
 - The live users equal the recorded users: `default` with the admin password and all rights, and one user for each connection on the server, with its password hash and rules.
 
-### Adopt Process 162
+### Adopt an existing Valkey Process
 
 `orbit database:server:create <slug> --driver=redis --node=NODE --process=ID --connection=CONNECTION` adopts an existing Valkey Process. It refuses with `database.server_adoption_refused` and changes nothing unless all of these hold:
 
 - The Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - It publishes container port 6379 on the Node's WireGuard address.
 - No server owns the Process.
-- The connection is a `redis` connection to that address and port, has a password, and that password logs in as `default`.
+- The connection is a `redis` connection to that address and port that logs in as `default`. With a password, that password logs in. Without one, Valkey accepts a client without a password.
 
-Then the Gateway uses that password as the admin password. It writes `/data/users.acl` into the Process's volume, and replaces the Process specification with the server specification. The ID, name, volume, and port stay. It waits for the login, and links the connection to the server. Valkey restarts once. It reads its append-only file again, so queued jobs stay, and the connection's clients keep working as `default`.
+The adoption never locks out a client that works today:
+
+- When the connection has a password, as on `services`, that password becomes the admin password. The ACL file's `default` line holds its hash.
+- When the connection has no password, as on `beast`, the Gateway generates the admin password, and the ACL file's `default` line is `user default on nopass ~* &* +@all`. The server stays as open as it was, and Doctor reports it as open until it is closed.
+
+Then the Gateway writes `/data/users.acl` into the Process's volume, and replaces the Process specification with the server specification. The ID, name, volume, and port stay. It waits for the admin login, and links the connection to the server. Valkey restarts once. It reads its append-only file again, so queued jobs stay, and the connection's clients keep working as `default`.
+
+### Close an adopted server
+
+`orbit database:server:close <slug>` gives `default` the admin password with `ACL SETUSER default resetpass #<hash>` and `ACL SAVE`. From then on, a client without a password gets no access. The operator runs it after each client of an open server has its own connection. It refuses with `database.server_in_use` and changes nothing while either of these holds:
+
+- A connection on the server has no password, because its clients would be locked out.
+- A client other than the Gateway is logged in to the server as `default`.
+
+A server whose `default` already has the admin password returns at once. A client that is not connected at that moment is not seen, so the operator moves every client first.
 
 ### The collector gets its own user later
 
@@ -91,6 +105,7 @@ The ProxyCli collector and the Gateway's snapshot reads keep using `services-val
 - `database:user:create` for Valkey users: it adds a user to a database that a connection has, and records no connection. On Valkey, one user is one connection.
 - A raw ACL rule string as input: Orbit must own the reset, the password, the channels, and the final deny, so the input is the key patterns and the allowed commands only.
 - A new server for `services` and a move of the data: it needs a queue outage or a copy tool, a release, and a new setup of the collector, against one restart for adoption.
+- Closing an open server during adoption: every client that logs in without a password would stop at once, before it has its own connection.
 - Refusing `process:update` for MySQL servers too: MySQL keeps its users in its data directory, so a specification change cannot open it, and an image update of a MySQL server still uses `process:update`.
 
 ## Consequences
