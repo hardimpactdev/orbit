@@ -877,7 +877,7 @@ it('does not classify an in-progress task without an attached session', function
     Classification::assertNothingClassified();
 });
 
-it('targets the idle in-progress task while another task is working', function (): void {
+it('defers the idle task handoff check while another task owns the workspace review', function (): void {
     $group = tick_group();
     $workingTask = $group->tasks->first();
     $workingTask->update(['status' => TaskStatus::Reviewing]);
@@ -913,7 +913,7 @@ it('targets the idle in-progress task while another task is working', function (
 
     expect($decisions)->toBe([])
         ->and($dispatcher->commands)->toBe([])
-        ->and(TaskCheck::query()->where('task_id', $idleTask->id)->count())->toBe(1)
+        ->and(TaskCheck::query()->where('task_id', $idleTask->id)->count())->toBe(0)
         ->and(TaskCheck::query()->where('task_id', $workingTask->id)->count())->toBe(0)
         ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);

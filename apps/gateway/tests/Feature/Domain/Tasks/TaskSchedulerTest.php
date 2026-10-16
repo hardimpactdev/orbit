@@ -2672,6 +2672,256 @@ function scheduler_review(array $receipts, bool $notified = true): array
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
 }
 
+it('waits for a workspace check before taking the review baseline', function (TaskCheckKind $kind): void {
+    [, $task, , , , $dispatcher] = scheduler_review([], notified: false);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    $checks->failSnapshot = true;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => $kind, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_notified_attempt)->toBeNull()
+        ->and($task->fresh()?->review_workspace_head)->toBeNull()
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($dispatcher->commands)->toBe([]);
+
+    $checks->failSnapshot = false;
+    $checks->tree = str_repeat('d', 40);
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+})->with(TaskCheckKind::cases());
+
+it('does not blame a reviewer for untracked files from an overlapping legacy check', function (): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $changedTree = str_repeat('d', 40);
+    $checks = new FakeTaskCheckRunner([
+        TaskCheckReading::running(),
+        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_tia_fixture/test.php'], 'check created untracked fixture'),
+    ]);
+    $checks->tree = $changedTree;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $task->review_workspace_head,
+        'tree_before' => $task->review_workspace_tree, 'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->assistance_requested)->toBeFalse()->and($dispatcher->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Changed)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($changedTree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+});
+
+it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
+    [$group, $task, $receipts, , , $dispatcher] = scheduler_review([]);
+    $hold = TaskAssistance::attributes($kind, 'Which contract?', 'Choose the contract.');
+    $task->update($hold);
+    $group->update($hold);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the documented contract.', 'author' => 'operator',
+    ]);
+    expect($dispatcher->commands)->toBe([])->and($receipts->prepared)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+    expect($receipts->prepared)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+        ->and($receipts->contexts)->toHaveCount(1)
+        ->and($receipts->contexts[0])->toContain('Use the documented contract.')
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+})->with([AssistanceKind::Failure, AssistanceKind::Direction]);
+
+it('recovers old workspace-change assistance when a finished check records the current tree', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update($failure);
+    $group->update($failure);
+    $checks->tree = str_repeat('d', 40);
+    $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head,
+        'tree_before' => str_repeat('b', 40), 'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'started_at' => now()->subMinute(), 'finished_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+});
+
+it('reconciles remote finished checks before recovering assistance with an exhausted review attempt', function (int $attempt, string $head, string $tree): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
+    $this->travelTo('2026-10-16 07:44:32');
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update([
+        ...$failure, 'review_attempt' => $attempt, 'review_notified_attempt' => $attempt,
+        'review_reminder_attempt' => $attempt,
+    ]);
+    $group->update($failure);
+    $finishedAt = now()->subHours(3)->getTimestamp();
+    $result = TaskCheckReading::finished(0, $head, $tree, [], 'checks passed', finishedAt: $finishedAt);
+    $checks = new FakeTaskCheckRunner([$result, $result]);
+    $checks->head = $head;
+    $checks->tree = $tree;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $older = $group->tasks()->where('id', '!=', $task->id)->firstOrFail();
+    $rows = [];
+    foreach ([$older, $task] as $owner) {
+        $rows[] = $owner->checks()->create([
+            'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234 + $owner->id,
+            'process_started' => 'old-check', 'head_before' => $head, 'tree_before' => $tree,
+            'started_at' => now()->subHours(4),
+        ]);
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    foreach ($rows as $row) {
+        expect($row->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+            ->and($row->fresh()?->head_after)->toBe($head)
+            ->and($row->fresh()?->tree_after)->toBe($tree)
+            ->and($row->fresh()?->exit_code)->toBe(0)
+            ->and($row->fresh()?->changed_paths)->toBe([])
+            ->and($row->fresh()?->finished_at?->getTimestamp())->toBe($finishedAt);
+    }
+    expect($task->fresh()?->review_attempt)->toBe($attempt + 1)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($attempt + 1)
+        ->and($task->fresh()?->review_workspace_head)->toBe($head)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($tree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)])
+        ->and($checks->starts)->toBe(0)
+        ->and($checks->cancels)->toBe(0)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_attempt)->toBe($attempt + 1)
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)]);
+})->with([
+    'group 1632 attempt 5 of 5' => [5, str_pad('472a292a', 40, '0'), str_pad('fc0270cc', 40, '0')],
+    'group 1692 attempt 4 of 4' => [4, str_pad('784b3522', 40, '0'), str_pad('88597428', 40, '0')],
+]);
+
+it('preserves assistance and check ownership while a remote check is active or unstarted', function (int $pid): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update($failure);
+    $group->update($failure);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
+    $checks->failSnapshot = true;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => $pid,
+        'process_started' => 'active-check', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
+        ->and($check->fresh()?->finished_at)->toBeNull()
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->assistance_reason)->toBe($failure['assistance_reason'])
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+        ->and($checks->starts)->toBe(0)
+        ->and($checks->cancels)->toBe(0)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+})->with(['active process' => [1234], 'start not yet recorded' => [0]]);
+
+it('keeps stale review assistance when the remote check result cannot be read', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update($failure);
+    $group->update($failure);
+    $checks->failRead = true;
+    $check = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'old-check', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toContain('The check result could not be read.')
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+});
+
+it('records failed or lost remote checks without excusing a later workspace mutation', function (bool $lost): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update($failure);
+    $group->update($failure);
+    $reading = $lost ? TaskCheckReading::lost('check disappeared')
+        : TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], 'gate failed');
+    $checks = new FakeTaskCheckRunner([$reading]);
+    $checks->tree = str_repeat('d', 40);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'old-check', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe($lost ? TaskCheckStatus::Lost : TaskCheckStatus::Failed)
+        ->and($check->fresh()?->output)->toBe($lost ? 'check disappeared' : 'gate failed')
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+        ->and($checks->starts)->toBe(0)
+        ->and($checks->cancels)->toBe(0)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+})->with(['failed gate' => [false], 'lost process' => [true]]);
+
 it('approves a review when the workspace is unchanged since the review request', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),

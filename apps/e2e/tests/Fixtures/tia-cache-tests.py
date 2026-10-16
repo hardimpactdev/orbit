@@ -665,6 +665,52 @@ class MainCacheTest(CacheFixture):
                 self.assertRaises(SystemExit):
             cache.main()
 
+    def test_bootstrap_has_one_composer_cache_writer_and_preserves_authentication(self):
+        root = Path(self.temporary.name) / 'bootstrap-cache-writers'
+        (root / 'bin').mkdir(parents=True)
+        (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
+        for project in cache.PROJECTS:
+            (root / project).mkdir(parents=True)
+        for name in ('gateway-app-key', 'worktree-cache', 'tia-cache'):
+            script = root / 'bin' / name
+            script.write_text('#!/bin/sh\nexit 0\n')
+            script.chmod(0o755)
+        composer = root / 'bin/composer'
+        composer.write_text('''#!/usr/bin/env python3
+import fcntl, json, os, sys
+from pathlib import Path
+if sys.argv[1] == 'install':
+    assert os.environ['BOOTSTRAP_LAST_ASYNC_PID'] == '', 'Composer installs must run synchronously'
+    assert json.loads(os.environ['COMPOSER_AUTH']) == {'github-oauth': {'github.com': 'fixture-token'}}
+    cache = Path(os.environ['COMPOSER_CACHE_DIR'])
+    assert cache == Path(os.environ['BOOTSTRAP_TEST_CACHE'])
+    with (cache / 'writer.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            sys.exit('Concurrent Composer cache writers')
+        with (cache / 'installs').open('a') as calls:
+            calls.write(os.getcwd() + '\\n')
+''')
+        composer.chmod(0o755)
+        # Observe Bash's async-job state, including jobs that already exited.
+        # The old background loop leaves a prior PID in every install after the
+        # first, so it fails even if the scheduler runs the jobs one at a time.
+        bash_environment = root / 'bash-env'
+        bash_environment.write_text('set -T\ntrap \'export BOOTSTRAP_LAST_ASYNC_PID="${!:-}"\' DEBUG\n')
+        downloads = root / 'downloads'
+        downloads.mkdir()
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
+                                capture_output=True, text=True, env={
+                                    **os.environ, 'BASH_ENV': str(bash_environment), 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                                    'COMPOSER_CACHE_DIR': str(downloads), 'BOOTSTRAP_TEST_CACHE': str(downloads),
+                                    'COMPOSER_AUTH': json.dumps({'github-oauth': {'github.com': 'fixture-token'}}),
+                                })
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([str(root / project) for project in cache.PROJECTS],
+                         (downloads / 'installs').read_text().splitlines())
+        self.assertNotIn('fixture-token', result.stdout + result.stderr)
+
     def test_bootstrap_seeds_before_affected_tests_and_quality_checks_and_never_publishes(self):
         root = Path(self.temporary.name) / 'bootstrap'
         (root / 'bin').mkdir(parents=True)

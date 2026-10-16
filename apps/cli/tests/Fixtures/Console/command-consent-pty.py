@@ -6,11 +6,20 @@ import json
 import os
 import pty
 import select
+import signal
 import struct
 import subprocess
 import sys
 import termios
 import time
+
+def reader_has_children(pid):
+    if sys.platform == 'linux':
+        with open(f'/proc/{pid}/task/{pid}/children') as children:
+            return bool(children.read().strip())
+    parents = subprocess.check_output(['ps', '-A', '-o', 'ppid='], text=True)
+    return str(pid) in parents.split()
+
 
 configuration = json.loads(open(sys.argv[3]).read())
 master, slave = pty.openpty()
@@ -42,7 +51,34 @@ while process.poll() is None:
     ready = ready or configuration['prompt'].encode() in output
     pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
     if ready and keys and not awaiting_output and pending_input == 0:
-        os.write(master, keys.pop(0))
+        # PTY input delivery is asynchronous. An empty FIONREAD snapshot can
+        # precede delivery, so first observe the complete key queued while the
+        # reader is stopped. After resuming, zero proves it has consumed it.
+        os.kill(process.pid, signal.SIGSTOP)
+        _, status = os.waitpid(process.pid, os.WUNTRACED)
+        if not os.WIFSTOPPED(status):
+            process.returncode = os.waitstatus_to_exitcode(status)
+            break
+        try:
+            # A completed prompt can restore canonical mode before the next
+            # prompt configures raw input. Do not type into that transition.
+            # stty runs in a child process. A stopped reader with no children
+            # cannot change terminal mode between this check and the write.
+            if reader_has_children(process.pid):
+                continue
+            if termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ISIG | termios.ECHO):
+                continue
+            key = keys.pop(0)
+            if os.write(master, key) != len(key):
+                raise RuntimeError('Incomplete PTY key write')
+            deadline = time.monotonic() + idle_timeout
+            while struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0] < len(key):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([slave], [], [], remaining)[0]:
+                    raise RuntimeError('PTY key was not delivered: ' + repr(key) + ' ' +
+                                       repr(termios.tcgetattr(slave)) + '\n' + output.decode(errors='replace'))
+        finally:
+            os.kill(process.pid, signal.SIGCONT)
         awaiting_output = True
 while select.select([master], [], [], 0.02)[0]:
     try:
