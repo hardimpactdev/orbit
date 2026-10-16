@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Run only the guarded image-retry command from an authorized immutable tooling tree."""
+import argparse
+from contextlib import contextmanager
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import stat
+import subprocess
+import sys
+import tarfile
+
+
+class Refused(Exception):
+    pass
+
+
+def root_owned(path, allow_link=False):
+    info = path.lstat()
+    if info.st_uid != 0 or (not path.is_symlink() and info.st_mode & 0o022) or (path.is_symlink() and not allow_link):
+        raise Refused("Authorization and tooling paths must be root-owned and not writable by other accounts.")
+
+
+def trusted_path(path):
+    if not path.is_absolute():
+        raise Refused("Trusted paths must be absolute.")
+    for component in [*reversed(path.parents), path]:
+        root_owned(component)
+
+
+@contextmanager
+def execution_locks(home):
+    handles = []
+    try:
+        for name in ("gateway-release.lock", "gateway-release-step.lock"):
+            descriptor = os.open(home / name, os.O_RDONLY | os.O_NOFOLLOW)
+            handles.append(descriptor)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise Refused("Release locks must be existing private Gateway-owned regular files.")
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.set_inheritable(descriptor, True)
+        yield
+    finally:
+        for descriptor in reversed(handles):
+            os.close(descriptor)
+
+
+def digest(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def tree_digest(root):
+    result = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        root_owned(path, allow_link=True)
+        name = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            if root.resolve() not in path.resolve().parents:
+                raise Refused("Tooling links outside the immutable tree.")
+            result.update(name.encode() + b"\0link:" + os.readlink(path).encode() + b"\n")
+        elif path.is_file():
+            result.update(name.encode() + b"\0" + digest(path).encode() + b"\n")
+        elif not path.is_dir():
+            raise Refused("Tooling contains a special file.")
+    return result.hexdigest()
+
+
+def validate(manifest):
+    account = pwd.getpwnam("orbit")
+    if os.geteuid() == 0 or os.geteuid() != account.pw_uid:
+        raise Refused("Run as the non-root orbit account.")
+    trusted_path(manifest)
+    data = json.loads(manifest.read_text())
+    keys = {"source_sha", "archive", "archive_sha256", "tooling", "tree_sha256", "group", "vm", "live_sha", "current", "config_sha256", "orbit_home", "database", "storage"}
+    if not isinstance(data, dict) or set(data) != keys:
+        raise Refused("Authorization fields do not match the recovery contract.")
+    for field, width in [("source_sha", 40), ("live_sha", 40), ("archive_sha256", 64), ("tree_sha256", 64), ("config_sha256", 64)]:
+        if not isinstance(data[field], str) or not re.fullmatch("[0-9a-f]{%d}" % width, data[field]):
+            raise Refused("Authorization requires exact commit and SHA256 identities.")
+    for field in ("group", "vm"):
+        if type(data[field]) is not int or data[field] < 1:
+            raise Refused("Authorization requires positive group and VM IDs.")
+    for field in ("archive", "tooling", "current", "orbit_home", "database", "storage"):
+        if not isinstance(data[field], str) or not Path(data[field]).is_absolute() or ".." in Path(data[field]).parts:
+            raise Refused("Authorization paths must be absolute and canonical.")
+    tree = Path(data["tooling"])
+    archive = Path(data["archive"])
+    for path in (tree, archive):
+        trusted_path(path)
+    if digest(archive) != data["archive_sha256"] or tree_digest(tree) != data["tree_sha256"]:
+        raise Refused("The archive or installed tooling digest changed.")
+    # git archive records its exact commit in the PAX global comment. Compare every archived source byte.
+    with tarfile.open(archive, "r:") as source:
+        if source.pax_headers.get("comment") != data["source_sha"]:
+            raise Refused("The source archive is not the authorized Git commit.")
+        for member in source.getmembers():
+            name = Path(member.name)
+            if name.is_absolute() or ".." in name.parts or not (member.isfile() or member.isdir() or member.issym()):
+                raise Refused("The source archive contains unsupported paths or file types.")
+            if member.issym():
+                if not (tree / name).is_symlink() or os.readlink(tree / name) != member.linkname:
+                    raise Refused("Installed source link differs from the archive.")
+            elif member.isfile():
+                stream = source.extractfile(member)
+                if stream is None or hashlib.file_digest(stream, "sha256").hexdigest() != digest(tree / name):
+                    raise Refused("Installed source differs from the authorized archive.")
+    current = Path(data["current"])
+    if (current / "REVISION").read_text().strip() != data["live_sha"]:
+        raise Refused("The serving release changed.")
+    config = current / "apps/gateway/bootstrap/cache/config.php"
+    if digest(config) != data["config_sha256"]:
+        raise Refused("The effective serving configuration changed.")
+    for path in (config, Path(data["orbit_home"]), Path(data["database"]), Path(data["storage"])):
+        info = path.stat()
+        if info.st_uid != account.pw_uid or info.st_mode & 0o022:
+            raise Refused("Shared state is not owned by the Gateway account.")
+    if config.stat().st_mode & 0o077:
+        raise Refused("The effective configuration must be private.")
+    if (tree / "REVISION").exists() or (tree / "apps/gateway/bootstrap/cache/config.php").exists():
+        raise Refused("Recovery tooling must not be a deployable release or carry a stale config cache.")
+    for relative in ("apps/gateway/artisan", "apps/gateway/vendor/autoload.php", "apps/gateway/app/Console/Commands/RetryTaskVmRoleImagesCommand.php"):
+        if not (tree / relative).is_file():
+            raise Refused("The authorized tooling is incomplete.")
+    env = {"HOME": account.pw_dir, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "APP_CONFIG_CACHE": str(config.resolve()), "LARAVEL_STORAGE_PATH": data["storage"]}
+    # Read only known paths from the actual cached config, and return a boolean exit code, never secret values.
+    program = '''$c=require $argv[1];$d=$c['database']['default']??null;exit(($c['orbit']['home']??null)===$argv[2]&&($c['orbit']['gateway_checkout']??null)===$argv[3]&&($c['database']['connections'][$d]['driver']??null)==='sqlite'&&($c['database']['connections'][$d]['database']??null)===$argv[4]?0:1);'''
+    checked = subprocess.run(["/usr/bin/php8.5", "-r", program, str(config), data["orbit_home"], str(current / "apps/gateway"), data["database"]], env=env, capture_output=True, timeout=30)
+    if checked.returncode != 0:
+        raise Refused("Effective DB, ORBIT_HOME or stable checkout does not match authorization.")
+    return ["/usr/bin/php8.5", str(tree / "apps/gateway/artisan"), "task-vms:retry-role-images", str(data["group"]), str(data["vm"])], env
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--authorization", type=Path, default=Path("/run/orbit-task-vm-recovery/authorization.json"))
+    parser.add_argument("--check", action="store_true", help="Validate source and shared identity without invoking recovery.")
+    args = parser.parse_args()
+    try:
+        command, environment = validate(args.authorization)
+        if args.check:
+            print(json.dumps({"outcome": "validated", "command": "task-vms:retry-role-images", "group": int(command[-2]), "vm": int(command[-1])}))
+            return 0
+        # Both locks are retained across exec; the existing action also takes the group execution lock.
+        home = Path(json.loads(args.authorization.read_text())["orbit_home"])
+        with execution_locks(home):
+            command, environment = validate(args.authorization)
+            os.execve(command[0], command, environment)
+    except (Refused, OSError, ValueError, KeyError, tarfile.TarError, subprocess.SubprocessError):
+        print(json.dumps({"outcome": "refused", "message": "Recovery authorization, source or shared identity validation failed; no recovery command was invoked."}), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
