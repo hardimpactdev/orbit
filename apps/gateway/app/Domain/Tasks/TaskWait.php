@@ -15,4 +15,7 @@ enum TaskWait: string
 
     /** The subtask's declared topology is being prepared, or its group cannot run it. */
     case Topology = 'topology';
+
+    /** The group's task VM lacks its recipe base image, and the host transfers it before the topology is prepared. */
+    case RecipeImages = 'recipe_images';
 }

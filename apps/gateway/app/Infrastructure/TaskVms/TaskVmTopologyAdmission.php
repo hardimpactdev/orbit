@@ -11,11 +11,13 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmTopologyRun;
 use App\Domain\TaskVms\TaskVmTopologyRunState;
 use App\Domain\TaskVms\TaskVmTopologyState;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Processes\CommandResult;
+use App\Jobs\TaskVms\TransferTaskVmRoleImages;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
@@ -26,7 +28,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * Prepares a group's declared topology nested in its task VM, before a subtask that declares one runs its baseline
  * check or any turn. The first such subtask starts a preparation unit ({@see TaskVmTopologyUnit}), which runs the host
- * setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the group's declarations.
+ * setup, imports the recipe base image, and acquires `TASK-<group>` with the union of the group's declarations. A VM
+ * without that image, such as one whose claim-time transfer was lost, gets it from a queued transfer first
+ * ({@see TaskVmRoleImages}), so no tick waits on the copy.
  * Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's declaration admits it
  * at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a resolution starts it
  * again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
@@ -36,6 +40,8 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
     public const string TooSmall = 'Task VM: this subtask\'s topology needs a larger task VM than the group got, and Orbit does not resize it.';
 
     public const string NoWorkspace = 'Task VM: the group has no task VM workspace for its topology yet.';
+
+    public const string Importing = 'Task VM: transferring the recipe base image for the topology.';
 
     private const int ReasonLimit = 2000;
 
@@ -76,6 +82,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
             }
             Log::warning('The task VM restarted since its topology was ready; preparing it again.', ['task_vm' => $vm->name]);
         }
+        $this->importImages($vm);
         $this->start($vm, $node, $instance, $group, $topology);
 
         throw new TaskCapacityException(TaskWait::Topology, self::preparing($topology));
@@ -95,6 +102,32 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
     private static function preparing(TaskTopology $topology): string
     {
         return 'Task VM: preparing the topology '.implode(', ', $topology->toArray()).'.';
+    }
+
+    /**
+     * Returns when the VM holds its recipe base image. Otherwise the row is `importing` while a queued transfer runs,
+     * and the subtask waits. A transfer that failed its last try asks for assistance, and a resolution transfers again.
+     */
+    private function importImages(TaskVm $vm): void
+    {
+        try {
+            // Resolved here: the scheduler must build even while the task VM settings are invalid.
+            if (app(TaskVmRoleImages::class)->present($vm)) {
+                return;
+            }
+        } catch (TaskVmException $exception) {
+            throw new TaskCapacityException(TaskWait::RecipeImages, 'Task VM: the recipe base image in the VM could not be read: '.$exception->getMessage());
+        }
+        if ($vm->topology_state === TaskVmTopologyState::Importing && $vm->topology_error !== null) {
+            $this->fail($vm, new TaskVmTopologyRun(TaskVmTopologyRunState::Failed, 'recipe-images', $vm->topology_error));
+        }
+        if ($vm->topology_state !== TaskVmTopologyState::Importing) {
+            $vm->update(['topology_state' => TaskVmTopologyState::Importing, 'topology_run' => null, 'topology_error' => null]);
+        }
+        // Unique per row: a transfer that is queued or runs already is not queued again.
+        TransferTaskVmRoleImages::dispatch($vm->id);
+
+        throw new TaskCapacityException(TaskWait::RecipeImages, self::Importing);
     }
 
     /** Records the run first, so a tick that dies after the SSH call finds a run to read, never a second unit. */

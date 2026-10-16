@@ -1004,7 +1004,11 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 
 For medium and large VMs, the preparation job on `task-vms` transfers the single prebuilt base image before the VM becomes ready. This also supports subtasks added later within that VM's size. The manifest records the VM's recipe. The [harness import contract](/reference/incus-topologies#one-recipe-base-image) defines validation and archive cleanup.
 
-Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
+The host runs `resources/task-vms/role-images-transfer.sh` for the transfer. It skips a VM whose manifest already names the claimed recipe and base fingerprint. It succeeds only when the manifest in the VM exists, parses, and names them after the copy; otherwise the transfer fails with `task_vm.recipe_images_transfer_failed`.
+
+Before Orbit starts the unit, it checks that the VM holds that manifest. A VM without it, for example one whose transfer at the claim was lost, gets it from a queued transfer on `task-vms`. Meanwhile the row is `importing` and the subtask waits with `Task VM: transferring the recipe base image for the topology.` When the transfer fails its last try, the subtask asks for assistance with the error, and a resolution transfers again.
+
+Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`importing`, `preparing`, or `ready`), and the run in `topology_run`.
 
 A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
 
