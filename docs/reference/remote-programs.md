@@ -106,7 +106,7 @@ The existing production deployment program loads `lib/production-shared-paths.sh
 
 ## Programs
 
-These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`.
+These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`. Gateway PHP-FPM convergence runs `gateway.install-start-hooks` on the Gateway itself, as `sudo bash -seu -- <arguments>`.
 
 | Program | Purpose |
 | --- | --- |
@@ -119,6 +119,7 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | `instances.read-removal-receipt` | Reports how complete a receipt-backed removal is. |
 | `instances.clean-removal-receipt` | Finishes a receipt-backed removal. |
 | `instances.finalize-source-removal` | Moves a recorded source into quarantine and deletes it. |
+| `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 ## Why it works this way

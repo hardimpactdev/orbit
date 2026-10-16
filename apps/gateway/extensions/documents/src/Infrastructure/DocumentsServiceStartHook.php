@@ -2,11 +2,27 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Gateway;
+namespace Orbit\Extensions\Documents\Infrastructure;
 
-final readonly class GatewayCleanupStartupRenderer
+use App\Domain\Gateway\GatewayServiceStartHook;
+
+/** Invalidates document-body cleanup each time the Gateway PHP-FPM service starts ([Project Documents](/reference/project-documents#local-state-and-startup-ordering)). */
+final readonly class DocumentsServiceStartHook implements GatewayServiceStartHook
 {
-    public const string HOOK_PATH = '/etc/orbit/project-document-cleanup-start';
+    public function name(): string
+    {
+        return 'project-document-cleanup-start';
+    }
+
+    public function dropIn(): string
+    {
+        return 'orbit-document-cleanup.conf';
+    }
+
+    public function description(): string
+    {
+        return 'document cleanup startup gate';
+    }
 
     public function renderHook(string $checkoutPath, string $orbitHome): string
     {
@@ -28,10 +44,5 @@ final readonly class GatewayCleanupStartupRenderer
             fi
             exec /usr/sbin/runuser -u orbit -- /usr/bin/env HOME=/home/orbit {$home} /usr/bin/php8.5 {$artisan} project-documents:cleanup:invalidate --no-interaction
             BASH.PHP_EOL;
-    }
-
-    public function renderDropIn(): string
-    {
-        return "# Managed by Orbit: document cleanup startup gate\n[Service]\nExecStartPre=+".self::HOOK_PATH."\n";
     }
 }
