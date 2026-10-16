@@ -1,6 +1,6 @@
 # Rust agent
 
-`orbit-agent` is an outbound-only Linux service. Keep credentials, signatures, and the agent secret out of logs, never add command execution or listeners, and load trust only from `/etc/orbit/agent/ca.pem`. Read the agent secret only from `/etc/orbit/agent/secret` and send it only to the Gateway ([Node agent](../../docs/reference/node-agent.md#agent-secret)). Keep process-name filtering, event serialization, and snapshot sizing covered by unit tests.
+`orbit-agent` is an outbound-only Linux service. Keep credentials, signatures, and the agent secret out of logs, never add listeners or command execution on anyone's behalf (the only program the agent runs is read-only `journalctl` with fixed arguments, see [Live logs](../../docs/reference/live-logs.md#the-agent-runs-no-program-that-changes-the-node)), and load trust only from `/etc/orbit/agent/ca.pem`. Read the agent secret only from `/etc/orbit/agent/secret` and send it only to the Gateway ([Node agent](../../docs/reference/node-agent.md#agent-secret)). Keep process-name filtering, event serialization, and snapshot sizing covered by unit tests.
 
 ## Checks
 

@@ -56,13 +56,26 @@ if [[ -n "$baseline_commit" ]]; then
 else
     git -C "$scratch/tree" update-ref -d refs/remotes/origin/main || fail 'temporary_checkout_failed: cannot clear synthetic ratchet baseline'
 fi
+# Read the head's attributes, but force ordinary text merging for our driver
+# name: GitHub does not install repository-local merge drivers.
+git -C "$scratch/tree" -c core.hooksPath=/dev/null checkout --quiet --detach "$head_commit" || fail 'temporary_checkout_failed: checkout failed'
 preview="$head_commit"
 if ! "$head_only"; then
     set +e
-    merge_output="$(git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"
+    merge_output="$(git -C "$scratch/tree" -c 'merge.orbit-generated.driver=git merge-file %A %O %B' merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"
     merge_status=$?
     set -e
     if ((merge_status == 1)); then
+        # Diagnostic only. Never lint this result or substitute it for GitHub's.
+        if (cd "$scratch/tree" && "$TOOL_ROOT/bin/generated-merge" --install); then
+            if driver_output="$(ORBIT_GENERATED_MERGE_DEPENDENCIES="$TOOL_ROOT" git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"; then
+                printf 'docs-merge-check: local_driver_clean: publish a checked local merge before GitHub can merge\n' >&2
+            else
+                printf 'docs-merge-check: local_driver_failed:\n%s\n' "$driver_output" >&2
+            fi
+        else
+            printf 'docs-merge-check: local_driver_unavailable: installation failed\n' >&2
+        fi
         fail "merge_conflict: merge refused; head-only lint was not run
 $merge_output"
     elif ((merge_status != 0)); then
