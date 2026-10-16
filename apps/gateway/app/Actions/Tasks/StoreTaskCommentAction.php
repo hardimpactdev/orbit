@@ -88,8 +88,8 @@ final readonly class StoreTaskCommentAction
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
-                    // A failed topology preparation has no agent to tell: the admission forgot the run, so clearing
-                    // assistance lets the next tick prepare the topology again.
+                    // A resolution of a failed topology preparation goes to no agent: the admission forgot the run, so
+                    // clearing assistance lets the next prepared turn prepare the topology again.
                     $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
                     if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
                         $group->update(TaskAssistance::cleared());

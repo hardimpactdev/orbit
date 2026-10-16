@@ -9,7 +9,7 @@ A task group's topology is a disposable fleet composed from the declared Nodes: 
 
 ## Use the declared topology
 
-In a task VM group, a subtask that declares a `topology` runs with `TASK-<group>` nested in the VM. Orbit prepares it before the subtask starts, and your prompt names its nodes. Agents never acquire or release it.
+In a task VM group, a subtask that declares a `topology` runs with `TASK-<group>` nested in the VM. Orbit prepares it before your first turn, and your prompt names its nodes. Agents never acquire or release it.
 
 When you review such a subtask, prove each deliverable on the declared nodes with `exec ... --record=LABEL`, where LABEL names the deliverable. Orbit refuses your approval until the evidence log holds a recorded command that exited 0 on each node the subtask declares, started after the implementer's last handoff. Cite the labels in your `--deliverable` evidence and summary.
 

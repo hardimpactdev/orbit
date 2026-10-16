@@ -342,7 +342,13 @@ final readonly class TaskSubtaskRunner
         return app(TaskWorkspaceHead::class)->checksRunning($group);
     }
 
-    /** @throws TaskTurnReceiptException */
+    /**
+     * Prepares the workspace for these turns: the implementer's first turn, a relay to the implementer, a review
+     * request, and a rubric reminder. It admits the subtask's declared topology first, so the topology is prepared
+     * after the group's baseline check, which runs the Project setup. Returns false while the turn must wait.
+     *
+     * @throws TaskTurnReceiptException
+     */
     public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): bool
     {
         if ($role === TaskThreadRole::Reviewer && app(TaskWorkspaceHead::class)->checksRunning($group)) {
@@ -352,11 +358,11 @@ final readonly class TaskSubtaskRunner
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
-        if (! $alreadyFetched) {
-            $this->turnFetcher->beforeTurn($group);
-        }
         if (! $this->admitTopology($scheduler, $group, $task)) {
             return false;
+        }
+        if (! $alreadyFetched) {
+            $this->turnFetcher->beforeTurn($group);
         }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $mode = TaskTurnMode::forTask($task, $role);
@@ -512,9 +518,7 @@ final readonly class TaskSubtaskRunner
             // An incoming pull request has no implementer before its first final review, so that review runs the
             // baseline on the fresh workspace first. Setup then serves the fixups that follow.
             if ($group->reviewsIncomingPullRequest() && ($this->baselineCheck($task)?->status === TaskCheckStatus::Running || $this->needsBaseline($task))) {
-                if ($this->admitTopology($scheduler, $group, $task)) {
-                    $this->handleBaseline($scheduler, $group, $task);
-                }
+                $this->handleBaseline($scheduler, $group, $task);
 
                 return;
             }
@@ -527,12 +531,8 @@ final readonly class TaskSubtaskRunner
 
             return;
         }
-        if (! $this->admitTopology($scheduler, $group, $task)) {
-            return;
-        }
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
-            $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $this->handleBaseline($scheduler, $group, $task);
         } else {
             $this->assignImplementer($scheduler, $task, $alreadyFetched);
@@ -660,9 +660,6 @@ final readonly class TaskSubtaskRunner
             return;
         }
 
-        if ($check instanceof TaskCheck && ! $this->admitTopology($scheduler, $group, $task)) {
-            return;
-        }
         $this->startBaseline($scheduler, $group, $task);
     }
 
