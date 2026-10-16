@@ -37,6 +37,8 @@ use App\Models\Project;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
@@ -49,6 +51,7 @@ use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\NullTaskReviewDiff;
+use Tests\Support\RealStorageGuard;
 use Tests\Support\SshGuardedProcessRunner;
 use Tests\Support\TestToolchain;
 use Tests\Support\UnreachableSshExecutor;
@@ -78,6 +81,11 @@ require_once __DIR__.'/Helpers/OperationFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
+        $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
+        // Direct-file staging must be isolated too, not just writes through the Storage facade.
+        $this->temporaryStorage = sys_get_temp_dir().'/orbit-feature-storage-'.bin2hex(random_bytes(16));
+        app()->useStoragePath($this->temporaryStorage);
+        Storage::fake('local');
         app()->instance(SshExecutor::class, new UnreachableSshExecutor);
         app()->instance(TaskVmPackageCacheMount::class, new FakeTaskVmPackageCacheMount);
         app()->instance(HostKeyScanner::class, new FakeHostKeyScanner);
@@ -105,7 +113,12 @@ uses(TestCase::class, RefreshDatabase::class)
         ActivityShutdownFinalizer::forgetArmed();
     })
     ->afterEach(function (): void {
-        app(SshGuardedProcessRunner::class)->assertNoStrayProcesses();
+        try {
+            $this->realStorageGuard->assertUnchanged();
+            app(SshGuardedProcessRunner::class)->assertNoStrayProcesses();
+        } finally {
+            File::deleteDirectory($this->temporaryStorage);
+        }
     })
     ->in('Feature');
 
