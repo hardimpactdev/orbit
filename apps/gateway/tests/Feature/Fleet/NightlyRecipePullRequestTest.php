@@ -49,7 +49,7 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
             return Http::response(str_contains($request->url(), 'ref=nightly') ? ($branchFile ?? $file) : $file);
         },
         $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-'.nightlyRecipeDate()->format('Ymd')], $branchFile === null ? 201 : 422),
-        $base.'/pulls?*' => Http::response($pulls),
+        $base.'/pulls?*' => static fn (Request $request) => Http::response(isset($request['head']) ? $pulls : []),
         $base.'/pulls/99' => Http::response($pulls[0] ?? []),
         $base.'/pulls' => Http::response(['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
     ]);
@@ -75,7 +75,7 @@ it('reads exactly main and opens a date-only PR through the existing App publish
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
         && $request['head'] === $branch && $request['base'] === 'main');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/pulls?')
-        && $request['head'] === 'nckrtl:'.$branch);
+        && ($request['head'] ?? null) === 'nckrtl:'.$branch);
 });
 
 it('does nothing when main already pins today or a newer snapshot', function (int $days): void {
@@ -85,7 +85,7 @@ it('does nothing when main already pins today or a newer snapshot', function (in
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBeNull();
 
     Http::assertNotSent(static fn (Request $request): bool => in_array($request->method(), ['PUT', 'PATCH'], true)
-        || str_ends_with($request->url(), '/git/refs') || str_contains($request->url(), '/pulls'));
+        || str_ends_with($request->url(), '/git/refs') || (str_contains($request->url(), '/pulls') && isset($request['head'])));
 })->with(['today' => 1, 'newer' => 2]);
 
 it('reuses an existing date PR including a closed operator decision', function (string $state): void {

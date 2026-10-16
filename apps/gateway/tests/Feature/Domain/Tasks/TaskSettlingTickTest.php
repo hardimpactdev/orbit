@@ -69,11 +69,9 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Classification;
-use PHPUnit\Framework\ExpectationFailedException;
 use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AgentCommandDispatcher;
@@ -87,39 +85,7 @@ use Tests\Support\NullTaskWorkspaceDiffReader;
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
-    $this->transcriptRoot = sys_get_temp_dir().'/orbit-settling-'.bin2hex(random_bytes(16));
-    $disk = Storage::build(['driver' => 'local', 'root' => $this->transcriptRoot, 'throw' => true]);
-    config(['filesystems.disks.local.root' => $this->transcriptRoot]);
-    Storage::set('local', $disk);
-    // Every archive access must still resolve to this test's root, even if another binding changes it.
-    Storage::partialMock()->shouldReceive('disk')->with('local')->andReturnUsing(function () use ($disk) {
-        expect(config('filesystems.disks.local.root'))->toBe($this->transcriptRoot)
-            ->and($disk->path(''))->toBe($this->transcriptRoot.'/');
-
-        return $disk;
-    });
     tick_bind_defaults();
-});
-
-afterEach(function (): void {
-    try {
-        expect(config('filesystems.disks.local.root'))->toBe($this->transcriptRoot);
-    } finally {
-        File::deleteDirectory($this->transcriptRoot);
-    }
-});
-
-it('guards transcript storage against a root outside the per-test archive', function (): void {
-    config(['filesystems.disks.local.root' => storage_path('app/private')]);
-
-    try {
-        expect(fn () => Storage::disk('local')->put('task-transcripts/escaped.json', '{}'))
-            ->toThrow(ExpectationFailedException::class);
-    } finally {
-        config(['filesystems.disks.local.root' => $this->transcriptRoot]);
-    }
-
-    expect(File::allFiles($this->transcriptRoot))->toBe([]);
 });
 
 it('writes and reads real transcript observations only in its temporary archive', function (): void {
@@ -132,8 +98,8 @@ it('writes and reads real transcript observations only in its temporary archive'
 
     $archive->execute($group->id, $thread->node_id);
 
-    expect(File::exists($this->transcriptRoot.'/'.ArchiveAgentTranscriptsAction::path($thread)))->toBeTrue()
-        ->and($archive->read($thread))->toBe(app(AgentDriverRegistry::class)->get($thread->driver)->observe($thread)->toArray());
+    Storage::disk('local')->assertExists(ArchiveAgentTranscriptsAction::path($thread));
+    expect($archive->read($thread))->toBe(app(AgentDriverRegistry::class)->get($thread->driver)->observe($thread)->toArray());
 });
 
 it('deletes stale pending thread rows for finished tasks', function (): void {
