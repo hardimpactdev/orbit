@@ -1944,6 +1944,13 @@ it('advances the current subtask when Jev marks it done', function (): void {
     {
         public int $spawned = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->spawned++;

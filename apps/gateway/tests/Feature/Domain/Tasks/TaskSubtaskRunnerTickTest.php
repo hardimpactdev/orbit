@@ -192,6 +192,13 @@ describe('a thread that works outside the task phase', function (): void {
         {
             public int $reviews = 0;
 
+            public function reserveReviewer(Task $task): ?int
+            {
+
+                return null;
+
+            }
+
             public function spawnReviewer(Task $task): ?int
             {
                 return null;
@@ -266,6 +273,11 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(AgentSnapshotReader::class, $reader);
         app()->instance(AgentSpawner::class, new class implements AgentSpawner
         {
+            public function reserveReviewer(Task $task): ?int
+            {
+                return null;
+            }
+
             public function spawnReviewer(Task $task): ?int
             {
                 return null;
@@ -570,6 +582,13 @@ it('project baseline setup only', function (): void {
     {
         /** @var list<string> */
         public array $events = [];
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {

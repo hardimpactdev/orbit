@@ -328,6 +328,13 @@ it('complete ended resumes a committed authorization without GitHub after a stop
     {
         public int $starts = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->starts++;

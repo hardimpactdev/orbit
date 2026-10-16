@@ -204,6 +204,13 @@ function rm_runtime(array $receipts = []): object
         /** @var list<GitHubListedPullRequest> */
         public array $open = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->reviewers[] = $task->id;

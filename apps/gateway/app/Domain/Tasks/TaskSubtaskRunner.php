@@ -220,13 +220,15 @@ final readonly class TaskSubtaskRunner
         }
 
         try {
-            $process = app(TaskWorkspaceLease::class)->startCheck($group, $task, $command, [], $this->handoffCheck($task));
+            $process = app(TaskWorkspaceLease::class)->startCheck($group, $task, $command, [], $this->handoffCheck($task), commentId: $receipt->id);
         } catch (TaskCheckException $exception) {
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
         }
-        TaskCheck::query()->create([
+        TaskCheck::query()->updateOrCreate([
+            'task_id' => $task->id, 'pid' => $process->pid, 'process_started' => $process->started,
+        ], [
             'task_id' => $task->id,
             'task_comment_id' => $receipt->id,
             'kind' => TaskCheckKind::Handoff,
@@ -350,6 +352,19 @@ final readonly class TaskSubtaskRunner
 
     /** @throws TaskTurnReceiptException */
     public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false, ?string $sendKey = null): bool
+    {
+        $leases = app(TaskWorkspaceLease::class);
+        if ($threadId === null) {
+            return $leases->run($group, $role->value, 'prepare:'.$task->id.':'.$role->value,
+                fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey), taskId: $task->id);
+        }
+        $thread = AgentThread::query()->findOrFail($threadId);
+
+        return $leases->withThreadLock($thread,
+            fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey));
+    }
+
+    private function prepareAdmittedTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId, bool $alreadyFetched, ?string $sendKey): bool
     {
         $thread = $threadId === null ? null : AgentThread::query()->find($threadId);
         if ($thread instanceof AgentThread && (app(TaskWorkspaceLease::class)->retrying($thread, $sendKey)
@@ -697,19 +712,26 @@ final readonly class TaskSubtaskRunner
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->all());
         $command = $instance->project->taskCheckCommand();
-        // Queue before reserving a start; queued work has not attempted SSH yet.
-        app(TaskWorkspaceLease::class)->acquire($group, 'check', 'check:'.$task->id, taskId: $task->id);
-        $this->recordSubtaskStart($task);
-        $claim = $this->claimBaseline($task);
-        if (! $claim instanceof TaskCheck) {
-            return;
-        }
+        $claim = null;
         try {
-            $process = app(TaskWorkspaceLease::class)->startCheck($group, $task, $command, $setup);
+            $process = app(TaskWorkspaceLease::class)->run($group, 'check', 'check:'.$task->id, function () use ($group, $task, $command, $setup, &$claim): ?TaskCheckProcess {
+                $this->recordSubtaskStart($task);
+                $claim = $this->claimBaseline($task);
+                if (! $claim instanceof TaskCheck) {
+                    return null;
+                }
+
+                return app(TaskWorkspaceLease::class)->startCheck($group, $task, $command, $setup);
+            }, taskId: $task->id);
         } catch (TaskCheckException $exception) {
-            $this->releaseBaselineClaim($claim);
+            if ($exception->startNotDispatched && $claim instanceof TaskCheck) {
+                $this->releaseBaselineClaim($claim);
+            }
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
+            return;
+        }
+        if (! $claim instanceof TaskCheck || ! $process instanceof TaskCheckProcess) {
             return;
         }
         $stored = TaskCheck::query()->whereKey($claim->id)
@@ -722,7 +744,9 @@ final readonly class TaskSubtaskRunner
                 'tree_before' => $process->tree,
                 'updated_at' => now(),
             ]);
-        if ($stored !== 1) {
+        $recorded = $claim->fresh();
+        if ($stored !== 1 && (! $recorded instanceof TaskCheck || $recorded->status !== TaskCheckStatus::Running
+            || $recorded->pid !== $process->pid || $recorded->process_started !== $process->started)) {
             try {
                 $this->checks->cancel($instance, $process);
             } catch (TaskCheckException $exception) {

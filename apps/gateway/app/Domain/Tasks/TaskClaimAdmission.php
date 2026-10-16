@@ -346,7 +346,7 @@ final readonly class TaskClaimAdmission
         try {
             $leftover = $instance instanceof Instance ? Instance::query()->find($instance->id) : $this->workspaces->find($group);
             if ($leftover instanceof Instance) {
-                $this->workspaces->remove($leftover);
+                $this->workspaces->remove($leftover, $group);
             } else {
                 $this->workspaces->execute($group);
             }

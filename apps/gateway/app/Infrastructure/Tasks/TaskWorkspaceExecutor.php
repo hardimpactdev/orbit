@@ -26,6 +26,10 @@ final readonly class TaskWorkspaceExecutor
             throw new RuntimeConvergenceException($step, $errorCode, $exception->getMessage(), previous: $exception);
         }
 
+        // This refusal is known to precede every SSH dispatch.
+        if ($mutates && (! is_string($workspace->node->wireguard_ip) || $workspace->node->wireguard_ip === '')) {
+            throw new RuntimeConvergenceException($step, 'app-dev.wireguard_ip_missing', 'The workspace Node has no WireGuard address.');
+        }
         $leases = app(TaskWorkspaceLease::class);
         $lease = $mutates ? $leases->remoteStarted($workspace, $changesCheckout) : null;
         try {

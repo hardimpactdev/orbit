@@ -34,9 +34,9 @@ function workspace_mcp_instance(string $checkout): Instance
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
 }
 
-function workspace_mcp(): RemoteTaskWorkspaceMcp
+function workspace_mcp(): object
 {
-    return new RemoteTaskWorkspaceMcp(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+    $mcp = new RemoteTaskWorkspaceMcp(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
@@ -60,6 +60,29 @@ function workspace_mcp(): RemoteTaskWorkspaceMcp
             public function put(string $host, int $port, HostKey $key): void {}
         },
     )));
+
+    return new class($mcp)
+    {
+        public function __construct(private RemoteTaskWorkspaceMcp $mcp) {}
+
+        public function installWhenMissing(Instance $instance): bool
+        {
+            $leases = app(TaskWorkspaceLease::class);
+            if ($leases->currentScope()?->instance_id === $instance->id || $instance->checkout_path === '') {
+                return $this->mcp->installWhenMissing($instance);
+            }
+            $group = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
+            if ($group instanceof Task) {
+                return $leases->run($group, 'reviewer', 'mcp-test', fn (): bool => $this->mcp->installWhenMissing($instance));
+            }
+            $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Prepare MCP', 'brief' => 'Install under admitted ownership', 'status' => 'running']);
+            $group->taskable()->associate($instance);
+            $group->save();
+            test_vm_group($group);
+
+            return $leases->run($group, 'reviewer', 'mcp-test', fn (): bool => $this->mcp->installWhenMissing($instance));
+        }
+    };
 }
 
 afterEach(function (): void {
@@ -148,7 +171,7 @@ it('keeps MCP installation fenced without crediting changes to the reviewed chec
     $group = test_vm_group($group);
     $instance->refresh();
     $lease = app(TaskWorkspaceLease::class)->acquire($group, 'reviewer', 'prepare');
-    expect(workspace_mcp()->installWhenMissing($instance))->toBeTrue();
+    expect(app(TaskWorkspaceLease::class)->within($lease, fn (): bool => workspace_mcp()->installWhenMissing($instance)))->toBeTrue();
     expect($lease->fresh()->getAttribute('orbit_mutation'))->toBeFalse()
         ->and($lease->fresh()->getAttribute('remote_uncertain'))->toBeFalse();
 });

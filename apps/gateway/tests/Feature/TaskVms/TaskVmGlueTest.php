@@ -11,6 +11,7 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -153,7 +154,8 @@ describe('publish and fetch', function (): void {
         app()->instance(SshExecutor::class, $transport);
 
         try {
-            app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main');
+            app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'fetch-test',
+                fn () => app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main'));
             $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
             $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
             $commit = $git($root.'/vm', 'rev-parse', 'HEAD');

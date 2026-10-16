@@ -438,7 +438,7 @@ describe('wake', function (): void {
         {
             public function __construct(private object $test) {}
 
-            public function synchronized(int $groupId, Closure $operation): mixed
+            public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
             {
                 $this->test->locked[] = $groupId;
                 try {
@@ -455,7 +455,7 @@ describe('wake', function (): void {
         app(CompleteTaskGroupAction::class)->execute($this->group);
 
         expect($this->group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
-            ->and($this->lockedDuringRemoval)->toBe([$this->group->id, $this->group->id, -$workspace->id])
+            ->and($this->lockedDuringRemoval)->toBe([$this->group->id])
             ->and($this->locked)->toBe([]);
     });
 

@@ -79,6 +79,25 @@ function task_signer_ssh(SshExecutor $transport): DevelopmentSshExecutor
     );
 }
 
+function task_signer_admitted(SshExecutor $transport): object
+{
+    return new class(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport))))
+    {
+        public function __construct(private RemoteTaskWorkspaceSigner $signer) {}
+
+        public function commit(Instance $instance, string $message): ?string
+        {
+            $group = Task::topLevel()->create(['project_id' => $instance->project_id,
+                'title' => 'Sign admitted workspace', 'brief' => 'Commit under exact ownership.', 'status' => 'running']);
+            $group->taskable()->associate($instance);
+            $group->save();
+            test_vm_group($group);
+
+            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message));
+        }
+    };
+}
+
 /** @param list<string> $arguments */
 function task_signer_git(string $checkout, array $arguments): string
 {
@@ -93,7 +112,7 @@ it('commits every workspace change with the message from stdin and returns the n
     $message = "Models\n\nChecked the export and its test. It's \$ready; `no` shell expansion.";
 
     try {
-        $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), $message);
+        $sha = task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), $message);
 
         expect($sha)->toBe(task_signer_git($checkout, ['rev-parse', 'HEAD']))
             ->and(task_signer_git($checkout, ['log', '-1', '--format=%B']))->toBe($message)
@@ -111,7 +130,7 @@ it('returns HEAD without a new commit when the workspace has no changes', functi
     $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
 
     try {
-        expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
+        expect(task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
     } finally {
         File::deleteDirectory($checkout);
     }
@@ -134,7 +153,7 @@ describe('TaskGitHardening', function (): void {
         file_put_contents($checkout.'/change', 'agent change');
 
         try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'Orbit commit');
+            $sha = task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), 'Orbit commit');
 
             expect($sha)->not->toBeNull()
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse()
@@ -148,7 +167,7 @@ describe('TaskGitHardening', function (): void {
 it('returns null when the remote git commit fails', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'failed', 1, false)]);
 
-    expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)))->commit(
+    expect(task_signer_admitted($transport)->commit(
         task_signer_instance(),
         'Models',
     ))->toBeNull();

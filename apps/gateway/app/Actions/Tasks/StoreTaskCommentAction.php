@@ -215,20 +215,22 @@ final readonly class StoreTaskCommentAction
                 if ($thread === null) {
                     throw new AgentDriverException('Blocked AgentThread is unavailable.');
                 }
-                $key = 'tasks.resolution.'.$comment->id;
-                $message = $task->pending_resolution_comment_id === $comment->id ? $task->pending_resolution_message : null;
-                if ($message === null || ! app(TaskWorkspaceLease::class)->retrying($thread, $key, $message)) {
-                    app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::from($thread->role), 'thread:'.$thread->id, $thread->id);
-                    if ($reviewing) {
-                        app(TaskWorkspaceLease::class)->requireReviewBaseline($thread);
+                app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($task, $comment, $thread, $reviewing): void {
+                    $key = 'tasks.resolution.'.$comment->id;
+                    $message = $task->pending_resolution_comment_id === $comment->id ? $task->pending_resolution_message : null;
+                    if ($message === null || ! app(TaskWorkspaceLease::class)->retrying($thread, $key, $message)) {
+                        app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::from($thread->role), 'thread:'.$thread->id, $thread->id);
+                        if ($reviewing) {
+                            app(TaskWorkspaceLease::class)->requireReviewBaseline($thread);
+                        }
+                        $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
+                        $message = $this->fetchNotice->apply($comment->body);
+                        Task::query()->whereKey($task->id)->where('pending_resolution_comment_id', $comment->id)
+                            ->update(['pending_resolution_message' => $message]);
                     }
-                    $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
-                    $message = $this->fetchNotice->apply($comment->body);
-                    Task::query()->whereKey($task->id)->where('pending_resolution_comment_id', $comment->id)
-                        ->update(['pending_resolution_message' => $message]);
-                }
-                $this->drivers->get($thread->driver)->send($thread, $message, $key);
-                $this->recordResolutionDelivered($task, $comment, $reviewing);
+                    $this->drivers->get($thread->driver)->send($thread, $message, $key);
+                    $this->recordResolutionDelivered($task, $comment, $reviewing);
+                });
             }
         } catch (TaskWorkspaceWaiting) {
             if ($reviewing) {
@@ -303,12 +305,14 @@ final readonly class StoreTaskCommentAction
         }
 
         try {
-            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$reviewer->id, $reviewer->id);
-            app(TaskWorkspaceLease::class)->requireReviewBaseline($reviewer);
-            $this->turnFetcher->beforeTurn($task->parent);
-            $mode = new TaskTurnMode(causeRequired: true);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, $mode, $this->reviewPackets->reviewContext($task));
-            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id, mode: $mode)));
+            app(TaskWorkspaceLease::class)->withThreadLock($reviewer, function () use ($task, $comment, $reviewer, $instance): void {
+                app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$reviewer->id, $reviewer->id);
+                app(TaskWorkspaceLease::class)->requireReviewBaseline($reviewer);
+                $this->turnFetcher->beforeTurn($task->parent);
+                $mode = new TaskTurnMode(causeRequired: true);
+                $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, $mode, $this->reviewPackets->reviewContext($task));
+                $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id, mode: $mode)));
+            });
         } catch (TaskWorkspaceWaiting) {
             $this->deferReviewResolution($task, $comment);
 
@@ -331,10 +335,12 @@ final readonly class StoreTaskCommentAction
         }
 
         try {
-            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$reviewer->id, $reviewer->id);
-            $this->turnFetcher->beforeTurn($task->parent);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reviewer->id, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
-            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id)));
+            app(TaskWorkspaceLease::class)->withThreadLock($reviewer, function () use ($task, $comment, $reviewer, $instance): void {
+                app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$reviewer->id, $reviewer->id);
+                $this->turnFetcher->beforeTurn($task->parent);
+                $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reviewer->id, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
+                $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id)));
+            });
         } catch (TaskWorkspaceWaiting) {
             $this->deferReviewResolution($task, $comment);
 

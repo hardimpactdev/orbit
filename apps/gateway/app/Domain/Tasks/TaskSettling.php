@@ -186,7 +186,7 @@ final readonly class TaskSettling
                     $leases->cancelQueued($group, 'cancel-push:'.$group->id);
                     $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance): void {
                         $this->pushCancelledApproval($group, $instance);
-                        $this->workspaces->remove($instance);
+                        $this->workspaces->remove($instance, $group);
                     });
                     $this->rememberBackoff($backoffKey, null, 'workspace removal');
                     $this->releaseRemovedWorkspace($group, $instance->id);

@@ -148,7 +148,11 @@ final readonly class TaskSessionObserver
             return false;
         }
 
-        return app(TaskWorkspaceLease::class)->inspect($group, fn (): bool => $this->diff->hasCommitsSince($instance, $since));
+        try {
+            return app(TaskWorkspaceLease::class)->inspect($group, fn (): bool => $this->diff->hasCommitsSince($instance, $since));
+        } catch (TaskCheckException) {
+            return false;
+        }
     }
 
     /** @param list<array{id: string, kind: string, label: string, text: string, at: string}> $entries

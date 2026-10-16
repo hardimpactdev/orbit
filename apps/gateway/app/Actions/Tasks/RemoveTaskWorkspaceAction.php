@@ -94,7 +94,7 @@ final readonly class RemoveTaskWorkspaceAction
         $instance = $this->find($group);
 
         if ($instance instanceof Instance) {
-            $this->remove($instance);
+            $this->remove($instance, $group);
         }
 
         return $instance;
@@ -104,22 +104,31 @@ final readonly class RemoveTaskWorkspaceAction
      * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
      * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Instance $instance): void
+    public function remove(Instance $instance, ?Task $group = null): void
     {
-        $group = Task::topLevel()->where('taskable_id', $instance->id)->first()
-            ?? Task::topLevel()->where('project_id', $instance->project_id)->whereKey(is_string($instance->branch_override) ? (int) str_replace('task-', '', $instance->branch_override) : 0)->first();
+        $group ??= Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
+        if (! $group instanceof Task && is_string($instance->branch_override)
+            && $instance->name === $instance->branch_override && preg_match('/\Atask-([1-9][0-9]*)\z/', $instance->branch_override, $match) === 1) {
+            $group = Task::topLevel()->where('project_id', $instance->project_id)->find((int) $match[1]);
+        }
+        if ($group instanceof Task && ($group->project_id !== $instance->project_id || $this->find($group)?->id !== $instance->id)) {
+            throw new TaskWorkspaceWaiting('The workspace removal owner does not match this Instance.');
+        }
         if ($group instanceof Task) {
             $group->setRelation('taskable', $instance);
             $leases = app(TaskWorkspaceLease::class);
             $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
+                $lease = $leases->remoteStarted($instance);
                 try {
                     $this->removeWithLease($instance);
+                    $leases->remoteFinished($lease);
                 } catch (Throwable $exception) {
                     if ($this->uncertainRemoteRemoval($exception)) {
                         // The synchronous holder also survives a Gateway crash. Keep it
                         // after a caught transport loss while teardown may still run.
-                        $leases->remoteStarted($instance);
+                        throw $exception;
                     }
+                    $leases->remoteFinished($lease);
                     throw $exception;
                 }
             });

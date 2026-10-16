@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
@@ -39,6 +40,7 @@ it('serializes independent groups and preserves FIFO ownership across a process 
             ['id' => $second->id, 'parent_id' => null, 'status' => 'running'],
         ]);
         (require database_path('migrations/2026_10_16_074802_create_task_workspace_leases_table.php'))->up();
+        (require database_path('migrations/2026_10_16_111138_create_task_workspace_operations_table.php'))->up();
         $first->setConnection('lease_concurrency');
         $second->setConnection('lease_concurrency');
 
@@ -183,3 +185,53 @@ function lease_concurrency_read($socket): array
 
     return $reply;
 }
+
+it('refuses a real cancellation request while another process records group completion', function (): void {
+    tick_bind_defaults();
+    $group = tick_group();
+    $directory = sys_get_temp_dir().'/orbit-action-contention-'.bin2hex(random_bytes(8));
+    app()->instance(TaskExecutionLock::class, new NativeTaskExecutionLock($directory));
+    [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    stream_set_timeout($parent, 5);
+    $pid = null;
+    try {
+        app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $directory, $parent, $child, &$pid): void {
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                throw new RuntimeException('Could not fork a cancellation request.');
+            }
+            if ($pid === 0) {
+                fclose($parent);
+                app()->instance(TaskExecutionLock::class, new NativeTaskExecutionLock($directory));
+                app()->forgetInstance(CancelTaskGroupAction::class);
+                try {
+                    app(CancelTaskGroupAction::class)->execute($group);
+                    lease_concurrency_write($child, ['status' => 'unexpected-cancel']);
+                } catch (TaskWorkspaceWaiting) {
+                    lease_concurrency_write($child, ['status' => 'busy']);
+                } catch (Throwable $exception) {
+                    lease_concurrency_write($child, ['error' => $exception->getMessage()]);
+                }
+                exit(0);
+            }
+            fclose($child);
+            // The holder remains locked until the complete public request has answered.
+            expect(lease_concurrency_read($parent))->toBe(['status' => 'busy']);
+            expect($group->fresh()->status->value)->toBe('running');
+            expect(TaskWorkspaceLeaseRecord::query()->count())->toBe(0);
+        });
+        pcntl_waitpid($pid, $status);
+        expect(pcntl_wexitstatus($status))->toBe(0);
+        $pid = null;
+    } finally {
+        fclose($parent);
+        if (is_resource($child)) {
+            fclose($child);
+        }
+        if (is_int($pid) && $pid > 0 && pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+        (new Filesystem)->deleteDirectory($directory);
+    }
+});

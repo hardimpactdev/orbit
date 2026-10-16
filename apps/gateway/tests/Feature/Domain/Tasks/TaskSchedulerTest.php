@@ -54,8 +54,6 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
-use App\Domain\Tasks\TaskTurnFetchNotice;
-use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -198,6 +196,13 @@ function scheduler_recording_spawner(): AgentSpawner
         /** @var list<string> */
         public array $events = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -313,6 +318,11 @@ it('starts a group when provisioning assigns an instance', function (): void {
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -359,6 +369,13 @@ it('fails a group and its first task when the turn command cannot be installed',
     {
         public int $implementers = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -402,6 +419,11 @@ it('keeps the task in review and counts a communication failure when the reviewe
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;
@@ -445,6 +467,11 @@ it('fails a group and its first task when the implementer spawn returns no threa
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -494,6 +521,11 @@ it('fails the group when a later implementer spawn returns no thread id', functi
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -958,6 +990,13 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         /** @var list<string> */
         public array $events = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -1417,6 +1456,13 @@ it('records a review-request failure and still reviews the other group', functio
     {
         public function __construct(private int $taskId, private string $raw) {}
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             if ($task->id === $this->taskId) {
@@ -1482,6 +1528,13 @@ it('does not replace an open direction request when a review request keeps faili
     app()->instance(AgentSpawner::class, new class($first->id) implements AgentSpawner
     {
         public function __construct(private int $taskId) {}
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -1815,6 +1868,11 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -2450,6 +2508,11 @@ it('prepares a fixup review without pull request fields', function (): void {
     $group = queued_group($project, 'Fixup review', $instance);
     scheduler_bind_claim($instance, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'reviewer-thread')->id;
@@ -2633,6 +2696,11 @@ function scheduler_review(array $receipts, bool $notified = true): array
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->reviewBases[] = TaskReviewBase::reviewBase($task);
@@ -2780,11 +2848,10 @@ it('does not infer mutation provenance from an overlapping legacy check', functi
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Changed)
         ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
         ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($signer->messages)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+        ->and($dispatcher->commands)->toBe([]);
 });
 
 it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
@@ -3005,47 +3072,27 @@ it('approves a review when the workspace is unchanged since the review request',
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('refuses a review when the working tree differs and asks for assistance after a second turn with the mismatch', function (): void {
+it('asks for assistance immediately for an unattributed tree change and never asks the reviewer to restore it', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->tree = str_repeat('c', 40);
-    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id);
-
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->fresh()?->review_handled_comment_id)->toBeNull()
-        ->and($task->fresh()?->review_notified_turn_id)->toBe('review-turn')
-        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe(TaskScheduler::WorkspaceChangedReminder)
+        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".$reminder);
-
-    app(TaskScheduler::class)->tick();
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
     $checks->tree = str_repeat('b', 40);
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->fresh()?->review_handled_comment_id)->toBeNull()
-        ->and($dispatcher->commands)->toHaveCount(1);
-
-    $checks->tree = str_repeat('c', 40);
     $reader->turnId = 'review-turn-2';
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder)
-        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
-        ->and($dispatcher->commands)->toHaveCount(1);
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
 });
 
 function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks): void
@@ -3178,7 +3225,7 @@ it('recovers an assistance-blocked stale final review on the next tick only from
     'unrelated group direction' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, false, 'Choose an environment.'],
 ]);
 
-it('applies the kept approval once the reviewer restores the workspace', function (): void {
+it('retains assistance after an unowned edit even if the tree is restored', function (): void {
     [, $task, , $signer, $checks, , $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
@@ -3190,14 +3237,14 @@ it('applies the kept approval once the reviewer restores the workspace', functio
 
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+        ->and($task->fresh()?->assistance_requested)->toBeTrue();
 
     $reader->turnId = 'review-turn-2';
     app(TaskScheduler::class)->tick();
 
-    expect($signer->messages)->toBe([$task->title."\n\nChecked the models."])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($signer->messages)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue();
 });
 
 it('counts an unreadable review workspace as a communication failure and does not treat it as a reviewer change', function (): void {
@@ -3233,9 +3280,7 @@ it('does not relay findings or accept a blocked question when the working tree d
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder)
-        ->and($dispatcher->commands[0]['message']['text'])->not->toContain('Distinct findings')
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe($outcome);
 })->with([
     'changes requested' => ['changes_requested', null, 'tree'],
@@ -3321,8 +3366,7 @@ it('still reminds the reviewer when the implementer turn is the handoff turn', f
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($signer->messages)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+        ->and($dispatcher->commands)->toBe([]);
 });
 
 it('accepts a lost commit response as the stored commit without a reminder or a second commit', function (): void {
@@ -3464,13 +3508,13 @@ it('asks for assistance for an unexplained head change without accepting the old
         ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
         ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
         ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands)->toHaveCount(1);
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($dispatcher->commands)->toBe([]);
     expect(app(AgentSpawner::class))->reviewBases->toBe([]);
 
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands)->toHaveCount(1);
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($dispatcher->commands)->toBe([]);
 
     $reader->turnId = 'unexplained-head-followup';
     app(TaskScheduler::class)->tick();

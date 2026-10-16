@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskReviewedCommit;
+use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use App\Models\TaskWorkspaceOperation;
 use Closure;
 use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Support\Facades\DB;
@@ -52,10 +55,8 @@ final class TaskWorkspaceLease
      */
     private function synchronized(Task $group, Closure $operation): mixed
     {
-        $instance = $group->taskable;
-
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn () => $instance instanceof Instance
-            ? app(TaskExecutionLock::class)->synchronized(-$instance->id, $operation) : $operation());
+        // The Instance lock is used only for queue admission/release, never over remote IO.
+        return app(TaskExecutionLock::class)->synchronized($group->id, $operation, wait: false);
     }
 
     public function cancelQueued(Task $group, string $owner): void
@@ -68,17 +69,74 @@ final class TaskWorkspaceLease
         });
     }
 
-    /** Persist uncertainty before an SSH mutation, including mutations whose caller swallows failure. */
-    public function remoteStarted(Instance $instance, bool $changesCheckout = false): ?TaskWorkspaceLeaseRecord
+    private function activeScope(int $instanceId): ?TaskWorkspaceLeaseRecord
     {
-        return app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($instance, $changesCheckout): ?TaskWorkspaceLeaseRecord {
-            $lease = TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $instance->id)->first();
-            if ($lease instanceof TaskWorkspaceLeaseRecord) {
-                if ($lease->getAttribute('remote_uncertain')) {
-                    throw new TaskWorkspaceWaiting('The prior remote mutation has no authoritative completion.');
-                }
-                $lease->update(['remote_uncertain' => true, 'orbit_mutation' => $lease->getAttribute('orbit_mutation') || $changesCheckout]);
+        $scope = $this->scopes[$instanceId] ?? null;
+        if (! $scope instanceof TaskWorkspaceLeaseRecord) {
+            return null;
+        }
+        $fresh = $scope->fresh();
+        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('active_instance_id') !== $instanceId) {
+            unset($this->scopes[$instanceId]);
+
+            return null;
+        }
+
+        $scope->refresh();
+
+        return $scope;
+    }
+
+    public function currentScope(): ?TaskWorkspaceLeaseRecord
+    {
+        foreach (array_reverse(array_keys($this->scopes)) as $instanceId) {
+            if (($scope = $this->activeScope($instanceId)) instanceof TaskWorkspaceLeaseRecord) {
+                return $scope;
             }
+        }
+
+        return null;
+    }
+
+    /** @template T
+     * @param  Closure(): T  $operation
+     * @return T
+     */
+    public function within(TaskWorkspaceLeaseRecord $lease, Closure $operation): mixed
+    {
+        $fresh = $lease->fresh();
+        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('active_instance_id') !== $fresh->instance_id) {
+            throw new TaskWorkspaceWaiting('The workspace admission no longer owns this Instance.');
+        }
+        $previous = $this->scopes[$lease->instance_id] ?? null;
+        if ($previous instanceof TaskWorkspaceLeaseRecord && $previous->id !== $lease->id) {
+            throw new TaskWorkspaceWaiting('A different workspace actor owns this scope.');
+        }
+        $this->scopes[$lease->instance_id] = $lease;
+        try {
+            return $operation();
+        } finally {
+            if ($previous instanceof TaskWorkspaceLeaseRecord) {
+                $this->scopes[$lease->instance_id] = $previous;
+            } else {
+                unset($this->scopes[$lease->instance_id]);
+            }
+        }
+    }
+
+    /** Persist uncertainty before an SSH mutation, including mutations whose caller swallows failure. */
+    public function remoteStarted(Instance $instance, bool $changesCheckout = false): TaskWorkspaceLeaseRecord
+    {
+        return app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($instance, $changesCheckout): TaskWorkspaceLeaseRecord {
+            $scope = $this->scopes[$instance->id] ?? null;
+            $lease = $scope instanceof TaskWorkspaceLeaseRecord ? TaskWorkspaceLeaseRecord::query()->whereKey($scope->id)->where('status', 'held')->where('active_instance_id', $instance->id)->first() : null;
+            if (! $lease instanceof TaskWorkspaceLeaseRecord) {
+                throw new TaskWorkspaceWaiting('A checkout mutation requires its exact admitted workspace scope.');
+            }
+            if ($lease->getAttribute('remote_uncertain') || $lease->getAttribute('completion_pending')) {
+                throw new TaskWorkspaceWaiting('The prior remote mutation has no authoritative completion.');
+            }
+            $lease->update(['remote_uncertain' => true, 'orbit_mutation' => $lease->getAttribute('orbit_mutation') || $changesCheckout]);
 
             return $lease;
         });
@@ -88,7 +146,9 @@ final class TaskWorkspaceLease
     {
         if ($lease instanceof TaskWorkspaceLeaseRecord) {
             app(TaskExecutionLock::class)->synchronized(-$lease->instance_id, static function () use ($lease): void {
-                TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->update(['remote_uncertain' => false]);
+                if (! TaskWorkspaceOperation::query()->where('lease_id', $lease->id)->where('status', 'pending')->exists()) {
+                    TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->update(['remote_uncertain' => false]);
+                }
             });
         }
     }
@@ -100,9 +160,9 @@ final class TaskWorkspaceLease
             throw new TaskCheckException('The task workspace is unavailable.');
         }
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskWorkspaceLeaseRecord => app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($group, $instance, $kind, $owner, $threadId, $taskId): TaskWorkspaceLeaseRecord {
-            if (isset($this->scopes[$instance->id])) {
-                return $this->scopes[$instance->id];
+        return app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($group, $instance, $kind, $owner, $threadId, $taskId): TaskWorkspaceLeaseRecord {
+            if (($scope = $this->activeScope($instance->id)) instanceof TaskWorkspaceLeaseRecord) {
+                return $scope;
             }
             $this->pruneQueued($instance->id);
             $task = $taskId === null ? null : Task::query()->where('parent_id', $group->id)->find($taskId);
@@ -110,8 +170,14 @@ final class TaskWorkspaceLease
                 throw new TaskWorkspaceWaiting('The queued workspace actor belongs to a cancelled subtask.');
             }
             $request = DB::transaction(function () use ($group, $instance, $kind, $owner, $threadId, $taskId, $task): TaskWorkspaceLeaseRecord {
-                $request = TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)
-                    ->where('kind', $kind)->where('owner', $owner)->whereIn('status', ['queued', 'held'])->first();
+                $request = TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)->where('group_id', $group->id)
+                    ->where(function ($query) use ($kind, $owner, $threadId): void {
+                        $query->where(fn ($original) => $original->where('kind', $kind)->where('owner', $owner));
+                        if ($threadId !== null) {
+                            $query->orWhere(fn ($actor) => $actor->where('status', 'held')->where('thread_id', $threadId)
+                                ->where('actor_kind', $kind)->where('actor_owner', $owner));
+                        }
+                    })->whereIn('status', ['queued', 'held'])->first();
                 if (! $request instanceof TaskWorkspaceLeaseRecord) {
                     $request = TaskWorkspaceLeaseRecord::query()->create([
                         'instance_id' => $instance->id, 'group_id' => $group->id,
@@ -127,6 +193,7 @@ final class TaskWorkspaceLease
                     $request->update([
                         'active_instance_id' => $instance->id, 'status' => 'held', 'acquired_at' => now(), 'acquisition_sequence' => $this->nextSequence($instance->id),
                         'gateway_pid' => getmypid(), 'gateway_started' => self::processIdentity(getmypid() ?: 0),
+                        'gateway_host' => gethostname(), 'gateway_boot' => self::bootIdentity(), 'journaled' => true,
                     ]);
                 }
 
@@ -140,7 +207,7 @@ final class TaskWorkspaceLease
             }
 
             return $request;
-        }));
+        });
     }
 
     /**
@@ -155,28 +222,34 @@ final class TaskWorkspaceLease
             return $operation();
         }
         $instanceId = $group->taskable->id;
-        if (isset($this->scopes[$instanceId])) {
+        if ($this->activeScope($instanceId) instanceof TaskWorkspaceLeaseRecord) {
             return $operation();
         }
 
-        return $this->synchronized($group, function () use ($group, $kind, $owner, $operation, $instanceId, $taskId): mixed {
+        // Instance admission is short; the durable row owns the operation after this lock ends.
+        $lease = $this->synchronized($group, function () use ($group, $kind, $owner, $taskId): TaskWorkspaceLeaseRecord {
             $this->reconcile($group);
             $lease = $this->acquire($group, $kind, $owner, taskId: $taskId);
             if ($lease->getAttribute('gateway_pid') !== getmypid()
                 || $lease->getAttribute('gateway_started') !== self::processIdentity(getmypid() ?: 0)
-                || $lease->thread_id !== null || $lease->pid !== null) {
+                || $lease->thread_id !== null || $lease->pid !== null || $lease->getAttribute('completion_pending')) {
                 throw new TaskWorkspaceWaiting('The prior workspace actor has not released ownership.');
             }
-            $this->scopes[$instanceId] = $lease;
+
+            return $lease;
+        });
+
+        return $this->within($lease, function () use ($group, $lease, $operation): mixed {
             try {
                 $this->snapshotBefore($group, $lease);
 
                 return $operation();
             } finally {
-                unset($this->scopes[$instanceId]);
                 $lease->refresh();
-                if ($lease->thread_id === null && $lease->pid === null && ! $lease->getAttribute('remote_uncertain')) {
-                    $this->release($lease, $this->snapshot($group));
+                if ($lease->thread_id === null && $lease->pid === null) {
+                    $after = $lease->getAttribute('remote_uncertain') ? null : $this->snapshot($group);
+                    $lease->update(['completion_pending' => true]);
+                    $this->release($lease, $after);
                 }
             }
         });
@@ -254,7 +327,7 @@ final class TaskWorkspaceLease
                 throw new TaskWorkspaceWaiting('The admitted '.$role->value.' turn still owns the workspace.');
             }
             $this->snapshotBefore($group, $lease);
-            $lease->update(['kind' => $role->value, 'owner' => $owner, 'thread_id' => $threadId]);
+            $lease->update(['actor_kind' => $role->value, 'actor_owner' => $owner, 'thread_id' => $threadId]);
 
             return $lease;
         });
@@ -270,11 +343,15 @@ final class TaskWorkspaceLease
     {
         $group = Task::topLevel()->findOrFail($thread->task_group_id);
 
-        return $this->synchronized($group, function () use ($group, $operation): mixed {
-            $this->reconcile($group);
+        return app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $thread, $operation): mixed {
+            $lease = $this->synchronized($group, function () use ($group, $thread): TaskWorkspaceLeaseRecord {
+                $this->reconcile($group);
 
-            return $operation();
-        });
+                return $this->acquire($group, $thread->role, 'thread:'.$thread->id, $thread->id, $thread->task_id);
+            });
+
+            return $this->within($lease, $operation);
+        }, wait: false);
     }
 
     public function admittedSendKey(AgentThread $thread, ?string $key, string $message, bool $continuation = false): string
@@ -323,7 +400,7 @@ final class TaskWorkspaceLease
             return true;
         }
         $lease = TaskWorkspaceLeaseRecord::query()->where('group_id', $thread->task_group_id)
-            ->where('thread_id', $thread->id)->where('owner', 'thread:'.$thread->id)->where('status', 'held')
+            ->where('thread_id', $thread->id)->where('status', 'held')
             ->when($key === null || $key === '', static fn ($query) => $query->where('dispatch_generated', true),
                 static fn ($query) => $query->where('dispatch_key', $key))
             ->whereNotNull('dispatch_started_at')->first();
@@ -408,7 +485,7 @@ final class TaskWorkspaceLease
         $group = Task::topLevel()->findOrFail($thread->task_group_id);
         $this->synchronized($group, function () use ($group, $thread): void {
             $lease = TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $group->taskable_id)
-                ->where('thread_id', $thread->id)->where('owner', 'thread:'.$thread->id)->first();
+                ->where('thread_id', $thread->id)->first();
             if ($lease instanceof TaskWorkspaceLeaseRecord) {
                 $this->release($lease, $this->snapshot($group));
             }
@@ -421,23 +498,36 @@ final class TaskWorkspaceLease
      *
      * @throws TaskCheckException
      */
-    public function startCheck(Task $group, Task $task, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function startCheck(Task $group, Task $task, ?string $command, array $setup = [], ?array $deliverables = null, ?int $commentId = null): TaskCheckProcess
     {
-        return $this->synchronized($group, function () use ($group, $task, $command, $setup, $deliverables): TaskCheckProcess {
+        $lease = $this->synchronized($group, function () use ($group, $task): TaskWorkspaceLeaseRecord {
             $this->reconcile($group);
             $lease = $this->acquire($group, 'check', 'check:'.$task->id, taskId: $task->id);
             if ($lease->pid !== null) {
                 throw new TaskWorkspaceWaiting('The admitted workspace check has not stopped.');
             }
+
+            return $lease;
+        });
+
+        return $this->within($lease, function () use ($group, $task, $command, $setup, $deliverables, $commentId, $lease): TaskCheckProcess {
+            $this->snapshotBefore($group, $lease);
             $pending = $task->checks()->where('status', TaskCheckStatus::Running)->where('pid', 0)->latest('id')->first();
-            // Persist the start intent before SSH. An unanswered start may have spawned a child.
-            $lease->update(['pid' => 0, 'check_id' => $pending?->id, 'orbit_mutation' => true]);
+            if (! $pending instanceof TaskCheck) {
+                $pending = $task->checks()->create([
+                    'kind' => ($deliverables['base_merge'] ?? false) ? TaskCheckKind::BaseMerge : TaskCheckKind::Handoff,
+                    'task_comment_id' => $commentId, 'status' => TaskCheckStatus::Running,
+                    'pid' => 0, 'process_started' => '', 'head_before' => $lease->head_before, 'tree_before' => $lease->tree_before, 'started_at' => now(),
+                ]);
+            }
+            $runId = bin2hex(random_bytes(16));
+            $lease->update(['pid' => 0, 'check_id' => $pending->id, 'check_run_id' => $runId, 'orbit_mutation' => true]);
             $instance = $group->taskable;
             if (! $instance instanceof Instance) {
                 throw new TaskCheckException('The task workspace is unavailable.');
             }
             try {
-                $process = app(TaskCheckRunner::class)->start($instance, $command, $setup, $deliverables);
+                $process = app(TaskCheckRunner::class)->start($instance, $command, $setup, $deliverables, $runId);
             } catch (TaskCheckException $exception) {
                 if ($exception->startNotDispatched) {
                     $lease->update(['pid' => null]);
@@ -445,12 +535,19 @@ final class TaskWorkspaceLease
                 }
                 throw $exception;
             }
-            $lease->update(['kind' => 'check', 'owner' => 'check:'.$task->id, 'pid' => $process->pid, 'process_started' => $process->started,
-                'head_before' => $lease->head_before ?? $process->head, 'tree_before' => $lease->tree_before ?? $process->tree,
-                'process_head' => $process->head, 'process_tree' => $process->tree, 'thread_id' => null]);
+            $this->adoptStartedCheck($lease, $pending, $process);
 
             return $process;
         });
+    }
+
+    private function adoptStartedCheck(TaskWorkspaceLeaseRecord $lease, TaskCheck $check, TaskCheckProcess $process): void
+    {
+        $lease->update(['actor_kind' => 'check', 'actor_owner' => 'check:'.$check->task_id, 'pid' => $process->pid, 'process_started' => $process->started,
+            'head_before' => $lease->head_before ?? $process->head, 'tree_before' => $lease->tree_before ?? $process->tree,
+            'process_head' => $process->head, 'process_tree' => $process->tree, 'thread_id' => null]);
+        TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running)->where('pid', 0)
+            ->update(['pid' => $process->pid, 'process_started' => $process->started, 'head_before' => $process->head, 'tree_before' => $process->tree]);
     }
 
     public function invalidateCheck(Instance $instance, TaskCheckProcess $process): void
@@ -476,8 +573,17 @@ final class TaskWorkspaceLease
     public function release(TaskWorkspaceLeaseRecord $lease, ?TaskWorkspaceSnapshot $after = null): void
     {
         app(TaskExecutionLock::class)->synchronized($lease->group_id, fn () => app(TaskExecutionLock::class)->synchronized(-$lease->instance_id, function () use ($lease, $after): void {
-            TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->update([
-                'active_instance_id' => null, 'status' => 'released', 'released_at' => now(),
+            $fresh = TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->first();
+            if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->getAttribute('remote_uncertain')) {
+                return;
+            }
+            if ($fresh->getAttribute('orbit_mutation') && $after === null && Instance::query()->whereKey($fresh->instance_id)->exists()) {
+                $fresh->update(['completion_pending' => true]);
+
+                return;
+            }
+            $fresh->update([
+                'active_instance_id' => null, 'status' => 'released', 'released_at' => now(), 'completion_pending' => false,
                 'head_after' => $after?->head, 'tree_after' => $after?->tree,
             ]);
         }));
@@ -516,6 +622,17 @@ final class TaskWorkspaceLease
         $this->synchronized($group, function () use ($group): void {
             $instance = $group->taskable;
             if (! $instance instanceof Instance) {
+                $removed = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->where('status', 'held')->where('kind', 'teardown')->first();
+                if ($removed instanceof TaskWorkspaceLeaseRecord
+                    && ! Instance::query()->whereKey($removed->instance_id)->exists()
+                    && TaskVm::query()->where('group_id', $group->id)->where('state', TaskVmState::Destroyed)->exists()) {
+                    $removed->update(['remote_uncertain' => false]);
+                    $this->release($removed);
+                }
+
+                return;
+            }
+            if ($this->activeScope($instance->id) instanceof TaskWorkspaceLeaseRecord) {
                 return;
             }
             $holder = TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $instance->id)->first();
@@ -527,7 +644,23 @@ final class TaskWorkspaceLease
 
                 return;
             }
-            if ($holder->getAttribute('remote_uncertain')) {
+            app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($holder): void {
+                $holder->refresh();
+                if ($holder->getAttribute('journaled') && $this->localOwnerDead($holder)
+                    && ! TaskWorkspaceOperation::query()->where('lease_id', $holder->id)->exists()
+                    && $holder->kind !== 'teardown') {
+                    // Native SSH journals before dispatch. Provider deletion has a separate Destroying fence.
+                    $holder->update(['remote_uncertain' => false]);
+                }
+            });
+            if ($holder->getAttribute('remote_uncertain')
+                && ! app(TaskWorkspaceOperationRecovery::class)->settled($holder)) {
+                return;
+            }
+            $holder->refresh();
+            if ($holder->getAttribute('completion_pending')) {
+                $this->release($holder, $this->snapshot($group));
+
                 return;
             }
             if ($holder->pid !== null) {
@@ -543,6 +676,28 @@ final class TaskWorkspaceLease
                 }
                 $holder->update(['check_id' => $check->id]);
                 if ($holder->pid === 0) {
+                    $runId = $holder->getAttribute('check_run_id');
+                    if (! is_string($runId) || $runId === '') {
+                        return;
+                    }
+                    try {
+                        $process = app(TaskCheckRunner::class)->recoverStart($instance, $runId);
+                    } catch (TaskCheckException) {
+                        return;
+                    }
+                    if ($process === null) {
+                        // The remote start ID is now tombstoned; the late original cannot run.
+                        TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running)->where('pid', 0)->delete();
+                        $holder->update(['pid' => null]);
+                        $this->release($holder, $this->snapshot($group));
+
+                        return;
+                    }
+                    $this->adoptStartedCheck($holder, $check, $process);
+                    $holder->refresh();
+                    $check->refresh();
+                }
+                if ($holder->pid === null || $holder->pid < 1) {
                     return;
                 }
                 $process = new TaskCheckProcess($holder->pid, $holder->process_started ?? '', $holder->process_head ?? $holder->head_before ?? '', $holder->process_tree ?? $holder->tree_before ?? '');
@@ -581,7 +736,8 @@ final class TaskWorkspaceLease
             if ($holder->thread_id !== null) {
                 $thread = AgentThread::query()->find($holder->thread_id);
                 if ($holder->getAttribute('dispatch_started_at') === null) {
-                    if (! $thread instanceof AgentThread || in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+                    if (! $thread instanceof AgentThread || in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+                        || ($holder->getAttribute('journaled') && $this->localOwnerDead($holder))) {
                         $this->release($holder, $this->snapshot($group));
                     }
 
@@ -609,9 +765,10 @@ final class TaskWorkspaceLease
 
                 return;
             }
-            // A dead Gateway does not prove that its SSH child stopped. Keep the fence
-            // until the remote result or an operator proves termination.
-
+            if ($holder->getAttribute('journaled') && $this->localOwnerDead($holder)
+                && app(TaskWorkspaceOperationRecovery::class)->settled($holder)) {
+                $this->release($holder, $this->snapshot($group));
+            }
         });
     }
 
@@ -791,8 +948,11 @@ final class TaskWorkspaceLease
         if ($lease->head_before !== null) {
             return;
         }
-        $snapshot = $this->snapshot($group);
-        $lease->update(['head_before' => $snapshot?->head, 'tree_before' => $snapshot?->tree]);
+        $snapshot = $group->taskable instanceof Instance ? app(TaskCheckRunner::class)->snapshot($group->taskable) : null;
+        if (! $snapshot instanceof TaskWorkspaceSnapshot) {
+            throw new TaskCheckException('The workspace baseline could not be read before admission.');
+        }
+        $lease->update(['head_before' => $snapshot->head, 'tree_before' => $snapshot->tree]);
     }
 
     private function snapshot(Task $group): ?TaskWorkspaceSnapshot
@@ -802,6 +962,32 @@ final class TaskWorkspaceLease
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private static function bootIdentity(): ?string
+    {
+        $boot = @file_get_contents('/proc/sys/kernel/random/boot_id');
+
+        return is_string($boot) && trim($boot) !== '' ? trim($boot) : null;
+    }
+
+    private function localOwnerDead(TaskWorkspaceLeaseRecord $holder): bool
+    {
+        if ($holder->getAttribute('gateway_host') !== gethostname() || self::bootIdentity() === null
+            || ! is_string($holder->getAttribute('gateway_boot')) || ! is_int($holder->getAttribute('gateway_pid'))
+            || ! is_string($holder->getAttribute('gateway_started'))) {
+            return false;
+        }
+        if ($holder->getAttribute('gateway_boot') !== self::bootIdentity()) {
+            return true;
+        }
+        $pid = $holder->getAttribute('gateway_pid');
+        $identity = self::processIdentity($pid);
+        if ($identity === null && file_exists('/proc/'.$pid)) {
+            return false;
+        }
+
+        return $identity !== $holder->getAttribute('gateway_started');
     }
 
     private static function processIdentity(int $pid): ?string

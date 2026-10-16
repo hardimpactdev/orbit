@@ -41,11 +41,11 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         private RepositoryPullRequestAccess $github,
     ) {}
 
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
     {
         $dispatched = false;
         try {
-            return $this->startPrepared($instance, $command, $setup, $deliverables, $dispatched);
+            return $this->startPrepared($instance, $command, $setup, $deliverables, $dispatched, $runId);
         } catch (TaskCheckException $exception) {
             $exception->startNotDispatched = ! $dispatched;
             throw $exception;
@@ -56,7 +56,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
      * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool, base_merge?: bool}|null  $deliverables
      */
-    private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched): TaskCheckProcess
+    private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched, ?string $runId): TaskCheckProcess
     {
         $instance->refresh();
         $script = file_get_contents(resource_path('tasks/check'));
@@ -96,7 +96,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 }
             }
         }
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true, composerAuth: $auth, beforeDispatch: static function () use (&$dispatched): void {
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command" '.escapeshellarg($runId ?? ''), withVpHome: true, allocateTemporary: true, composerAuth: $auth, beforeDispatch: static function () use (&$dispatched): void {
             $dispatched = true;
         });
         $pid = $data['pid'] ?? null;
@@ -108,6 +108,29 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
 
         return new TaskCheckProcess($pid, $started, $head, $tree);
+    }
+
+    public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+    {
+        $script = file_get_contents(resource_path('tasks/check'));
+        if (! is_string($script)) {
+            throw new TaskCheckException('The check script is unavailable.');
+        }
+        $data = $this->run($instance, [$runId], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" recover-start "$2"');
+        if (($data['run_id'] ?? null) !== $runId) {
+            throw new TaskCheckException('The check start identity does not match.');
+        }
+        if (($data['state'] ?? null) === 'not_started') {
+            return null;
+        }
+        if (! in_array($data['state'] ?? null, ['started', 'finished'], true) || ! is_int($data['pid'] ?? null) || $data['pid'] < 1
+            || ! is_string($data['started'] ?? null) || $data['started'] === ''
+            || ! is_string($data['head'] ?? null) || ! is_string($data['tree'] ?? null)) {
+            throw new TaskCheckException('The check start is not authoritatively known.');
+        }
+
+        return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree']);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading

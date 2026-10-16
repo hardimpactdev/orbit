@@ -243,7 +243,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 'instance',
                 $instance->id,
                 $instance->name,
-                'Task workspace lease holder and queue.',
+                'Task workspace lease holder and queue. Restore connectivity, then let a task tick reconcile exact operation and run receipts; unknown ownership stays fenced.',
                 'one workspace actor at a time',
                 $observed,
             );

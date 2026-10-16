@@ -96,6 +96,11 @@ it('claimNext continues after provision null', function (): void {
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
@@ -332,6 +337,7 @@ function claim_hol_instance(Project $project, string $name): Instance
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
+        'branch_override' => $name,
         'checkout_path' => "/tmp/{$name}",
         'status' => 'reserved',
     ]);
@@ -341,6 +347,11 @@ function claim_hol_spawner(): void
 {
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
@@ -597,7 +608,7 @@ describe('the abandoned workspace sweep', function (): void {
         claim_hol_workspace($project, $todo);
         $cancelled = claim_hol_group($project, 'Cancelled lookalike');
         $cancelled->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        claim_hol_instance($project, 'task-'.$cancelled->id);
+        claim_hol_instance($project, 'task-'.$cancelled->id)->update(['branch_override' => null]);
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([])

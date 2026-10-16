@@ -26,6 +26,7 @@ and never allocate or modify a TMPDIR.
 """
 
 import atexit
+import fcntl
 import json
 import os
 import re
@@ -185,7 +186,51 @@ def optional(path):
     return path if path and path != '-' else None
 
 
-def start(checkout, setup=None, deliverables=None, command=None):
+def start_record(run_id, recover=False):
+    if not re.fullmatch(r'[a-f0-9]{32}', run_id):
+        raise ValueError('Invalid check run identity')
+    root = os.path.join(DIRECTORY, 'check-starts')
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    path = os.path.join(root, run_id + '.json')
+    lock = open(path + '.lock', 'a')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    data = None
+    if os.path.exists(path):
+        with open(path) as source:
+            data = json.load(source)
+        if data.get('run_id') != run_id:
+            raise ValueError('Check run identity differs')
+    if recover and (data is None or data.get('state') == 'starting'):
+        data = {'run_id': run_id, 'state': 'not_started'}
+        write_start_record(path, data)
+    return lock, path, data
+
+
+def write_start_record(path, data):
+    temporary = path + '.' + str(os.getpid())
+    with open(temporary, 'w') as output:
+        json.dump(data, output)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary, path)
+
+
+def recover_start(run_id):
+    lock, _path, data = start_record(run_id, recover=True)
+    print(json.dumps(data))
+    lock.close()
+
+
+def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
+    lock, record = None, None
+    if run_id:
+        lock, record, existing = start_record(run_id)
+        if existing is not None:
+            print(json.dumps(existing))
+            return
+        write_start_record(record, {'run_id': run_id, 'state': 'starting', 'starter_pid': os.getpid(),
+                                    'starter_started': process_started(os.getpid()), 'boot': open('/proc/sys/kernel/random/boot_id').read().strip()})
+
     retire_stale_base_directories()
     setup, deliverables = optional(setup), optional(deliverables)
     if command:
@@ -198,12 +243,56 @@ def start(checkout, setup=None, deliverables=None, command=None):
     for path in (RESULT, LOG):
         if os.path.exists(path):
             os.remove(path)
+    if record:
+        # A separately managed cgroup transfers ownership out of the contained SSH starter.
+        unit = 'orbit-task-check-' + run_id + '.service'
+        arguments = ['sudo', '-n', 'systemd-run', '--quiet', '--unit=' + unit,
+                     '--uid=' + str(os.getuid()), '--gid=' + str(os.getgid()),
+                     '--property=Type=exec', '--property=ExitType=cgroup', '--property=RemainAfterExit=yes',
+                     '--description=Orbit task check ' + run_id,
+                     '--property=KillMode=control-group', '--property=WorkingDirectory=' + checkout]
+        for name in ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR', 'VP_HOME', 'COMPOSER_CACHE_DIR',
+                     'ORBIT_SEED_PATH', 'ORBIT_SEED_COMMIT', 'INERTIA_SSR_URL', 'INERTIA_SSR_PORT'):
+            if name in os.environ:
+                arguments.append('--setenv=' + name + '=' + os.environ[name])
+        # FD3 can carry Composer auth. Use stdin, never argv, the environment, or the journal.
+        try:
+            auth = os.fdopen(os.dup(3), 'rb').read()
+        except OSError:
+            auth = b''
+        descriptor = os.memfd_create('orbit-check-auth', os.MFD_CLOEXEC)
+        try:
+            os.write(descriptor, auth)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            arguments.extend(['--no-block', '--property=StandardInput=file:/proc/' + str(os.getpid()) + '/fd/' + str(descriptor),
+                              '--property=StandardOutput=null', '--property=StandardError=null'])
+            service = subprocess.run(arguments + ['--', sys.executable, os.path.abspath(__file__),
+                                     'run-owned', run_id, checkout, head, tree, setup or '-', deliverables or '-', command],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            lock.close()
+            if service.returncode != 0:
+                raise RuntimeError('The managed check could not be started')
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                handle, _path, data = start_record(run_id)
+                handle.close()
+                if data.get('state') in ('started', 'not_started'):
+                    print(json.dumps(data))
+                    return
+                time.sleep(0.02)
+            raise RuntimeError('The managed check did not confirm admission')
+        finally:
+            os.close(descriptor)
     try:
         os.set_inheritable(3, True)
     except OSError:
         pass
     pid = os.fork()
     if pid == 0:
+        if record:
+            write_start_record(record, {'run_id': run_id, 'state': 'started', 'pid': os.getpid(),
+                                       'started': process_started(os.getpid()), 'head': head, 'tree': tree})
+            lock.close()
         os.setsid()
         null = os.open(os.devnull, os.O_RDWR)
         for descriptor in (0, 1, 2):
@@ -218,7 +307,44 @@ def start(checkout, setup=None, deliverables=None, command=None):
         if started:
             break
         time.sleep(0.02)
-    print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
+    data = {'pid': pid, 'started': started, 'head': head, 'tree': tree}
+    if record:
+        data.update({'run_id': run_id, 'state': 'started'})
+        write_start_record(record, data)
+        lock.close()
+    print(json.dumps(data))
+
+
+def run_owned(run_id, checkout, head, tree, setup, deliverables, command):
+    global RESULT, LOG
+    RESULT = managed_result_path(run_id)
+    LOG = managed_log_path(run_id)
+    lock, record, data = start_record(run_id)
+    if (data.get('state') != 'starting' or data.get('boot') != open('/proc/sys/kernel/random/boot_id').read().strip()
+            or not data.get('starter_started')
+            or process_started(data.get('starter_pid')) != data.get('starter_started')):
+        lock.close()
+        return
+    credentials = sys.stdin.buffer.read()
+    boot = data['boot']
+    if os.getsid(0) != os.getpid():
+        os.setsid()
+    write_start_record(record, {'run_id': run_id, 'state': 'started', 'pid': os.getpid(),
+                               'started': process_started(os.getpid()), 'head': head, 'tree': tree, 'boot': boot})
+    lock.close()
+    descriptor = os.memfd_create('orbit-check-auth', os.MFD_CLOEXEC)
+    try:
+        os.write(descriptor, credentials)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        if descriptor != 3:
+            os.dup2(descriptor, 3)
+            os.close(descriptor)
+        run(checkout, head, tree, setup, deliverables, command)
+    finally:
+        try:
+            os.close(3)
+        except OSError:
+            pass
 
 
 def run_setup(checkout, setup, log, composer_auth=None):
@@ -758,6 +884,7 @@ def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_st
         'failed_step': failed_step,
         'setup_output_start': setup_output_start,
         'head_before': head,
+        'checkout': os.getcwd(),
         'tree_before': tree,
         'head_after': head_after,
         'tree_after': tree_after,
@@ -768,37 +895,121 @@ def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_st
     }
 
 
-def write_check_result(result):
-    temporary = RESULT + '.' + str(os.getpid())
+def managed_result_path(run_id):
+    return os.path.join(DIRECTORY, 'check-starts', run_id + '.result.json')
+
+
+def managed_log_path(run_id):
+    return os.path.join(DIRECTORY, 'check-starts', run_id + '.log')
+
+
+def write_check_result(result, path=None):
+    path = path or RESULT
+    temporary = path + '.' + str(os.getpid())
     with open(temporary, 'w') as output:
         json.dump(result, output)
-    os.replace(temporary, RESULT)
+    os.replace(temporary, path)
 
 
-def output_tail(start=0):
-    if not os.path.exists(LOG):
+def output_tail(start=0, path=None):
+    path = path or LOG
+    if not os.path.exists(path):
         return ''
-    with open(LOG, 'rb') as log:
+    with open(path, 'rb') as log:
         log.seek(0, os.SEEK_END)
         log.seek(max(start, log.tell() - OUTPUT_TAIL))
         return log.read().decode('utf-8', errors='replace')
+
+
+def managed_run(pid, started):
+    root = os.path.join(DIRECTORY, 'check-starts')
+    if not os.path.isdir(root):
+        return None
+    for name in os.listdir(root):
+        if not re.fullmatch(r'[a-f0-9]{32}\.json', name):
+            continue
+        with open(os.path.join(root, name)) as source:
+            data = json.load(source)
+        if data.get('pid') == pid and data.get('started') == started and data.get('boot'):
+            return data
+    return None
+
+
+def managed_run_finished(data):
+    if data.get('state') == 'finished':
+        return True
+    if data.get('boot') != open('/proc/sys/kernel/random/boot_id').read().strip():
+        return False
+    unit = 'orbit-task-check-' + data['run_id'] + '.service'
+    result = subprocess.run(['systemctl', 'show', unit, '--no-pager',
+                             '--property=LoadState,ActiveState,SubState,ControlGroup,Description'],
+                            capture_output=True, text=True)
+    state = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    if result.returncode != 0 or state.get('LoadState') != 'loaded' or state.get('Description') != 'Orbit task check ' + data['run_id']:
+        return False
+    if not ((state.get('ActiveState') == 'active' and state.get('SubState') == 'exited')
+            or state.get('ActiveState') in ('inactive', 'failed')):
+        return False
+    group = state.get('ControlGroup')
+    if group:
+        if not group.startswith('/') or '..' in group.split('/'):
+            return False
+        try:
+            with open('/sys/fs/cgroup' + group + '/cgroup.events') as source:
+                events = dict(line.split() for line in source)
+            if events.get('populated') != '0':
+                return False
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return False
+    lock, path, current = start_record(data['run_id'])
+    current['state'] = 'finished'
+    write_start_record(path, current)
+    lock.close()
+    subprocess.run(['sudo', '-n', 'systemctl', 'stop', unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
 
 
 def status(pid, started):
     # Read liveness before the result: the check writes check.json before it exits, so a check that
     # finishes between the two reads is still running on the first and finished on the second.
     alive = process_started(pid) == started
-    if os.path.exists(RESULT):
-        with open(RESULT) as result:
+    owned = managed_run(pid, started)
+    if owned and not managed_run_finished(owned):
+        print(json.dumps({'state': 'running'}))
+        return
+    result_path = managed_result_path(owned['run_id']) if owned else RESULT
+    log_path = managed_log_path(owned['run_id']) if owned else LOG
+    if os.path.exists(result_path):
+        with open(result_path) as result:
             data = json.load(result)
-            print(json.dumps({'state': 'finished', 'result': data, 'output': data.get('failure_output', output_tail(data.get('setup_output_start') or 0))}))
+        if owned and not data.get('managed_terminal_snapshot'):
+            # A descendant may outlive the result writer. Its final tree was not checked.
+            checkout = data.get('checkout')
+            if not isinstance(checkout, str):
+                raise RuntimeError('The managed check result has no checkout identity')
+            head_after = git(checkout, 'rev-parse', 'HEAD')
+            tree_after = working_tree(checkout)
+            if head_after != data['head_after'] or tree_after != data['tree_after']:
+                data.update({'exit_code': 1, 'failed_step': CHECK_ERROR, 'head_after': head_after,
+                             'tree_after': tree_after, 'changed_paths': changed_paths(checkout, data['tree_before'], tree_after),
+                             'failure_output': 'The workspace changed after the check result was written.'})
+            data['managed_terminal_snapshot'] = True
+            write_check_result(data, result_path)
+        print(json.dumps({'state': 'finished', 'result': data, 'output': data.get('failure_output', output_tail(data.get('setup_output_start') or 0, log_path))}))
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:
-        print(json.dumps({'state': 'lost', 'output': output_tail()}))
+        print(json.dumps({'state': 'lost', 'output': output_tail(path=log_path)}))
 
 
 def cancel(pid, started):
+    owned = managed_run(pid, started)
+    if owned and not managed_run_finished(owned):
+        subprocess.run(['sudo', '-n', 'systemctl', 'kill', '--signal=TERM', 'orbit-task-check-' + owned['run_id'] + '.service'], check=True)
+        print(json.dumps({'cancelled': True}))
+        return
     if process_started(pid) != started:
         remove_recorded_check_tmpdir()
         print(json.dumps({'cancelled': False}))
@@ -829,8 +1040,12 @@ def snapshot(checkout):
 
 def main(arguments):
     command = arguments[0] if arguments else ''
-    if command == 'start' and len(arguments) in (2, 3, 4, 5):
+    if command == 'start' and len(arguments) in (2, 3, 4, 5, 6):
         start(*arguments[1:])
+    elif command == 'recover-start' and len(arguments) == 2:
+        recover_start(arguments[1])
+    elif command == 'run-owned' and len(arguments) == 8:
+        run_owned(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])
     elif command == 'status' and len(arguments) == 3:

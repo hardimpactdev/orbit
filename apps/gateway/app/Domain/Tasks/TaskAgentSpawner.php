@@ -163,7 +163,10 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
         try {
             $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($this->reviewPacket($task, true, $thread->id)));
-        } catch (AgentDriverException) {
+        } catch (AgentDriverException $exception) {
+            if (! $exception->turnRejected) {
+                throw $exception;
+            }
             // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
             $replacement = $this->openReviewer($task);
             if ($replacement === null) {
@@ -262,6 +265,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function prepareReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
+        app(TaskWorkspaceLease::class)->withThreadLock($thread, fn () => $this->prepareAdmittedReceipt($thread, $mode));
+    }
+
+    private function prepareAdmittedReceipt(AgentThread $thread, ?TaskTurnMode $mode): void
+    {
         $leaseGroup = Task::topLevel()->findOrFail($thread->task_group_id);
         app(TaskWorkspaceLease::class)->turn($leaseGroup, TaskThreadRole::from($thread->role), 'thread:'.$thread->id, $thread->id);
         $group = Task::topLevel()->with(['taskable', 'project'])->find($thread->task_group_id);
@@ -302,6 +310,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     }
 
     private function startPending(AgentThread $thread, string $title, string $prompt, ?string $key = null): ?int
+    {
+        return app(TaskWorkspaceLease::class)->withThreadLock($thread, fn (): ?int => $this->startAdmittedPending($thread, $title, $prompt, $key));
+    }
+
+    private function startAdmittedPending(AgentThread $thread, string $title, string $prompt, ?string $key): ?int
     {
         $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);

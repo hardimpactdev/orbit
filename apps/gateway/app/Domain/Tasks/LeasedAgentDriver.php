@@ -44,33 +44,37 @@ final readonly class LeasedAgentDriver implements AgentDriver
     public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
         $leases = app(TaskWorkspaceLease::class);
-        $leases->withThreadLock($thread, function () use ($leases, $thread, $message, $key): void {
+        $group = Task::topLevel()->findOrFail($thread->task_group_id);
+        app(TaskExecutionLock::class)->synchronized($group->id, function () use ($leases, $thread, $message, $key): void {
+            $leases->reconcile(Task::topLevel()->findOrFail($thread->task_group_id));
             if ($leases->completedSend($thread, $key, $message)) {
                 return;
             }
-            $continuation = $leases->inputContinuation($thread);
-            $retry = ! $continuation && $leases->retrying($thread, $key, $message);
-            if (! $retry && ! $continuation) {
-                $this->admit($thread);
-                $previous = null;
+            $leases->withThreadLock($thread, function () use ($leases, $thread, $message, $key): void {
+                $continuation = $leases->inputContinuation($thread);
+                $retry = ! $continuation && $leases->retrying($thread, $key, $message);
+                if (! $retry && ! $continuation) {
+                    $this->admit($thread);
+                    $previous = null;
+                    try {
+                        $previous = $this->driver->observe($thread);
+                    } catch (AgentDriverException) {
+                        // An unreadable prior turn does not weaken the completion fence.
+                    }
+                    $key = $leases->dispatch($thread, $previous, $key, $message);
+                } else {
+                    $key = $leases->admittedSendKey($thread, $key, $message, $continuation);
+                }
                 try {
-                    $previous = $this->driver->observe($thread);
-                } catch (AgentDriverException) {
-                    // An unreadable prior turn does not weaken the completion fence.
+                    $this->driver->send($thread, $message, $key);
+                } catch (AgentDriverException $exception) {
+                    if ($exception->turnRejected && ! $retry && ! $continuation) {
+                        $leases->rejectedDispatch($thread);
+                    }
+                    throw $exception;
                 }
-                $key = $leases->dispatch($thread, $previous, $key, $message);
-            } else {
-                $key = $leases->admittedSendKey($thread, $key, $message, $continuation);
-            }
-            try {
-                $this->driver->send($thread, $message, $key);
-            } catch (AgentDriverException $exception) {
-                if ($exception->turnRejected && ! $retry && ! $continuation) {
-                    $leases->rejectedDispatch($thread);
-                }
-                throw $exception;
-            }
-        });
+            });
+        }, wait: false);
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void

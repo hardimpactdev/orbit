@@ -91,11 +91,16 @@ function workspace_route_claim(array $routeResults): array
         /** @param ArrayObject<int, string> $events */
         public function __construct(private FakeTaskCheckRunner $inner, private ArrayObject $events) {}
 
-        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
         {
             $this->events->append('baseline-start');
 
             return $this->inner->start($instance, $command, $setup, $deliverables);
+        }
+
+        public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+        {
+            return null;
         }
 
         public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -145,6 +150,13 @@ function workspace_route_claim(array $routeResults): array
     {
         /** @param ArrayObject<int, string> $events */
         public function __construct(private ArrayObject $events) {}
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {

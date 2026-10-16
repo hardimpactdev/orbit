@@ -184,6 +184,13 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         /** @var list<int> */
         public array $implementers = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;
@@ -1056,6 +1063,13 @@ it('starts the reviewer with the first review request when the group has no revi
     {
         /** @var list<int> */
         public array $reviewers = [];
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {

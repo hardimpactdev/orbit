@@ -15,5 +15,5 @@ interface TaskExecutionLock
      * @param  Closure(): T  $operation
      * @return T
      */
-    public function synchronized(int $groupId, Closure $operation): mixed;
+    public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed;
 }

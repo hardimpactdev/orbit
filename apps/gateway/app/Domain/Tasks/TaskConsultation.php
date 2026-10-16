@@ -105,7 +105,7 @@ final readonly class TaskConsultation
 
             return app(TaskWorkspaceLease::class)->withReceipt($group, $task->id, $actingThreadId,
                 fn (): ?TaskTurnReceipt => $this->collectAdmittedReceipt($group, $task, $role, $instance, $actingThreadId));
-        });
+        }, wait: false);
     }
 
     private function collectAdmittedReceipt(Task $group, Task $task, TaskThreadRole $role, Instance $instance, ?int $actingThreadId): ?TaskTurnReceipt
@@ -344,15 +344,19 @@ final readonly class TaskConsultation
         try {
             $reserved = $this->spawner->reserveReviewer($task);
             $thread = AgentThread::query()->findOrFail($reserved);
-            if (! app(TaskWorkspaceLease::class)->retrying($thread, $this->consultSendKey($receipt))) {
-                app(TaskWorkspaceLease::class)->turn($group, TaskThreadRole::Reviewer, 'thread:'.$reserved, $reserved);
-                $this->turnFetcher->beforeTurn($group);
-                $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true), $this->reviewPackets->reviewContext($task));
-            }
-            $threadId = $this->spawner->consult($task, trim($receipt->body)."\n\n".TaskTurnInstructions::consult($reserved), $this->consultSendKey($receipt));
-            if ($threadId === null) {
-                throw new AgentDriverException('The reviewer conversation could not be started.');
-            }
+            $threadId = app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $task, $instance, $reserved, $thread, $receipt): int {
+                if (! app(TaskWorkspaceLease::class)->retrying($thread, $this->consultSendKey($receipt))) {
+                    app(TaskWorkspaceLease::class)->turn($group, TaskThreadRole::Reviewer, 'thread:'.$reserved, $reserved);
+                    $this->turnFetcher->beforeTurn($group);
+                    $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true), $this->reviewPackets->reviewContext($task));
+                }
+                $threadId = $this->spawner->consult($task, trim($receipt->body)."\n\n".TaskTurnInstructions::consult($reserved), $this->consultSendKey($receipt));
+                if ($threadId === null) {
+                    throw new AgentDriverException('The reviewer conversation could not be started.');
+                }
+
+                return $threadId;
+            });
         } catch (TaskWorkspaceWaiting) {
             return;
         } catch (Throwable $exception) {
@@ -613,13 +617,18 @@ final readonly class TaskConsultation
 
         try {
             $reserved = $this->spawner->reserveReviewer($task);
-            app(TaskWorkspaceLease::class)->turn($group, TaskThreadRole::Reviewer, 'thread:'.$reserved, $reserved);
-            $this->turnFetcher->beforeTurn($group);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
-            $threadId = $this->spawner->relay($task, trim($resolution->body)."\n\n".TaskTurnInstructions::relay($reserved));
-            if ($threadId === null) {
-                throw new AgentDriverException('The reviewer conversation could not be started.');
-            }
+            $thread = AgentThread::query()->findOrFail($reserved);
+            $threadId = app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $task, $instance, $reserved, $resolution): int {
+                app(TaskWorkspaceLease::class)->turn($group, TaskThreadRole::Reviewer, 'thread:'.$reserved, $reserved);
+                $this->turnFetcher->beforeTurn($group);
+                $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
+                $threadId = $this->spawner->relay($task, trim($resolution->body)."\n\n".TaskTurnInstructions::relay($reserved));
+                if ($threadId === null) {
+                    throw new AgentDriverException('The reviewer conversation could not be started.');
+                }
+
+                return $threadId;
+            });
         } catch (TaskWorkspaceWaiting) {
             return;
         } catch (Throwable $exception) {
@@ -924,10 +933,12 @@ final readonly class TaskConsultation
             return true;
         }
         $thread = AgentThread::query()->findOrFail($acting->threadId);
-        if (! app(TaskWorkspaceLease::class)->retrying($thread, $retry['key'])) {
-            app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
-            $this->turnFetcher->beforeTurn($group);
-        }
+        app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $acting, $thread, $retry): void {
+            if (! app(TaskWorkspaceLease::class)->retrying($thread, $retry['key'])) {
+                app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
+                $this->turnFetcher->beforeTurn($group);
+            }
+        });
         try {
             $this->actor->resumeInterruptedTurn($group, $acting,
                 'Your previous turn failed because of a transient provider error. Continue the same assignment from the existing workspace. Check git status and git diff before continuing, and hand off with the turn command.',
@@ -990,10 +1001,12 @@ final readonly class TaskConsultation
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
     {
         $thread = AgentThread::query()->findOrFail($acting->threadId);
-        if (! app(TaskWorkspaceLease::class)->retrying($thread, $key)) {
-            app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
-            $this->turnFetcher->beforeTurn($group);
-        }
+        app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $acting, $thread, $key): void {
+            if (! app(TaskWorkspaceLease::class)->retrying($thread, $key)) {
+                app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
+                $this->turnFetcher->beforeTurn($group);
+            }
+        });
         try {
             $this->actor->resumeInterruptedTurn($group, $acting, TaskScheduler::PiServerRestartContinue, $key);
         } catch (AgentDriverException $exception) {

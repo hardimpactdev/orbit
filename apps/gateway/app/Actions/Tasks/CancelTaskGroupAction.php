@@ -32,7 +32,7 @@ final readonly class CancelTaskGroupAction
 
     public function execute(Task $group): Task
     {
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group));
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group), wait: false);
     }
 
     private function cancel(Task $group): Task
@@ -156,7 +156,7 @@ final readonly class CancelTaskGroupAction
     private function removeWorkspace(Task $group, Instance $instance): void
     {
         try {
-            $this->workspace->remove($instance);
+            $this->workspace->remove($instance, $group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

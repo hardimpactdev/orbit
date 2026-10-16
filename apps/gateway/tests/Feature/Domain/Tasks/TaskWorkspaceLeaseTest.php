@@ -171,7 +171,7 @@ it('queues baseline admission without creating an unstarted claim and starts onc
     expect($task->checks()->count())->toBe(0)->and($checks->starts)->toBe(0);
     $leases->release($holder);
     $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task);
-    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task);
+    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
     expect($task->checks()->count())->toBe(1)->and($checks->starts)->toBe(1)->and($task->fresh()->communication_failures)->toBe(0);
 });
 

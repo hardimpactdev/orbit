@@ -121,6 +121,13 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
             return test_agent_thread($task->parent, 'revalidation-implementer-'.$task->id, $task)->id;
         }
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task, 'revalidation-reviewer')->id;

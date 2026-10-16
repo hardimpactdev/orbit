@@ -33,7 +33,7 @@ it('keeps cancellation under the execution lock and retains running ownership un
         /** @var list<int> */
         public array $held = [];
 
-        public function synchronized(int $groupId, Closure $operation): mixed
+        public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
         {
             $this->held[] = $groupId;
             try {

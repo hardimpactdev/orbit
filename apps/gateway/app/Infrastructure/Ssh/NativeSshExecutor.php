@@ -7,6 +7,7 @@ namespace App\Infrastructure\Ssh;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 
 final readonly class NativeSshExecutor implements SshExecutor
 {
@@ -26,7 +27,7 @@ final readonly class NativeSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        return $this->runner->run(new ProcessInvocation(
+        return app(RemoteWorkspaceOperationJournal::class)->execute($connection, $command, fn (RemoteCommand $command): CommandResult => $this->runner->run(new ProcessInvocation(
             arguments: [
                 'ssh',
                 ...$this->options($connection),
@@ -43,7 +44,7 @@ final readonly class NativeSshExecutor implements SshExecutor
             output: $command->output,
             cancelled: $command->cancelled,
             terminateGraceSeconds: $command->terminateGraceSeconds,
-        ));
+        )));
     }
 
     /** @return list<string> */

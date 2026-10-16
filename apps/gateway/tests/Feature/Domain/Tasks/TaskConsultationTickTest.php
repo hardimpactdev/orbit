@@ -1044,6 +1044,13 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     {
         public int $spawns = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->spawns++;

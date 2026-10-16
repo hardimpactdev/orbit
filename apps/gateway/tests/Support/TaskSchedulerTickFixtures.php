@@ -572,6 +572,13 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
 
         public function __construct(private bool $fetchFails, private bool $fastForwardFails = false) {}
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;

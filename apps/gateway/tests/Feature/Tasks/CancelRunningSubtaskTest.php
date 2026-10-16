@@ -116,6 +116,13 @@ function cancel_subtask_in_baseline(int $suffix): array
     {
         public int $implementers = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;

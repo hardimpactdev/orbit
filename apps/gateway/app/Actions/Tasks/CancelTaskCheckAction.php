@@ -32,7 +32,7 @@ final readonly class CancelTaskCheckAction
     {
         $this->requireExtension->execute();
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task));
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task), wait: false);
     }
 
     private function cancelWithLock(Task $group, Task $task): TaskCheck
