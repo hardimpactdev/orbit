@@ -74,8 +74,6 @@
                 "ssr_port": 13714,
                 "seed_path": null,
                 "seed_commit": null,
-                "annotator_port": null,
-                "annotator_url": null,
                 "routes": [
                     {
                         "id": 1,

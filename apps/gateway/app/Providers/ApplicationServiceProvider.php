@@ -26,7 +26,6 @@ use App\Domain\Analytics\AnalyticsStatsDriver;
 use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
-use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -155,7 +154,6 @@ use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -207,7 +205,6 @@ use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
-use App\Infrastructure\AppDev\RemoteAgentationSiteProjection;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
@@ -421,7 +418,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceTransferSource::class => RemoteInstanceTransferSource::class,
         InstanceTransferRuntime::class => NativeInstanceTransferRuntime::class,
         InstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
-        AgentationSiteProjection::class => RemoteAgentationSiteProjection::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         NodeCaddyBuilds::class => NodeCaddyBuilder::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
@@ -507,7 +503,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
-        ProcessEnvironmentProjection::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,
         AgentViewConverger::class => NativeAgentViewConverger::class,
@@ -661,9 +656,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             InstanceRuntimeReadiness::class,
             static fn ($app): RemoteInstanceRuntimeReadiness => new RemoteInstanceRuntimeReadiness(
                 runtime: $app->make(ProcessRuntimeManager::class),
-                ssh: $app->make(SshExecutor::class),
-                keys: $app->make(SshKeyProvider::class),
-                knownHosts: $app->make(KnownHostsStore::class),
                 timeoutSeconds: Config::integer('orbit.hibernation.wake_timeout_seconds'),
                 agents: $app->make(AgentProcessView::class),
             ),

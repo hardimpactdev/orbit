@@ -15,7 +15,6 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewBase;
@@ -52,7 +51,7 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Revalidate before start', 'brief' => 'Check the actual base.',
-        'status' => TaskGroupStatus::Running, 'execution_mode' => TaskExecutionMode::Managed,
+        'status' => TaskGroupStatus::Running,
     ]);
     $repository = new class implements DeliverablePathRepository
     {

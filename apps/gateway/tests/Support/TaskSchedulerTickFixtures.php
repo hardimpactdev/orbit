@@ -16,7 +16,6 @@ use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -1074,7 +1073,6 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
         'title' => $slug,
         'brief' => 'Baseline setup only.',
         'status' => TaskGroupStatus::Running,
-        'execution_mode' => TaskExecutionMode::Managed,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

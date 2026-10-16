@@ -2,53 +2,36 @@
 
 declare(strict_types=1);
 
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use Tests\Support\AppDevFakeSshExecutor;
-use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('waits for observed running status without probing a fallback Vite port', function (): void {
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    $runtime->statusOverride = 'running';
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, '', '', 1, false)]);
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    $runtime->shouldReceive('status')->once()->andReturn('running');
     $readiness = new RemoteInstanceRuntimeReadiness(
         runtime: $runtime,
-        ssh: $ssh,
-        keys: new HibernationReadinessKeyProvider,
-        knownHosts: new HibernationReadinessKnownHostsStore,
         timeoutSeconds: 5,
     );
     $instance = readiness_instance();
     $process = readiness_process($instance, 'vite');
 
     $readiness->waitUntilReady($instance, [$process]);
-
-    expect($ssh->commands)->toBe([]);
 });
 
 it('does not probe the Vite port for a queue Process', function (): void {
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    $runtime->statusOverride = 'active';
-    $ssh = new AppDevFakeSshExecutor;
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    $runtime->shouldReceive('status')->once()->andReturn('active');
     $readiness = new RemoteInstanceRuntimeReadiness(
         runtime: $runtime,
-        ssh: $ssh,
-        keys: new HibernationReadinessKeyProvider,
-        knownHosts: new HibernationReadinessKnownHostsStore,
         timeoutSeconds: 5,
     );
     $instance = readiness_instance();
     $process = readiness_process($instance, 'queue');
 
     $readiness->waitUntilReady($instance, [$process]);
-
-    expect($ssh->commands)->toBe([]);
 });
 
 function readiness_instance(): Instance
@@ -82,27 +65,4 @@ function readiness_process(Instance $instance, string $name): Process
     $process->setRelation('owner', $instance);
 
     return $process;
-}
-
-final class HibernationReadinessKeyProvider implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/orbit/ssh/id_ed25519';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 test';
-    }
-}
-
-final class HibernationReadinessKnownHostsStore implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/orbit/ssh/known_hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
 }

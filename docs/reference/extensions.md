@@ -97,14 +97,14 @@ The Node footprint applies core's artifacts first, then each contributed `NodeFo
 
 Private DNS publishes each record that a `ContributedPrivateDnsRecords` returns as a `host-record`. A contribution decides its records from stored state, as core does. Core checks each record before it writes the dnsmasq configuration:
 
-- The hostname must be one that an extension reserves, so no core record or Route can answer for it.
+- The hostname must be one that an extension reserves. It cannot take a core name, and new Routes cannot take the reserved name.
 - Only one contribution may publish a hostname.
 - The hostname must not be a Cluster TLD that the publication answers for, or a name under one.
 - The address must be an IPv4 host address in the VPN subnet.
 
 A record that breaks a rule makes publication throw a `LogicException` before it changes the `vpn` Node. So no contribution can add a dnsmasq directive. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contributed record source and the classes it uses. ProxyCli contributes the `collector.cli-proxy-api.orbit` record this way.
 
-The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. No Route and no analytics tracking host can use one. A contributed name must be a lowercase DNS name under `.orbit`, with no comma or whitespace, that core and the other contributions do not reserve. Any other name makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
+The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. A contributed name must be a lowercase DNS name under `.orbit`, with no comma or whitespace, that core and the other contributions do not reserve. Any other name makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
 
 `GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
 

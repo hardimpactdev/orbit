@@ -20,7 +20,6 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -294,13 +293,6 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
     $fetcher = turn_fetch_fetcher(fail: true);
     app()->instance(TaskBaseBranchFetcher::class, $fetcher);
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
-    {
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            return ['thread' => ['session' => ['status' => 'idle']]];
-        }
-    });
     Http::fake(function (Request $request) use ($fetcher) {
         if (str_ends_with($request->url(), '/messages')) {
             $fetcher->order[] = 'turn';

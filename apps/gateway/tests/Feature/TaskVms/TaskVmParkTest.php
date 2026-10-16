@@ -16,7 +16,6 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestHealth;
@@ -76,7 +75,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
 {
     $task = Task::topLevel()->create([
         'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
-        'execution_mode' => TaskExecutionMode::Managed, 'pr_url' => 'https://github.com/acme/dlf/pull/7',
+        'pr_url' => 'https://github.com/acme/dlf/pull/7',
         'settled_at' => now()->subMinutes($minutesAgo + 10), ...$group,
     ]);
     Task::query()->create([

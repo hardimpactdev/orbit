@@ -12,7 +12,6 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionHold;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
@@ -112,7 +111,7 @@ final readonly class RetryTaskBaselineAction
     /** A failed baseline is retryable only while the entire group remains untouched and its watched PR has not ended. */
     private function failedBaseline(Task $group, Task $task): ?TaskCheck
     {
-        if ($group->execution_mode !== TaskExecutionMode::Managed || $group->status !== TaskGroupStatus::Running
+        if ($group->status !== TaskGroupStatus::Running
             || TaskExecutionHold::active($group)
             || $task->status !== TaskStatus::Running || ! $task->assistance_requested
             || $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction) {

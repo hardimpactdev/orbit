@@ -106,7 +106,7 @@ final readonly class TaskScheduler
             return [];
         }
 
-        $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+        $groups = Task::topLevel()
             ->with(['project', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])
             ->orderBy('id')

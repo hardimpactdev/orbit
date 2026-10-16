@@ -7,7 +7,6 @@ namespace App\Actions\TaskVms;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -77,7 +76,7 @@ final readonly class ParkIdleTaskVmsAction
      */
     private static function idle(Builder $groups): Builder
     {
-        return $groups->where('execution_mode', TaskExecutionMode::Managed)
+        return $groups
             ->where('status', TaskGroupStatus::WaitingForReview)
             ->whereNotNull('pr_url')->where('pr_url', '!=', '')
             ->whereNull('watched_pr_completion')

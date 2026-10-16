@@ -11,9 +11,6 @@ final readonly class ProcessPresets
     {
         return [
             VpDevPreset::NAME,
-            AnnotatorPreset::NAME,
-            AgentationMcpPreset::NAME,
-            AntigravityWatchPreset::NAME,
         ];
     }
 
@@ -27,20 +24,7 @@ final readonly class ProcessPresets
     {
         return match ($preset) {
             VpDevPreset::NAME => VpDevPreset::command(),
-            AnnotatorPreset::NAME => AnnotatorPreset::command(),
-            AgentationMcpPreset::NAME => AgentationMcpPreset::command(),
-            AntigravityWatchPreset::NAME => AntigravityWatchPreset::command(),
             default => throw new \InvalidArgumentException('Unsupported Process preset.'),
         };
-    }
-
-    public static function restartPolicy(string $preset): string
-    {
-        return $preset === AntigravityWatchPreset::NAME ? 'always' : 'on-failure';
-    }
-
-    public static function refusesKeepAlive(string $preset): bool
-    {
-        return in_array($preset, [AgentationMcpPreset::NAME, AntigravityWatchPreset::NAME, AnnotatorPreset::NAME], true);
     }
 }

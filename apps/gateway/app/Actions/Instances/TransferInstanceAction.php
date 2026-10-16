@@ -6,7 +6,6 @@ namespace App\Actions\Instances;
 
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Data\Instances\TransferInstanceData;
-use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\SsrPortAllocator;
@@ -799,24 +798,14 @@ final readonly class TransferInstanceAction
             $this->assertTransferableWebRootRoutes($webRootRoutes, $lockedInstance->id, $placement->clusterId);
             $lockedTransfer->update(['source_router_node_id' => $this->sourceRouterId($sourceRoute)]);
 
-            $annotationPorts = app(AgentationPortAllocator::class);
-            $annotationPorts->retain($lockedInstance, 'annotator_port');
-            $annotationPorts->retain($lockedInstance, 'agentation_port');
-            $annotatorPort = $lockedInstance->annotator_port === null ? null : $annotationPorts->nextAvailable($destination->id, $lockedInstance->id, 'annotator_port');
-            $agentationPort = $lockedInstance->agentation_port === null ? null : $annotationPorts->nextAvailable($destination->id, $lockedInstance->id, reserved: $annotatorPort === null ? [] : [$annotatorPort]);
-
             $lockedInstance->update([
                 'node_id' => $destination->id,
                 'vite_port' => StoredInteger::fromOrZero(DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port')),
                 'ssr_port' => $this->destinationSsrPort($instance, $destination),
-                'annotator_port' => $annotatorPort,
-                'agentation_port' => $agentationPort,
                 'name' => $lockedTransfer->destination_name,
                 'checkout_path' => $lockedTransfer->destination_path,
                 'source_layout' => InstanceSourceLayout::Checkout,
             ]);
-            $annotationPorts->retain($lockedInstance, 'annotator_port');
-            $annotationPorts->retain($lockedInstance, 'agentation_port');
 
             if ($destinationRoute->id === $sourceRoute->id) {
                 $destinationRoute->update([
@@ -898,9 +887,6 @@ final readonly class TransferInstanceAction
         DB::transaction(fn (): array => $this->lockCleanupRoutes($instance, $transfer));
         $sourceNode = Node::query()->findOrFail($transfer->source_node_id);
         $this->transferProjection->retireSource($transfer);
-        $annotationPorts = app(AgentationPortAllocator::class);
-        $annotationPorts->releaseOnNode($instance, $sourceNode->id, 'annotator_port');
-        $annotationPorts->releaseOnNode($instance, $sourceNode->id, 'agentation_port');
         $this->runtime->cleanupSourceArtifacts($instance, $sourceNode, $transfer->source_path);
         $cleanup = $this->sources->cleanupSource($transfer);
 

@@ -10,7 +10,6 @@ use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -53,7 +52,6 @@ it('starts one baseline check and asks for no assistance when the todo move and 
         'title' => 'Baseline start race',
         'brief' => 'One baseline check wins the start.',
         'status' => TaskGroupStatus::Running,
-        'execution_mode' => TaskExecutionMode::Managed,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -230,7 +228,6 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
         'title' => $slug,
         'brief' => 'Baseline claim.',
         'status' => TaskGroupStatus::Running,
-        'execution_mode' => TaskExecutionMode::Managed,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

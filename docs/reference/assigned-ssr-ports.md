@@ -17,7 +17,7 @@ Orbit assigns `ssr_port` when it creates or registers a development Instance. Pr
 When this Instance already has a recorded port on the Node, Orbit keeps it. Otherwise the search starts at `13714` and moves up to `65535`. It skips:
 
 - SSR ports that other Instances on the Node hold,
-- [Vite ports](/reference/assigned-vite-ports), annotator ports, and Agentation ports assigned on the Node,
+- [Vite ports](/reference/assigned-vite-ports) assigned on the Node,
 - ports that any TCP socket on the Node uses, over IPv4 or IPv6, except in `TIME_WAIT`,
 - the common service ports that the Vite search also skips.
 

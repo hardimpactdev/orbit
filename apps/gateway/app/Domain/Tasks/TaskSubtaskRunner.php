@@ -456,7 +456,6 @@ final readonly class TaskSubtaskRunner
     public function startTask(TaskScheduler $scheduler, Task $task): Task
     {
         $task->load('parent');
-        $task->parent->requireManagedExecution();
         if (TaskExecutionHold::active($task->parent) || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
             return $task->parent->fresh(['tasks', 'project', 'taskable']) ?? $task->parent;
         }
@@ -489,7 +488,7 @@ final readonly class TaskSubtaskRunner
     {
         return DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
             $tasks = $this->lockedTasks($group);

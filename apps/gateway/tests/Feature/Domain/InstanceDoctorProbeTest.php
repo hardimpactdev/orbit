@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Doctor\InstanceDoctorProbe;
-use App\Data\Annotations\AnnotationInput;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorInspectionScope;
@@ -487,20 +485,6 @@ it('keeps an ordinary Instance on the active lifecycle when the Project is unrou
         ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
         ->and($report->issues[0]->expected)->toBe('active')
         ->and($instance->fresh()->task_workspace_routed)->toBeNull();
-});
-
-it('keeps an annotated active Orbit Instance healthy after the annotation resolves', function (): void {
-    $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_orbit_app(), $node);
-    $store = app(AnnotationStoreAction::class);
-    $annotation = $store->create($instance, new AnnotationInput(['id' => 'doctor-annotation', 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
-    $store->transition($annotation, 'in_progress', null);
-    $store->transition($annotation, 'resolved', 'Done');
-
-    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
-
-    expect($instance->tasks()->count())->toBe(1)
-        ->and($report->issues)->toBe([]);
 });
 
 it('continues after a typed instance inspection failure', function (): void {

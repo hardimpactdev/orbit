@@ -44,7 +44,7 @@ final readonly class TaskClaimAdmission
     {
         // Failed rows from an earlier tick still need assistance, but never another reservation.
         foreach (TaskVm::query()->where('state', TaskVmState::Failed)
-            ->whereHas('group', static fn ($group) => $group->where('execution_mode', TaskExecutionMode::Managed)
+            ->whereHas('group', static fn ($group) => $group
                 ->where('status', TaskGroupStatus::Todo)->where('assistance_requested', false))->get() as $vm) {
             $this->failedVms->requestAssistance($vm, new TaskVmFailedException($vm)->getMessage());
         }
@@ -54,7 +54,7 @@ final readonly class TaskClaimAdmission
         }
         while (true) {
             $reserved = DB::transaction(function () use ($skipped): ?Task {
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()
                     ->where('status', TaskGroupStatus::Todo)
                     ->whereNotIn('id', TaskVm::query()->where('state', TaskVmState::Failed)->select('group_id')->whereNotNull('group_id'))
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
@@ -141,7 +141,7 @@ final readonly class TaskClaimAdmission
     /** @param list<int> $skipped */
     private function resumeWaitingSandbox(TaskScheduler $scheduler, array &$skipped): ?Task
     {
-        $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+        $groups = Task::topLevel()
             ->where('status', TaskGroupStatus::WaitingForReview)
             ->whereNull('watched_pr_completion')
             ->whereHas('tasks', fn ($tasks) => $tasks->where('status', TaskStatus::Todo))
@@ -173,7 +173,7 @@ final readonly class TaskClaimAdmission
      */
     private function startReserved(TaskScheduler $scheduler, Task $reserved, Instance $instance): ?Task
     {
-        $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+        $group = Task::topLevel()
             ->with(['tasks', 'project', 'taskable'])
             ->lockForUpdate()
             ->findOrFail($reserved->id);
@@ -378,7 +378,7 @@ final readonly class TaskClaimAdmission
     public function releaseStaleReservations(): int
     {
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-        $stale = static fn ($query) => $query->where('execution_mode', TaskExecutionMode::Managed)
+        $stale = static fn ($query) => $query
             ->where('status', TaskGroupStatus::Reserved)
             ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
         $released = 0;

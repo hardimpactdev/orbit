@@ -61,7 +61,6 @@ it('refuses a top-level column on a subtask', function (string $column, mixed $v
 })->with([
     'project' => ['project_id', 1],
     'pull request' => ['pr_url', 'https://example.test/pull/1'],
-    'execution' => ['execution_mode', 'managed'],
 ]);
 
 it('refuses a subtask that would have children', function (): void {
@@ -94,7 +93,6 @@ it('refuses a subtask that would have children', function (): void {
         'implementer_model' => null,
         'reviewer_model' => null,
         'reviewer_agent_thread_id' => null,
-        'execution_mode' => null,
         'implementer_agent_driver' => null,
         'reviewer_agent_driver' => null,
         'agent_unavailable_since' => null,
