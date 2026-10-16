@@ -26,6 +26,7 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -109,10 +110,10 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
 
         if ($existing instanceof Instance) {
             // Only the group's own workspace carries its task branch. Another Instance with the name is never adopted.
-            if ($existing->branch_override !== $name) {
+            if ($existing->branch_override !== $name || ! TaskWorkspaceOwnership::owns($group, $existing)) {
                 throw new ResourceOperationException(
                     'instance.name_taken',
-                    "Instance [{$name}] exists without the task branch and is not this group's workspace.",
+                    "Instance [{$name}] exists without proven task ownership and is not this group's workspace.",
                     409,
                 );
             }
@@ -148,6 +149,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
                 'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,
                 'task_workspace_routed' => $visitable,
+                'task_workspace_owner_id' => $group->id,
                 'status' => InstanceState::Reserved,
             ]);
         }
@@ -351,8 +353,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
     {
         $name = TaskWorkspaceName::for($group);
 
-        return Instance::query()
-            ->where('project_id', $group->project_id)
+        return TaskWorkspaceOwnership::forGroup($group)
             ->where('name', $name)
             ->where('branch_override', $name)
             ->first();

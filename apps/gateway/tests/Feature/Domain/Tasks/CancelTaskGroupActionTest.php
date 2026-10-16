@@ -329,6 +329,7 @@ function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceSt
         'name' => $name,
         'branch_override' => $name,
         'checkout_path' => "/srv/orbit/apps/cancel-app/{$name}",
+        'task_workspace_owner_id' => $group->id,
         'status' => $instanceStatus,
     ]);
 

@@ -914,7 +914,7 @@ describe(DestroyTaskVm::class, function (): void {
         app()->instance(ProjectLifecycleRunner::class, $runner);
         Queue::fake();
 
-        $removal->remove($instance);
+        $removal->remove($instance, $group);
 
         expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
             ->and($this->provider->calls)->toBe(['destroy'])
@@ -955,7 +955,7 @@ describe(DestroyTaskVm::class, function (): void {
         $pending = $thread('example', TaskAgentSpawner::PendingPrefix.'not-started');
         Queue::fake();
 
-        $removal->remove($instance);
+        $removal->remove($instance, $group);
 
         expect($readable->providerCalls)->toBe([[]])
             ->and($this->provider->calls)->toBe(['destroy'])
@@ -971,7 +971,7 @@ describe(DestroyTaskVm::class, function (): void {
         $this->provider->onDestroy = static fn () => throw new TaskVmException('task_vm.delete_failed', 'The VM could not be deleted.', 502);
         Queue::fake();
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance))->toThrow(TaskVmException::class);
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))->toThrow(TaskVmException::class);
 
         expect(Instance::query()->find($instance->id))->not->toBeNull()
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying)
@@ -1128,7 +1128,7 @@ function tvm_life_provision(Closure $provision): void
 function tvm_life_workspace(Task $group, Node $node): Instance
 {
     return Instance::query()->create([
-        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'task_workspace_owner_id' => $group->id, 'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
         'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public', 'branch' => 'task-'.$group->id,
         'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);

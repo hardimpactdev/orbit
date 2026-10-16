@@ -72,7 +72,9 @@ final readonly class CancelTaskGroupAction
                     $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
                 }
             } else {
-                $locked->taskable()->dissociate();
+                if (! $attached instanceof Instance) {
+                    $locked->taskable()->dissociate();
+                }
                 $locked->assistance_requested = false;
             }
             $locked->status = TaskGroupStatus::Cancelled;
@@ -84,6 +86,8 @@ final readonly class CancelTaskGroupAction
         if ($attachedByClaim instanceof Instance) {
             try {
                 $this->removeWorkspace($group, $attachedByClaim);
+                Task::topLevel()->whereKey($group->id)->where('taskable_type', 'instance')
+                    ->where('taskable_id', $attachedByClaim->id)->update(['taskable_type' => null, 'taskable_id' => null]);
             } catch (Throwable $exception) {
                 $locked = Task::topLevel()->findOrFail($group->id);
                 $locked->taskable()->associate($attachedByClaim);
@@ -123,7 +127,7 @@ final readonly class CancelTaskGroupAction
     private function removeWorkspace(Task $group, Instance $instance): void
     {
         try {
-            $this->workspace->remove($instance);
+            $this->workspace->remove($instance, $group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

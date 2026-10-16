@@ -218,6 +218,7 @@ it('task workspace stamps source_prepare_id before preparing source', function (
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
     expect($reservation?->status)->toBe(InstanceState::Reserved);
+    expect($reservation?->task_workspace_owner_id)->toBe($group->id);
     expect($reservation?->source_prepare_id)->not->toBeNull()->toBeString();
     expect(Str::isUuid($reservation->source_prepare_id, version: 4))->toBeTrue();
     expect($instance?->fresh()?->source_prepare_id)->toBe($reservation->source_prepare_id);
@@ -383,6 +384,7 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
             'name' => TaskWorkspaceName::for($group),
             'checkout_path' => $checkout,
             'branch_override' => TaskWorkspaceName::for($group),
+            'task_workspace_owner_id' => $group->id,
             'source_layout' => InstanceSourceLayout::Worktree,
             'seed_repository' => $seed,
             'seed_commit' => $commit,
@@ -423,6 +425,7 @@ it('refuses a reserved worktree reclaim when source identity does not match', fu
         'name' => TaskWorkspaceName::for($group),
         'checkout_path' => '/srv/orbit/apps/foreign-reclaim/'.TaskWorkspaceName::for($group),
         'branch_override' => TaskWorkspaceName::for($group),
+        'task_workspace_owner_id' => $group->id,
         'source_layout' => InstanceSourceLayout::Worktree,
         'seed_repository' => '/srv/orbit/apps/foreign-reclaim/default',
         'seed_commit' => str_repeat('b', 40),

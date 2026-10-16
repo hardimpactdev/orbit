@@ -14,6 +14,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -22,14 +23,15 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
+use RuntimeException;
 use Throwable;
 
 /**
  * Finds and removes a task group's workspace, including one that a claim provisioned but never attached.
  *
  * A claim can provision the `task-{group id}` Instance and then fail, or stop, before it attaches it. The
- * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
- * when the group holds no Instance.
+ * workspace records its task owner before remote preparation. Cleanup requires that owner or an explicit
+ * Instance association, and refuses conflicting claims. Names and branches alone never authorize removal.
  *
  * A workspace on a task VM goes with its VM. A workspace whose VM is already gone uses the generic forced Instance
  * remover, which runs the Project's teardown steps, then deletes the checkout and only then the Instance row. A
@@ -49,19 +51,15 @@ final readonly class RemoveTaskWorkspaceAction
     /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
     public function find(Task $group): ?Instance
     {
-        $attached = $group->taskable;
-
-        if ($attached instanceof Instance) {
-            return $attached;
-        }
-
         $name = TaskWorkspaceName::for($group);
 
-        return Instance::query()
-            ->where('project_id', $group->project_id)
-            ->where('name', $name)
-            ->where('branch_override', $name)
-            ->first();
+        return TaskWorkspaceOwnership::forGroup($group)
+            ->where(function ($candidate) use ($group, $name): void {
+                $candidate->where('instances.id', $group->taskable_id)
+                    ->orWhere(function ($named) use ($name): void {
+                        $named->where('instances.name', $name)->where('instances.branch_override', $name);
+                    });
+            })->first();
     }
 
     /**
@@ -86,8 +84,12 @@ final readonly class RemoveTaskWorkspaceAction
     {
         $instance = $this->find($group);
 
+        if (! $instance instanceof Instance && $group->fresh()?->taskable instanceof Instance) {
+            throw new RuntimeException('Task workspace ownership is missing or ambiguous. The Instance was retained.');
+        }
+
         if ($instance instanceof Instance) {
-            $this->remove($instance);
+            $this->remove($instance, $group);
         }
 
         return $instance;
@@ -97,13 +99,19 @@ final readonly class RemoveTaskWorkspaceAction
      * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
      * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Instance $instance): void
+    public function remove(Instance $instance, Task $group): void
     {
+        if (! TaskWorkspaceOwnership::owns($group, $instance)) {
+            throw new RuntimeException('Task workspace ownership is missing or ambiguous. The Instance was retained.');
+        }
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
+            if ($vm->group_id !== $group->id) {
+                throw new RuntimeException('The Instance is on another task VM. The Instance was retained.');
+            }
             $this->removeWithTaskVm($instance, $vm);
 
             return;

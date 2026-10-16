@@ -36,6 +36,7 @@ function test_vm_group(Task $group): Task
  */
 function test_vm_workspace(Task $group, Instance $workspace): Instance
 {
+    $workspace->forceFill(['task_workspace_owner_id' => $group->id])->save();
     if (TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
         return $workspace;
     }

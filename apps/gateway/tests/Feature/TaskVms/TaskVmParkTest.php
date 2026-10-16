@@ -417,7 +417,7 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace))
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace, $group))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.parked'));
         expect(Instance::query()->whereKey($workspace->id)->exists())->toBeTrue();
         Queue::assertPushed(ResumeTaskVm::class);

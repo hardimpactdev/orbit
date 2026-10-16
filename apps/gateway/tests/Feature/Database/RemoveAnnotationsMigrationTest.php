@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\Tasks\TaskSettling;
+use App\Models\Instance;
+use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -134,4 +139,100 @@ it('rolls back earlier schema and data changes when a later schema operation fai
 
     removal_assert_untouched();
     expect(DB::table('task_comments')->count())->toBe(1);
+});
+
+function removal_workspace_candidates(): Collection
+{
+    $reflection = new ReflectionClass(TaskSettling::class);
+
+    return $reflection->getMethod('abandonedWorkspaces')->invoke($reflection->newInstanceWithoutConstructor());
+}
+
+function removal_workspace_allowed(int $groupId, int $instanceId): bool
+{
+    $reflection = new ReflectionClass(TaskSettling::class);
+
+    return $reflection->getMethod('shouldRemoveWorkspace')->invoke(
+        $reflection->newInstanceWithoutConstructor(),
+        Task::topLevel()->findOrFail($groupId),
+        Instance::query()->findOrFail($instanceId),
+    );
+}
+
+function removal_ownership_migration(): Migration
+{
+    return require database_path('migrations/2026_11_15_000000_add_task_workspace_owner_to_instances.php');
+}
+
+it('refuses to erase a protective annotation association before any write', function (string $status, bool $attached): void {
+    removal_fixture();
+    DB::table('instances')->where('id', 1)->update(['name' => 'task-3', 'branch_override' => 'task-3']);
+    DB::table('tasks')->where('id', 3)->update([
+        'status' => $status, 'taskable_type' => $attached ? 'instance' : null, 'taskable_id' => $attached ? 1 : null,
+    ]);
+    $writes = [];
+    DB::connection()->beforeExecuting(function (string $query) use (&$writes): void {
+        if (preg_match('/^\s*(insert|update|delete|create|alter|drop|replace)\b/i', $query)) {
+            $writes[] = $query;
+        }
+    });
+
+    expect(fn () => removal_migration()->up())->toThrow(RuntimeException::class, 'ambiguous task workspace ownership: 1');
+
+    expect($writes)->toBe([]);
+    removal_assert_untouched();
+})->with(['cancelled', 'completed', 'running'])->with([false, true]);
+
+it('never sweeps a user Instance after its annotation association was already lost', function (): void {
+    removal_fixture();
+    DB::table('instances')->where('id', 1)->update(['name' => 'task-3', 'branch_override' => 'task-3']);
+    DB::table('tasks')->where('id', 3)->update(['status' => 'cancelled', 'taskable_type' => null, 'taskable_id' => null]);
+    // Reproduce the irreversible association loss on an already migrated deployment.
+    DB::table('annotations')->delete();
+    DB::table('tasks')->whereIn('id', [2, 1])->delete();
+
+    removal_migration()->up();
+    removal_ownership_migration()->up();
+
+    expect(removal_workspace_candidates()->pluck('id')->all())->toBe([]);
+    expect(removal_workspace_allowed(3, 1))->toBeFalse();
+    expect(app(RemoveTaskWorkspaceAction::class)->find(Task::topLevel()->findOrFail(3)))->toBeNull();
+    expect(DB::table('instances')->where('id', 1)->exists())->toBeTrue();
+    expect(DB::table('instances')->whereNotNull('task_workspace_owner_id')->count())->toBe(0);
+});
+
+it('keeps the migrated user Instance out of both cleanup gates while retaining proven managed cleanup', function (bool $attached): void {
+    removal_fixture();
+    DB::table('tasks')->where('id', 3)->update(['status' => 'cancelled']);
+
+    removal_migration()->up();
+    removal_ownership_migration()->up();
+    DB::table('instances')->where('id', 1)->update(['name' => 'task-3', 'branch_override' => 'task-3']);
+    if (! $attached) {
+        DB::table('instances')->where('id', 1)->update(['name' => 'user-workspace']);
+        DB::table('tasks')->where('id', 3)->update(['taskable_id' => null, 'taskable_type' => null]);
+        DB::table('instances')->where('id', 2)->update(['name' => 'task-3', 'branch_override' => 'task-3', 'task_workspace_owner_id' => 3]);
+    }
+
+    expect(removal_workspace_candidates()->pluck('id')->all())->toBe([2]);
+    expect(removal_workspace_allowed(3, 1))->toBeFalse();
+    expect(removal_workspace_allowed(3, 2))->toBeTrue();
+    expect(DB::table('instances')->count())->toBe(2);
+})->with([true, false]);
+
+it('rolls durable workspace ownership back without inventing lost associations on reapply', function (): void {
+    removal_fixture();
+    removal_migration()->up();
+    $migration = require database_path('migrations/2026_11_15_000000_add_task_workspace_owner_to_instances.php');
+    $migration->up();
+    DB::table('instances')->where('id', 2)->update(['task_workspace_owner_id' => 3]);
+    $migration->down();
+    expect(Schema::hasColumn('instances', 'task_workspace_owner_id'))->toBeFalse();
+    expect(DB::table('instances')->count())->toBe(2);
+    $migration->up();
+    expect(DB::table('instances')->whereNotNull('task_workspace_owner_id')->count())->toBe(0);
+    DB::table('instances')->where('id', 2)->update(['task_workspace_owner_id' => 3]);
+    DB::table('tasks')->where('id', 4)->delete();
+    DB::table('tasks')->where('id', 3)->delete();
+    expect(DB::table('instances')->where('id', 2)->value('task_workspace_owner_id'))->toBeNull();
 });

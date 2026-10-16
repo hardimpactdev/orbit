@@ -139,15 +139,14 @@ final readonly class TaskSettling
     }
 
     /**
-     * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
-     * branch, and of a settling group whose merged pull request cleanup failed. An unattached workspace waits while
+     * Removes the workspace of a cancelled or completed group with proven task ownership, and of a settling group whose merged pull request cleanup failed. An unattached workspace waits while
      * a live claim can still own it. The tick does not remove the workspace of a group that is still active.
      *
      * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
      * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
      * it has spent its time budget; the rest wait for the next tick. Success clears removal assistance only.
-     * A cancelled group pushes its stored approval before the checkout is deleted. A user Instance attached to a
-     * non-managed group is never a candidate.
+     * A cancelled group pushes its stored approval before the checkout is deleted. An Instance without proven,
+     * unambiguous task ownership is never a candidate.
      */
     public function removeAbandonedWorkspaces(): int
     {
@@ -177,7 +176,7 @@ final readonly class TaskSettling
 
             try {
                 $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
+                $this->workspaces->remove($instance, $group);
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
@@ -211,7 +210,7 @@ final readonly class TaskSettling
             return;
         }
         // A parked task VM starts first. The merge cleanup waits for it without a failure or a backoff.
-        if ($instance instanceof Instance && ! app(WakeTaskVmAction::class)->forInstance($instance)) {
+        if ($instance instanceof Instance && TaskWorkspaceOwnership::owns($group, $instance) && ! app(WakeTaskVmAction::class)->forInstance($instance)) {
             return;
         }
 
@@ -248,7 +247,7 @@ final readonly class TaskSettling
 
     private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
     {
-        if ($instance->project_id !== $group->project_id) {
+        if (! TaskWorkspaceOwnership::owns($group, $instance)) {
             return false;
         }
 
@@ -357,28 +356,11 @@ final readonly class TaskSettling
     /** @return Collection<int, Instance> */
     private function abandonedWorkspaces(): Collection
     {
-        $workspaceName = match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "CONCAT('task-', tasks.id)",
-            default => "'task-' || tasks.id",
-        };
-
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
         $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
-        return Instance::query()
+        return TaskWorkspaceOwnership::query()
             ->select('instances.*', 'tasks.id as ended_task_group_id')
-            ->join('tasks', function ($join) use ($workspaceName): void {
-                $join->on('tasks.project_id', '=', 'instances.project_id')
-                    ->whereNull('tasks.parent_id')
-                    ->where(function ($link) use ($workspaceName): void {
-                        $link->whereColumn('tasks.taskable_id', 'instances.id')
-                            ->orWhere(function ($named) use ($workspaceName): void {
-                                $named->whereRaw("instances.name = {$workspaceName}")
-                                    ->whereColumn('instances.branch_override', 'instances.name')
-                                    ->whereNull('tasks.taskable_id');
-                            });
-                    });
-            })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])

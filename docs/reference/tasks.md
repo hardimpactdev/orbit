@@ -521,7 +521,7 @@ The scheduler records a successful workspace start in the activity log within th
 
 A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
 
-A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it by name and branch and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
+A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The provisioner records its owning task on the Instance when it creates the row, before remote preparation. The next claim requires that recorded ownership, then finds the workspace by name and branch and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
 ### Start a subtask
 
@@ -1429,7 +1429,7 @@ Settle, escalate, and assistance that is not `direction` stay on the [Coder webh
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by Project, `task-{id}` name, and matching branch; a name alone never permits removal.
+Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by its recorded task owner, Project, `task-{id}` name, and matching branch. Neither a name nor a matching branch grants removal authority.
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
@@ -1473,9 +1473,11 @@ A failed teardown keeps the workspace, its Instance, and its VM for retry. On a 
 
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
 
+Cleanup refuses conflicting task owners or multiple task associations. A detached Instance created before ownership was recorded stays in place until an operator establishes its ownership; Orbit does not backfill ownership from names, branches or paths. Losing an association never grants cleanup authority.
+
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
+- of a `cancelled` or `completed` task, attached through an explicit Instance association, or carrying that task’s recorded ownership and the `task-{id}` name and branch. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
 For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
