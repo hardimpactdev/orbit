@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -129,9 +130,6 @@ class StoreProcessRequest extends FormRequest
                     if ($this->input('target_type') !== 'instance') {
                         $validator->errors()->add('target_type', 'The preset requires an Instance.');
                     }
-                    if (($this->input('keep_alive') === true) && is_string($this->input('preset')) && ProcessPresets::refusesKeepAlive($this->input('preset'))) {
-                        $validator->errors()->add('keep_alive', 'This preset hibernates with the Instance and cannot keep-alive.');
-                    }
                 }
                 $this->validateSystemdExecutable($validator);
                 $this->validateEnvironmentNames($validator);
@@ -171,7 +169,7 @@ class StoreProcessRequest extends FormRequest
             volumes: $volumes,
             restartPolicy: is_string($validated['restart_policy'] ?? null)
                 ? $validated['restart_policy']
-                : (isset($validated['preset']) ? ProcessPresets::restartPolicy($this->string('preset')->toString()) : 'never'),
+                : (isset($validated['preset']) ? VpDevPreset::RestartPolicy : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
             restartOnDeploy: ($validated['restart_on_deploy'] ?? true) === true,

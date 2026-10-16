@@ -99,7 +99,7 @@ it('labels a false negative from a pull request observed merged and records both
         mergeSha: 'actual-merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
     );
-    $group->update(['status' => 'settling', 'execution_mode' => 'managed', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
+    $group->update(['status' => 'settling', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
     app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher
     {
         public function __construct(private TaskPullRequestHealth $merge) {}
@@ -343,7 +343,7 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
         mergeSha: 'actual-merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
     );
-    $group->update(['status' => 'settling', 'execution_mode' => 'managed', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
+    $group->update(['status' => 'settling', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
     app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher
     {
         public function __construct(private TaskPullRequestHealth $merge) {}

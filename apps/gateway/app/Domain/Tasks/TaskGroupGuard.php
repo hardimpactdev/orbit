@@ -55,7 +55,7 @@ final class TaskGroupGuard
      */
     public static function deliverableGateBlocked(Task $group, Task $task): bool
     {
-        return $group->execution_mode === TaskExecutionMode::Managed && $group->status === TaskGroupStatus::Running
+        return $group->status === TaskGroupStatus::Running
             && $task->parent_id === $group->id && $task->status === TaskStatus::Running && $task->assistance_requested
             && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
             && is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::DeliverableGatePrefix)

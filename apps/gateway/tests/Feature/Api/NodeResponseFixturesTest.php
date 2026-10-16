@@ -69,7 +69,7 @@ describe('node response fixtures', function (): void {
             'cluster_id' => $cluster->id,
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'public_ssh_host' => '94.237.40.75',
             'public_ssh_port' => 22,
             'user' => 'orbit',
@@ -93,7 +93,7 @@ describe('node response fixtures', function (): void {
             'public_ssh_host' => '94.237.40.75',
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'roles' => ['app-dev'],
             'cluster_id' => $cluster->id,
             'wireguard_ip' => '10.44.0.3',
@@ -126,7 +126,7 @@ describe('node response fixtures', function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'public_ssh_host' => '94.237.40.75',
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.3',
@@ -156,7 +156,7 @@ describe('node response fixtures', function (): void {
             'public_ssh_host' => '94.237.40.75',
             'architecture' => 'x86_64',
             'roles' => ['app-dev'],
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
         ])->assertUnprocessable()->assertJsonPath('error.code', 'node.ssh_host_fingerprint_required');
         record_fixture($fingerprintRequired, 'nodes/node-add/fingerprint-required', AddNodeRequest::class, 'POST /api/v1/nodes');
     });

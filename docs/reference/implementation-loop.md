@@ -97,6 +97,8 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 
 Gateway project, subprocess, and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
+The Docs project job also supplies Bun 1.4.2 and installs the Gateway's Composer dependencies and the web app's locked Bun dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including during the subprocess test run.
+
 ### One PHP build in CI
 
 Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/nckrtl/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.
@@ -230,7 +232,7 @@ On Sabre the job skips the Homebrew and system package steps, because Sabre alre
 
 A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest runs 6 processes there instead of 4.
 
-The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. The annotator server test replaces the preset's `/usr/local/bin/node` with it, because a host's own `node` shim can point into a home that the runner user cannot read. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
+The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
 
 Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Three runner services, `sabre-1` to `sabre-3`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has passwordless `sudo`. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
@@ -359,7 +361,7 @@ When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Program
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
 
-The Gateway's `composer check` also runs `bin/annotator-build --check`. It verifies that the vendored annotator release in `apps/gateway/resources/annotator` matches the `@nckrtl/annotator` version that `apps/web/bun.lock` locks. After you bump the locked version, run `bin/annotator-build` and include the generated Gateway resource files. Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
+Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
 
 When the candidate changes the project, the gate runs that project’s architecture tests from CI, including the CLI binary contract. CLI documentation, binary scripts, and workflows also trigger the CLI contracts. The SDK’s existing architecture checks include its request inventory in `RepositoryGuidanceTest`.
 
@@ -381,7 +383,7 @@ A budget of 2 or less runs one group at a time. The budget counts workers, not e
 
 With the default of 4, the Gateway's checks run with two processes while two other groups run with one each. Set the budget to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
 
-The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. The Gateway's `composer check` reads `apps/web/node_modules` for the annotator check, and the web group runs `bun install` there. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
+The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
 #### Changed-file quality checks
 

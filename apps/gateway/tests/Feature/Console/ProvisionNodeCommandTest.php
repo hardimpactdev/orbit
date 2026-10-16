@@ -53,7 +53,7 @@ it('provisions the first peer from the gateway console', function (): void {
             'host' => '94.237.108.25',
             '--role' => ['app-dev'],
             '--architecture' => 'x86_64',
-            '--tld' => '.Operator.Orbit',
+            '--tld' => '.Operator.Test',
             '--wireguard-ip' => '10.44.0.2',
             '--cluster' => (string) $cluster->id,
             '--lan-ip' => '10.0.0.2',
@@ -71,7 +71,7 @@ it('provisions the first peer from the gateway console', function (): void {
         ->and($node->architecture)
         ->toBe('x86_64')
         ->and($node->tld)
-        ->toBe('operator.orbit')
+        ->toBe('operator.test')
         ->and($node->cluster_id)
         ->toBe($cluster->id)
         ->and($node->wireguard_ip)

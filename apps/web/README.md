@@ -48,7 +48,7 @@ The URL carries the section, the open record, and the node and project filters. 
 
 ## Annotation
 
-The SPA mounts the [`@nckrtl/annotator`](https://github.com/nckrtl/annotator) overlay in `src/main.tsx`. With `VITE_ANNOTATION_SERVICE_URL` set, `src/annotation/orbit-transport.ts` adds the **Orbit** delivery mode: it checks that the tasks extension is enabled, sends annotations to the Instance annotation endpoint as tasks for a T3 thread, and refreshes on the app's realtime annotation events. `VITE_ANNOTATION_THREAD_ID` sets the thread; in development, `/__annotate/thread` detects it from the T3 state database. The overlay's local server mode works without Orbit.
+The SPA mounts the [`@nckrtl/annotator`](https://github.com/nckrtl/annotator) overlay in `src/main.tsx`. It delivers to a local annotation server (`npx @nckrtl/annotator serve`, or an ordinary Process that runs it). In development, `annotationServerProxy` from `@nckrtl/annotator/vite` routes a loopback server URL through `/__annotate/local`. Demo mode answers that path with a stub.
 
 ## Tests
 
@@ -80,4 +80,4 @@ bun run build
 
 ## Annotation package
 
-The overlay is the published `@nckrtl/annotator` package, maintained in its own repository. Update it with `bun update @nckrtl/annotator`, then run `bin/annotator-build` so the Gateway serves the same version. Set `VITE_ANNOTATION_TRANSCRIPTION_URL` in `.env.local` to a Diction-compatible WebSocket URL or same-origin route. Speech is disabled without a URL. Set `VITE_ANNOTATION_AUTO_START=0` to start recording only from the microphone button. Restart the dev server after editing environment settings. The [package README](https://github.com/nckrtl/annotator) covers installation and injection. `docs/reference/agent-annotation.md` covers how Orbit uses the package.
+The overlay is the published `@nckrtl/annotator` package, maintained in its own repository. Update it with `bun update @nckrtl/annotator`. Set `VITE_ANNOTATION_TRANSCRIPTION_URL` in `.env.local` to a Diction-compatible WebSocket URL or same-origin route. Speech is disabled without a URL. Set `VITE_ANNOTATION_AUTO_START=0` to start recording only from the microphone button. Restart the dev server after editing environment settings. The [package README](https://github.com/nckrtl/annotator) covers installation and injection.

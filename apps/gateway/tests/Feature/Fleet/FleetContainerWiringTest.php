@@ -18,7 +18,6 @@ use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\AnnotatorFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
@@ -64,7 +63,6 @@ describe('fleet container wiring', function (): void {
                 CaddyPackageFootprintArtifact::class,
                 CaddyFootprintArtifact::class,
                 PrivateDnsFootprintArtifact::class,
-                AnnotatorFootprintArtifact::class,
                 RouteResidueFootprintArtifact::class,
                 TmpfilesFootprintArtifact::class,
                 ProxyCliFootprintArtifact::class,

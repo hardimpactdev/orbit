@@ -16,7 +16,7 @@ use LogicException;
 
 /**
  * Every Route site on a Node: `app-dev` and `app-prod` workload and Router sites, custom proxy
- * Routes, analytics tracking hosts, Agentation, Vite, hibernation wake, and public Ingress sites.
+ * Routes, analytics tracking hosts, Vite, hibernation wake, and public Ingress sites.
  * The stored Route state decides the sites; the existing renderer draws each one.
  */
 final readonly class RouteCaddySiteSource implements NodeCaddySiteSource

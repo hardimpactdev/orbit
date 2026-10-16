@@ -12,7 +12,7 @@
                 "status": "active",
                 "platform": "linux",
                 "architecture": "x86_64",
-                "tld": "app-dev.orbit",
+                "tld": "app-dev.test",
                 "public_ssh_host": "94.237.40.75",
                 "public_ssh_port": 22,
                 "user": "orbit",
