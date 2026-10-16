@@ -1193,26 +1193,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0220-serialize-task-workspaces-with-one-durable-lease.md",
-            "title": "ADR 0220: Serialize task workspaces with one durable lease",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Process",
-                "Task",
-                "Task check",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0220"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1274,8 +1254,7 @@
                 "0215",
                 "0216",
                 "0217",
-                "0218",
-                "0220"
+                "0218"
             ]
         },
         {

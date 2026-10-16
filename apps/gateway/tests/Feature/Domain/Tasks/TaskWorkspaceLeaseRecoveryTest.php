@@ -251,7 +251,7 @@ it('recovers a dead Gateway preparation without releasing a dispatched turn', fu
     $group = $this->leaseGroup;
     $thread = AgentThread::query()->create([
         'task_group_id' => $group->id, 'task_id' => $group->tasks->first()->id,
-        'node_id' => $group->taskable->node_id, 'driver' => 'pi', 'external_id' => 'prepared-reviewer',
+        'node_id' => $group->taskable->node_id, 'runtime_key' => 'node:'.$group->taskable->node_id, 'driver' => 'pi', 'external_id' => 'prepared-reviewer',
         'role' => 'reviewer', 'state' => 'idle',
     ]);
     $leases = app(TaskWorkspaceLease::class);

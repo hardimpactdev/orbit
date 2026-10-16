@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class TaskWorkspaceOperation extends Model
 {
+    #[\Override]
     protected $guarded = [];
 
     protected function casts(): array

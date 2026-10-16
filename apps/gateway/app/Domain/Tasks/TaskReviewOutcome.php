@@ -887,7 +887,7 @@ final readonly class TaskReviewOutcome
         }
         $group = $task->parent()->with('taskable')->firstOrFail();
         try {
-            $reserved = $existing === null ? $this->spawner->reserveReviewer($task) : $existing->id;
+            $reserved = $existing?->id ?? $this->spawner->reserveReviewer($task);
             $dispatch = function () use ($scheduler, $group, $task, $existing, $reserved): bool {
                 if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Reviewer, $reserved)) {
                     return false;
