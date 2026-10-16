@@ -617,7 +617,7 @@ TAGS = [
     ('database', 'Database connections', 'The registry of mysql, pgsql, and sqlite connections.'),
     ('process', 'Processes', 'systemd services and Docker containers owned by an Instance, a Node, or a Project definition.'),
     ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
-    ('annotation', 'Annotations', 'Instance annotations, T3 delivery, and replayable status events.'),
+    ('annotation', 'Annotations', 'Instance annotations and T3 delivery.'),
     ('tasks', 'Tasks', 'Commander feature groups and ordered subtasks.'),
     ('extension', 'Extensions', 'Gateway-owned extension switches.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
@@ -1815,9 +1815,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
-    if route['name'] == 'annotation:events':
-        responses['200'] = {'description': 'Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
-    elif route['name'] == 'tasks:agent-stream':
+    if route['name'] == 'tasks:agent-stream':
         responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'agent:realtime':
         connection = {'type': 'object', 'properties': {

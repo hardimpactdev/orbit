@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Extensions\Contributions;
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -29,6 +31,7 @@ use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -67,18 +70,18 @@ it('installs and executes the FPM pre-start gate before accepting traffic and re
     try {
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
-        $install = $calls->first(static fn (ProcessInvocation $call): bool => str_contains($call->input ?? '', 'orbit-document-cleanup.conf'));
+        $install = $calls->first(static fn (ProcessInvocation $call): bool => in_array('orbit-document-cleanup.conf', $call->arguments, true));
         expect($install)->toBeInstanceOf(ProcessInvocation::class);
         $invalidation = $calls->search(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', '/etc/orbit/project-document-cleanup-start']);
         $activation = $calls->search(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']);
         expect($invalidation)->toBeInt();
         expect($activation)->toBeInt()->toBeGreaterThan($invalidation);
-        $program = str_replace(['/etc/orbit', '/etc/systemd', '/run/orbit', '/usr/sbin/runuser'], [$root.'/etc/orbit', $root.'/etc/systemd', $root.'/run/orbit', $root.'/bin/runuser'], $install->input);
+        $arguments = str_replace(['/etc/orbit', '/etc/systemd', '/run/orbit', '/usr/sbin/runuser'], [$root.'/etc/orbit', $root.'/etc/systemd', $root.'/run/orbit', $root.'/bin/runuser'], array_slice($install->arguments, 1));
         // Subprocesses inherit an environment that need not match the booted test application's config.
         $_ENV['APP_ENV'] = $ambientEnvironment;
         $environment = ['APP_ENV' => 'testing', 'PATH' => $root.'/bin:'.getenv('PATH'), 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $runtime];
-        $installer = new Process(['bash', '-seu'], env: $environment);
-        $installer->setInput($program);
+        $installer = new Process($arguments, env: $environment);
+        $installer->setInput($install->input);
         expect($installer->run())->toBe(0, $installer->getErrorOutput());
         $unit = file_get_contents($root.'/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf');
         preg_match('/^ExecStartPre=\\+(.+)$/m', $unit, $matches);
@@ -126,7 +129,7 @@ it('refuses FPM reload or restart when cleanup invalidation fails during converg
     try {
         expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)->toBe('gateway-fpm-cleanup-invalidate');
+                expect($exception->step)->toBe('gateway-fpm-start-hook');
                 expect($exception->errorCode)->toBe('gateway.fpm_start_failed');
             });
         expect(Collection::make($processes->calls)->contains(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))->toBeFalse();
@@ -347,8 +350,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
 
 it('keeps staged FPM candidates bound to their invocation under contention', function (): void {
     $processes = new GatewayFpmContentionProcessRunner;
-    $primary = new NativeGatewayFpmConverger($processes);
-    $processes->contender = new NativeGatewayFpmConverger($processes);
+    $primary = new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), app(Contributions::class)->of(GatewayServiceStartHook::class));
+    $processes->contender = new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), app(Contributions::class)->of(GatewayServiceStartHook::class));
 
     $primary->converge('/tmp/primary-gateway-pool.conf');
 
@@ -1003,7 +1006,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
             webDirectory: new GatewayWebDirectoryConverger($processes, '/home/orbit/web'),
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
-            fpm: new NativeGatewayFpmConverger($processes),
+            fpm: new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), app(Contributions::class)->of(GatewayServiceStartHook::class)),
             builds: new NodeCaddyBuilder(
                 app(NodeCaddyfileRenderer::class),
                 new NodeCaddyBuildLock($orbitHome.'/locks/caddy-build'),

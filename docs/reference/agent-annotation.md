@@ -29,7 +29,7 @@ In Orbit mode, the Gateway stores each annotation and sends it to a T3 thread. T
 
 | Request | Result |
 | --- | --- |
-| `GET` | The Instance's annotations. |
+| `GET` | `annotation:list`: the Instance's annotations. |
 | `POST` | Stores an annotation. The same ID with the same content returns the stored one. A changed instruction needs a new annotation, or it fails with `annotation.conflict`. |
 | `POST {annotation}/status` | `in_progress`, or `resolved` with a `summary`. `resolved` needs `in_progress` first. |
 | `POST {annotation}/retry` | Queues a failed delivery again. It can set `threadId` while nothing was sent. |
@@ -69,7 +69,11 @@ The command and message IDs are fixed when the annotation is stored, so a repeat
 
 ### Live updates
 
-Every change sends an [`annotation.updated`](/reference/events#annotation) notice with the ID, Instance ID, and revision. The browser then fetches the list. It also fetches when it subscribes, reconnects, or refreshes. Submissions stay HTTP requests.
+Every change sends an [`annotation.updated`](/reference/events#annotation) notice through Reverb with the ID, Instance ID, and revision. The browser then fetches the list with `annotation:list`. It also fetches when it subscribes, reconnects, or refreshes. Submissions stay HTTP requests.
+
+A client follows annotations with `annotation.updated` notices and `annotation:list`. An MCP client calls `annotation-list`.
+
+Each change takes the next revision from one Gateway-wide counter. So a later change always has a higher revision, also across Instances. The first revision of an annotation is its submission order.
 
 The transport subscribes through the web app's own realtime connection. While that connection is not live, the browser also fetches every 15 seconds and when a hidden tab becomes visible. That timed fetch skips a hidden tab. A realtime notice starts a fetch in a hidden tab too.
 
@@ -102,6 +106,10 @@ A copy of the overlay in each application would drift, and Orbit code in the ove
 ### HTTP submissions, realtime notices
 
 HTTP keeps Gateway validation, storage, and a durable answer for each submission. A realtime client message cannot run a Gateway action. So a notice only tells the browser to fetch.
+
+### Notices, not a Gateway stream
+
+An open stream holds a PHP-FPM worker, and those workers serve every API request. Reverb holds the open connections instead, and each fetch is one short request.
 
 ### A subtask in an existing-thread task
 

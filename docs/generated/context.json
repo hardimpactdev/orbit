@@ -1518,6 +1518,7 @@
             "concepts": [
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1867,6 +1868,7 @@
                 "Activity",
                 "Extension",
                 "Gateway",
+                "Node",
                 "Process",
                 "Project",
                 "Project Documents",
@@ -2627,6 +2629,7 @@
             "concepts": [
                 "Activity",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

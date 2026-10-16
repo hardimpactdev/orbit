@@ -86,7 +86,7 @@ describe('Instance annotations', function (): void {
         $this->getJson($url)->assertOk()->assertJsonCount(1, 'data')->assertJsonMissingPath('data.0.command');
     });
 
-    it('enforces peer access and Instance ownership for updates and event streams', function (): void {
+    it('enforces peer access and Instance ownership for reads and updates', function (): void {
         $instance = annotationFixture();
         $url = "/api/v1/instances/{$instance->id}/annotations";
         $this->postJson($url, annotationInput())->assertCreated();
@@ -97,23 +97,24 @@ describe('Instance annotations', function (): void {
         $this->postJson("/api/v1/instances/{$other->id}/annotations/annotation-one/status", ['status' => 'in_progress'])->assertNotFound();
         $peer = Node::query()->create(['name' => 'denied', 'status' => 'active', 'public_ssh_host' => '10.44.0.89', 'wireguard_ip' => '10.44.0.89']);
         $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson($url)->assertForbidden();
-        $this->get($url.'/events')->assertForbidden();
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.199'])->postJson($url, annotationInput())->assertForbidden();
     });
 
-    it('replays progress and completion after refresh and snapshots current state', function (): void {
+    it('lists progress and completion as the current state', function (): void {
         $instance = annotationFixture();
         $url = "/api/v1/instances/{$instance->id}/annotations";
-        $cursor = $this->postJson($url, annotationInput())->assertCreated()->json('data.revision');
+        $revision = $this->postJson($url, annotationInput())->assertCreated()->json('data.revision');
         $this->postJson($url.'/annotation-one/status', ['status' => 'resolved', 'summary' => 'done'])->assertConflict();
-        $this->postJson($url.'/annotation-one/status', ['status' => 'in_progress'])->assertOk();
+        $progress = $this->postJson($url.'/annotation-one/status', ['status' => 'in_progress'])->assertOk()->json('data.revision');
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.status', 'in_progress')->assertJsonPath('data.0.revision', $progress);
+        expect($progress)->toBeGreaterThan($revision);
         $this->postJson($url.'/annotation-one/status', ['status' => 'resolved'])->assertUnprocessable();
         $this->postJson($url.'/annotation-one/status', ['status' => 'resolved', 'summary' => 'Reduced title size; checked browser'])->assertOk();
-        $response = $this->withHeader('Last-Event-ID', (string) $cursor)->get($url.'/events')->assertOk();
-        expect($response->streamedContent())->toContain('event: annotation.updated', 'event: snapshot', 'in_progress', 'resolved', 'Reduced title size');
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.0.status', 'resolved')
+            ->assertJsonPath('data.0.summary', 'Reduced title size; checked browser')
+            ->assertJsonPath('data.0.revision', fn (int $current): bool => $current > $progress);
         $this->postJson($url.'/annotation-one/status', ['status' => 'in_progress'])->assertConflict();
-        $this->flushHeaders();
-        $this->get($url.'/events?after=invalid')->assertUnprocessable();
     });
 
     it('delivers in order only when idle and explicitly completed, and retries the identical command', function (): void {

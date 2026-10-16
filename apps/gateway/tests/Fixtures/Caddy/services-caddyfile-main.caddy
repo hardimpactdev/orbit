@@ -1,0 +1,80 @@
+# Managed by Orbit: Node Caddy build
+{
+    auto_https disable_certs
+    order abort first
+    metrics {
+        per_host
+    }
+}
+
+# orbit: app-dev app-instance-{instance}
+https://shop.test {
+    bind 10.44.0.3
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-certificates/app-instance-{instance}/current/cert.pem /etc/caddy/orbit-certificates/app-instance-{instance}/current/key.pem
+    @orbit_probe header X-Orbit-Probe 1
+log_skip @orbit_probe
+@orbit_asleep {
+    not header X-Orbit-Probe 1
+    not file {
+        root /dev/shm/orbit/hibernation
+        try_files /app-instance-{instance}.awake
+    }
+}
+handle @orbit_asleep {
+    forward_auth https://gateway.orbit {
+        uri /api/v1/runtime-activations/app-instance/{instance}
+        header_up Host gateway.orbit
+        transport http {
+            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            tls_server_name gateway.orbit
+        }
+    }
+}
+log {
+    output file /data/caddy/orbit/hibernation/app-instance-{instance}.log
+}
+handle {
+    root * /home/orbit/apps/shop.test/public
+encode zstd gzip
+php_fastcgi unix//run/php/orbit-app-instance-{instance}.sock
+file_server
+}
+}
+
+# orbit: websocket reverb.orbit
+# Managed by Orbit: websocket
+reverb.orbit {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    tls /etc/caddy/orbit-websocket-cert-current/reverb.pem /etc/caddy/orbit-websocket-cert-current/reverb.key
+    reverse_proxy 127.0.0.1:8790
+}
+
+# orbit: analytics analytics.orbit
+# Managed by Orbit: analytics
+analytics.orbit {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-analytics-cert-current/analytics.pem /etc/caddy/orbit-analytics-cert-current/analytics.key
+    reverse_proxy 10.44.0.3:8000
+}
+
+# orbit: proxycli collector.cli-proxy-api.orbit
+# Managed by Orbit: proxycli
+collector.cli-proxy-api.orbit {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    tls /etc/caddy/orbit-proxycli-cert-current/proxycli.pem /etc/caddy/orbit-proxycli-cert-current/proxycli.key
+    reverse_proxy 127.0.0.1:8787 {
+        lb_try_duration 5s
+    }
+}
