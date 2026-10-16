@@ -328,6 +328,12 @@ final readonly class RunAutomaticDeploysAction
             default => null,
         };
 
+        // A rollback that holds the Instance pauses automatic deployment once a worker starts it, so no commit waits.
+        if ($outcome->result === AutomaticDeployResult::Busy
+            && Operation::query()->whereKey($outcome->operationId)->where('kind', OperationKinds::InstanceRollback)->exists()) {
+            $sha = null;
+        }
+
         if ($sha === null || ! GitCommitSha::isValid($sha)) {
             $state->clearStall();
 

@@ -187,7 +187,16 @@ A lost worker resumes a resumable step and fails any other step with `operation.
 
 ### The rollback operation
 
-The Gateway validates the request and the access grant, checks that the Instance is a production Instance, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is not a production Instance, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
+The Gateway validates the request and the access grant, checks that the Instance is a production Instance that retains the release, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope and changes nothing:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `rollback.release_not_retained` | 422 | The Instance does not retain the release. [`instance:release:list`](/cli/instance#orbit-instancereleaselist) lists the releases it retains. A queued deploy stays queued |
+| `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
+| `operation.target_busy` | 409 | Another operation holds the Instance |
+| `operation.queue_unavailable` | 503 | The Gateway has no queue |
+
+The `rollback` step checks the release again, because a deploy's cleanup can remove it after the request. Then the operation fails at `rollback` with `rollback.release_invalid`. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
 
 | Step | Resumable | Failed boundary |
 | --- | --- | --- |
@@ -314,7 +323,7 @@ A blocked commit does not deploy automatically again. A new commit deploys at on
 
 #### Pause
 
-A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not. A rollback that still waits for the Instance lock counts. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
+A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback that waits for a worker has no history row yet. Its operation holds the Instance, so the tick reports `busy`, starts nothing, and does not count the commit as stalled. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
 
 Resuming continues from the commit that is live then. The commit a rollback moved away from is blocked. The tick reads it from the deployment history, so it counts also when you resume or deploy by hand before a tick saw the rollback. The tick also keeps it in `auto_deploy_state.blocked`, so it stays blocked after its rows leave the history.
 

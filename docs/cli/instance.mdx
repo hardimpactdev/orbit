@@ -641,7 +641,7 @@ Pressing Ctrl-C stops following, not the rollback. The CLI prints the command th
 | --- | --- |
 | The operation succeeded. | `0` |
 | The operation failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result includes one. |
-| The Gateway refused the request, such as `operation.target_busy` while a deploy runs. | Nonzero, with the one-line error envelope. |
+| The Gateway refused the request, such as `operation.target_busy` while a deploy runs, or `rollback.release_not_retained` for a release the Instance does not retain. | Nonzero, with the one-line error envelope. Nothing changes. |
 | You pressed Ctrl-C. | `130`. The operation keeps running. |
 
 ```bash

@@ -59,6 +59,24 @@ final readonly class RollbackInstanceAction
     }
 
     /**
+     * Refuses a release that the Instance does not retain, before a rollback records anything or supersedes a deploy. The
+     * `rollback` step checks the release again, because a deploy's cleanup can remove it in between.
+     *
+     * @throws ResourceOperationException `rollback.release_not_retained` (422) for a release that is not retained
+     */
+    public function assertRetained(Instance $instance, string $releaseName): void
+    {
+        if (! in_array($releaseName, $this->deployment->releases($instance)->releases, true)) {
+            throw new ResourceOperationException(
+                'rollback.release_not_retained',
+                "The Instance does not retain the release [{$releaseName}]. List its releases with instance:release:list.",
+                422,
+                details: ['release' => $releaseName],
+            );
+        }
+    }
+
+    /**
      * Runs the rollback's steps through `$steps`: the steps of an `instance.rollback` operation. The `rollback` step
      * finds the retained release, and the `activation` step selects it.
      */

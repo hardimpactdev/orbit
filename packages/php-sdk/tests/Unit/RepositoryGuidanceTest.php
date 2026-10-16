@@ -423,7 +423,7 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe($expectedOperationCount + 4)
+            ->toBe($expectedOperationCount + 5)
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
             ->toContain(...$developmentDeployRequests)

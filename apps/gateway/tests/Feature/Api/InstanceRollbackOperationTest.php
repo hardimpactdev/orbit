@@ -82,6 +82,17 @@ describe('starting a rollback', function (): void {
         expect(Operation::query()->count())->toBe(0);
     });
 
+    it('refuses a release that the Instance does not retain before it records anything', function (): void {
+        start_rollback($this, 'release-gone')
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'rollback.release_not_retained')
+            ->assertJsonPath('error.details.release', 'release-gone');
+
+        expect(Operation::query()->count())->toBe(0)
+            ->and(InstanceDeployment::query()->count())->toBe(0)
+            ->and($this->fixture->deployment->invocations)->toBe(0);
+    });
+
     it('refuses a second rollback while the first one holds the Instance', function (): void {
         $first = start_rollback($this)->json('data.id');
 
@@ -136,6 +147,28 @@ describe('a rollback and a deploy of the same Instance', function (): void {
             ->and($private->first()->data['sequence'])->toBe($deploy->refresh()->sequence);
     });
 
+    it('leaves a queued deploy and automatic deployment alone when the release is not retained', function (bool $automatic): void {
+        $this->fixture->instance->update(['auto_deploy' => true]);
+        $deploy = queue_rollback_test_deploy($this, $automatic);
+        $state = $this->fixture->instance->fresh()->auto_deploy_state;
+
+        start_rollback($this, 'release-gone')->assertStatus(422)->assertJsonPath('error.code', 'rollback.release_not_retained');
+
+        expect($deploy->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($deploy->error_code)->toBeNull()
+            ->and($deploy->cancel_requested_at)->toBeNull()
+            ->and(rollback_test_lock_holders())->toBe([$deploy->id])
+            ->and(Operation::query()->where('kind', 'instance.rollback')->count())->toBe(0)
+            ->and(InstanceDeployment::query()->count())->toBe(0)
+            ->and($this->fixture->instance->fresh()->auto_deploy_state)->toBe($state)
+            ->and(new AutomaticDeployHistory($this->fixture->instance->fresh())->pausedBy())->toBeNull();
+
+        run_operation_jobs();
+
+        expect($deploy->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($this->fixture->deployment->preparedCommits)->toBe([$automatic ? str_repeat('b', 40) : null]);
+    })->with(['manual' => false, 'automatic' => true]);
+
     it('refuses while a worker runs the deploy', function (bool $automatic): void {
         $deploy = queue_rollback_test_deploy($this, $automatic);
         expect(app(OperationStore::class)->claim($deploy, 'gateway:1'))->toBeTrue();
@@ -178,9 +211,12 @@ describe('a rollback and a deploy of the same Instance', function (): void {
             ->assertJsonPath('error.code', 'operation.target_busy')
             ->assertJsonPath('error.details.operation_id', $deploy->id);
 
+        // The refused insert undid the claim with the rest of the rollback's transaction, so the deploy is queued again.
         expect($claimed)->toBeTrue()
-            ->and($deploy->refresh()->status)->not->toBe(OperationStatus::Cancelled)
+            ->and($deploy->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and($deploy->attempts)->toBe(0)
             ->and($deploy->error_code)->toBeNull()
+            ->and($deploy->cancel_requested_at)->toBeNull()
             ->and(rollback_test_lock_holders())->toBe([$deploy->id])
             ->and(Operation::query()->where('kind', 'instance.rollback')->count())->toBe(0);
     });
@@ -242,7 +278,7 @@ describe('running a rollback', function (): void {
             ->and(collect(InstanceDeployment::query()->sole()->events)->where('type', 'phase')->pluck('phase')->all())->toBe(['rollback', 'activation', 'process_restart']);
     });
 
-    it('fails at the rollback step when the release is not retained', function (): void {
+    it('fails at the rollback step when the release is gone by the time a worker runs it', function (): void {
         $this->fixture->deployment->failRollback = true;
         $id = start_rollback($this)->json('data.id');
         run_operation_jobs();
@@ -250,12 +286,12 @@ describe('running a rollback', function (): void {
         ($this->asCaller)()->getJson("/api/v1/operations/{$id}")
             ->assertJsonPath('data.status', 'failed')
             ->assertJsonPath('data.failed_step', 'rollback')
-            ->assertJsonPath('data.error_code', 'deployment.release_missing')
+            ->assertJsonPath('data.error_code', 'rollback.release_invalid')
             ->assertJsonPath('data.result.selected_release', 'initial');
 
         $deployment = InstanceDeployment::query()->sole();
         expect($deployment->failed_step)->toBe('rollback_selection')
-            ->and($deployment->error_code)->toBe('deployment.release_missing')
+            ->and($deployment->error_code)->toBe('rollback.release_invalid')
             ->and($this->fixture->deployment->activations)->toBe(0);
     });
 

@@ -28,7 +28,7 @@ The SDK models exactly 214 concrete public Gateway API operations:
 - Vault: status, setup, sync, and teardown.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
 
-The four abstract request bases are implementation details, not extra Gateway
+The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
 
 - Use numeric resource IDs in routes where the Gateway contract does. Keep a

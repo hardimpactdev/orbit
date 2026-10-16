@@ -12408,7 +12408,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.",
+        "description": "Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12494,7 +12494,7 @@
             }
           },
           "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "description": "The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy.",
             "content": {
               "application/json": {
                 "schema": {

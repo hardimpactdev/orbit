@@ -86,12 +86,11 @@ final readonly class DeployInstanceAction
      * Runs the deployment's steps through `$steps`: the steps of an `instance.deploy` operation. With `$commit`, it
      * deploys that commit, which the branch must contain, instead of the branch's newest commit.
      */
-    public function execute(Instance $instance, DeploymentSteps $steps, ?DeploymentRequest $request = null, ?string $commit = null): DeploymentResult
+    public function execute(Instance $instance, DeploymentSteps $steps, DeploymentRequest $request, ?string $commit = null): DeploymentResult
     {
-        $request ??= DeploymentRequest::withoutOutput();
         $instance->refresh();
         if ($instance->placedOnAppDev()) {
-            return $this->developmentAction()->execute($instance, $request, $steps, $commit);
+            return $this->developmentAction()->execute($instance, $steps, $request, $commit);
         }
 
         try {

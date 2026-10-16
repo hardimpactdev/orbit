@@ -14,7 +14,6 @@ use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
@@ -231,7 +230,7 @@ it('keeps the live runtime through an upgrade build failure and retains it for r
     $this->instance(ProductionDeployment::class, $remote);
     $ssh->buildFails = true;
 
-    $failure = app(DeployInstanceAction::class)->execute($instance, new InlineDeploymentSteps);
+    $failure = app(DeployInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployInstanceAction::class)), DeploymentRequest::withoutOutput());
 
     expect($failure->succeeded)->toBeFalse();
     expect($failure->failure?->boundary)->toBe(DeploymentFailureBoundary::BeforeActivation);
@@ -243,14 +242,14 @@ it('keeps the live runtime through an upgrade build failure and retains it for r
     $ssh->buildFails = false;
     $ssh->removedReleases = [$failed->name];
 
-    $success = app(DeployInstanceAction::class)->execute($instance, new InlineDeploymentSteps);
+    $success = app(DeployInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployInstanceAction::class)), DeploymentRequest::withoutOutput());
 
     expect($success->succeeded)->toBeTrue();
     expect($instance->fresh()->checkout_path)->toBe($candidate->path);
     expect($ssh->managedRuntimes)->toEqualCanonicalizing([...$oldRuntimes, ...$newRuntimes]);
     $operationsBeforeRollback = $ssh->operations;
 
-    $rollback = app(RollbackInstanceAction::class)->execute($instance, 'initial', new InlineDeploymentSteps, DeploymentRequest::withoutOutput());
+    $rollback = app(RollbackInstanceAction::class)->execute($instance, 'initial', operation_steps($instance, app(RollbackInstanceAction::class)), DeploymentRequest::withoutOutput());
 
     expect($rollback->succeeded)->toBeTrue();
     expect($instance->fresh()->checkout_path)->toBe($live->path);

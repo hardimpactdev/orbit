@@ -71,7 +71,7 @@ final readonly class DeployDefaultInstanceAction
      * Deploys the branch's newest commit, or `$commit` when the branch contains it. The `instance.deploy` operation
      * records its history row; the automatic deployment tick starts that operation only for a changed commit.
      */
-    public function execute(Instance $instance, DeploymentRequest $request, DeploymentSteps $steps, ?string $commit = null): DeploymentResult
+    public function execute(Instance $instance, DeploymentSteps $steps, DeploymentRequest $request, ?string $commit = null): DeploymentResult
     {
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $request, $steps, $commit): DeploymentResult {
@@ -87,7 +87,6 @@ final readonly class DeployDefaultInstanceAction
                             $collector->output($event);
                             $request->emit($event);
                         },
-                        cancellation: $request->cancellation,
                         phase: static function (DeploymentProgressPhase $phase, ?string $stepName) use ($request, $collector): void {
                             $collector->phase($phase, $stepName);
                             $request->emitPhase($phase, $stepName);

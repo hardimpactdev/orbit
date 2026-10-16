@@ -128,6 +128,11 @@ describe('deployment requests', function (): void {
         );
     });
 
+    it('sends a deploy as an empty JSON object and a rollback as its release', function (): void {
+        expect((string) new DeployInstanceRequest(17)->body())->toBe('{}')
+            ->and((string) new RollbackInstanceRequest(17, 'release-a')->body())->toBe('{"release":"release-a"}');
+    });
+
     it('returns a started deploy as its queued operation', function (): void {
         $requestId = deployment_request_id();
         $mock = new MockClient([

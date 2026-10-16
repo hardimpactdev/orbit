@@ -20,7 +20,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -175,10 +174,6 @@ final class Orb220ProductionDeployment implements ProductionDeployment
             ));
         }
 
-        if ($request->cancellation->requested()) {
-            throw new ProcessCancelledException;
-        }
-
         return new CommandResult(0, '', '', 1, false);
     }
 
@@ -214,7 +209,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         }
 
         if ($this->failRollback) {
-            throw new ResourceOperationException('deployment.release_missing', 'Injected rollback failure.', 409);
+            throw new ResourceOperationException('rollback.release_invalid', 'Injected rollback failure.', 409);
         }
 
         return $this->release($name);
