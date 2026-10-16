@@ -461,7 +461,7 @@ describe('placement', function (): void {
         $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
         file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
         config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
-        $document['ubuntu']['snapshot'] = '20261015T000000Z';
+        $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
         $hostId = $this->host->id;
         $this->upcloud->beforeTemplateList = static function () use ($path, $document, $hostId): void {
             file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
@@ -1158,7 +1158,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
             expect(fn () => app()->call([$oldJob, 'handle']))->toThrow(TaskVmException::class);
             app(UniqueLock::class)->release($oldJob);
             $created = count($this->upcloud->created);
-            $document['ubuntu']['snapshot'] = '20261015T000000Z';
+            $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
             file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
             app()->call([$oldJob, 'handle']);
             expect($this->upcloud->created)->toHaveCount($created);
