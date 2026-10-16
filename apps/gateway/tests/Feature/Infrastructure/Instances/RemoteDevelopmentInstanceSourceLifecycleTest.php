@@ -615,6 +615,7 @@ it('removes an absent pre-activation reserved worktree without touching its seed
     $name = 'task-'.$group->id;
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
     $instance->update([
+        'task_workspace_owner_id' => $group->id,
         'source_prepare_id' => 'absent-task-prepare',
         'task_workspace_routed' => false,
         'seed_selected' => true,

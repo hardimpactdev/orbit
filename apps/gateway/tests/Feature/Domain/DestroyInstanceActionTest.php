@@ -53,7 +53,7 @@ describe('reserved worktree removable', function (): void {
             'brief' => 'Clear the interrupted workspace.',
             'status' => TaskGroupStatus::Todo,
         ]);
-        $instance->update(['name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id]);
+        $instance->update(['task_workspace_owner_id' => $group->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id]);
         $transport = reserved_removal_source($instance, true);
 
         $cancelled = app(CancelTaskGroupAction::class)->execute($group);

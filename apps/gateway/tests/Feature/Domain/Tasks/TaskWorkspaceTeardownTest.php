@@ -267,6 +267,7 @@ function task_teardown_workspace(Project $project, Node $node, string $suffix, T
     ]);
     $name = $attached ? 'workspace-'.$suffix : 'task-'.$group->id;
     $workspace = task_teardown_instance($project, $node, $name, $attached ? null : $name);
+    $workspace->update(['task_workspace_owner_id' => $group->id]);
     $neighbor = task_teardown_instance($project, $node, 'neighbor-'.$suffix, null);
 
     if ($attached) {
