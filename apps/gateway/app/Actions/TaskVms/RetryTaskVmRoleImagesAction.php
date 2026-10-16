@@ -10,6 +10,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmState;
@@ -38,12 +39,12 @@ final readonly class RetryTaskVmRoleImagesAction
                 || $vm->provider !== TaskVmProviderKind::Incus || $vm->node?->status !== LifecycleStatus::Active
                 || $vm->recipe_identity === null || $vm->size->resources()->topologyPool === null
                 || $vm->topology_state !== null || $vm->topology_run !== null) {
-                throw new TaskVmException('task_vm.recipe_images_retry_refused', 'Retry requires the waiting group\'s ready Incus VM, a pinned recipe, and no topology run.');
+                throw new TaskVmException(TaskVmError::RecipeImagesRetryRefused, 'Retry requires the waiting group\'s ready Incus VM, a pinned recipe, and no topology run.');
             }
             foreach (AgentThread::query()->where('task_group_id', $groupId)->whereNull('archived_at')->get() as $thread) {
                 if ($thread->sendLeases()->where('expires_at', '>', now())->exists()
                     || ! in_array($this->observer->observe($thread)?->state, [AgentThreadState::Done, AgentThreadState::Failed, AgentThreadState::Idle], true)) {
-                    throw new TaskVmException('task_vm.recipe_images_retry_refused', 'An agent is active or its state is unknown. Retry after the group is idle.');
+                    throw new TaskVmException(TaskVmError::RecipeImagesRetryRefused, 'An agent is active or its state is unknown. Retry after the group is idle.');
                 }
             }
             $this->images->prepare($vm);
