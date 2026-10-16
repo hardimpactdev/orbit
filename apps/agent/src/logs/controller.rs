@@ -1,7 +1,7 @@
 //! Starts and stops log streams from the Gateway's HTTPS stream list (ADR 0153), and hands their events
 //! to the realtime connection. A channel message only prompts a fetch; it never names what to read.
 use super::{
-    docker, journal, laravel,
+    docker, journalctl, laravel,
     laravel::Unavailable,
     limits::{
         agent_bucket, AgentBucket, LineSink, StreamQueue, LIST_UNAVAILABLE, SOURCE_UNAVAILABLE,
@@ -131,7 +131,7 @@ pub fn spawn_stream(spec: StreamSpec, queue: Arc<StreamQueue>) -> JoinHandle<()>
         let mut sink = LineSink::new(queue.clone(), spec.lines);
         let result = match spec.source {
             Source::Laravel { path } => laravel::run(path, &mut sink).await,
-            Source::Journal { unit } => journal::run(unit, &mut sink).await,
+            Source::Journal { unit } => journalctl::run(unit, &mut sink).await,
             Source::Docker {
                 container,
                 process_id,
@@ -560,54 +560,6 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(hub.running(), 0);
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[tokio::test]
-    async fn journal_stream_end_to_end() {
-        use super::super::journal_writer::{Options, Writer};
-        let dir = std::env::temp_dir().join(format!("orbit-agent-e2e-j-{}", rand::random::<u64>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let unit = "orbit-process-41-queue.service";
-        let mut w = Writer::new(Options::default());
-        let entry = |w: &mut Writer, n: u64, message: &str| {
-            w.append(
-                1_790_331_302_000_000 + n,
-                &[
-                    ("_SYSTEMD_UNIT", unit.as_bytes()),
-                    ("_PID", b"7"),
-                    ("SYSLOG_IDENTIFIER", b"queue"),
-                    ("MESSAGE", message.as_bytes()),
-                ],
-            )
-        };
-        entry(&mut w, 1, "one");
-        entry(&mut w, 2, "token=abc");
-        w.write(&dir.join("system.journal"));
-        let queue = Arc::new(StreamQueue::new(id(2), agent_bucket()));
-        let mut sink = LineSink::new(queue.clone(), 10);
-        let task_dir = dir.clone();
-        let task = tokio::spawn(async move {
-            let _ = journal::run_in(vec![task_dir], unit.into(), &mut sink).await;
-        });
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        let first = queue.flush("c", Instant::now()).unwrap();
-        assert_eq!(
-            lines_of(&first.frames),
-            [
-                "2026-09-25T10:15:02+00:00 queue[7]: one",
-                "2026-09-25T10:15:02+00:00 queue[7]: token=[REDACTED]"
-            ]
-        );
-        entry(&mut w, 3, "three");
-        w.write(&dir.join("system.journal"));
-        tokio::time::sleep(Duration::from_millis(800)).await;
-        let next = queue.flush("c", Instant::now()).unwrap();
-        assert_eq!(
-            lines_of(&next.frames),
-            ["2026-09-25T10:15:02+00:00 queue[7]: three"]
-        );
-        task.abort();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test(start_paused = true)]
