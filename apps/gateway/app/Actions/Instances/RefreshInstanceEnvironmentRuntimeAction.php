@@ -21,6 +21,22 @@ final readonly class RefreshInstanceEnvironmentRuntimeAction
         private Repository $pending,
     ) {}
 
+    // Record immediately after explicit env-sync replaces .env, before later sync steps.
+    public function recordPending(InstanceEnvironmentContext $context): void
+    {
+        if ($context->environment !== 'production') {
+            return;
+        }
+
+        if (! $this->pending->forever('instance-environment-runtime-pending:'.$context->instanceId, true)) {
+            throw new ResourceOperationException(
+                errorCode: 'env.runtime_refresh_failed',
+                message: 'The environment file was synchronized, but Orbit could not record the pending runtime refresh. No refresh was attempted.',
+                status: 502,
+            );
+        }
+    }
+
     // Called only by explicit env-sync, while the Instance environment lock is held.
     public function execute(InstanceEnvironmentContext $context, InstanceEnvironmentResult $result): InstanceEnvironmentResult
     {
@@ -47,13 +63,7 @@ final readonly class RefreshInstanceEnvironmentRuntimeAction
         $status = 'skipped_unchanged';
         $restarted = [];
         if ($result->environmentChanged || $this->pending->has($key)) {
-            if (! $this->pending->forever($key, true)) {
-                throw new ResourceOperationException(
-                    errorCode: 'env.runtime_refresh_failed',
-                    message: 'The environment file was synchronized, but Orbit could not record the pending runtime refresh. No refresh was attempted.',
-                    status: 502,
-                );
-            }
+            $this->recordPending($context);
             $status = $this->runtime->refresh($context);
             if (! str_starts_with($status, 'skipped_')) {
                 try {
