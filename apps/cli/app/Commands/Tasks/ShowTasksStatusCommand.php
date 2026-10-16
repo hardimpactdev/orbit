@@ -34,7 +34,7 @@ final class ShowTasksStatusCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $connector = $this->coreGatewayConnector($repository, $connectors);
+        $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
