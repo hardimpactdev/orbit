@@ -6,6 +6,7 @@ use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
@@ -19,10 +20,15 @@ function nightlyRecipeFile(?string $snapshot = null): array
 {
     $content = file_get_contents(resource_path('machine-software/recipe.json'));
     if ($snapshot !== null) {
-        $content = str_replace('20261014T000000Z', $snapshot, $content);
+        $content = str_replace(new RecipeLoader()->load()->snapshot, $snapshot, $content);
     }
 
     return ['sha' => hash('sha1', $content), 'content' => base64_encode($content)];
+}
+
+function nightlyRecipeDate(int $days = 1): DateTimeImmutable
+{
+    return new DateTimeImmutable(new RecipeLoader()->load()->snapshot)->modify("+{$days} days");
 }
 
 function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pulls = [], bool $denyWrite = false): void
@@ -42,45 +48,47 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
 
             return Http::response(str_contains($request->url(), 'ref=nightly') ? ($branchFile ?? $file) : $file);
         },
-        $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-20261015'], $branchFile === null ? 201 : 422),
+        $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-'.nightlyRecipeDate()->format('Ymd')], $branchFile === null ? 201 : 422),
         $base.'/pulls?*' => Http::response($pulls),
         $base.'/pulls' => Http::response(['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
     ]);
 }
 
 it('reads exactly main and opens a date-only PR through the existing App publisher', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
+    $branch = 'nightly/recipe-'.nightlyRecipeDate()->format('Ymd');
+    $expected = base64_decode(nightlyRecipeFile(nightlyRecipeDate()->format('Ymd\THis\Z'))['content']);
     nightlyRecipeGitHub($file);
 
     $url = app(OpenNightlyRecipePullRequestAction::class)->execute();
 
     expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
-        && $request['branch'] === 'nightly/recipe-20261015'
+        && $request['branch'] === $branch
         && $request['sha'] === $file['sha']
-        && base64_decode($request['content']) === str_replace('20261014T000000Z', '20261015T000000Z', base64_decode($file['content']))
+        && base64_decode($request['content']) === $expected
         && $request->hasHeader('Authorization', 'Bearer ghs_nightly_test'));
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/git/refs')
         && $request['sha'] === str_repeat('a', 40));
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
-        && $request['head'] === 'nightly/recipe-20261015' && $request['base'] === 'main');
+        && $request['head'] === $branch && $request['base'] === 'main');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/pulls?')
-        && $request['head'] === 'nckrtl:nightly/recipe-20261015');
+        && $request['head'] === 'nckrtl:'.$branch);
 });
 
-it('does nothing when main already pins today or a newer snapshot', function (string $snapshot): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
-    nightlyRecipeGitHub(nightlyRecipeFile($snapshot));
+it('does nothing when main already pins today or a newer snapshot', function (int $days): void {
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
+    nightlyRecipeGitHub(nightlyRecipeFile(nightlyRecipeDate($days)->format('Ymd\THis\Z')));
 
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBeNull();
 
     Http::assertNotSent(static fn (Request $request): bool => in_array($request->method(), ['PUT', 'PATCH'], true)
         || str_ends_with($request->url(), '/git/refs') || str_contains($request->url(), '/pulls'));
-})->with(['20261015T000000Z', '20261016T000000Z']);
+})->with(['today' => 1, 'newer' => 2]);
 
 it('reuses an existing date PR including a closed operator decision', function (string $state): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     nightlyRecipeGitHub(nightlyRecipeFile(), pulls: [['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'state' => $state, 'merged_at' => null]]);
 
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
@@ -89,8 +97,8 @@ it('reuses an existing date PR including a closed operator decision', function (
 })->with(['open', 'closed']);
 
 it('recovers after a crash between the date commit and opening its PR without another commit', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
-    nightlyRecipeGitHub(nightlyRecipeFile(), nightlyRecipeFile('20261015T000000Z'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
+    nightlyRecipeGitHub(nightlyRecipeFile(), nightlyRecipeFile(nightlyRecipeDate()->format('Ymd\THis\Z')));
 
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
 
@@ -98,7 +106,7 @@ it('recovers after a crash between the date commit and opening its PR without an
 });
 
 it('refuses to overwrite a concurrently edited date branch', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $changed = nightlyRecipeFile();
     $changed['sha'] = str_repeat('c', 40);
     nightlyRecipeGitHub(nightlyRecipeFile(), $changed);
@@ -109,7 +117,7 @@ it('refuses to overwrite a concurrently edited date branch', function (): void {
 });
 
 it('fails before opening a PR when GitHub refuses the pin write', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     nightlyRecipeGitHub(nightlyRecipeFile(), denyWrite: true);
 
     expect(fn () => app(OpenNightlyRecipePullRequestAction::class)->execute())->toThrow(RequestException::class);
@@ -130,11 +138,31 @@ it('notifies through release alerts when the nightly job fails without including
 });
 
 it('opens one reviewed PR that moves every Sury PHP pin together and reuses it on later nights', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
     $content = base64_decode($file['content']);
-    $bumped = str_replace('8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504', '8.5.12-1+0~20261014.1+ubuntu26.04~1.gbp000001', $content);
-    $bumped = preg_replace_callback('/("url": "[^"]*8\.5\.12[^"]*",\s*"sha256": ")[0-9a-f]{64}/', static fn (array $m): string => $m[1].str_repeat('d', 64), $bumped);
+    $recipe = new RecipeLoader()->load();
+    $current = $recipe->php($recipe->ciPhp)->phpVersion;
+    $next = preg_replace_callback('/[0-9]+$/', static fn (array $match): string => (string) ((int) $match[0] + 1), $current);
+    $document = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+    foreach ($document['tools'] as &$tool) {
+        if ($tool['source'] !== 'artifact' || ! str_starts_with($tool['version'], $current.'-')) {
+            continue;
+        }
+        $tool['version'] = str_replace($current.'-', $next.'-', $tool['version']);
+        foreach ($tool['artifacts'] as &$artifact) {
+            $artifact['url'] = str_replace($current.'-', $next.'-', $artifact['url']);
+            $artifact['sha256'] = str_repeat('d', 64);
+        }
+        unset($artifact);
+    }
+    unset($tool);
+    $bumped = json_encode($document, JSON_THROW_ON_ERROR);
+    $releases = [];
+    foreach ($recipe->php as $version => $build) {
+        $releases[] = 'PHP '.($version === $recipe->ciPhp ? $next : $build->phpVersion);
+    }
+    $title = 'Bump the PHP build to '.implode(', ', $releases);
     app()->instance(PhpBuildBump::class, new class($bumped) extends PhpBuildBump
     {
         public function __construct(private readonly string $bumped) {}
@@ -154,14 +182,23 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
         && base64_decode($request['content']) === $bumped);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
         && str_starts_with($request['head'], 'nightly/php-build-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
-        && $request['title'] === 'Bump the PHP build to PHP 8.5.12, PHP 8.4.26');
+        && $request['title'] === $title);
 });
 
 it('opens no PHP build PR when main pins the newest Sury build, and refuses a partial bump', function (): void {
-    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
     $content = base64_decode($file['content']);
-    $partial = preg_replace('/"version": "8\.5\.11-1\+0~20260924\.26\+ubuntu26\.04~1\.gbpbcb504"/', '"version": "8.5.12-1"', $content, 1);
+    $recipe = new RecipeLoader()->load();
+    $document = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+    $pin = &$document['tools']["php{$recipe->ciPhp}-cli"];
+    $current = $pin['version'];
+    $pin['version'] = $current.'.partial';
+    foreach ($pin['artifacts'] as &$artifact) {
+        $artifact['url'] = str_replace($current, $pin['version'], $artifact['url']);
+    }
+    unset($artifact, $pin);
+    $partial = json_encode($document, JSON_THROW_ON_ERROR);
     foreach ([$content => null, $partial => InvalidArgumentException::class] as $result => $error) {
         app()->instance(PhpBuildBump::class, new class($result) extends PhpBuildBump
         {

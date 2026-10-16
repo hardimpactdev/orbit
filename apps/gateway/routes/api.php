@@ -80,7 +80,6 @@ Route::prefix('v1')->group(function (): void {
         ->prefix('instances/{instance}/annotations')->group(function (): void {
             Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
             Route::post('', [AnnotationsController::class, 'store'])->name('annotation:create');
-            Route::get('events', [AnnotationsController::class, 'events'])->withoutMiddleware(RecordCommandActivity::class)->name('annotation:events');
             Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
             Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
         });

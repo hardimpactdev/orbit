@@ -1158,6 +1158,129 @@ it('scopes a final re-review to the prior final tree and findings until an opera
 });
 
 describe('mechanical main merges', function (): void {
+    it('defers a main merge until the workspace review owner settles', function (string $hold): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        $runtime->baseMergeHead = RM_COMMIT;
+        rm_watch(rm_open(RM_HEAD, behind: true));
+        $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed')]);
+        app()->instance(TaskCheckRunner::class, $checks);
+        $active = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 2, 'title' => 'New work', 'brief' => 'Review the new work.',
+            'status' => $hold === 'reviewing' ? TaskStatus::Reviewing : TaskStatus::Completed,
+        ]);
+        $handoff = null;
+        $reader = new class implements AgentSnapshotReader
+        {
+            public bool $working = true;
+
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                return ['thread' => ['session' => ['status' => $this->working ? 'running' : 'done'],
+                    'latestTurn' => ['id' => 'review-turn', 'state' => $this->working ? 'running' : 'completed']]];
+            }
+        };
+        if ($hold === 'handoff check') {
+            $handoff = TaskCheck::query()->create(['task_id' => $active->id, 'kind' => TaskCheckKind::Handoff,
+                'status' => TaskCheckStatus::Running, 'pid' => 42, 'process_started' => 'handoff',
+                'head_before' => RM_HEAD, 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
+        } elseif ($hold === 'reviewer turn') {
+            test_agent_thread($group, 'still-reviewing');
+            app()->instance(AgentSnapshotReader::class, $reader);
+        }
+        // Deliberately leave the group settling and its loaded tasks stale. Admission
+        // must read all current subtasks, not trust the group phase or the merge's task.
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        expect($runtime->baseMerges)->toBe(0)->and($checks->starts)->toBe(0)
+            ->and(TaskCheck::query()->where('kind', TaskCheckKind::BaseMerge)->count())->toBe(0)
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+        $active->update(['status' => TaskStatus::Completed]);
+        $handoff?->update(['status' => TaskCheckStatus::Passed]);
+        $reader->working = false;
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        expect($runtime->baseMerges)->toBe(1)->and($checks->starts)->toBe(1);
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        expect($runtime->pushes)->toBe([RM_COMMIT])
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+    })->with(['reviewing', 'reviewer turn', 'handoff check']);
+
+    it('recovers main merges after a reviewer replacement without ignoring working turns', function (?string $oldState, string $replacementState, bool $legacy, bool $pointed): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        $runtime->baseMergeHead = RM_COMMIT;
+        rm_watch(rm_open(RM_HEAD, behind: true));
+        $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed')]);
+        app()->instance(TaskCheckRunner::class, $checks);
+        $feature = $group->tasks->sole();
+        $obsolete = test_agent_thread($group, 'obsolete-reviewer');
+        $obsolete->update(['task_id' => $legacy ? null : $feature->id]);
+        $replacement = test_agent_thread($group, 'replacement-reviewer');
+        $replacement->update(['task_id' => $feature->id]);
+        // Leave the caller's group stale: admission must see the persisted replacement.
+        Task::topLevel()->whereKey($group->id)->update(['reviewer_agent_thread_id' => $pointed ? $replacement->id : null]);
+        $reader = new class($oldState, $replacementState) implements AgentSnapshotReader
+        {
+            public function __construct(public ?string $oldState, public string $replacementState) {}
+
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                $state = $threadId === 'obsolete-reviewer' ? $this->oldState : $this->replacementState;
+
+                return $state === null ? null : ['thread' => ['session' => ['status' => $state],
+                    'latestTurn' => ['id' => 'review-'.$threadId, 'state' => $state === 'running' ? 'running' : 'completed']]];
+            }
+        };
+        app()->instance(AgentSnapshotReader::class, $reader);
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        $held = $oldState === 'running' || $replacementState === 'running';
+        expect($runtime->baseMerges)->toBe($held ? 0 : 1)
+            ->and($checks->starts)->toBe($held ? 0 : 1)
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+        $reader->oldState = null;
+        $reader->replacementState = 'done';
+        if ($held) {
+            app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        }
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        expect($runtime->baseMerges)->toBe(1)->and($checks->starts)->toBe(1)
+            ->and($runtime->pushes)->toBe([RM_COMMIT])
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+    })->with([
+        'unavailable superseded subtask reviewer' => [null, 'done', false, true],
+        'unavailable superseded legacy reviewer' => [null, 'done', true, true],
+        'latest subtask reviewer without a pointer' => [null, 'done', false, false],
+        'superseded reviewer still working' => ['running', 'done', false, true],
+        'replacement reviewer still working' => [null, 'running', false, true],
+    ]);
+
+    it('reports an unavailable current reviewer instead of an indefinite settling hold', function (): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD, behind: true));
+        $reviewer = test_agent_thread($group, 'unavailable-reviewer');
+        $reviewer->update(['task_id' => $group->tasks->sole()->id]);
+        $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
+        app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+        {
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                return null;
+            }
+        });
+
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+
+        expect($runtime->baseMerges)->toBe(0)
+            ->and($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->merge_reason)->toContain('observation is unavailable')
+            ->and($group->fresh()?->assistance_reason)->toContain('reviewer thread #'.$reviewer->id,
+                'observation is unavailable', 'Restore access to its agent runtime or retry the review')
+            ->not->toContain('handoff check to settle');
+    });
+
     it('merges main and gates the merge before the final reviewer or PR starts', function (): void {
         $group = rm_group([['Feature', TaskStatus::Completed]], TaskGroupStatus::Settling);
         $feature = $group->tasks->sole();
