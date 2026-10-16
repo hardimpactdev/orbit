@@ -297,7 +297,7 @@ describe('instance:analytics:enable', function (): void {
 
         $this->postJson($this->url, ['hosts' => ['analytics.shop.example.com']])
             ->assertOk()
-            ->assertJsonPath('data.hosts.0.domain', 'analytics.shop.example.com');
+            ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com');
 
         expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(1);
     });
