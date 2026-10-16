@@ -78,7 +78,7 @@ it('plans only the production role pins and makes no remote or registry writes i
 
     expect($result['applied'])->toBeFalse()
         ->and($result['plan']->recipe)->toBe($recipe->identity)
-        ->and($result['plan']->snapshot)->toBe('20261014T000000Z')
+        ->and($result['plan']->snapshot)->toBe($recipe->snapshot)
         ->and($result['plan']->tools)->toHaveKeys(['curl', 'caddy', 'node', 'pnpm', 'vp-cli'])
         ->not->toHaveKeys(['rust', 'pi', 'php8.4-pcov'])
         ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true, 'status' => 'older_than_recipe'])
