@@ -1,0 +1,18 @@
+#!/bin/sh
+# A stand-in journalctl for the agent's tests. Each test links it into its own directory and writes
+# the shell snippets `cursor`, `history`, and `follow` there. It is committed rather than written by
+# the tests, because a program written while another test starts a process can fail with ETXTBSY.
+PATH=/usr/bin:/bin
+D=$(dirname "$0")
+printf '%s\n' "$*" >> "$D/calls"
+for argument; do
+    case $argument in
+        --cursor=*) cursor=${argument#--cursor=} ;;
+        --after-cursor=*) after=${argument#--after-cursor=} ;;
+    esac
+done
+case " $* " in
+    *" --follow "*) . "$D/follow" ;;
+    *" --reverse "*) . "$D/history" ;;
+    *) . "$D/cursor" ;;
+esac
