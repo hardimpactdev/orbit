@@ -345,11 +345,12 @@ final readonly class TaskSubtaskRunner
     /**
      * Prepares the workspace for these turns: the implementer's first turn, a relay to the implementer, a review
      * request, and a rubric reminder. It admits the subtask's declared topology first, so the topology is prepared
-     * after the group's baseline check, which runs the Project setup. Returns false while the turn must wait.
+     * after the group's baseline check, which runs the Project setup. A caller that admitted the topology itself, before
+     * its own remote work, passes `$topologyAdmitted`. Returns false while the turn must wait.
      *
      * @throws TaskTurnReceiptException
      */
-    public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): bool
+    public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false, bool $topologyAdmitted = false): bool
     {
         if ($role === TaskThreadRole::Reviewer && app(TaskWorkspaceHead::class)->checksRunning($group)) {
             return false;
@@ -358,7 +359,7 @@ final readonly class TaskSubtaskRunner
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
-        if (! $this->admitTopology($scheduler, $group, $task)) {
+        if (! $topologyAdmitted && ! $this->admitTopology($scheduler, $group, $task)) {
             return false;
         }
         if (! $alreadyFetched) {
@@ -845,9 +846,14 @@ final readonly class TaskSubtaskRunner
         if ($task->status !== TaskStatus::Running || $this->skipStaleConflictFixup($scheduler, $task)) {
             return;
         }
+        // A preparing topology can wait for many ticks, so admit it before the remote work below. prepareTurn then
+        // does not admit it again.
+        $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->admitTopology($scheduler, $group, $task)) {
+            return;
+        }
 
         $this->recordSubtaskStart($task);
-        $group = $task->parent()->with(['project', 'taskable'])->first();
         if ($group instanceof Task && ! $this->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
@@ -862,7 +868,7 @@ final readonly class TaskSubtaskRunner
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
                 }
-                if (! $this->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched)) {
+                if (! $this->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched, topologyAdmitted: true)) {
                     return;
                 }
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);

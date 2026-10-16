@@ -15,6 +15,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -3419,8 +3420,28 @@ it('runs the baseline before it prepares the topology, and starts the implemente
     $project->update(['task_check' => 'composer check']);
     $instance = scheduler_instance($project, scheduler_node('topology-baseline-node', '10.44.0.94'), 'baseline');
     $group = queued_group($project, 'Topology baseline', $instance);
-    $spawner = scheduler_recording_spawner();
-    scheduler_bind_claim($instance, $spawner);
+    $group->tasks()->sole()->update(['deliverables' => [
+        ['id' => 'tasks-doc', 'type' => 'file', 'path' => 'docs/reference/tasks.md', 'change' => 'modified', 'description' => 'The tasks reference.'],
+    ]]);
+    $agents = tick_running_agents();
+    scheduler_bind_claim($instance, $agents);
+    $paths = new class implements DeliverablePathRepository
+    {
+        public int $reads = 0;
+
+        public function defaultBranchCommit(Project $project): string
+        {
+            return str_repeat('a', 40);
+        }
+
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
+        {
+            $this->reads++;
+
+            return ['docs/reference/tasks.md'];
+        }
+    };
+    app()->instance(DeliverablePathRepository::class, $paths);
     $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
     app()->instance(TaskCheckRunner::class, $checks);
     $state = (object) ['ready' => false, 'seen' => []];
@@ -3434,12 +3455,13 @@ it('runs the baseline before it prepares the topology, and starts the implemente
 
     app(TaskScheduler::class)->claimNext();
 
-    expect($checks->starts)->toBe(1)->and($state->seen)->toBe([])->and($spawner->events)->toBe([]);
+    expect($checks->starts)->toBe(1)->and($state->seen)->toBe([])->and($agents->spawned)->toBe([]);
+    $reads = $paths->reads;
 
     test_pass_baseline();
 
     expect($state->seen)->toBe([[1, TaskCheckStatus::Passed]])
-        ->and($spawner->events)->toBe([])
+        ->and($agents->spawned)->toBe([])
         ->and($group->fresh()->capacity_wait_reason)->toBe('Task VM: preparing the topology app-dev.')
         ->and($group->fresh()->assistance_requested)->toBeFalse()
         ->and($group->tasks()->sole()->communication_failures)->toBe(0)
@@ -3447,11 +3469,18 @@ it('runs the baseline before it prepares the topology, and starts the implemente
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 
     test_pass_baseline();
-    expect($checks->starts)->toBe(1)->and($spawner->events)->toBe([]);
+    // The wait reads no deliverable paths and fetches nothing for the turn.
+    expect($checks->starts)->toBe(1)->and($agents->spawned)->toBe([])
+        ->and($paths->reads)->toBe($reads)
+        ->and($agents->turnFetches)->toBe(0);
 
     $state->ready = true;
     test_pass_baseline();
-    expect($spawner->events)->toBe(['implementer:1'])
+    // One admission per tick: the implementer's start admits the topology once, before its turn.
+    expect($agents->spawned)->toBe([$group->tasks()->sole()->id])
+        ->and($state->seen)->toHaveCount(3)
+        ->and($paths->reads)->toBe($reads + 1)
+        ->and($agents->turnFetches)->toBe(1)
         ->and($checks->starts)->toBe(1)
         ->and($group->fresh()->capacity_wait_reason)->toBeNull();
 });
@@ -3670,6 +3699,10 @@ it('polls a running baseline without preparing the topology, and prepares it onc
 
 it('admits the topology before it requests a review, and requests none until it is ready', function (): void {
     [$group, $task] = scheduler_review([], notified: false);
+    // Only the counting turn fetch of these agents is needed; the review keeps its own spawner.
+    $reviews = app(AgentSpawner::class);
+    $agents = tick_running_agents();
+    app()->instance(AgentSpawner::class, $reviews);
     $state = (object) ['ready' => false, 'subtasks' => []];
     mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function (Task $_, Task $subtask) use ($state): void {
         $state->subtasks[] = $subtask->id;
@@ -3681,6 +3714,7 @@ it('admits the topology before it requests a review, and requests none until it 
     app(TaskScheduler::class)->tick();
 
     expect($state->subtasks)->toBe([$task->id])
+        ->and($agents->turnFetches)->toBe(0)
         ->and(app(AgentSpawner::class))->reviewBases->toBe([])
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
         ->and($task->fresh()?->communication_failures)->toBe(0)
@@ -3690,6 +3724,7 @@ it('admits the topology before it requests a review, and requests none until it 
     app(TaskScheduler::class)->tick();
 
     expect(app(AgentSpawner::class))->reviewBases->toHaveCount(1)
+        ->and($agents->turnFetches)->toBe(1)
         ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt)
         ->and($group->fresh()?->capacity_wait_reason)->toBeNull();
 });
