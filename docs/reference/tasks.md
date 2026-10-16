@@ -1766,7 +1766,7 @@ An unavailable superseded reviewer conversation does not hold workspace changes 
 
 If HEAD changes unexpectedly during a review, Orbit discards that turn's outcome and requests a fresh review of the delta from the previous review tree on the new head. It does not ask for assistance or attribute the head change to the reviewer. A working-tree change without a head change still needs resolution; its reminder and any assistance describe the workspace mismatch rather than claiming that the reviewer edited it.
 
-Reviews already blocked by the old workspace-change reminder recover on the next tick when Orbit's stored main-merge check identifies the current head and tree. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
+Reviews already blocked by a workspace-change reminder poll their running workspace checks under the execution lock before the assistance gate. Orbit records finished remote results even when the database still says running. Active checks retain ownership and delay recovery; an unreadable result keeps assistance in place and records a communication failure. Recovery needs an exact current head and tree recorded by Orbit's finished check or main-merge check. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
 
 If Orbit cannot read the workspace during recovery, the assistance reason reports that inspection error instead of the old revert instruction. Recovery remains automatic after access returns, and unrelated assistance stays unchanged.
 
