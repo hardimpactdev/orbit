@@ -176,6 +176,11 @@ final readonly class TaskScheduler
         return $this->reviews->handleReviewerOutcome($this, $group, $task, $observation);
     }
 
+    public function recoverStaleReview(Task $group, Task $task): bool
+    {
+        return $this->reviews->recoverStaleReview($this, $group, $task);
+    }
+
     public function retryCommittedApproval(Task $group, Task $task): bool
     {
         return $this->reviews->retryCommittedApproval($this, $group, $task);

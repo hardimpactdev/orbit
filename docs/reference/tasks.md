@@ -1732,6 +1732,10 @@ An unavailable superseded reviewer conversation does not hold workspace changes 
 
 If HEAD changes unexpectedly during a review, Orbit discards that turn's outcome and requests a fresh review of the delta from the previous review tree on the new head. It does not ask for assistance or attribute the head change to the reviewer. A working-tree change without a head change still needs resolution; its reminder and any assistance describe the workspace mismatch rather than claiming that the reviewer edited it.
 
+Reviews already blocked by the old workspace-change reminder recover on the next tick when Orbit's stored main-merge check identifies the current head and tree. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
+
+If Orbit cannot read the workspace during recovery, the assistance reason reports that inspection error instead of the old revert instruction. Recovery remains automatic after access returns, and unrelated assistance stays unchanged.
+
 A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
 
 A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.

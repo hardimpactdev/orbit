@@ -59,6 +59,7 @@ use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -2737,6 +2738,119 @@ it('refuses a review when the working tree differs and asks for assistance after
         ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
         ->and($dispatcher->commands)->toHaveCount(1);
 });
+
+it('re-requests a review on an Orbit main merge with a fresh baseline and delta scope', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Reviewed before the merge.'),
+        FakeTaskTurnReceipts::contents('approved', 'Reviewed the merge delta.'),
+    ]);
+    $checks->head = str_repeat('d', 40);
+    $checks->tree = str_repeat('e', 40);
+    $checks->commitTree = $checks->tree;
+    $task->checks()->create([
+        'kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+        'pid' => 0, 'process_started' => '',
+        'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_head)->toBe($checks->head)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)])
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->sole()->properties['cause'])->toBe('orbit_main_merge')
+        ->and($dispatcher->commands)->toBe([])
+        ->and($signer->messages)->toBe([]);
+
+    $reader->turnId = 'merge-delta-review';
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($signer->messages)->toBe([$task->title."\n\nReviewed the merge delta."]);
+});
+
+it('recovers an assistance-blocked stale final review on the next tick only from an Orbit merge record', function (string $reason, bool $recorded, bool $agentEdit, bool $recovers, ?string $groupReason = null, bool $failedSnapshots = false): void {
+    [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
+    $task->update(['type' => TaskType::FinalReview]);
+    $group->tasks()->where('id', '!=', $task->id)->delete();
+    $receipt = $task->comments()->create([
+        'type' => TaskCommentType::Approved, 'author' => TaskThreadRole::Reviewer->value,
+        'body' => 'Approved the moved head.', 'review_attempt' => $task->review_attempt,
+        'task_group_id' => $group->id, 'posted_at' => now(),
+    ]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, $reason);
+    $task->update([
+        ...$failure, 'review_handled_comment_id' => $receipt->id,
+        'review_reminder_attempt' => $task->review_attempt, 'review_reminder_input_id' => 'old-reminder',
+    ]);
+    $group->update($groupReason === null ? $failure : TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $groupReason));
+    $checks->head = str_repeat('d', 40);
+    $checks->tree = str_repeat('e', 40);
+    $checks->commitTree = $checks->tree;
+    if ($recorded) {
+        $task->checks()->create([
+            'kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+            'pid' => 0, 'process_started' => '',
+            'head_before' => $checks->head, 'tree_before' => $checks->tree,
+            'head_after' => $checks->head, 'tree_after' => $checks->tree,
+            'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
+        ]);
+    }
+    if ($agentEdit) {
+        $checks->tree = str_repeat('f', 40);
+    }
+    if ($failedSnapshots) {
+        $checks->failSnapshot = true;
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            app(TaskScheduler::class)->tick();
+
+            $inspectionFailure = 'Orbit could not inspect the workspace while recovering a stale review after a main merge: The workspace tree could not be read.';
+            expect($task->fresh()?->assistance_requested)->toBeTrue()
+                ->and($group->fresh()?->assistance_requested)->toBeTrue()
+                ->and($task->fresh()?->assistance_reason)->toBe($groupReason === null ? $inspectionFailure : $reason)
+                ->and($group->fresh()?->assistance_reason)->toBe($groupReason ?? $inspectionFailure)
+                ->and($task->fresh()?->communication_failures)->toBe($groupReason === null ? $attempt : 0)
+                ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+                ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+                ->and($dispatcher->commands)->toBe([]);
+        }
+        $checks->failSnapshot = false;
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBe(! $recovers)
+        ->and($group->fresh()?->assistance_requested)->toBe(! $recovers)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + ($recovers ? 1 : 0))
+        ->and($task->fresh()?->review_workspace_head)->toBe($recovers ? $checks->head : str_repeat('a', 40))
+        ->and($task->fresh()?->review_workspace_tree)->toBe($recovers ? $checks->tree : str_repeat('b', 40))
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe($recovers ? [str_repeat('b', 40)] : [])
+        ->and($task->fresh()?->review_reminder_attempt)->toBe($recovers ? null : $task->review_attempt)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+    if ($groupReason !== null) {
+        expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+            ->and($group->fresh()?->assistance_reason)->toBe($groupReason);
+    }
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + ($recovers ? 1 : 0))
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe($recovers ? [str_repeat('b', 40)] : []);
+})->with([
+    'live legacy failure' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false, true],
+    'legacy failed inspections then restored workspace' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false, true, null, true],
+    'unrelated group direction with failed snapshots' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, false, 'Choose an environment.', true],
+    'current failure' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, true],
+    'no Orbit merge record' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, false, false, false],
+    'agent edited after merge' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, true, false],
+    'unrelated failure' => ['Project check failed.', true, false, false],
+    'unrelated group direction' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, false, 'Choose an environment.'],
+]);
 
 it('applies the kept approval once the reviewer restores the workspace', function (): void {
     [, $task, , $signer, $checks, , $reader] = scheduler_review([
