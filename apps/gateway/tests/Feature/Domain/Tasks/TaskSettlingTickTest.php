@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -70,6 +71,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Classification;
 use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -95,6 +97,20 @@ beforeEach(function (): void {
             ]];
         }
     });
+});
+
+it('writes and reads real transcript observations only in its temporary archive', function (): void {
+    $group = tick_group();
+    $thread = test_agent_thread($group, 'archive-regression');
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $archive = app(ArchiveAgentTranscriptsAction::class);
+
+    $archive->execute($group->id, $thread->node_id);
+
+    Storage::disk('local')->assertExists(ArchiveAgentTranscriptsAction::path($thread));
+    expect($archive->read($thread))->toBe(app(AgentDriverRegistry::class)->get($thread->driver)->observe($thread)->toArray());
 });
 
 it('deletes stale pending thread rows for finished tasks', function (): void {
