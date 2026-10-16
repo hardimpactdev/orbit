@@ -1,0 +1,43 @@
+Loading agent thread...
+
+┌  Show agent thread
+│
+├  ● Loaded agent thread
+│
+└  Loaded agent thread.
+
+
+┌  Agent thread: 3
+│
+├  State            done
+│
+├  Kind             delta
+│
+├  Source           live
+│
+├  Cursor           run-1.9
+│
+├  Tokens           52,000
+│
+├  Input            2,400
+│
+├  Cached           43,200
+│
+├  Output           6,400
+│
+├  Calls            5
+│
+├  Peak             10,100
+│
+├  Line diff        —
+│
+├  Input requests   0
+│
+├  Error            —
+│
+└  Provider error   —
+
+2026-09-23 09:58 · message · assistant
+  Added the SDK requests.
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

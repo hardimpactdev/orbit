@@ -37,6 +37,9 @@ class FakeAgentDriver implements AgentDriver
     /** @var (Closure(string): void)|null runs at the start of create and send, before the call is recorded */
     public ?Closure $beforeTurn = null;
 
+    /** @var list<string|null> the cursor of each read */
+    public array $readCursors = [];
+
     public function __construct(private readonly string $key = 'example') {}
 
     public function key(): string
@@ -107,6 +110,13 @@ class FakeAgentDriver implements AgentDriver
     public function observe(AgentThread $thread): AgentObservation
     {
         return $this->observation ?? throw new AgentDriverException('Unavailable');
+    }
+
+    public function read(AgentThread $thread, ?string $cursor): AgentObservation
+    {
+        $this->readCursors[] = $cursor;
+
+        return $this->observe($thread);
     }
 
     public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable

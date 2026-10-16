@@ -7,7 +7,7 @@ covers:
   - "packages/php-sdk/src/Responses/Tasks/**"
 ---
 
-The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app.
+The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app; [`tasks:agent:show`](#orbit-tasksagentshow) reads the same conversation, as a snapshot or as a delta after a cursor.
 
 A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
@@ -31,6 +31,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
 | [`tasks:question:close`](#orbit-tasksquestionclose) | Close an open or escalated question as answered or superseded. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
+| [`tasks:agent:show`](#orbit-tasksagentshow) | Show one redacted read of an agent thread's conversation. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 
@@ -344,7 +345,27 @@ List a task's agent threads: each subtask's reviewer and implementer, including 
 orbit tasks:agents [group] [--json]
 ```
 
-The table shows the thread ID, role, subtask ID, driver, model, state, tokens, uncached input, cached input, output, model calls, peak context, line diff, and observation time. An unknown token field is a blank cell. JSON output includes `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, and `peak_context_tokens`, each null when the driver did not report it. The [thread token metrics](/reference/tasks#thread-token-metrics) define the fields. The latest error of each thread follows the table. The Gateway's conversation stream for a thread has no CLI command; the web task board shows the cumulative total.
+The table shows the thread ID, role, subtask ID, driver, model, state, tokens, uncached input, cached input, output, model calls, peak context, line diff, and observation time. An unknown token field is a blank cell. JSON output includes `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, and `peak_context_tokens`, each null when the driver did not report it. The [thread token metrics](/reference/tasks#thread-token-metrics) define the fields. The latest error of each thread follows the table. The web task board shows the cumulative total. [`tasks:agent:show`](#orbit-tasksagentshow) reads one thread's conversation.
+
+## orbit tasks:agent:show
+
+Show one redacted read of an agent thread's conversation.
+
+```bash
+orbit tasks:agent:show [group] [session] [--after-sequence=CURSOR] [--json]
+```
+
+| Input | Choices | Meaning |
+| --- | --- | --- |
+| `group` | a list of tasks | The numeric task ID. |
+| `session` | the task's agent threads | The numeric agent thread ID, as `tasks:agents` shows it. |
+| `--after-sequence=CURSOR` | the `cursor` of a previous read | Return only the entries after that cursor, when the thread's Pi server can resume from it. |
+
+In a terminal the command prompts for each omitted input. The thread list shows the ID, role, subtask ID, driver, and state. It leaves out stored `t3` threads, which have no transcript. A noninteractive call fails before the request with `tasks.group_required` or `tasks.agent_thread_required`, and an invalid ID fails with `tasks.group_invalid` or `tasks.agent_thread_invalid`. The command needs Gateway access.
+
+Human output shows the state, the kind, the source, the cursor, the token metrics, the line diff, the number of input requests, and the errors. The kind is `snapshot` for the whole transcript, or `delta` for only the entries after `--after-sequence`. The source is `live` for a read from the thread's Node, or `saved transcript` when Orbit read its saved copy. Each transcript entry follows, oldest first, under a heading with its time, kind, and label. Entry times are the driver's UTC times, to the minute. JSON output returns the read with `request_id`. [Read a thread](/reference/tasks#read-a-thread) defines the fields and the cursor. To see newer entries, run the command again with the last `cursor` as `--after-sequence`.
+
+A thread that has not started yet shows no entries. A `t3` thread fails with `tasks.agent_transcript_unavailable`. A thread whose Node is gone fails with `tasks.agent_unavailable` when Orbit saved no transcript. A thread whose Pi server cannot serve the read fails with `tasks.agent_read_failed` when Orbit saved no transcript. An invalid `--after-sequence` fails with `validation.failed`.
 
 
 ## Related

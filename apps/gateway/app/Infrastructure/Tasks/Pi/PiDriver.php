@@ -108,6 +108,23 @@ final readonly class PiDriver implements AgentDriver
     }
 
     /**
+     * Reads the thread for a viewer. A cursor from the server's current run gets a delta: the entries the stream would
+     * send after it, merged by ID, with the current state. Any other cursor gets a snapshot, as on the stream.
+     */
+    public function read(AgentThread $thread, ?string $cursor): AgentObservation
+    {
+        $node = $this->node($thread);
+        $payload = $this->client->read($node, $thread->external_id, $this->resumeFrom($cursor));
+        if (data_get($payload, 'session.id') !== $thread->external_id) {
+            throw new AgentDriverException('Agent observation identity does not match.');
+        }
+
+        return $payload['kind'] === 'delta'
+            ? $this->deltaObservation($payload, $node)
+            : $this->snapshotObservation($payload, new PiTranscript, $node);
+    }
+
+    /**
      * Relays one Pi server stream. A cursor is `{run}.{sequence}`. A cursor from the server's
      * current run resumes after it, so a reconnect gets only what it missed. Any other cursor,
      * including one from before a server restart, gets a fresh snapshot.
@@ -234,10 +251,42 @@ final readonly class PiDriver implements AgentDriver
     }
 
     /**
-     * @param  array<string, mixed>  $data  A snapshot or state event.
+     * Folds a delta as {@see events()} folds a resumed stream: the context names the open tool calls, each entry event adds
+     * its entries, and a settled state stops the calls that never got a result. A later entry replaces one with its ID.
+     *
+     * @param  array<string, mixed>  $delta
+     */
+    private function deltaObservation(array $delta, Node $node): AgentObservation
+    {
+        $transcript = new PiTranscript;
+        foreach (is_array($delta['context'] ?? null) ? $delta['context'] : [] as $entry) {
+            if (is_array($entry)) {
+                $transcript->remember($entry);
+            }
+        }
+        $entries = [];
+        foreach (is_array($delta['events'] ?? null) ? $delta['events'] : [] as $event) {
+            if (! is_array($event)) {
+                continue;
+            }
+            $normalized = match (true) {
+                ($event['kind'] ?? null) === 'entry' && is_array($event['entry'] ?? null) => $transcript->entries($event['entry']),
+                ($event['kind'] ?? null) === 'state' && $this->settled($event['state'] ?? null) => $transcript->settle(),
+                default => [],
+            };
+            foreach ($normalized as $entry) {
+                $entries[$entry['id']] = $entry;
+            }
+        }
+
+        return $this->observation($this->redactObject($delta, $node), $this->redactEntries(array_values($entries), $node), delta: true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  A snapshot, delta, or state event.
      * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $entries
      */
-    private function observation(array $data, array $entries): AgentObservation
+    private function observation(array $data, array $entries, bool $delta = false): AgentObservation
     {
         $state = AgentThreadState::tryFrom(is_string($data['state'] ?? null) ? $data['state'] : '');
         $error = is_string($data['error'] ?? null) && $data['error'] !== '' ? $data['error'] : null;
@@ -258,6 +307,7 @@ final readonly class PiDriver implements AgentDriver
             cursor: $this->cursor($data),
             turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,
             providerError: $state === AgentThreadState::Failed && in_array($data['providerError'] ?? null, ['overloaded', 'rate_limited', 'server_error'], true) ? $data['providerError'] : null,
+            delta: $delta,
         );
     }
 

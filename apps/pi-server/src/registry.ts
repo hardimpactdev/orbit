@@ -136,6 +136,30 @@ export interface Resumed {
 
 export type StreamEvent = Snapshot | Resumed | EntryEvent | StateEvent;
 
+/**
+ * Answers `GET /sessions/{id}` with a cursor from the current run: the session's current state
+ * and the events a stream resumed from the same cursor would send after its `resumed` event.
+ */
+export interface Delta {
+    kind: "delta";
+    run: string;
+    /** The newest sequence of this run: the cursor for the next read. */
+    sequence: number;
+    session: { id: string };
+    state: DerivedState["state"];
+    error: string | null;
+    providerError?: DerivedState["providerError"];
+    turnId: string | null;
+    usage: Usage;
+    /** As in `Resumed`: entries at or before the cursor whose tool calls have no result yet. */
+    context: TranscriptEntry[];
+    /**
+     * Exactly the events a stream resumed from the same cursor replays after its `resumed`
+     * event, in sequence order.
+     */
+    events: (EntryEvent | StateEvent)[];
+}
+
 /** The last event a client received: the run and the sequence number within it. */
 export interface StreamCursor {
     run: string;
@@ -143,6 +167,14 @@ export interface StreamCursor {
 }
 
 export type StreamListener = (event: StreamEvent) => void;
+
+/** What a client missed after a cursor. A resumed stream and a delta read both send it. */
+interface Replay {
+    /** The cursor's sequence. */
+    after: number;
+    context: TranscriptEntry[];
+    missed: (EntryEvent | StateEvent)[];
+}
 
 interface LiveSession {
     id: string;
@@ -244,8 +276,29 @@ export class SessionRegistry {
         }
     }
 
-    async snapshot(id: string): Promise<Snapshot> {
-        return this.buildSnapshot(await this.load(id));
+    /**
+     * Reads a session. With a cursor from the current run that is not ahead of it, returns a
+     * delta: the current state and the events after the cursor, as a resumed stream sends them.
+     * Otherwise returns a full snapshot.
+     */
+    async read(id: string, after?: StreamCursor): Promise<Snapshot | Delta> {
+        const live = await this.load(id);
+        const replay = this.replay(live, after);
+        if (replay === undefined) {
+            return this.buildSnapshot(live);
+        }
+
+        return {
+            kind: "delta",
+            run: live.run,
+            sequence: live.sequence,
+            session: { id: live.id },
+            ...this.derive(live),
+            turnId: latestTurn(live),
+            usage: usage(live.session),
+            context: replay.context,
+            events: replay.missed,
+        };
     }
 
     /**
@@ -260,8 +313,21 @@ export class SessionRegistry {
     ): Promise<() => void> {
         const live = await this.load(id);
         live.listeners.add(listener);
-        const replay = after === undefined ? undefined : this.replay(live, after);
-        (replay ?? [this.buildSnapshot(live)]).forEach(listener);
+        const replay = this.replay(live, after);
+        const start: StreamEvent[] =
+            replay === undefined
+                ? [this.buildSnapshot(live)]
+                : [
+                      {
+                          kind: "resumed",
+                          run: live.run,
+                          sequence: replay.after,
+                          session: { id: live.id },
+                          context: replay.context,
+                      },
+                      ...replay.missed,
+                  ];
+        start.forEach(listener);
 
         return () => {
             live.listeners.delete(listener);
@@ -423,11 +489,12 @@ export class SessionRegistry {
 
     /**
      * Rebuilds what a client missed after a cursor: the entries streamed after it and the latest
-     * state if it changed after it, in sequence order. Returns undefined when the cursor belongs
-     * to another run or is ahead of this run, so the caller sends a snapshot instead.
+     * state if it changed after it, in sequence order, and the open tool calls at the cursor.
+     * Returns undefined when there is no cursor, or it belongs to another run or is ahead of this
+     * run, so the caller sends a snapshot instead.
      */
-    private replay(live: LiveSession, after: StreamCursor): StreamEvent[] | undefined {
-        if (after.run !== live.run || after.sequence > live.sequence) {
+    private replay(live: LiveSession, after: StreamCursor | undefined): Replay | undefined {
+        if (after === undefined || after.run !== live.run || after.sequence > live.sequence) {
             return undefined;
         }
         const missed: (EntryEvent | StateEvent)[] = [];
@@ -455,16 +522,7 @@ export class SessionRegistry {
         }
         missed.sort((a, b) => a.sequence - b.sequence);
 
-        return [
-            {
-                kind: "resumed",
-                run: live.run,
-                sequence: after.sequence,
-                session: { id: live.id },
-                context: [...new Set(openCalls.values())],
-            },
-            ...missed,
-        ];
+        return { after: after.sequence, context: [...new Set(openCalls.values())], missed };
     }
 
     private emit(live: LiveSession, event: StreamEvent): void {

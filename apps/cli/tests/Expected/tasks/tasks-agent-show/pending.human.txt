@@ -1,0 +1,41 @@
+Loading agent thread...
+
+┌  Show agent thread
+│
+├  ● Loaded agent thread
+│
+└  Loaded agent thread.
+
+
+┌  Agent thread: 5
+│
+├  State            —
+│
+├  Kind             snapshot
+│
+├  Source           live
+│
+├  Cursor           —
+│
+├  Tokens           —
+│
+├  Input            —
+│
+├  Cached           —
+│
+├  Output           —
+│
+├  Calls            —
+│
+├  Peak             —
+│
+├  Line diff        —
+│
+├  Input requests   0
+│
+├  Error            —
+│
+└  Provider error   —
+
+No entries.
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
