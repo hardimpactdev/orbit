@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
@@ -27,7 +28,7 @@ final readonly class AnnotatorFootprintArtifact implements NodeFootprintArtifact
 
     public function name(): string
     {
-        return 'annotator';
+        return ReservedNames::AnnotatorArtifact;
     }
 
     public function applies(Node $node): bool

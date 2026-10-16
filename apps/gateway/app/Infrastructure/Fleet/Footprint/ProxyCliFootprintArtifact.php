@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Fleet\Footprint;
 
 use App\Actions\Processes\RestartProcessAction;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -30,7 +31,7 @@ final readonly class ProxyCliFootprintArtifact implements NodeFootprintArtifact
 
     public function name(): string
     {
-        return 'proxycli';
+        return ReservedNames::ProxyCliArtifact;
     }
 
     public function applies(Node $node): bool

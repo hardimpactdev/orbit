@@ -79,6 +79,7 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
+require_once __DIR__.'/Helpers/PlugInAssertions.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
