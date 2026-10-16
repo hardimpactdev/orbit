@@ -42,12 +42,12 @@ A request that starts a long operation creates one `operations` row and answers 
 | `sequence` | A counter that grows with every change of the row or one of its steps |
 | `current_step` | The step that runs, or null |
 | `failed_step`, `error_code` | The step that ended a failed operation and its error code |
-| `result` | What the operation produced, such as the deployment and the selected release |
+| `result` | What the operation produced, such as the selected release |
 | `triggered_by` | The calling Node's name |
 
 Each step gets one `operation_steps` row with its `name`, `position`, `status` (`pending`, `running`, `succeeded`, `failed`, or `cancelled`), start and finish times, a bounded output tail, its error code, whether it is `resumable`, and the `sequence` at which it last changed.
 
-A domain record that the operation produces stays. A deploy still writes its `instance_deployments` row with the full log. The operation is the execution; the deployment is the history of the Instance.
+A deploy still writes its `instance_deployments` row with the full log, until [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history) replaces that history with operations in step 6 below. A domain record that an operation changes, such as the Instance, stays.
 
 ### Runs on the `operations` queue
 
@@ -74,7 +74,7 @@ A step that a person writes, such as a deploy step that migrates a database, is 
 - a `running` operation whose attempt lease is free, because its worker died or its code ended without recording the outcome, and
 - a `queued` operation whose job was dispatched more than 10 minutes ago and has not started, but only while the `operations` queue holds no job at all, because Redis can lose a job. With one worker, an operation that waits behind a long one still has its job in the queue, so the sweep never adds a second one.
 
-The runner then decides what the interrupted step means. A resumable step runs again. A step that is not resumable fails with `operation.worker_lost`, and the operation fails at that step. An operation that has started three times fails the same way, so a step that kills its worker cannot loop. The kind finishes its domain record either way, so a lost deploy still ends its deployment row as failed.
+The runner then decides what the interrupted step means. A resumable step runs again. A step that is not resumable fails with `operation.worker_lost`, and the operation fails at that step. An operation that has started three times fails the same way, so a step that kills its worker cannot loop. The kind finishes its domain record either way, so a lost deploy still ends its deployment row as failed, until step 6 below replaces that row.
 
 When a resumed deploy plans different steps than its first attempt, because someone changed the deploy steps in between, it fails with `operation.plan_changed`.
 
@@ -86,7 +86,7 @@ While its job runs, a deploy also takes the Instance's existing operation lock, 
 
 ### Cancel
 
-`POST /api/v1/operations/{operation}/cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A running one stops before its next step and becomes `cancelled`; the running step finishes first. A cancelled deploy records its deployment as failed with `deployment.cancelled`. This maps onto `tasks/cancel` of MCP Tasks.
+`POST /api/v1/operations/{operation}/cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A running one stops before its next step and becomes `cancelled`; the running step finishes first. A cancelled deploy records its deployment as failed with `deployment.cancelled`, until step 6 below replaces the deployment row. This maps onto `tasks/cancel` of MCP Tasks.
 
 A deploy ignores a cancel request once its `activation` step succeeded. The new release is then live, and stopping would skip the PHP refresh, the `after_activation` steps such as a queue restart, and the cleanup. The deploy finishes, and its operation keeps `cancel_requested` set. A half-done deploy marked `cancelled` would be worse than a late cancel, and a separate error code would report a failure where nothing failed.
 
@@ -113,10 +113,11 @@ The agent calls `operation-show` with `after_sequence` after `poll.after_seconds
 This pull request moves the API, MCP, CLI, and web deploy of an Instance onto operations. These follow, each in its own pull request:
 
 1. **Rollback.** Done: `instance.rollback` runs as an operation with the steps `rollback`, `activation`, `php_refresh`, and `process_restart`, and the NDJSON stream code is gone. A rollback needs the queue and can wait behind an operation on another Instance. The maintainer decided on 16 Oct 2026 that a rollback cancels a deploy of the same Instance that no worker has started, and is busy once a worker has started one ([One operation at a time](/reference/deployments#one-operation-at-a-time)).
-2. **Instance create and remove.** Their operations replace `InstanceCreationRecovery` and `InstanceRemovalMember`.
-3. **Route convergence.** Its operation replaces `RouteRemovalResidue`.
+2. **Instance create and remove.** Their operations replace `InstanceCreationRecovery` and the removal ledger, `InstanceRemoval` and `InstanceRemovalMember`. Removal progress becomes operation steps, and a task workspace removal uses the same operation ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-removal-ledger)).
+3. **Route convergence.** Its operation holds the progress of a Route change. `RouteRemovalResidue` stays: it names cleanup owed on a Node that an offline removal did not reach, and that work can outlive any operation ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#an-operation-is-the-only-record-of-its-run)).
 4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) does this: `orbit:auto-deploy` starts a pinned `instance.deploy` operation only for a changed commit, so an unchanged commit still creates no record.
-5. **The PHP-FPM limit.** It stays at 600 seconds until no long operation runs in a request.
+5. **The PHP-FPM limit.** It stays at 600 seconds until no long operation runs in a request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) decides the other commands that still run long in a request and sets the new limit.
+6. **The deployment history.** Rollback moved in #1301, so `instance_deployments` can give way to operations in a pull request of its own ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history)).
 
 `orbit:activity-finalize-interrupted` stays: it ends Activity rows of requests that PHP-FPM killed, which operations do not replace.
 
@@ -145,6 +146,6 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 ## Affects
 
 - Components: apps/gateway, apps/web, apps/cli, packages/php-sdk, apps/docs
-- ADRs: none
+- ADRs: [0218](/decisions/0218-take-long-commands-off-the-request-path) extends this record
 - Detail: [Operations](/reference/operations); [Instance releases: Deploy through the API](/reference/deployments#deploy-through-the-api); [Realtime events: Operation](/reference/events#operation); [MCP: Operations](/reference/mcp#operations); [Gateway queue: Queues](/reference/gateway-queue#queues); [operation](/cli/operation)
 - Verify: `tests/Feature/Domain/Operations`, `tests/Feature/Api/OperationsTest.php`, `tests/Feature/Api/InstanceRollbackOperationTest.php`, and `tests/Feature/Api/InstanceDeploymentsTest.php` in apps/gateway; the operation request tests in packages/php-sdk; the deploy, rollback, and operation command tests in apps/cli; the operation tests in apps/web. On Incus: a deploy that answers 202, finishes on Horizon, survives a killed worker in a resumable step, and fails with `operation.worker_lost` in a deploy step.
