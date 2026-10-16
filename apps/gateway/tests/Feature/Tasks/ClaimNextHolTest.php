@@ -935,9 +935,9 @@ it('releases only expired top-level reservations without an execution mode', fun
 
     expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(2);
 
-    expect(Task::topLevel()->orderBy('id')->pluck('status')->all())->toBe([
+    expect(Task::topLevel()->orderBy('id')->get()->pluck('status')->all())->toBe([
         TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Reserved,
         TaskGroupStatus::Running, TaskGroupStatus::Backlog,
     ]);
-    expect(Task::query()->whereNotNull('parent_id')->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
+    expect(Task::query()->whereNotNull('parent_id')->get()->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
 });
