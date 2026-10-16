@@ -56,18 +56,25 @@ final readonly class TaskVmCloudInit
     public const array WorkspaceTools = ['rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev'];
 
     /**
-     * The user-data of a task VM, which boots from the base image. `orbit` is in `incus-admin` from the first boot, before
-     * Pi starts, so the agents it starts can run a nested topology once Incus is installed. The group is a system group,
-     * as the Incus package creates it, so the package keeps it. `orbit` already has passwordless sudo, so the group
-     * grants nothing more.
+     * Incus and what a nested topology needs beside it, installed without recommended packages: QEMU for amd64, the
+     * only architecture of the `base` profile, with its UEFI firmware, SPICE module, `qemu-img`, `virtiofsd`, and
+     * dnsmasq, which Incus VMs need but the Incus package only recommends; btrfs for the pool of the topology seed; and
+     * nftables for the isolation table. Pinned to Incus 6.0.5, whose recovery API adopts the topology seed.
+     *
+     * @var list<string>
+     */
+    public const array TopologyPackages = [
+        'incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base',
+        'btrfs-progs', 'nftables',
+    ];
+
+    /**
+     * The user-data of a task VM, which boots from the base image. The image build already put `orbit` in
+     * `incus-admin`, because cloud-init adds groups only to a user it creates.
      */
     public function render(string $gatewayPublicKey): string
     {
-        return self::document([
-            // The base image already has `orbit`, and cloud-init adds groups only to a user it creates.
-            'bootcmd' => [['sh', '-c', 'getent group incus-admin >/dev/null || groupadd --system incus-admin; if id orbit >/dev/null 2>&1; then usermod -aG incus-admin orbit; fi']],
-            'users' => [[...$this->user($gatewayPublicKey), 'groups' => 'incus-admin']],
-        ]);
+        return self::document(['users' => [$this->user($gatewayPublicKey)]]);
     }
 
     /** The user-data of the base image builder, which boots from the stock image. */

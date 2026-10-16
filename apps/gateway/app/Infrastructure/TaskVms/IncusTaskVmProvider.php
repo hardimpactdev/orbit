@@ -28,7 +28,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     public function __construct(
         private IncusHost $incus,
         private TaskVmSettings $settings,
-        private TaskVmWorkspaceVolumes $volumes,
+        private TaskVmVolumes $volumes,
     ) {}
 
     public function create(TaskVm $vm, string $userData): void
@@ -45,7 +45,9 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host((int) $vm->host_node_id);
-        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, $vm->image_fingerprint ?? $host->imageAlias, $userData, $vm->size);
+        // A VM whose size runs a topology boots with a clone of its base image's topology seed (ADR 0222).
+        $seed = $vm->size->resources()->testNodes > 0 ? $this->volumes->cloneSeed($host, $vm->incusHostNode(), $vm) : null;
+        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, $vm->image_fingerprint ?? $host->imageAlias, $userData, $vm->size, $seed);
 
         // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
@@ -134,7 +136,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
     }
 
-    /** Deletes the VM, then its workspace clone, which Incus keeps when it deletes the VM. */
+    /** Deletes the VM, then its topology seed clone and legacy workspace, which Incus keeps when it deletes the VM. */
     public function destroy(TaskVm $vm): void
     {
         $result = $this->incus($vm, ['delete', '--force', '--', $vm->name]);

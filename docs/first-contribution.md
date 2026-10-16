@@ -136,4 +136,4 @@ Orbit's maintainers and Orbit's own agents do the following work. A person who c
 - The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
 - Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI does not run it. The root checks in step 5 still apply to you.
 
-[Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) explains why contributors do not run Incus.
+[Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) explains why contributors do not run Incus.

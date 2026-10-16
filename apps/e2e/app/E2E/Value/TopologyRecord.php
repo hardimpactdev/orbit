@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** One issue's composed topology, as `<worktree>/.e2e/topology.json` records it. */
 final readonly class TopologyRecord
 {
-    public const int SCHEMA = 6;
+    public const int SCHEMA = 7;
 
     /** The one disk device name a mounted worktree uses on every checkout Node. */
     public const string SOURCE_DEVICE = 'orbit-source';

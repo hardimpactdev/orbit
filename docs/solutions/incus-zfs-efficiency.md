@@ -10,17 +10,17 @@ covers:
 
 ## Problem
 
-An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway and an operator. Task groups import one recipe base and run every Node, including the operator, as a VM; the harness counts them against capacity. Pre-recipe groups must drain or be cancelled before deployment. The measurements below used that container and exclude its memory. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
+An Orbit task group has an [Incus topology](/reference/incus-topologies) only when its subtasks declare one. A topology has the declared workload VMs plus a Gateway and an operator, nested in the group's task VM. Every Node, including the operator, is a VM, and the harness counts them against capacity. The measurements below used an earlier operator container and exclude its memory. Copy-on-write clones make the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
 
 ## Cause
 
-Incus creates each guest from the recipe base image with a native ZFS clone. The measured test pool used LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Imported recipe images keep their source disk size instead of forcing that smaller limit. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
+When these measurements ran, Incus created each guest from the recipe base image with a native ZFS clone. The measured test pool used LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Today each guest is a copy of the task VM's `node-template`: a btrfs snapshot in the pool `topology-seed`, which is a ZFS clone of the host's [topology seed](/reference/compute-drivers#the-topology-seed). A copy keeps the template's root disk size. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
 
 The original prepared Gateway and app-prod guests held Docker images despite running no Docker containers. Each Node had the same 2 GiB memory budget, although their workloads differ.
 
 ## Improvements, in priority order
 
-The host builds and smokes only the base image once per recipe. A topology group imports that one image for every role and builds none, avoiding about 7 to 9 minutes of repeated work. Check transfer time, archive space, nested boot, and the operator VM's memory on a real task VM before treating this as a measured net saving.
+The host builds and smokes only the base image once per recipe, and builds one topology seed from it. A task VM boots with a clone of the seed and copies every Node from its template, so it builds, transfers, and imports no image ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)).
 
 The recipe base build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
 
@@ -72,7 +72,7 @@ The experiment used a temporary 2 GiB XFS loop filesystem inside app-dev. This p
 
 ## Existing settings to keep
 
-Keep native Incus ZFS cloning, LZ4 compression, and sparse root volumes. They already provide the main VM disk saving. Shrinking the advertised 16 GiB disk does not reclaim 16 GiB of reserved space, because there is no such reservation.
+Keep native Incus ZFS cloning of the topology seed, LZ4 compression, and sparse volumes. They already provide the main VM disk saving. Shrinking the advertised 16 GiB disk does not reclaim 16 GiB of reserved space, because there is no such reservation.
 
 Guest block discard is supported, and `fstrim.timer` is enabled on all three Nodes. A trim before any cleanup released only tens of MiB of referenced data. There is no evidence for adding another trim scheduler. A trim after deleting large caches is useful.
 

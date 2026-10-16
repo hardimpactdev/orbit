@@ -15,7 +15,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceVolumes;
+use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Models\Node;
@@ -54,7 +54,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onTaskVmQueue();
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceVolumes $volumes, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images, TaskVmImageBuildChain $builds): void
+    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmVolumes $volumes, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images, TaskVmImageBuildChain $builds): void
     {
         $builds->recoverSubmissions();
         foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
@@ -69,7 +69,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                     Log::warning('Deleted an orphaned task VM.', ['node_id' => $node->id, 'name' => $name]);
                 }
                 foreach ($volumes->sweepClones($host, $node) as $name) {
-                    Log::warning('Deleted an orphaned task VM workspace clone.', ['node_id' => $node->id, 'volume' => $name]);
+                    Log::warning('Deleted an orphaned task VM volume.', ['node_id' => $node->id, 'volume' => $name]);
                 }
                 $this->misses(TaskVm::query()->live()->where('host_node_id', $node->id), $found['missing']);
                 $this->reportStrays($audit->strays($host, $node), $node);

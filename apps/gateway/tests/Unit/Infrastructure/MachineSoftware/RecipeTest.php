@@ -183,7 +183,7 @@ describe('machine recipe structure and identity', function (): void {
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
         $development = [...$production, ...$php];
-        $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
+        $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::TopologyPackages, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,

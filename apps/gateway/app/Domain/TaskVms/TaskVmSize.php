@@ -37,8 +37,8 @@ enum TaskVmSize: string
     {
         return match ($this) {
             self::Normal => new TaskVmResources(slots: 1),
-            self::Medium => new TaskVmResources(slots: 2, cpus: 4, memory: '8GiB', disk: '40GiB', qemuConfig: self::FreePageReporting, testNodes: 1, topologyPool: '25GiB'),
-            self::Large => new TaskVmResources(slots: 3, cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::FreePageReporting, testNodes: 2, topologyPool: '45GiB'),
+            self::Medium => new TaskVmResources(slots: 2, cpus: 4, memory: '8GiB', disk: '40GiB', qemuConfig: self::FreePageReporting, testNodes: 1),
+            self::Large => new TaskVmResources(slots: 3, cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::FreePageReporting, testNodes: 2),
         };
     }
 

@@ -4,20 +4,31 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** Each invocation is one phase of one image; all artifacts are held until the complete set passes smoke. */
+/**
+ * Each invocation is one phase of one image; all artifacts are held until the complete set passes smoke and has its
+ * topology seed. `smoke` keeps its VM for `topology-seed`, which builds the seed in it and then deletes it.
+ */
 final readonly class RecipeImageBuildSteps
 {
+    /** The remote program that builds a topology seed in the smoke VM, as root on the host. */
+    public const string SeedProgram = 'task-vms.build-topology-seed';
+
     public function __construct(
         private TaskVmSettings $settings,
         private IncusHost $incus,
@@ -26,6 +37,9 @@ final readonly class RecipeImageBuildSteps
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private RecipeImagePrograms $programs,
+        private TaskVmVolumes $volumes,
+        private RemoteProgramRunner $runner,
+        private RemoteProgramCatalog $catalog,
     ) {}
 
     public function run(TaskVmImageBuild $build, TaskVmImageBuildStep $step, ?string $program): bool
@@ -54,7 +68,7 @@ final readonly class RecipeImageBuildSteps
         }
         $alias = RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, $profile);
         $shell = $this->image->shell($host, $node, $name)->forRecipePhase($profile, $phase);
-        if (isset($build->images[$profile]) && ! in_array($phase, ['reset', 'smoke', 'publish'], true)) {
+        if (isset($build->images[$profile]) && ! in_array($phase, ['reset', 'smoke', 'publish', 'topology-seed'], true)) {
             return true;
         }
         try {
@@ -113,7 +127,9 @@ final readonly class RecipeImageBuildSteps
                     $this->image->checkSmoke($smokeShell);
                     $this->image->checked($smoke, 'image check', $smokeShell->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot'])));
                     $this->programs->verify($smokeShell, $recipe, $profile);
-                    $this->image->delete($host, $node, $smoke);
+                    break;
+                case 'topology-seed':
+                    $this->topologySeed($host, $node, $name.'-smoke', $build->images[$profile]['fingerprint']);
                     break;
                 default:
                     throw new TaskVmException('task_vm.image_build_failed', 'Unknown recipe image phase.');
@@ -123,6 +139,11 @@ final readonly class RecipeImageBuildSteps
             $detail = mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 500);
             if ($phase === 'publish') {
                 throw new TaskVmException('task_vm.image_build_failed', $detail."\nPublishing runs on Incus host [{$node->name}].", previous: $error);
+            }
+            // The seed is built from the host, so no guest log in the smoke VM tells more than the program's log.
+            if ($phase === 'topology-seed') {
+                throw $error instanceof TaskVmException && $error->errorCode === TaskVmError::TopologySeedFailed->value ? $error
+                    : new TaskVmException('task_vm.image_build_failed', $detail."\nThe topology seed is built from Incus host [{$node->name}].", previous: $error);
             }
             try {
                 $logShell = $this->image->shell($host, $node, $phase === 'smoke' ? $name.'-smoke' : $name);
@@ -140,6 +161,37 @@ final readonly class RecipeImageBuildSteps
         return true;
     }
 
+    /**
+     * Builds the topology seed of the base `$fingerprint` as {@see TaskVmVolumes::newSeed()} in the smoke VM `$smoke`
+     * with {@see self::SeedProgram}, then deletes the VM and renames the seed, so a seed with its final name is always
+     * finished. A finished seed is kept. The program creates the `-new` volume before it changes anything in the VM,
+     * so a VM beside a `-new` volume may hold the Incus state of an earlier attempt: it is replaced by a fresh one from
+     * the published base, as a gone VM is.
+     */
+    private function topologySeed(TaskVmHost $host, Node $node, string $smoke, string $fingerprint): void
+    {
+        if (! $this->volumes->exists($host, $node, TaskVmVolumes::seed($fingerprint))) {
+            if ($this->volumes->exists($host, $node, TaskVmVolumes::newSeed($fingerprint))) {
+                $this->image->delete($host, $node, $smoke);
+            }
+            if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
+                $this->image->launch($host, $node, $smoke, $fingerprint, $this->cloudInit->render($this->keys->publicKey()));
+            }
+            $this->image->awaitCloudInit($host, $node, $smoke);
+            try {
+                $this->runner->run($node, $this->catalog->program(self::SeedProgram, user: 'root'), [
+                    'project' => $host->project, 'pool' => $host->pool, 'vm' => $smoke, 'device' => TaskVmVolumes::SeedDevice,
+                    'volume' => TaskVmVolumes::newSeed($fingerprint), 'size' => TaskVmVolumes::SeedSize, 'fingerprint' => $fingerprint,
+                ]);
+            } catch (RemoteProgramFailed $failure) {
+                $log = mb_substr(trim($failure->log), -3000);
+                throw new TaskVmException(TaskVmError::TopologySeedFailed, "Building the topology seed in [{$smoke}] failed: {$failure->reason->value}.".($log === '' ? '' : "\n{$log}"), 502, $failure);
+            }
+        }
+        $this->image->delete($host, $node, $smoke);
+        $this->volumes->finishSeed($host, $node, $fingerprint);
+    }
+
     public function promote(TaskVmImageBuild $build): void
     {
         DB::transaction(function () use ($build): void {
@@ -148,9 +200,9 @@ final readonly class RecipeImageBuildSteps
             if ($current !== 1) {
                 throw new TaskVmException('task_vm.image_recipe_superseded', 'A newer recipe is desired. This build cannot become current.');
             }
-            $smoked = array_any($build->steps, static fn (array $entry): bool => $entry['program'] === 'base:smoke' && $entry['seconds'] !== null && $entry['error'] === null);
-            if (! isset($build->images['base']) || ! $smoked) {
-                throw new TaskVmException('task_vm.image_build_failed', 'The recipe base must pass smoke before promotion.');
+            $passed = static fn (string $program): bool => array_any($build->steps, static fn (array $entry): bool => $entry['program'] === $program && $entry['seconds'] !== null && $entry['error'] === null);
+            if (! isset($build->images['base']) || ! $passed('base:smoke') || ! $passed('base:topology-seed')) {
+                throw new TaskVmException('task_vm.image_build_failed', 'The recipe base must pass smoke and have its topology seed before promotion.');
             }
             $host = $this->settings->host($build->host_node_id);
             $this->image->promote($host, $build->hostNode, (string) $build->image_fingerprint);
@@ -171,7 +223,7 @@ final readonly class RecipeImageBuildSteps
         [$profile, $phase] = explode(':', (string) $build->current_program, 2) + ['', ''];
         $host = $this->settings->host($build->host_node_id);
         $published = $this->incus->aliasTarget($host, $build->hostNode, RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, $profile));
-        if (in_array($phase, ['publish', 'smoke'], true) && $published !== null) {
+        if (in_array($phase, ['publish', 'smoke', 'topology-seed'], true) && $published !== null) {
             return null;
         }
         if ($phase === 'launch' || array_key_exists((string) $build->builder_vm_name, $this->image->instances($host, $build->hostNode))) {

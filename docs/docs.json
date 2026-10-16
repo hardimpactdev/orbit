@@ -1059,7 +1059,7 @@
     },
     {
       "source": "/decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
@@ -1067,7 +1067,7 @@
     },
     {
       "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
@@ -1083,15 +1083,15 @@
     },
     {
       "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0050-release-successful-proof-resources-before-landing",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0056-retain-proof-topologies-for-interactive-review",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
@@ -1307,7 +1307,7 @@
     },
     {
       "source": "/decisions/0051-select-discovery-only-feature-delivery",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0052-seed-worktrees-from-successful-main-test-baselines",
@@ -1323,7 +1323,7 @@
     },
     {
       "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0059-make-the-builder-own-the-candidate-quality-gate",

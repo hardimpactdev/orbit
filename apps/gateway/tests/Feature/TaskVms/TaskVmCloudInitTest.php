@@ -7,17 +7,10 @@ use App\Infrastructure\TaskVms\TaskVmCloudInit;
 
 const CLOUD_INIT_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
-it('renders only the orbit user in incus-admin and the Gateway key for a task VM, which boots from the base image', function (): void {
+it('renders only the orbit user and the Gateway key for a task VM, whose base image already put orbit in incus-admin', function (): void {
     expect(new TaskVmCloudInit()->render(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
-            "bootcmd": [
-                [
-                    "sh",
-                    "-c",
-                    "getent group incus-admin >/dev/null || groupadd --system incus-admin; if id orbit >/dev/null 2>&1; then usermod -aG incus-admin orbit; fi"
-                ]
-            ],
             "users": [
                 {
                     "name": "orbit",
@@ -26,8 +19,7 @@ it('renders only the orbit user in incus-admin and the Gateway key for a task VM
                     "sudo": "ALL=(ALL) NOPASSWD:ALL",
                     "ssh_authorized_keys": [
                         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway"
-                    ],
-                    "groups": "incus-admin"
+                    ]
                 }
             ]
         }

@@ -7,17 +7,15 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\OrphanNetworkSweep;
-use App\E2E\RoleImagePrograms;
-use App\E2E\RoleImages;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
+use App\E2E\TopologyNodePrograms;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\WorktreeSynchronizer;
@@ -97,30 +95,26 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
     };
 }
 
-/** @return array{acquirer:TopologyAcquirer, releaser:TopologyReleaser, incus:FakeIncus, worktree:string, request:TopologyRequest, images:array<string,string>} */
-function acquirerFixture(?Closure $override = null, array &$steps = [], bool $images = true): array
+/** @return array{acquirer:TopologyAcquirer, releaser:TopologyReleaser, incus:FakeIncus, worktree:string, request:TopologyRequest} */
+function acquirerFixture(?Closure $override = null, array &$steps = [], bool $template = true): array
 {
     $incus = new FakeIncus()->install();
     $incus->respond(acquirerResponder($incus, $steps, $override));
-    $fingerprints = [];
-    if ($images) {
-        foreach (RoleImage::cases() as $image) {
-            $fingerprints[$image->value] = $incus->addImage($image->alias(), $image->instanceType(), ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => 'base']);
-        }
+    if (! $template) {
+        unset($incus->instances[IncusHost::TEMPLATE]);
     }
     $worktree = acquirerWorktree();
     $paths = StatePaths::forPrimary($worktree);
     $operation = new OperationId(str_repeat('c', 32));
-    $host = new IncusHost(pool: 'orbit-e2e');
+    $host = new IncusHost;
     $networks = new IncusNetworkLifecycle($host);
-    $guests = new TopologyGuestPreparer($host);
+    $guests = new TopologyGuestPreparer($host, settleIntervalMicroseconds: 0);
 
     return [
         'acquirer' => new TopologyAcquirer(
             host: $host,
             networks: $networks,
-            images: new RoleImages($host, settleIntervalMicroseconds: 0),
-            composer: new TopologyComposer($host, $guests, new RoleImagePrograms($worktree)),
+            composer: new TopologyComposer($host, $guests, new TopologyNodePrograms($worktree)),
             synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
             verifier: new TopologyVerifier($host, 1, 0),
             guests: $guests,
@@ -134,7 +128,6 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $im
         'incus' => $incus,
         'worktree' => $worktree,
         'request' => new TopologyRequest('TST-9', $worktree),
-        'images' => $fingerprints,
     ];
 }
 
@@ -146,9 +139,10 @@ describe('TopologyAcquirer', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('composes the declared Nodes from their role images and records the topology', function () {
+    it('composes the declared Nodes from template copies and records the topology', function () {
         $steps = [];
-        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request, 'images' => $images] = acquirerFixture(steps: $steps);
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(steps: $steps);
+        $template = $incus->instances[IncusHost::TEMPLATE];
         $timings = [];
 
         $topology = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']), function (string $step, float $seconds) use (&$timings): void {
@@ -163,14 +157,17 @@ describe('TopologyAcquirer', function () {
         expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
 
         $guests = [];
-        foreach ($incus->instances as $name => $guest) {
-            $guests[substr($name, strlen('orbit-e2e-tst-9-aaaaaaaa-'))] = [$guest['type'], $guest['config']['volatile.base_image'], isset($guest['devices']['orbit-source'])];
+        foreach ($incus->guests() as $name => $guest) {
+            $guests[substr($name, strlen('orbit-e2e-tst-9-aaaaaaaa-'))] = [$guest['type'], $guest['config']['volatile.base_image'], $guest['devices']['root']['pool'], isset($guest['devices']['orbit-source'])];
         }
         expect($guests)->toBe([
-            'gateway' => ['virtual-machine', $images['gateway'], true],
-            'app-dev' => ['virtual-machine', $images['app-dev'], true],
-            'operator' => ['virtual-machine', $images['operator'], true],
+            'gateway' => ['virtual-machine', $template['config']['volatile.base_image'], IncusHost::POOL, true],
+            'app-dev' => ['virtual-machine', $template['config']['volatile.base_image'], IncusHost::POOL, true],
+            'operator' => ['virtual-machine', $template['config']['volatile.base_image'], IncusHost::POOL, true],
         ])
+            ->and(array_map(static fn (array $call): string => $call[1], $incus->callsOf('copy')))
+            ->toBe(array_fill(0, 3, 'local:'.IncusHost::TEMPLATE))
+            ->and($incus->instances[IncusHost::TEMPLATE])->toBe($template)
             ->and($incus->instances['orbit-e2e-tst-9-aaaaaaaa-operator']['devices']['orbit-source'])
             ->toMatchArray(['source' => realpath($worktree), 'path' => '/home/orbit/orbit'])
             ->and($steps)->toBe([
@@ -188,33 +185,25 @@ describe('TopologyAcquirer', function () {
             ])
             ->and($timings)->toBe(['reserve', 'start', 'scripts', 'bootstrap.gateway', 'enroll.app-dev', 'enroll.operator', 'compose', 'readiness'])
             ->and($topology->toArray()['nodes'])->toBe(['gateway', 'app-dev', 'operator'])
-            ->and($topology->construction->images)->toBe(['gateway' => $images['gateway'], 'app-dev' => $images['app-dev'], 'operator' => $images['operator']])
+            ->and(array_keys($topology->construction->nodes))->toBe(['gateway', 'app-dev', 'operator'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->requireTopology()->toArray())->toBe($topology->toArray())
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure']);
     });
 
-    it('composes imported recipe roles including a VM operator without building images', function (): void {
-        extract(acquirerFixture(static function (string $instance, array $argv): ?array {
-            if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'boot_id')) {
-                return ["boot-ready\n", '', 0];
-            }
+    it('releases a composed topology without touching the template', function (): void {
+        extract(acquirerFixture());
+        $template = $incus->instances[IncusHost::TEMPLATE];
 
-            return null;
-        }));
-        foreach (RoleImage::cases() as $role) {
-            $incus->images[$images[$role->value]]['type'] = 'virtual-machine';
-            $incus->images[$images[$role->value]]['properties'] = ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => 'base'];
-        }
-
-        $record = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
-        expect(array_column($incus->instances, 'type'))->toBe(['virtual-machine', 'virtual-machine', 'virtual-machine']);
-        expect($incus->callsOf('publish'))->toBe([]);
-        foreach ($incus->callsOf('init') as $call) {
-            expect(array_any($call, static fn (string $argument): bool => str_starts_with($argument, 'root,size=')))->toBeFalse();
-        }
+        $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
+        expect(array_column($incus->guests(), 'type'))->toBe(['virtual-machine', 'virtual-machine', 'virtual-machine'])
+            ->and($incus->callsOf('init'))->toBe([])
+            ->and($incus->callsOf('publish'))->toBe([]);
         $acquirer->verify($request);
         $releaser->release($request);
-        expect($incus->instances)->toBe([]);
+
+        expect($incus->guests())->toBe([])
+            ->and($incus->instances)->toBe([IncusHost::TEMPLATE => $template])
+            ->and(array_filter($incus->calls, static fn (array $call): bool => in_array('local:'.IncusHost::TEMPLATE, $call, true) && $call[0] !== 'copy'))->toBe([]);
     });
 
     it('fails composition and cleans up when a Gateway VPN program fails', function (): void {
@@ -222,8 +211,7 @@ describe('TopologyAcquirer', function () {
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
             ->toThrow(RuntimeException::class, 'Gateway convergence program [vpn-prerequisites] failed.');
-        expect($incus->instances)->toBe([]);
-        expect($incus->callsOf('publish'))->toBe([]);
+        expect($incus->guests())->toBe([]);
     });
 
     it('reports recipe pnpm repair failure before enrollment and cleans its guests', function (): void {
@@ -231,7 +219,7 @@ describe('TopologyAcquirer', function () {
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
             ->toThrow(RuntimeException::class, 'pinned artifact digest mismatch');
-        expect($incus->instances)->toBe([]);
+        expect($incus->guests())->toBe([]);
     });
 
     it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
@@ -248,7 +236,7 @@ describe('TopologyAcquirer', function () {
                 ['app-prod-2', '10.44.0.4', 'app-prod', 'app-prod-2'],
                 ['operator', '10.44.0.5'],
             ])
-            ->and(array_keys($incus->instances))->toHaveCount(5);
+            ->and($incus->guests())->toHaveCount(5);
     });
 
     it('adds each declared extra role from the operator after every Node is enrolled', function () {
@@ -277,11 +265,11 @@ describe('TopologyAcquirer', function () {
             ]);
     });
 
-    it('fails before creating anything when a role image is missing and names the build command', function () {
-        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(images: false);
+    it('rolls back the network and names the copy failure when the host has no template', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(template: false);
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Step reserve failed: The recipe base image is missing or invalid; import it with bin/e2e-topology-images ensure --recipe-images=PATH. Pre-recipe groups must drain or be cancelled.')
+            ->toThrow(RuntimeException::class, 'Step reserve failed: Incus guest copy batch failed for gateway: Error: Instance not found; app-dev: Error: Instance not found; operator: Error: Instance not found.')
             ->and($incus->instances)->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
@@ -296,7 +284,7 @@ describe('TopologyAcquirer', function () {
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
             ->toThrow(RuntimeException::class, 'Step enroll.app-dev failed: guest script converge-node.sh exited 1 on orbit-e2e-tst-9-aaaaaaaa-gateway at Orbit step wireguard-peer-install (vpn.peer_config_failed).')
-            ->and($incus->instances)->toBe([])
+            ->and($incus->guests())->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure', 'remove'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
@@ -309,7 +297,7 @@ describe('TopologyAcquirer', function () {
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
             ->toThrow(RuntimeException::class, 'Step readiness failed: Topology readiness verification failed. Failed probes: nodes.registered')
-            ->and($incus->instances)->toBe([]);
+            ->and($incus->guests())->toBe([]);
     });
 
     it('refuses a second acquisition while the issue holds a topology', function () {
@@ -326,7 +314,7 @@ describe('TopologyAcquirer', function () {
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
             ->toThrow(RuntimeException::class, 'The worktree is missing apps/gateway/.env; run bin/bootstrap in the worktree before acquire.')
-            ->and($incus->instances)->toBe([]);
+            ->and($incus->guests())->toBe([]);
     });
 
     it('runs one command on an exact Node and refuses an undeclared Node', function () {
@@ -374,7 +362,7 @@ describe('TopologyAcquirer', function () {
             'deleted:orbit-e2e-tst-9-aaaaaaaa-gateway',
             'deleted:'.featureTarget('TST-9', 'a', TopologyRecipe::compose(['app-dev']))->network(),
         ])
-            ->and($incus->instances)->toBe([])
+            ->and($incus->guests())->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse()
             ->and(fn () => $releaser->release($request))->toThrow(RuntimeException::class, 'TST-9 has no active attempt.');
@@ -389,7 +377,7 @@ describe('TopologyAcquirer', function () {
             'type' => 'virtual-machine',
             'status' => 'Stopped',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => 'TST-9', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
-            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/']],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => IncusHost::POOL, 'path' => '/']],
         ];
         $incus->instances['orbit-e2e-tst-9-bbbbbbbb-app-dev'] = $incus->instances[$target->instance('app-dev')];
 
@@ -397,7 +385,7 @@ describe('TopologyAcquirer', function () {
 
         expect($result['released'])->toBe(['deleted:'.$target->instance('app-dev')])
             ->and($result['already_absent'])->toBe([$target->instance('operator'), $target->instance('gateway'), $target->network()])
-            ->and(array_keys($incus->instances))->toBe(['orbit-e2e-tst-9-bbbbbbbb-app-dev']);
+            ->and(array_keys($incus->guests()))->toBe(['orbit-e2e-tst-9-bbbbbbbb-app-dev']);
     });
 
     it('refuses to release a guest that another attempt owns', function () {
@@ -408,20 +396,20 @@ describe('TopologyAcquirer', function () {
             'type' => 'virtual-machine',
             'status' => 'Running',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => 'TST-9', 'user.orbit.e2e.attempt' => str_repeat('b', 32)],
-            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/']],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => IncusHost::POOL, 'path' => '/']],
         ];
 
         expect(fn () => $releaser->release($request))
             ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt')
-            ->and($incus->instances)->toHaveCount(1)
+            ->and($incus->guests())->toHaveCount(1)
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
     });
 
-    it('records schema 6 without the retired attempt purpose', function () {
+    it('records schema 7 without the retired attempt purpose', function () {
         ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture();
         $topology = $acquirer->acquire($request, TopologyRecipe::compose([]));
 
         expect($topology->toArray())->not->toHaveKey('purpose')
-            ->and($topology->toArray()['schema'])->toBe(6);
+            ->and($topology->toArray()['schema'])->toBe(7);
     });
 });
