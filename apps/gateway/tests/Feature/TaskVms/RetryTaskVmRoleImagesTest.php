@@ -38,7 +38,7 @@ function roleImageRecoveryFixture(): array
 it('recovers only the owned ready VM pinned recipe and leaves assistance and lifecycle unchanged', function (): void {
     [$group, $vm, $receipt] = roleImageRecoveryFixture();
     DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('b', 64)]);
-    $before = $vm->getAttributes();
+    $before = $vm->fresh()->getAttributes();
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, $receipt."\n", '', 1, false)]);
     app()->instance(SshExecutor::class, $ssh);
     $driver = new FakeAgentDriver;
@@ -46,7 +46,7 @@ it('recovers only the owned ready VM pinned recipe and leaves assistance and lif
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     AgentThread::query()->create(['task_group_id' => $group->id, 'driver' => 'example', 'runtime_key' => 'example', 'external_id' => 'thread', 'role' => 'reviewer', 'state' => 'working']);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertSuccessful();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertSuccessful();
 
     expect($vm->fresh()->getAttributes())->toBe($before);
     expect($group->fresh()->assistance_requested)->toBeTrue();
@@ -63,7 +63,7 @@ it('refuses unsafe recovery without transferring files', function (array $groupC
     $ssh = new AppDevFakeSshExecutor;
     app()->instance(SshExecutor::class, $ssh);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertFailed();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($ssh->commands)->toBeEmpty();
 })->with([
@@ -89,7 +89,7 @@ it('refuses an active or unobservable agent despite a cached done state', functi
     $ssh = new AppDevFakeSshExecutor;
     app()->instance(SshExecutor::class, $ssh);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertFailed();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($ssh->commands)->toBeEmpty();
 })->with([AgentThreadState::Working, AgentThreadState::AskingForInput, null]);
@@ -109,7 +109,7 @@ it('keeps recovery waiting after an incomplete transfer', function (): void {
     [$group, $vm] = roleImageRecoveryFixture();
     app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertFailed();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($group->fresh()->assistance_requested)->toBeTrue();
     expect($vm->fresh()->state->value)->toBe('ready');
@@ -122,7 +122,7 @@ it('refuses recovery when the pinned promoted build is unavailable', function ()
     $ssh = new AppDevFakeSshExecutor;
     app()->instance(SshExecutor::class, $ssh);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertFailed();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($ssh->commands)->toBeEmpty();
     expect($group->fresh()->assistance_requested)->toBeTrue();
@@ -135,7 +135,7 @@ it('refuses a pending send lease even when the agent reports done', function ():
     $ssh = new AppDevFakeSshExecutor;
     app()->instance(SshExecutor::class, $ssh);
 
-    $this->artisan('task-vms:retry-role-images', ['group' => $group->id, 'vm' => $vm->id])->assertFailed();
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($ssh->commands)->toBeEmpty();
 });
