@@ -31,11 +31,9 @@ final readonly class GatewayReleaseLock
             throw $this->unavailable();
         }
 
-        $handle = @fopen($this->path, 'ce');
-
-        if ($handle === false) {
-            throw $this->unavailable();
-        }
+        $this->existing($this->path);
+        $this->existing($this->stepPath());
+        $handle = $this->openPrivate($this->path);
 
         try {
             if (! flock($handle, LOCK_EX | LOCK_NB)) {
@@ -70,11 +68,7 @@ final readonly class GatewayReleaseLock
      */
     private function assertNoStepRunning(): void
     {
-        $step = @fopen($this->stepPath(), 'ce');
-
-        if ($step === false) {
-            return;
-        }
+        $step = $this->openPrivate($this->stepPath());
 
         try {
             if (! flock($step, LOCK_EX | LOCK_NB)) {
@@ -89,6 +83,53 @@ final readonly class GatewayReleaseLock
         } finally {
             fclose($step);
         }
+    }
+
+    /** @return resource */
+    private function openPrivate(string $path)
+    {
+        $this->existing($path);
+        // Exclusive creation never follows or changes an existing inode. Restore the caller's mask immediately.
+        $mask = umask(0077);
+        try {
+            $handle = @fopen($path, 'xe');
+        } finally {
+            umask($mask);
+        }
+        if ($handle === false) {
+            $this->existing($path);
+            $handle = @fopen($path, 'r+e');
+        }
+        if ($handle === false) {
+            throw $this->unavailable();
+        }
+        $opened = fstat($handle);
+        try {
+            $named = $this->existing($path);
+            if ($opened === false || $named === null || $opened['dev'] !== $named['dev'] || $opened['ino'] !== $named['ino']) {
+                throw $this->unavailable();
+            }
+        } catch (\Throwable $exception) {
+            fclose($handle);
+            throw $exception;
+        }
+
+        return $handle;
+    }
+
+    /** @return array<string|int, int>|null */
+    private function existing(string $path): ?array
+    {
+        clearstatcache(true, $path);
+        $info = @lstat($path);
+        if ($info === false) {
+            return null;
+        }
+        if (($info['mode'] & 0170000) !== 0100000 || ($info['mode'] & 07777) !== 0600 || $info['uid'] !== posix_geteuid()) {
+            throw $this->unavailable();
+        }
+
+        return $info;
     }
 
     private function unavailable(): GatewayReleaseException

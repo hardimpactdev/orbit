@@ -209,7 +209,15 @@ Every Gateway queue must have zero reservations. Other PHP processes refuse stag
 
 Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its fields are `target_sha`, `source_sha` and `units`; it contains no secrets.
 
+### Execution identity
+
 Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:stage <full-SHA>` from the reviewed prepared release, using shared configuration and stable release-layout paths. Stage, deploy and finalize refuse root, a different execution account, or mismatched ownership/configuration before opening release locks or writing shared state. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.
+
+Release stage, deploy and finalize require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.
+
+Release admission creates absent release and step lock files exclusively with mode `0600`, independent of the caller’s umask. Existing locks must be regular, owned by the executing account and mode `0600`; symlinks, foreign ownership and permissive modes refuse without changing the file or its inode. The command does not repair existing locks.
+
+### Finalization
 
 After staging, verify the ledger and new source while holds remain. Restore only PHP-FPM first, with Caddy allowing only GET `/up` and GET `/api/v1/gateway/status`; require the exact target version. When the operator approves consumer startup, run `sudo -u orbit php /home/orbit/orbit/apps/gateway/artisan gateway:release:finalize <full-SHA> <staged-record-id>`. Finalization binds to that original record and source, refuses pending migrations, and verifies a private SQLite recovery copy under `ORBIT_HOME/recovery` outside ordinary snapshot retention before clearing the hold. It does not snapshot, migrate or switch again.
 
@@ -1006,5 +1014,3 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.
 
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.
-
-Release stage, deploy and finalize require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.

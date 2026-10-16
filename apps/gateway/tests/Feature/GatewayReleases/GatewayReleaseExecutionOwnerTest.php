@@ -63,6 +63,26 @@ it('accepts the supported owner with matching private configuration and refuses 
         $owner = new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid());
         $owner->assertAllowed();
         expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
+        foreach (['gateway-release.lock', 'gateway-release-step.lock'] as $name) {
+            $path = $this->pipeline->home.'/'.$name;
+            foreach (['permissive', 'symlink'] as $fault) {
+                if ($fault === 'symlink') {
+                    symlink($database, $path);
+                } else {
+                    file_put_contents($path, 'preserved');
+                    chmod($path, 0644);
+                }
+                $stat = lstat($path);
+                app()->instance(GatewayReleaseExecutionOwner::class, $owner);
+                expect(Artisan::call('gateway:release:stage', ['commit' => str_repeat('a', 40)]))->toBe(1);
+                expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
+                clearstatcache(true, $path);
+                expect(lstat($path))->toBe($stat);
+                expect($this->pipeline->snapshots)->toBe(0);
+                expect($this->pipeline->steps)->toBe([]);
+                unlink($path);
+            }
+        }
         chmod($cache, 0666);
         expect(fn () => $owner->assertAllowed())->toThrow(GatewayReleaseException::class)
             ->and(fileperms($cache) & 0777)->toBe(0666)
@@ -167,6 +187,7 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     });
     $before = $layout->currentReleaseId();
     $hash = hash_file('sha256', $other);
+    $mask = umask(0002);
     try {
         expect(Artisan::call('gateway:release:stage', ['commit' => $target]))->toBe(1);
         expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
@@ -176,7 +197,12 @@ it('revalidates the refreshed target before snapshot or migration at the public 
         expect(hash_file('sha256', $other))->toBe($hash);
         expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse();
         expect(GatewayRelease::query()->sole()->migrations_ran)->toBeFalse();
+        expect(umask())->toBe(0002);
+        foreach (['gateway-release.lock', 'gateway-release-step.lock'] as $name) {
+            expect(fileperms($this->pipeline->home.'/'.$name) & 0777)->toBe(0600);
+        }
     } finally {
+        umask($mask);
         config(['database.default' => $oldDefault]);
         DB::purge('refresh_owner');
         putenv($oldCache === false ? 'APP_CONFIG_CACHE' : 'APP_CONFIG_CACHE='.$oldCache);

@@ -38,6 +38,10 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
         foreach ([$home.'/gateway-release.lock', $home.'/gateway-release-step.lock', $home.'/backups', $home.'/recovery', $home.'/gateway-release.paused'] as $path) {
             if (file_exists($path) || is_link($path)) {
                 $this->owned($path, $uid);
+                if (in_array($path, [$home.'/gateway-release.lock', $home.'/gateway-release-step.lock'], true)
+                    && (! is_file($path) || (fileperms($path) & 07777) !== 0600)) {
+                    $this->refuse();
+                }
             }
         }
         // The manager may retain a connection opened before configuration changed.
