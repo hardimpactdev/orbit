@@ -129,7 +129,16 @@ def validate(manifest):
             raise Refused("The authorized tooling is incomplete.")
     env = {"HOME": account.pw_dir, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "APP_CONFIG_CACHE": str(config.resolve()), "LARAVEL_STORAGE_PATH": data["storage"]}
     # Read only known paths from the actual cached config, and return a boolean exit code, never secret values.
-    program = '''$c=require $argv[1];$d=$c['database']['default']??null;exit(($c['orbit']['home']??null)===$argv[2]&&($c['orbit']['gateway_checkout']??null)===$argv[3]&&($c['database']['connections'][$d]['driver']??null)==='sqlite'&&($c['database']['connections'][$d]['database']??null)===$argv[4]?0:1);'''
+    program = r'''$c=require $argv[1];
+$d=$c['database']['default']??null;
+$v=$c['database']['connections'][$d]??null;
+$path=is_array($v)?($v['database']??null):null;
+$valid=is_array($v)&&($v['driver']??null)==='sqlite'
+    &&in_array($v['url']??null,[null,''],true)
+    &&!array_key_exists('read',$v)&&!array_key_exists('write',$v)&&empty($v['options'])
+    &&is_string($path)&&is_file($path)&&realpath($path)===$path&&$path===$argv[4]
+    &&($c['orbit']['home']??null)===$argv[2]&&($c['orbit']['gateway_checkout']??null)===$argv[3];
+exit($valid?0:1);'''
     checked = subprocess.run(["/usr/bin/php8.5", "-r", program, str(config), data["orbit_home"], str(current / "apps/gateway"), data["database"]], env=env, capture_output=True, timeout=30)
     if checked.returncode != 0:
         raise Refused("Effective DB, ORBIT_HOME or stable checkout does not match authorization.")

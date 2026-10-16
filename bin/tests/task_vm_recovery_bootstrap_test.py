@@ -117,6 +117,29 @@ class RecoveryBootstrapTest(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())['outcome'], 'validated')
             execute.assert_not_called()
 
+    def test_real_php_refuses_url_driver_and_split_database_overrides(self):
+        # Exercise the actual PHP gate, rather than stubbing its boolean response.
+        self.run.stop()
+        configuration = self.live / 'apps/gateway/bootstrap/cache/config.php'
+        base = {'orbit': {'home': str(self.home), 'gateway_checkout': str(self.live / 'apps/gateway')}, 'database': {'default': 'sqlite', 'connections': {'sqlite': {'driver': 'sqlite', 'database': str(self.db)}}}}
+        def write_config(values):
+            encoded = json.dumps(values).replace("'", "\\'")
+            configuration.write_text("<?php return json_decode('" + encoded + "', true);")
+            self.data['config_sha256'] = MODULE.digest(configuration)
+            self.write()
+        try:
+            write_config(base)
+            argv, _ = MODULE.validate(self.manifest)
+            self.assertEqual(argv[-2:], ['1752', '103'])
+            for override in [{'url': 'sqlite:////another.sqlite'}, {'driver': 'mysql'}, {'read': {'database': '/another.sqlite'}}, {'write': {'database': '/another.sqlite'}}, {'options': {'12': 'override'}}]:
+                changed = json.loads(json.dumps(base))
+                changed['database']['connections']['sqlite'].update(override)
+                write_config(changed)
+                with self.subTest(override=list(override)), self.assertRaises(MODULE.Refused):
+                    MODULE.validate(self.manifest)
+        finally:
+            self.run.start()
+
     def test_native_release_locks_block_other_owners_and_are_retained_for_exec(self):
         import fcntl
         for name in ('gateway-release.lock', 'gateway-release-step.lock'):
