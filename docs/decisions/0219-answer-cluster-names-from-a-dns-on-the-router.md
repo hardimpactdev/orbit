@@ -59,7 +59,7 @@ A Cluster-scoped Route domain outside the TLD keeps the VPN DNS answer on every 
 
 | File | Content | On change |
 | --- | --- | --- |
-| `dnsmasq.conf` | `listen-address`, `bind-dynamic`, `no-resolv`, `no-hosts`, `local-ttl=30`, `local=/<tld>/`, `address=/<tld>/<Router LAN>`, an `address=` line with the VPN DNS address for each more specific Node TLD below the Cluster TLD, and `addn-hosts=/etc/orbit/cluster-dns/hosts` | Restart |
+| `dnsmasq.conf` | `listen-address`, `bind-dynamic`, `no-resolv`, `no-hosts`, `local-ttl=30`, `local=/<tld>/`, `address=/<tld>/<Router LAN>`, an `address=` line with the owning Node's WireGuard address for each more specific Node TLD below the Cluster TLD, and `addn-hosts=/etc/orbit/cluster-dns/hosts` | Restart |
 | `hosts` | The exceptions: each exact VPN DNS record below the TLD that is not a Route domain of this Cluster, such as a custom proxy Route, with its VPN DNS address | Reload with `SIGHUP` |
 
 - A name in `hosts` wins over the TLD address, and a more specific `address=` wins over a less specific one. A test with a real dnsmasq checks both.
@@ -68,7 +68,7 @@ A Cluster-scoped Route domain outside the TLD keeps the VPN DNS answer on every 
 ### The VPN DNS
 
 - The VPN DNS is the stock `dnsmasq.service` on the `vpn` Node, as before the listener. `orbit-vpn.conf` has one `listen-address` line, the VPN DNS address, an `interface=` line for the private interface, and `bind-dynamic`.
-- Its records are today's WireGuard answers. The TLD wildcards stay in `orbit-records.conf`. The exact names move to an `addn-hosts` file, which that file names. After each change the publication sends `SIGHUP`, so a Route change never restarts the VPN DNS.
+- Its records are today's WireGuard answers. The TLD wildcards stay in `orbit-records.conf`. The exact names move to an `addn-hosts` file, which that file names. A change only to the hosts file sends `SIGHUP`. A config change, including a TLD wildcard change, restarts dnsmasq because SIGHUP does not read config again. Ordinary exact Route changes therefore do not restart VPN DNS. Test TLD add, change, removal, and rollback with a real daemon, including the restart interruption.
 - `local-ttl=30` keeps the 30-second TTL of today's answers, which the [withdrawal grace period](/reference/routes#withdrawal-grace-period) relies on.
 - It keeps the `server=` lines of the `vpn` Node, which bootstrap wrote from that Node's uplink resolvers. The publication rewrites only the lines that Orbit owns.
 - `bind-dynamic` cannot run next to a snippet with `bind-interfaces`, such as the stock `ubuntu-fan` snippet. The cutover moves every such snippet in `/etc/dnsmasq.d` to `/var/lib/orbit/dnsmasq/disabled`.
@@ -143,6 +143,8 @@ An action validates before its first member step. When it fails after a member s
 | Detach a member, or a member loses its LAN address | Down | That member | Its port 53 rules pruned |
 | A member gains its first role, or loses its override | Up | That member | None |
 | A member loses its last role, or gains an override | Down | That member | None |
+| A member gains `vpn` or `gateway`, even with other roles | Down | That member before the role policy changes | None |
+| A member loses `vpn` or `gateway` and becomes eligible | Up | That member after its default VPN DNS policy is ready | None |
 | Set the first Router | Up | Every LAN member | Installed by the Router baseline |
 | Replace the Router | Up | Every LAN member | Installed by the candidate baseline; never written on the old Router |
 | Clear the Router | Down | Every LAN member | Removed by the baseline removal |
@@ -211,7 +213,7 @@ The decision of 2026-10-16 fixes the location rule, the two servers, plain dnsma
 7. **Members without roles and members with a `--dns-server` override get no delegate.** sabre gets WireGuard answers from step 5. The firewall still admits sabre, so an operator can add the delegate by hand. Recommendation: accept.
 8. **The Router resolves its own names under the TLD through its own Cluster DNS**, unless it holds `vpn` or `gateway`. Recommendation: accept, so that one rule covers every LAN member.
 9. **A separate `orbit-cluster-dns.service` from `dnsmasq-base`**, not the stock `dnsmasq.service`. Recommendation: accept. A Router can also hold `vpn` or Incus bridges, and on beast the stock unit is failed while `/etc/dnsmasq.d` holds an Incus snippet and a stale Orbit file.
-10. **Exact names live in a hosts file that dnsmasq reads again on `SIGHUP`, on both servers.** Recommendation: accept. A restart drops lookups, and `SIGHUP` also clears answers that dnsmasq cached for a name before it became a Route.
+10. **Exact names live in a hosts file that dnsmasq reads again on `SIGHUP`, on both servers.** Recommendation: accept. Hosts-only updates avoid a restart and clear cached answers. Configuration changes still require a restart.
 11. **Both servers keep the 30-second TTL with `local-ttl=30`.** Recommendation: accept.
 12. **The Gateway writes a Router only when its stored digest differs, and publications never remove a Cluster DNS.** Recommendation: accept. A down Router then blocks only its own Cluster, and a publication from stored state during an activation cannot undo the expand.
 13. **The VPN DNS answers on the private interface of the `vpn` Node again.** Recommendation: accept. The override of app-prod points at that interface, and one `interface=` line restores it.
