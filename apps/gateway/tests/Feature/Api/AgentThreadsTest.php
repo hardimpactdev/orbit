@@ -20,6 +20,8 @@ use Tests\Support\TaskModelRouter;
 /** @return array{Task, AgentThread} */
 function agent_viewer_fixture(): array
 {
+    // A read falls back to a saved transcript, so no file another test saved may answer it.
+    Storage::fake('local');
     $node = Node::query()->create(['name' => 'agent-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);

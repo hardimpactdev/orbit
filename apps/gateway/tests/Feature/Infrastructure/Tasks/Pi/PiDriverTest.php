@@ -27,6 +27,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\TaskModelRouter;
 
@@ -635,6 +636,8 @@ describe('agent thread read route', function (): void {
     /** Calls the read as the Gateway peer with the tasks extension on. */
     function pi_read_as_gateway(AgentThread $thread): TestResponse
     {
+        // A read falls back to a saved transcript, so no file another test saved may answer it.
+        Storage::fake('local');
         $gateway = Node::query()->create(['name' => 'pi-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1']);
         test()->markAsGateway($gateway);
         test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
