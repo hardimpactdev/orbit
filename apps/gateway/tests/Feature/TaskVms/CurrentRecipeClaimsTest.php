@@ -67,7 +67,7 @@ it('records a current recipe and base fingerprint and keeps its VM across a depl
     mkdir($release.'/resources/machine-software', 0700, true);
     symlink('releases/current', $directory.'/orbit');
     $document = json_decode($build->recipe_json, true, flags: JSON_THROW_ON_ERROR);
-    $document['ubuntu']['snapshot'] = '20261015T000000Z';
+    $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
     file_put_contents($release.'/resources/machine-software/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
     config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
     try {

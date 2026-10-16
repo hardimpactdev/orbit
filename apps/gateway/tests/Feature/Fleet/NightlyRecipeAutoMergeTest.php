@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -16,17 +17,22 @@ use Tests\Support\TaskVmSettingsBuilder;
 function nightlyMergeEvidence(): array
 {
     $before = file_get_contents(resource_path('machine-software/recipe.json'));
-    $after = str_replace('20261014T000000Z', '20261015T000000Z', $before);
+    $document = json_decode($before, true, flags: JSON_THROW_ON_ERROR);
+    $snapshot = $document['ubuntu']['snapshot'];
+    $release = $document['ubuntu']['release'];
+    $date = new DateTimeImmutable($snapshot)->modify('+1 day');
+    $next = $date->format('Ymd\THis\Z');
+    $after = str_replace($snapshot, $next, $before);
     $bot = ['id' => 4243, 'login' => 'orbit-acme[bot]', 'type' => 'Bot'];
     $sha = str_repeat('b', 40);
     $pr = ['number' => 99, 'html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'title' => 'Nightly snapshot',
         'state' => 'open', 'draft' => false, 'user' => $bot, 'commits' => 1, 'changed_files' => 1, 'additions' => 1, 'deletions' => 1,
-        'head' => ['ref' => 'nightly/recipe-20261015', 'sha' => $sha, 'repo' => ['full_name' => 'nckrtl/orbit']],
+        'head' => ['ref' => 'nightly/recipe-'.$date->format('Ymd'), 'sha' => $sha, 'repo' => ['full_name' => 'nckrtl/orbit']],
         'base' => ['ref' => 'main', 'repo' => ['full_name' => 'nckrtl/orbit']]];
 
     return ['pr' => $pr, 'final' => $pr, 'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => $bot, 'parents' => [['sha' => str_repeat('a', 40)]]]],
         'files' => [['filename' => 'apps/gateway/resources/machine-software/recipe.json', 'status' => 'modified', 'additions' => 1, 'deletions' => 1, 'changes' => 2,
-            'patch' => "@@ -2,6 +2,6 @@\n     \"ubuntu\": {\n         \"release\": \"26.04\",\n-        \"snapshot\": \"20261014T000000Z\"\n+        \"snapshot\": \"20261015T000000Z\"\n     },"]],
+            'patch' => "@@ -2,6 +2,6 @@\n     \"ubuntu\": {\n         \"release\": \"{$release}\",\n-        \"snapshot\": \"{$snapshot}\"\n+        \"snapshot\": \"{$next}\"\n     },"]],
         'before' => $before, 'after' => $after,
         'runs' => [['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => $sha, 'app' => ['slug' => 'github-actions']]],
         'merge_status' => 200,
@@ -93,6 +99,9 @@ it('waits for genuine green Required checks on this exact head', function (strin
 
 it('blocks and alerts for any author commit file or snapshot evidence outside the narrow nightly change', function (string $case): void {
     $evidence = nightlyMergeEvidence();
+    $recipe = new RecipeLoader()->decode($evidence['after']);
+    $wrongSnapshot = new DateTimeImmutable($recipe->snapshot)->modify('+1 day')->format('Ymd\THis\Z');
+    $curl = $recipe->tools['curl']->version;
     match ($case) {
         'human PR author' => $evidence['pr']['user'] = ['id' => 42, 'login' => 'nick', 'type' => 'User'],
         'other App' => $evidence['pr']['user']['login'] = 'other[bot]',
@@ -108,8 +117,8 @@ it('blocks and alerts for any author commit file or snapshot evidence outside th
         'renamed file' => $evidence['files'][0]['status'] = 'renamed',
         'missing patch' => $evidence['files'][0]['patch'] = null,
         'extra patch line' => $evidence['files'][0]['patch'] .= "\n+extra",
-        'wrong snapshot date' => $evidence['after'] = str_replace('20261015T000000Z', '20261016T000000Z', $evidence['after']),
-        'hidden tool edit' => $evidence['after'] = str_replace('2.3.2-2', '2.3.2-3', $evidence['after']),
+        'wrong snapshot date' => $evidence['after'] = str_replace($recipe->snapshot, $wrongSnapshot, $evidence['after']),
+        'hidden tool edit' => $evidence['after'] = str_replace('"version": "'.$curl.'"', '"version": "'.$curl.'.changed"', $evidence['after']),
         'head changed at merge' => $evidence['final']['head']['sha'] = str_repeat('d', 40),
         'extra commit at merge' => $evidence['final']['commits'] = 2,
         'wrong base' => $evidence['pr']['base']['ref'] = 'other',
