@@ -13,6 +13,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Builder;
@@ -114,7 +116,7 @@ final readonly class DevelopmentDnsConfigRenderer
             $records->push('host-record='.AnalyticsHostname::Value.",{$analytics->wireguard_ip}");
         }
 
-        foreach ($this->contributedRecords() as $hostname => $address) {
+        foreach ($this->contributedRecords($nodeOverrides, $clusterOverrides) as $hostname => $address) {
             $records->push("host-record={$hostname},{$address}");
         }
 
@@ -126,27 +128,40 @@ final readonly class DevelopmentDnsConfigRenderer
     }
 
     /**
-     * The records that extensions contribute. A record for a hostname that no extension reserves, or that another
-     * contribution already publishes, is a wiring error: two records could answer for one name. It throws, so
-     * publication fails closed.
+     * The records that extensions contribute, checked before any reaches the dnsmasq configuration. Each hostname
+     * must be one that an extension reserves, which makes it a lowercase DNS name under `.orbit`, and must not be a
+     * Cluster TLD this publication answers for, or a name under one. Each address must be a host address in the VPN
+     * subnet. Only one contribution may publish a hostname. Anything else is a wiring error: it throws, so
+     * publication fails closed and no contribution can add a dnsmasq directive.
      *
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
      * @return array<string, string>
      *
      * @throws LogicException
      */
-    private function contributedRecords(): array
+    private function contributedRecords(array $nodeOverrides, array $clusterOverrides): array
     {
         $reserved = ReservedPrivateHostname::contributed();
+        $clusterTlds = null;
+        $subnet = null;
         $records = [];
 
         foreach (app(Contributions::class)->of(ContributedPrivateDnsRecords::class) as $contribution) {
             foreach ($contribution->records() as $hostname => $address) {
-                if (! in_array($hostname, $reserved, true)) {
-                    throw new LogicException('The contribution ['.$contribution::class."] publishes the private DNS record [{$hostname}], which no extension reserves.");
-                }
+                $clusterTlds ??= $this->selection->clusterTlds($nodeOverrides, $clusterOverrides);
+                $subnet ??= Ipv4Subnet::from(app(VpnSettings::class)->subnet());
+                $problem = match (true) {
+                    ! in_array($hostname, $reserved, true) => "the private DNS record [{$hostname}], which no extension reserves",
+                    array_key_exists($hostname, $records) => "the private DNS record [{$hostname}], which another contribution publishes",
+                    array_any($clusterTlds, static fn (string $tld): bool => $hostname === $tld || str_ends_with($hostname, ".{$tld}")) => "the private DNS record [{$hostname}], which is a Cluster TLD or a name under one",
+                    filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false => "the address [{$address}] for [{$hostname}], which is not an IPv4 address",
+                    ! $subnet->containsUsableAddress($address) => "the address [{$address}] for [{$hostname}], which is not a host address in the VPN subnet [{$subnet->value()}]",
+                    default => null,
+                };
 
-                if (array_key_exists($hostname, $records)) {
-                    throw new LogicException('The contribution ['.$contribution::class."] publishes the private DNS record [{$hostname}], which another contribution publishes.");
+                if ($problem !== null) {
+                    throw new LogicException('The contribution ['.$contribution::class."] publishes {$problem}.");
                 }
 
                 $records[$hostname] = $address;

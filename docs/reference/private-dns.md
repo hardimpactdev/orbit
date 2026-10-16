@@ -143,7 +143,7 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 | `analytics.orbit` | The Node that holds `analytics` |
 | `collector.cli-proxy-api.orbit` | The ProxyCli collector Node, while setup holds the collector. See [proxycli](/reference/proxycli). |
 
-These five platform names are reserved, so no Route can own them. Core reserves and publishes the first four. The proxycli extension reserves and publishes `collector.cli-proxy-api.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
+These platform names are reserved, so no Route can own them. Core reserves and publishes `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. The proxycli extension reserves and publishes `collector.cli-proxy-api.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
 
 ### Inspect the selection
 

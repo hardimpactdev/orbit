@@ -56,6 +56,8 @@ Route responses show target IDs and positions. They never show infrastructure ad
 
 Every Route is expected to be `active`. Doctor reports any other status as `route.lifecycle_not_active` in the `route` family. So a Route that an operation left `pending`, `activating`, `retiring`, or `failed` stays visible until a retry or cleanup finishes it. Doctor reads only the stored status, so the check also runs when the Node is unreachable.
 
+No Route may hold a reserved name, such as `gateway.orbit`. A Route that took a name before core or an extension reserved it keeps the name until you move the Route. Doctor reports such a Route as `route.domain_reserved` in the `route` family. It also reads only stored state.
+
 Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped Route belongs to the Node that holds the Cluster's Router role. A Route with neither is not reported.
 
 ## Select a domain and scope

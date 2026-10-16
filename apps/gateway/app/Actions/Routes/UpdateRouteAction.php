@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -104,6 +105,10 @@ final readonly class UpdateRouteAction
 
         $requestedPublication = $data->publicationProvided ? $data->publication : null;
         $domainChanges = $domain !== null && $domain !== $route->domain;
+
+        if ($domainChanges) {
+            ReservedPrivateHostname::assertAvailable($domain);
+        }
 
         if ($domainChanges && $route->hasWebRoot()) {
             throw new ResourceOperationException(

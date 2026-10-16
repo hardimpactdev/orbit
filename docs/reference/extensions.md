@@ -93,9 +93,16 @@ A contributed source cannot take a core name:
 
 The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact needs its own name, because the footprint keys its digests by name. A contributed artifact with the name of a core artifact, such as `caddy`, or of another contribution makes the footprint throw a `LogicException`. ProxyCli contributes the `proxycli` artifact this way.
 
-Private DNS publishes each record that a `ContributedPrivateDnsRecords` returns as a `host-record`. A contribution decides its records from stored state, as core does. Each hostname must be one that an extension reserves, so no core record or Route can answer for it. A record for any other hostname, or for a hostname that another contribution already publishes, makes publication throw a `LogicException` before it changes the `vpn` Node. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contributed record source and the classes it uses. ProxyCli contributes the `collector.cli-proxy-api.orbit` record this way.
+Private DNS publishes each record that a `ContributedPrivateDnsRecords` returns as a `host-record`. A contribution decides its records from stored state, as core does. Core checks each record before it writes the dnsmasq configuration:
 
-The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. No Route and no analytics tracking host can use one. A contributed name that core or another contribution already reserves makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
+- The hostname must be one that an extension reserves, so no core record or Route can answer for it.
+- Only one contribution may publish a hostname.
+- The hostname must not be a Cluster TLD that the publication answers for, or a name under one.
+- The address must be an IPv4 host address in the VPN subnet.
+
+A record that breaks a rule makes publication throw a `LogicException` before it changes the `vpn` Node. So no contribution can add a dnsmasq directive. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contributed record source and the classes it uses. ProxyCli contributes the `collector.cli-proxy-api.orbit` record this way.
+
+The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. No Route and no analytics tracking host can use one. A contributed name must be a lowercase DNS name under `.orbit`, with no comma or whitespace, that core and the other contributions do not reserve. Any other name makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
 
 A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. A Caddy build renders every site that is placed, so a site stays live until the extension removes it. A reserved hostname stays reserved, so no Route can take it while the extension is off.
 

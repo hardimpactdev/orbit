@@ -1866,6 +1866,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Extension",
                 "Gateway",
                 "Node",
