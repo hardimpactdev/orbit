@@ -14,6 +14,8 @@ In progress.
 
 Design proposal only; no implementation or fleet change is authorized by this ADR.
 
+### Approval boundary
+
 Nick's decision on 2026-10-16 includes the Cluster TLD **and exact Cluster-scoped Route domains outside it**, forwarding remaining names to VPN DNS, and Cluster DNS first with VPN DNS fallback for LAN members. The TLD-only, non-forwarding design below is an agent recommendation, not Nick's approval. Decisions 1–3 require explicit maintainer approval before implementation. Keeping the original scope is possible, but forwarded failures can move the resolver to VPN DNS and leave it there; this proposal avoids that coupling by reducing scope. The absence of outside-TLD Routes in the recorded fleet is not approval to remove that feature.
 
 All new units, programs, files, digest storage, lifecycle hooks, and Doctor codes below are planned. Existing code names describe integration points, not completed implementation. Fleet observations below were recorded during design on 2026-10-16 and must be checked again before rollout.
