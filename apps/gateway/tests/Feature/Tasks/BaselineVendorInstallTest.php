@@ -230,6 +230,7 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
     $project = Project::query()->create(['name' => 'rate limits', 'slug' => 'rate-limits', 'repository_url' => 'https://github.com/acme/shop.git', 'task_check' => 'composer check']);
     $node = Node::query()->create(['name' => 'rate-limit-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.192', 'wireguard_ip' => '10.44.0.192']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'baseline-rate-limit', 'checkout_path' => '/tmp/baseline-rate-limit', 'starting_commit' => str_repeat('a', 40), 'status' => 'reserved']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Rate limits', 'brief' => 'Retry setup', 'status' => TaskGroupStatus::Running]);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First task', 'brief' => 'Retry setup', 'status' => TaskStatus::Running]);

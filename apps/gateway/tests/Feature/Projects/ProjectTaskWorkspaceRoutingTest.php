@@ -14,7 +14,9 @@ use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -238,6 +240,10 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
     ]);
     $managed->taskable()->associate($mismatched);
     $managed->save();
+
+    // Replay the routing migration with the task column it read on that release.
+    Schema::table('tasks', fn (Blueprint $table) => $table->string('execution_mode')->nullable());
+    DB::table('tasks')->whereNull('parent_id')->update(['execution_mode' => 'managed']);
 
     $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
     assert($migration instanceof Migration);
