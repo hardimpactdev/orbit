@@ -117,7 +117,7 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 3. **Route convergence.** Its operation holds the progress of a Route change. `RouteRemovalResidue` stays: it names cleanup owed on a Node that an offline removal did not reach, and that work can outlive any operation ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#an-operation-is-the-only-record-of-its-run)).
 4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) does this: `orbit:auto-deploy` starts a pinned `instance.deploy` operation only for a changed commit, so an unchanged commit still creates no record.
 5. **The PHP-FPM limit.** It stays at 600 seconds until no long operation runs in a request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) decides the other commands that still run long in a request and sets the new limit.
-6. **The deployment history.** `instance_deployments` gives way to operations in a pull request after rollback moves ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history)).
+6. **The deployment history.** Rollback moved in #1301, so `instance_deployments` can give way to operations in a pull request of its own ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history)).
 
 `orbit:activity-finalize-interrupted` stays: it ends Activity rows of requests that PHP-FPM killed, which operations do not replace.
 
