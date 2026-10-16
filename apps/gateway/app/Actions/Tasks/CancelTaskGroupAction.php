@@ -60,7 +60,7 @@ final readonly class CancelTaskGroupAction
         $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
-            $this->teardownWorkspace($group, $instance, $unpublished);
+            $this->teardownWorkspace($group, $instance, $unpublished || $group->status === TaskGroupStatus::Cancelled);
         }
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
@@ -185,8 +185,8 @@ final readonly class CancelTaskGroupAction
             throw new ResourceOperationException(
                 errorCode: 'tasks.push_failed',
                 message: $exception->pending
-                    ? __('The group remains settling while its approved commits are pushed to task-:group: :reason Cancel again in a minute.', ['group' => $group->id, 'reason' => $exception->getMessage()])
-                    : __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
+                    ? __('The workspace stays while its approved commits are pushed to task-:group: :reason Cancel again in a minute.', ['group' => $group->id, 'reason' => $exception->getMessage()])
+                    : __('The workspace stays because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
                 status: 502,
             );
         }

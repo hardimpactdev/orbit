@@ -6,12 +6,14 @@ use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -232,6 +234,67 @@ it('limits named leftover recovery to its resolved Instance and its own historic
     expect(TaskWorkspaceLeaseRecord::query()->where('thread_id', $unrelated->id)->count())->toBe(0);
     expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->whereNull('instance_id')->count())->toBe(0);
 });
+
+it('preserves approved commits on a direct retry after offline cancellation and an active holder', function (): void {
+    $group = cancellation_lease_group();
+    $group->update(['status' => TaskGroupStatus::Settling]);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    $sha = cancellation_lease_approval($group);
+    $removed = cancellation_lease_remover();
+    $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+    $publisher->shouldReceive('push')->once()->withArgs(function (Task $pushed, string $commit) use ($group, $sha, $removed): bool {
+        expect($removed->ids)->toBe([]);
+        $removed->expectedLease = TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $group->taskable_id)->sole()->id;
+
+        return $pushed->id === $group->id && $commit === $sha;
+    });
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+    bind_task_node_reachability(unreachable: true);
+    app(CancelTaskGroupAction::class)->execute($group);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    expect($removed->ids)->toBe([]);
+    bind_task_node_reachability();
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'check', 'busy-check');
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))->toThrow(TaskWorkspaceWaiting::class);
+    expect($holder->fresh()->status)->toBe('held');
+    $leases->release($holder);
+    app(CancelTaskGroupAction::class)->execute($group);
+    app(CancelTaskGroupAction::class)->execute($group);
+    $this->artisan('tasks:tick')->assertSuccessful();
+
+    expect($removed->ids)->toBe([$holder->instance_id]);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    expect($group->fresh()->taskable_id)->toBeNull();
+    expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
+});
+
+it('retains approved work when publication fails on a direct offline cancellation retry', function (bool $pending): void {
+    $group = cancellation_lease_group();
+    $group->update(['status' => TaskGroupStatus::Settling]);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    cancellation_lease_approval($group);
+    $instance = $group->taskable;
+    $removed = cancellation_lease_remover();
+    bind_task_node_reachability(unreachable: true);
+    app(CancelTaskGroupAction::class)->execute($group);
+    bind_task_node_reachability();
+    $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+    $publisher->shouldReceive('push')->once()->andThrow($pending ? TaskPullRequestException::pending('Publication is not complete.') : new TaskPullRequestException('Publication is not complete.'));
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('tasks.push_failed');
+        expect($exception->status)->toBe(502);
+        expect($exception->getMessage())->not->toContain('remains settling');
+    });
+
+    expect($removed->ids)->toBe([]);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    expect($group->fresh()->taskable_id)->toBe($instance->id);
+    $this->assertModelExists($instance);
+})->with(['failed push' => false, 'queued push' => true]);
 
 /** A leftover checkout whose VM is already gone uses the real generic removal path. */
 function cancellation_lease_group(): Task
