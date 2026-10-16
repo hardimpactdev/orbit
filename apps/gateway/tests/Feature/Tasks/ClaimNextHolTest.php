@@ -1020,7 +1020,7 @@ it('retains ambiguous associations when completing a group so another ended grou
     }
     app(CompleteTaskGroupAction::class)->execute($group);
     expect($group->fresh()?->taskable_id)->toBe($instance->id);
-    expect($group->fresh()?->assistance_requested)->toBeTrue();
+    expect($group->fresh()?->assistance_reason)->toContain('ownership is missing or ambiguous');
     $reflection = new ReflectionClass(TaskSettling::class);
     $settling = $reflection->newInstanceWithoutConstructor();
     expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
