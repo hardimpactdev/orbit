@@ -72,7 +72,7 @@ Destroy deletes the clone after the VM, as it deletes a retained workspace volum
 
 ### Preparation adopts the clone
 
-`prepareTurn` admits the topology before every turn, the first one included. So the three calls before the baseline check go, and preparation runs after the Project setup has installed `apps/e2e`. The unit `orbit-task-topology-<run>` then runs two steps:
+`prepareTurn` admits the topology before each turn it prepares: the implementer's first turn, relays to the implementer, review requests, and rubric reminders. Every other turn in the subtask follows one of these. So the three calls before the baseline check go, and preparation runs after the Project setup has installed `apps/e2e`. The unit `orbit-task-topology-<run>` then runs two steps:
 
 - **`host-setup`.** `sudo bin/e2e-topology-host-setup` adopts the clone when the pool `topology-seed` is missing. It posts the pool (btrfs, source `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology-seed`) to the recovery endpoints `/internal/recover/validate` and `/internal/recover/import`, which `incus admin recover` uses. It also installs the isolation table and the UFW rules for the `oe` topology networks. When the device is missing, it fails, and the subtask asks for assistance.
 - **`acquire`.** `bin/e2e-topology acquire` copies `node-template` for each Node. Then it sets what it sets at creation today: the NIC, address, memory, CPU, mount, ownership metadata, and `cloud-init.user-data`. It waits for the first boot and sets public DNS, as `RoleImages::settle()` does today.
