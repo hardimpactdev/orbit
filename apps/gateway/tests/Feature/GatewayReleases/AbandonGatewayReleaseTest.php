@@ -214,3 +214,148 @@ it('reports foreign-key violations before migration and leaves source data avail
     $this->database->fail = false;
     expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(0, Artisan::output());
 });
+
+it('refuses a type-only partial restore before abandoning the staged hold', function (): void {
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    $before = DB::selectOne('SELECT typeof(body) AS kind, hex(body) AS bytes FROM recovery_annotations');
+    expect($before->kind)->toBe('blob');
+    expect($before->bytes)->toBe('0001FF');
+    DB::statement('UPDATE recovery_annotations SET body = CAST(body AS TEXT)');
+    $after = DB::selectOne('SELECT typeof(body) AS kind, hex(body) AS bytes FROM recovery_annotations');
+    expect($after->kind)->toBe('text');
+    expect($after->bytes)->toBe('0001FF');
+    $attributes = GatewayRelease::query()->findOrFail($record->id)->getAttributes();
+    $code = Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]);
+    expect($code)->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(GatewayRelease::query()->findOrFail($record->id)->getAttributes())->toBe($attributes);
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('keeps the hold for type-only drift after abandonment committed before marker removal', function (string $sql): void {
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    $markerPath = $this->pipeline->home.'/gateway-release.paused';
+    $marker = file_get_contents($markerPath);
+    ($this->restore)($record->snapshot_path);
+    $arguments = ['commit' => $this->target, 'record' => (string) $record->id];
+    expect(Artisan::call('gateway:release:abandon', $arguments))->toBe(0, Artisan::output());
+    file_put_contents($markerPath, $marker);
+    chmod($markerPath, 0600);
+    DB::statement($sql);
+    $attributes = GatewayRelease::query()->findOrFail($record->id)->getAttributes();
+    expect(Artisan::call('gateway:release:abandon', $arguments))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(GatewayRelease::query()->findOrFail($record->id)->getAttributes())->toBe($attributes);
+    expect(file_get_contents($markerPath))->toBe($marker);
+})->with([
+    'ordinary row' => 'UPDATE recovery_annotations SET body = CAST(body AS TEXT)',
+    'normalized completed record' => 'UPDATE gateway_releases SET message = CAST(message AS BLOB)',
+]);
+
+it('rejects changed SQLite cell identity without clearing a restored hold', function (string $before, string $after): void {
+    DB::statement('CREATE TABLE recovery_cells (value)');
+    DB::statement('INSERT INTO recovery_cells VALUES ('.$before.')');
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    DB::statement('UPDATE recovery_cells SET value = '.$after);
+    $attributes = GatewayRelease::query()->findOrFail($record->id)->getAttributes();
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(GatewayRelease::query()->findOrFail($record->id)->getAttributes())->toBe($attributes);
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+})->with([
+    'null vs empty text' => ['NULL', "''"],
+    'empty text vs empty blob' => ["''", "X''"],
+    'integer vs real' => ['1', '1.0'],
+    'integer vs text' => ['1', "'1'"],
+    'integer beyond double precision' => ['9007199254740992', '9007199254740993'],
+    'largest integers' => ['9223372036854775806', '9223372036854775807'],
+    'smallest integers' => ['-9223372036854775808', '-9223372036854775807'],
+    'adjacent doubles' => ['1.0', '1.0000000000000002'],
+    'subnormal double' => ['0.0', '4.9406564584124654e-324'],
+    'finite vs infinity' => ['1.7976931348623157e308', '1e999'],
+    'text after embedded nul' => ["CAST(X'610062' AS TEXT)", "CAST(X'610063' AS TEXT)"],
+    'blob bytes' => ["X'00FF'", "X'00FE'"],
+]);
+
+it('preserves real column names and intrinsic rowids while checking restored rows', function (string $sql): void {
+    DB::statement('CREATE TABLE recovery_collisions ("__restore_rowid" TEXT, "_rowid_" TEXT, "rowid" TEXT, "quote""column" TEXT)');
+    DB::statement("INSERT INTO recovery_collisions (oid, __restore_rowid, _rowid_, rowid) VALUES (7, 'real column', 'shadow', 'shadow')");
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    DB::statement($sql);
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+})->with([
+    'real alias-named column' => "UPDATE recovery_collisions SET __restore_rowid = 'changed'",
+    'intrinsic rowid behind shadowed names' => 'UPDATE recovery_collisions SET oid = 8',
+]);
+
+it('accepts an exact typed restore across page layout and WAL changes', function (): void {
+    DB::statement('CREATE TABLE recovery_cells (id INTEGER PRIMARY KEY, value)');
+    DB::statement("INSERT INTO recovery_cells (value) VALUES (NULL), (0), (-9223372036854775808), (9223372036854775807), (1.0), (1.0000000000000002), (4.9406564584124654e-324), (1e999), (-1e999), (''), (CAST(X'6100FF' AS TEXT)), (X''), (X'0001FF'), (X'0001FF')");
+    DB::statement('CREATE TABLE recovery_keyed (key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID');
+    DB::statement("INSERT INTO recovery_keyed VALUES ('α', X'00FF')");
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    $pageSize = (int) DB::selectOne('PRAGMA page_size')->page_size;
+    DB::statement('PRAGMA journal_mode=DELETE');
+    DB::statement('PRAGMA page_size='.($pageSize === 4096 ? 8192 : 4096));
+    DB::statement('VACUUM');
+    expect((int) DB::selectOne('PRAGMA page_size')->page_size)->not->toBe($pageSize);
+    DB::statement('PRAGMA journal_mode=WAL');
+    DB::statement('PRAGMA wal_autocheckpoint=0');
+    DB::statement("UPDATE recovery_annotations SET body = X'02'");
+    DB::statement("UPDATE recovery_annotations SET body = X'0001FF'");
+    clearstatcache(true, $this->databasePath.'-wal');
+    expect(DB::selectOne('PRAGMA journal_mode')->journal_mode)->toBe('wal');
+    expect(filesize($this->databasePath.'-wal'))->toBeGreaterThan(0);
+    expect(DB::selectOne('PRAGMA integrity_check')->integrity_check)->toBe('ok');
+    expect(DB::select('PRAGMA foreign_key_check'))->toBe([]);
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(0, Artisan::output());
+    expect(DB::table('recovery_cells')->count())->toBe(14);
+    expect(DB::selectOne('SELECT typeof(body) AS kind, hex(body) AS bytes FROM recovery_annotations'))->toMatchObject(['kind' => 'blob', 'bytes' => '0001FF']);
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse();
+});
+
+it('does not mistake a SQL string for a without-rowid declaration', function (): void {
+    DB::statement("CREATE TABLE recovery_literal (value TEXT DEFAULT 'WITHOUT ROWID')");
+    DB::statement('INSERT INTO recovery_literal (rowid) VALUES (1)');
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    DB::statement('UPDATE recovery_literal SET rowid = 2');
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('refuses unverifiable intrinsic rowids rather than silently omitting them', function (): void {
+    DB::statement('CREATE TABLE recovery_shadowed (rowid, _rowid_, oid)');
+    DB::statement('INSERT INTO recovery_shadowed VALUES (1, 2, 3)');
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('retains duplicate row counts in the restore proof', function (): void {
+    DB::statement('CREATE TABLE recovery_duplicates (value BLOB)');
+    DB::statement("INSERT INTO recovery_duplicates VALUES (X'00'), (X'00')");
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    DB::statement('DELETE FROM recovery_duplicates WHERE rowid = 2');
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
