@@ -6,4 +6,7 @@ namespace App\Domain\Tasks;
 
 use RuntimeException;
 
-final class TaskCheckException extends RuntimeException {}
+final class TaskCheckException extends RuntimeException
+{
+    public bool $startNotDispatched = false;
+}

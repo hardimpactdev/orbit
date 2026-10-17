@@ -1621,6 +1621,7 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -2862,6 +2863,7 @@
             "concepts": [
                 "Activity",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",

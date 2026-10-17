@@ -3703,7 +3703,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -4872,6 +4872,7 @@ export interface components {
             assistance?: components["schemas"]["TaskAssistance"][];
             last_tick_at?: string | null;
             merges?: components["schemas"]["TaskMerge"][];
+            workspace_leases?: components["schemas"]["TaskWorkspaceLease"][];
         };
         TaskAssistance: {
             id?: number;
@@ -4899,6 +4900,24 @@ export interface components {
             /** @enum {string|null} */
             merge_status?: "waiting" | "refused" | "merged" | null;
             merge_reason?: string | null;
+        };
+        TaskWorkspaceLease: {
+            instance_id?: number;
+            instance_name?: string;
+            group_id?: number;
+            project_code?: string;
+            holder?: components["schemas"]["TaskWorkspaceActor"] | null;
+            waiters?: components["schemas"]["TaskWorkspaceActor"][];
+        };
+        TaskWorkspaceActor: {
+            id?: number;
+            kind?: string;
+            owner?: string;
+            acquired_at?: string | null;
+            queued_at?: string | null;
+            thread_id?: number | null;
+            check_id?: number | null;
+            remote_uncertain?: boolean;
         };
         ToolInventory: {
             node_id?: number;

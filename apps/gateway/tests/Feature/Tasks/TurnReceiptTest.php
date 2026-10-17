@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -56,9 +57,9 @@ function turn_receipt_instance(string $checkout, array $group = []): Instance
     return test_ready_task_workspace($project, $node, ['name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13'], $group);
 }
 
-function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
+function turn_receipts(SshExecutor $transport): object
 {
-    return new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+    $receipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -82,6 +83,28 @@ function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
             public function put(string $host, int $port, HostKey $key): void {}
         },
     )));
+
+    return new class($receipts)
+    {
+        public function __construct(private RemoteTaskTurnReceipts $receipts) {}
+
+        /** @param array<int|string, mixed> $arguments */
+        public function __call(string $method, array $arguments): mixed
+        {
+            $instance = $arguments[0];
+            $group = $instance->tasks()->first();
+            if (! $group instanceof Task) {
+                $group = Task::topLevel()->create(['project_id' => $instance->project_id,
+                    'title' => 'Receipt admission', 'brief' => 'Exercise receipt metadata under ownership.', 'status' => TaskGroupStatus::Running]);
+                $group->taskable()->associate($instance);
+                $group->save();
+                test_vm_group($group);
+            }
+
+            return app(TaskWorkspaceLease::class)->run($group, 'implementer', 'receipt-test',
+                fn (): mixed => $this->receipts->{$method}(...$arguments));
+        }
+    };
 }
 
 /** @param list<string> $arguments */

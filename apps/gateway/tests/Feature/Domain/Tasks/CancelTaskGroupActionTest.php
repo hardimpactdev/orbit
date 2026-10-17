@@ -715,10 +715,14 @@ it('preserves the removal error after a claim attaches during cancellation', fun
     app()->instance(InstanceRemover::class, $remover);
     $database = app('db');
     $double = Mockery::mock($database);
-    $double->shouldReceive('transaction')->once()->andReturnUsing(static function (Closure $callback, int $attempts = 1) use ($database, $group, $workspace): mixed {
-        $claimed = Task::topLevel()->findOrFail($group->id);
-        $claimed->taskable()->associate($workspace);
-        $claimed->save();
+    $attached = false;
+    $double->shouldReceive('transaction')->andReturnUsing(static function (Closure $callback, int $attempts = 1) use ($database, $group, $workspace, &$attached): mixed {
+        if (! $attached) {
+            $attached = true;
+            $claimed = Task::topLevel()->findOrFail($group->id);
+            $claimed->taskable()->associate($workspace);
+            $claimed->save();
+        }
 
         return $database->connection()->transaction($callback, $attempts);
     });

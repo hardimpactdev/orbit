@@ -23,7 +23,9 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -1376,3 +1378,28 @@ final class InstanceProbeApplicationUrlInspector implements RouteApplicationUrlI
         return $this->matches ?? throw new DoctorInspectionException;
     }
 }
+
+it('reports the durable lease holder and queue as information even when its node is unreachable', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_task_workspace(instance_probe_app(), $node, InstanceState::SourceResolved);
+    $group = $instance->tasks()->sole();
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'reviewer', 'reviewer:doctor');
+    expect(fn () => $leases->acquire($group, 'check', 'check:doctor'))->toThrow(TaskWorkspaceWaiting::class);
+    $holder->update(['remote_uncertain' => true]);
+    $context = instance_probe_context($node);
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect($context);
+    $issue = collect($report->issues)->firstWhere('code', 'instance.workspace_lease');
+
+    expect($issue)->not->toBeNull()
+        ->and($issue?->kind->value)->toBe('informational')
+        ->and($issue?->resourceName)->toBe($instance->name)
+        ->and($issue?->summary)->toContain('tasks:lease:release LEASE_ID --reason=...')
+        ->and($issue?->observed)->toContain('reviewer [reviewer:doctor]', 'check [check:doctor]', 'remote mutation result uncertain; lease retained')
+        ->and($holder->fresh()?->status)->toBe('held');
+
+    $unreachable = new DoctorNodeContext($node, new NodeInspectionData(reachable: false, platform: null, architecture: null, wireGuardAddressMatches: null));
+    $offline = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect($unreachable);
+    expect(array_column($offline->issues, 'code'))->toContain('instance.workspace_lease', 'instance.node_unreachable')
+        ->and($holder->fresh()?->status)->toBe('held');
+});

@@ -299,6 +299,8 @@ Nightly convergence checks one Node before advancing to the next. This limits fa
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
+The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
+
 ### From claim to workspace
 
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).

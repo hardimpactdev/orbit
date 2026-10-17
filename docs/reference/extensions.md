@@ -30,6 +30,8 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
 
+Task agent turns and checkout operations share the [workspace lease](/reference/tasks#workspace-lease). Task drivers and remote operations use that ownership rule regardless of which caller starts the work. A disabled extension does not erase an existing holder or its recovery evidence.
+
 ## Layout
 
 An extension lives in `apps/gateway/extensions/<name>/`.

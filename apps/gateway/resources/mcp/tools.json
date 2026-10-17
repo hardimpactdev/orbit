@@ -9205,7 +9205,7 @@
       "name": "tasks-status",
       "extension": null,
       "title": "Show Tasks status",
-      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
+      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.",
       "method": "GET",
       "path": "/api/v1/tasks/status",
       "path_inputs": [],

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -12,6 +13,7 @@ use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
@@ -32,9 +34,9 @@ function workspace_mcp_instance(string $checkout): Instance
     return test_ready_task_workspace($project, $node, ['name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14']);
 }
 
-function workspace_mcp(): RemoteTaskWorkspaceMcp
+function workspace_mcp(): object
 {
-    return new RemoteTaskWorkspaceMcp(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+    $mcp = new RemoteTaskWorkspaceMcp(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
@@ -58,6 +60,22 @@ function workspace_mcp(): RemoteTaskWorkspaceMcp
             public function put(string $host, int $port, HostKey $key): void {}
         },
     )));
+
+    return new class($mcp)
+    {
+        public function __construct(private RemoteTaskWorkspaceMcp $mcp) {}
+
+        public function installWhenMissing(Instance $instance): bool
+        {
+            $leases = app(TaskWorkspaceLease::class);
+            if ($leases->currentScope()?->instance_id === $instance->id || $instance->checkout_path === '') {
+                return $this->mcp->installWhenMissing($instance);
+            }
+            $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
+
+            return $leases->run($group, 'reviewer', 'mcp-test', fn (): bool => $this->mcp->installWhenMissing($instance));
+        }
+    };
 }
 
 afterEach(function (): void {
@@ -136,4 +154,14 @@ it('reports failure for a workspace without a checkout', function (): void {
     $instance->checkout_path = '';
 
     expect(workspace_mcp()->installWhenMissing($instance))->toBeFalse();
+});
+
+it('keeps MCP installation fenced without crediting changes to the reviewed checkout tree', function (): void {
+    $instance = workspace_mcp_instance(workspace_mcp_checkout());
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
+    $instance->refresh();
+    $lease = app(TaskWorkspaceLease::class)->acquire($group, 'reviewer', 'prepare');
+    expect(app(TaskWorkspaceLease::class)->within($lease, fn (): bool => workspace_mcp()->installWhenMissing($instance)))->toBeTrue();
+    expect($lease->fresh()->getAttribute('orbit_mutation'))->toBeFalse()
+        ->and($lease->fresh()->getAttribute('remote_uncertain'))->toBeFalse();
 });

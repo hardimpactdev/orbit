@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelRunningSubtaskAction;
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckKind;
@@ -20,6 +21,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\NullTaskWorkspaceStateReader;
 
@@ -70,7 +72,7 @@ it('starts one baseline check and asks for no assistance when the todo move and 
 
         public function __construct(private FakeTaskCheckRunner $inner) {}
 
-        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
         {
             $process = $this->inner->start($instance, $command, $setup, $deliverables);
             if ($this->racing) {
@@ -79,6 +81,11 @@ it('starts one baseline check and asks for no assistance when the todo move and 
             }
 
             return $process;
+        }
+
+        public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+        {
+            return null;
         }
 
         public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -151,11 +158,16 @@ it('cancels the started baseline process when the claim is cancelled during the 
 
         public function __construct(private Task $group, private Task $task) {}
 
-        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
         {
             app(CancelTaskCheckAction::class)->execute($this->group->fresh(['taskable']) ?? $this->group, $this->task);
 
             return new TaskCheckProcess(4001, 'Wed Sep 23 12:00:01 2026', str_repeat('a', 40), str_repeat('b', 40));
+        }
+
+        public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+        {
+            return null;
         }
 
         public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -231,3 +243,39 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
 
     return [$group->fresh(['taskable']) ?? $group, $task];
 }
+
+it('releases baseline preparation when cancellation wins during the head read and subsequent ticks progress', function (): void {
+    [$group, $task] = baseline_start_task('baseline-cancel-head', '10.44.0.197', TaskStatus::Todo);
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    app()->instance(TaskWorkspaceStateReader::class, new class($group, $task) implements TaskWorkspaceStateReader
+    {
+        private bool $cancelled = false;
+
+        public function __construct(private Task $group, private Task $task) {}
+
+        public function headCommit(Instance $instance): ?string
+        {
+            if (! $this->cancelled) {
+                $this->cancelled = true;
+                app(CancelRunningSubtaskAction::class)->execute($this->group, $this->task->fresh());
+            }
+
+            return str_repeat('a', 40);
+        }
+
+        public function currentBranch(Instance $instance): ?string
+        {
+            return 'task-'.$this->group->id;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+    app(TaskScheduler::class)->startTask($task);
+    expect($task->fresh()?->status)->toBe(TaskStatus::Cancelled)
+        ->and($checks->starts)->toBe(0)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->exists())->toBeFalse();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    expect($checks->starts)->toBe(0)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->exists())->toBeFalse();
+});

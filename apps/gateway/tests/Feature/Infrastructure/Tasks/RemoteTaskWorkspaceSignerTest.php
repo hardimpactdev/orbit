@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -14,6 +16,8 @@ use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -72,6 +76,21 @@ function task_signer_ssh(SshExecutor $transport): DevelopmentSshExecutor
     );
 }
 
+function task_signer_admitted(SshExecutor $transport): object
+{
+    return new class(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport))))
+    {
+        public function __construct(private RemoteTaskWorkspaceSigner $signer) {}
+
+        public function commit(Instance $instance, string $message): ?string
+        {
+            $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
+
+            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message));
+        }
+    };
+}
+
 /** @param list<string> $arguments */
 function task_signer_git(string $checkout, array $arguments): string
 {
@@ -86,7 +105,7 @@ it('commits every workspace change with the message from stdin and returns the n
     $message = "Models\n\nChecked the export and its test. It's \$ready; `no` shell expansion.";
 
     try {
-        $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), $message);
+        $sha = task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), $message);
 
         expect($sha)->toBe(task_signer_git($checkout, ['rev-parse', 'HEAD']))
             ->and(task_signer_git($checkout, ['log', '-1', '--format=%B']))->toBe($message)
@@ -104,7 +123,7 @@ it('returns HEAD without a new commit when the workspace has no changes', functi
     $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
 
     try {
-        expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
+        expect(task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
     } finally {
         File::deleteDirectory($checkout);
     }
@@ -127,7 +146,7 @@ describe('TaskGitHardening', function (): void {
         file_put_contents($checkout.'/change', 'agent change');
 
         try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'Orbit commit');
+            $sha = task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), 'Orbit commit');
 
             expect($sha)->not->toBeNull()
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse()
@@ -141,8 +160,24 @@ describe('TaskGitHardening', function (): void {
 it('returns null when the remote git commit fails', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'failed', 1, false)]);
 
-    expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)))->commit(
+    expect(task_signer_admitted($transport)->commit(
         task_signer_instance(),
         'Models',
     ))->toBeNull();
 });
+
+it('keeps a synchronous lease when a swallowed commit failure has an unknown remote result', function (int $exit, bool $uncertain): void {
+    $instance = task_signer_instance();
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
+    $transport = new AppDevFakeSshExecutor([new CommandResult($exit, '', 'failed', 1, false)]);
+    $signer = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)));
+    $leases = app(TaskWorkspaceLease::class);
+    $result = $leases->run($group, 'verdict', 'commit', fn (): ?string => $signer->commit($instance, 'Models'));
+    $record = TaskWorkspaceLeaseRecord::query()->latest('id')->firstOrFail();
+
+    expect($result)->toBeNull()->and($record->getAttribute('remote_uncertain'))->toBe($uncertain)
+        ->and($record->status)->toBe($uncertain ? 'held' : 'released');
+    if ($uncertain) {
+        expect(fn () => $leases->acquire($group, 'check', 'next'))->toThrow(TaskWorkspaceWaiting::class);
+    }
+})->with([[1, false], [255, true], [124, true]]);

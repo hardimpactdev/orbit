@@ -186,7 +186,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     ]);
     $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $task = Task::query()->create([
-        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running,
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running, 'subtask_start_commit' => 'abc',
     ]);
     $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
     $probe = new class($timeout) implements SshExecutor
@@ -205,15 +205,27 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
             return new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false);
         }
     };
-    $transport = new AppDevFakeSshExecutor([
-        new CommandResult(0, '{"pid":4100,"started":"started","head":"abc","tree":"def"}', '', 1, false),
-    ]);
+    $transport = new class implements SshExecutor
+    {
+        public int $starts = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            if (str_contains($command->input ?? '', ' start "$checkout"')) {
+                $this->starts++;
+
+                return new CommandResult(0, '{"pid":4100,"started":"started","head":"abc","tree":"def"}', '', 1, false);
+            }
+
+            return new CommandResult(0, '{"head":"abc","tree":"def"}', '', 1, false);
+        }
+    };
     app()->instance(TaskCheckRunner::class, check_runner($transport, probe: $probe));
 
     test_pass_baseline();
 
     expect(TaskCheck::query()->count())->toBe(0);
-    expect($transport->commands)->toBeEmpty();
+    expect($transport->starts)->toBe(0);
     expect($task->fresh()->communication_failures)->toBe(1);
     expect($group->fresh()->assistance_requested)->toBeFalse();
 
@@ -221,7 +233,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
     expect($probe->calls)->toBe(2);
-    expect($transport->commands)->toHaveCount(1);
+    expect($transport->starts)->toBe(1);
     expect($task->fresh()->communication_failures)->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
 });
@@ -1609,3 +1621,95 @@ it('bounds output draining after an escaped grandchild outlives the setup shell'
         }
     }
 })->with(['configured timeout' => [30], 'no configured timeout' => [null]]);
+
+it('reads both merge parents and the parent tree for historical mutation proof', function (): void {
+    $checkout = check_runner_checkout('echo ok');
+    $git = static fn (array $args): string => trim((new Process(['git', '-C', $checkout, ...$args]))->mustRun()->getOutput());
+    $git(['add', '--all']);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'clean baseline']);
+    $parent = $git(['rev-parse', 'HEAD']);
+    $parentTree = $git(['rev-parse', 'HEAD^{tree}']);
+    $git(['checkout', '-b', 'incoming']);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'incoming']);
+    $second = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '--detach', $parent]);
+    $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '--no-ff', '--no-edit', $second]);
+    $snapshot = check_runner(new LocalShellSshExecutor)->snapshot(check_runner_instance($checkout));
+
+    expect($snapshot->parent)->toBe($parent)->and($snapshot->parentTree)->toBe($parentTree)
+        ->and($snapshot->secondParent)->toBe($second)->and($snapshot->commitTree)->toBe($snapshot->tree);
+});
+
+it('recovers an exact managed run and never exposes a result before descendants stop', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $runId = bin2hex(random_bytes(16));
+    $barrier = $this->directory.'/descendant-barrier';
+    $ready = $this->directory.'/descendant-ready';
+    if (! mkdir($barrier)) {
+        throw new RuntimeException('Could not create the observable barrier.');
+    }
+    $child = 'touch '.escapeshellarg($ready).'; while test -d '.escapeshellarg($barrier).'; do read -r -t 0.02 ignored || true; done; printf descendant > late.txt';
+    $process = null;
+    try {
+        $process = $runner->start($instance, 'bash -c '.escapeshellarg($child).' >/dev/null 2>&1 &', runId: $runId);
+        $recovered = $runner->recoverStart($instance, $runId);
+        expect($recovered?->pid)->toBe($process->pid)->and($recovered?->started)->toBe($process->started);
+        $deadline = microtime(true) + 10;
+        while ((! file_exists($ready) || ! file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json')) && microtime(true) < $deadline) {
+            clearstatcache();
+        }
+        expect(file_exists($ready))->toBeTrue()
+            ->and(file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json'))->toBeTrue()
+            ->and($runner->read($instance, $process)->state)->toBe('running');
+        rmdir($barrier);
+        $reading = check_runner_wait($runner, $instance, $process);
+        expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
+            ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
+            ->and($reading->changedPaths)->toContain('late.txt')
+            ->and($reading->causalityUncertain)->toBeTrue();
+    } finally {
+        if (is_dir($barrier)) {
+            rmdir($barrier);
+        }
+        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
+        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
+    }
+});
+
+it('tombstones a missing managed start and refuses a delayed original without executing it', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $runId = bin2hex(random_bytes(16));
+    expect($runner->recoverStart($instance, $runId))->toBeNull();
+    expect(fn () => $runner->start($instance, 'touch late-start', runId: $runId))->toThrow(TaskCheckException::class);
+    expect(file_exists($checkout.'/late-start'))->toBeFalse()
+        ->and($runner->recoverStart($instance, $runId))->toBeNull();
+});
+
+it('keeps finished managed results bound to their run when a newer check completes', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $runIds = [bin2hex(random_bytes(16)), bin2hex(random_bytes(16))];
+    try {
+        $first = $runner->start($instance, 'true', runId: $runIds[0]);
+        $original = check_runner_wait($runner, $instance, $first);
+        expect($original->state)->toBe('finished')->and($original->exitCode)->toBe(0);
+        $second = $runner->start($instance, 'printf newer > second-run.txt; exit 7', runId: $runIds[1]);
+        $newer = check_runner_wait($runner, $instance, $second);
+        $repeated = $runner->read($instance, $first);
+        expect($newer->state)->toBe('finished')->and($newer->exitCode)->toBe(7)
+            ->and($repeated->state)->toBe('finished')->and($repeated->exitCode)->toBe(0)
+            ->and($repeated->treeAfter)->toBe($original->treeAfter)
+            ->and($repeated->changedPaths)->toBe($original->changedPaths)
+            ->and($runner->read($instance, $second)->treeAfter)->toBe($newer->treeAfter);
+    } finally {
+        foreach ($runIds as $runId) {
+            (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
+            (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
+        }
+    }
+});

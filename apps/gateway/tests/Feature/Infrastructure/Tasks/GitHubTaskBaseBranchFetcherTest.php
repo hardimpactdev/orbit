@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -60,7 +61,7 @@ function fetcher_group(string $checkout): Task
     return test_vm_group($group);
 }
 
-function fetcher(SshExecutor $transport): GitHubTaskBaseBranchFetcher
+function fetcher(SshExecutor $transport): object
 {
     app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
         $transport,
@@ -87,7 +88,19 @@ function fetcher(SshExecutor $transport): GitHubTaskBaseBranchFetcher
         },
     ));
 
-    return app(GitHubTaskBaseBranchFetcher::class);
+    return new class(app(GitHubTaskBaseBranchFetcher::class))
+    {
+        public function __construct(private GitHubTaskBaseBranchFetcher $fetcher) {}
+
+        /** @param array<int|string, mixed> $arguments */
+        public function __call(string $method, array $arguments): mixed
+        {
+            $group = $arguments[0];
+
+            return app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'fetcher-test',
+                fn (): mixed => $this->fetcher->{$method}(...$arguments));
+        }
+    };
 }
 
 beforeEach(function (): void {
@@ -513,3 +526,12 @@ it('merges main with repository drivers, without hooks, and aborts unresolved co
         }
     }
 })->with(['clean' => 'clean', 'conflict' => 'conflict', 'overlap' => 'overlap', 'generated-only conflict' => 'generated-only conflict']);
+
+it('retains uncertainty for a checkout move but not a timed-out merge-base read', function (bool $move): void {
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+    $lease = app(TaskWorkspaceLease::class)->acquire($group, 'publication', 'compare-or-move');
+    $bases = fetcher(new AppDevFakeSshExecutor([new CommandResult(255, '', 'connection lost', 1, true)]));
+    expect(fn () => app(TaskWorkspaceLease::class)->within($lease, fn () => $move ? $bases->moveTo($group, str_repeat('a', 40)) : $bases->mergeBase($group)))->toThrow(TaskPullRequestException::class);
+    expect($lease->fresh()->getAttribute('remote_uncertain'))->toBe($move)
+        ->and($lease->fresh()->getAttribute('orbit_mutation'))->toBe($move);
+})->with([false, true]);

@@ -205,4 +205,5 @@ return [
         '0208-scan-monorepo-dependencies-per-sub-project',
         '0208-deploy-the-gateway-with-laravel-migrations',
     ],
+    '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
 ];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentDefaults;
@@ -20,6 +21,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AgentCommandDispatcher;
+use Tests\Support\AgentSnapshotReader;
 use Tests\Support\NullCoderSettleNotifier;
 
 function router_group(): Task
@@ -118,12 +120,31 @@ function router_dispatcher(): AgentCommandDispatcher
     };
 }
 
+function router_input_registry(AgentCommandDispatcher $dispatcher): AgentDriverRegistry
+{
+    $reader = new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            if ($threadId === 'implementer-thread') {
+                return ['thread' => ['session' => ['status' => 'waiting'], 'pendingApprovals' => [['requestId' => 'approval-3']]]];
+            }
+
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'stopped-'.$threadId, 'state' => 'completed']]];
+        }
+    };
+    $registry = test_snapshot_registry($dispatcher, $reader);
+    app()->instance(AgentDriverRegistry::class, $registry);
+
+    return $registry;
+}
+
 it('dispatches acceptForSession for a pending approval', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
     $observation = router_observation($group, 'approval-3');
 
-    new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(router_input_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         $observation,
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -146,7 +167,7 @@ it('surfaces a refused drain instead of swallowing the dispatch', function (): v
         }
     };
 
-    expect(fn () => new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    expect(fn () => new TaskSessionActor(router_input_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group, 'approval-3'),
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -156,8 +177,17 @@ it('surfaces a refused drain instead of swallowing the dispatch', function (): v
 it('starts an implementer turn through the agent driver', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
+    $reader = new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'stopped-'.$threadId, 'state' => 'completed']]];
+        }
+    };
+    $registry = test_snapshot_registry($dispatcher, $reader);
+    app()->instance(AgentDriverRegistry::class, $registry);
 
-    new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 0.86, 'Jev selected continue_implementer.'),

@@ -28263,7 +28263,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -33822,6 +33822,12 @@
             "items": {
               "$ref": "#/components/schemas/TaskMerge"
             }
+          },
+          "workspace_leases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskWorkspaceLease"
+            }
           }
         }
       },
@@ -33945,6 +33951,80 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TaskWorkspaceLease": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "integer"
+          },
+          "instance_name": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "integer"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "holder": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskWorkspaceActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waiters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskWorkspaceActor"
+            }
+          }
+        }
+      },
+      "TaskWorkspaceActor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "acquired_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queued_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "check_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remote_uncertain": {
+            "type": "boolean"
           }
         }
       },

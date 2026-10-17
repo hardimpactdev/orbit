@@ -7,9 +7,12 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -257,6 +260,7 @@ it('complete ended cancels open subtasks through the API and removes the workspa
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     $checks = new FakeTaskCheckRunner;
@@ -339,10 +343,11 @@ it('complete ended resumes a committed authorization without GitHub after a stop
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     $driver->failNextInterrupt = $failure === 'interrupt';
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     $checks->failNextCancel = $failure === 'check';
     app()->instance(TaskCheckRunner::class, $checks);
     $receipts = new FakeTaskTurnReceipts;
@@ -350,6 +355,13 @@ it('complete ended resumes a committed authorization without GitHub after a stop
     $spawner = new class implements AgentSpawner
     {
         public int $starts = 0;
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -439,10 +451,11 @@ it('complete ended holds stale transitions and start or send boundaries during i
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     $driver->failNextInterrupt = $fail;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner($fail ? [TaskCheckReading::running()] : null);
     app()->instance(TaskCheckRunner::class, $checks);
     $receipts = new FakeTaskTurnReceipts;
     app()->instance(TaskTurnReceipts::class, $receipts);
@@ -524,6 +537,7 @@ it('complete ended revalidates and stops a replacement reviewer and check before
     ]);
     $group->update(['reviewer_agent_thread_id' => $previousReviewer->id]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     $checks = new FakeTaskCheckRunner;
@@ -597,7 +611,7 @@ it('complete ended refuses an interrupted baseline start and retries without Git
         'pid' => $pid, 'process_started' => $started, 'head_before' => '', 'tree_before' => '',
         'started_at' => now()->subSeconds(TaskScheduler::BASELINE_START_LIMIT_SECONDS + 1),
     ]);
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner($resume === 'tick' ? [TaskCheckReading::running()] : null);
     app()->instance(TaskCheckRunner::class, $checks);
     $remover = new class implements InstanceRemover
     {

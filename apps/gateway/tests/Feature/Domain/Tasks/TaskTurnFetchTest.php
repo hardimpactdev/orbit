@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -117,6 +119,7 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
 function turn_fetch_driver(object $fetcher): FakeAgentDriver
 {
     $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'prior-fetch-turn');
     $driver->beforeTurn = function () use ($fetcher): void {
         $fetcher->order[] = 'turn';
     };

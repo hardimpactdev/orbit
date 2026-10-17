@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskDeliverable;
@@ -432,12 +434,13 @@ function review_context_opening(): array
         /** @var list<array{message: string, context: ?string}> */
         public array $turns = [];
     };
-    $driver->beforeTurn = function (string $message) use ($log, $checkout): void {
+    $driver->beforeTurn = function (string $message) use ($driver, $log, $checkout): void {
         $path = review_context_file_path($checkout);
         $log->turns[] = [
             'message' => $message,
             'context' => is_file($path) ? (string) file_get_contents($path) : null,
         ];
+        $driver->observation = new AgentObservation(state: AgentThreadState::Done, turnId: 'context-turn-'.count($log->turns));
     };
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);

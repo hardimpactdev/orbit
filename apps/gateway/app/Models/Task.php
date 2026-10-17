@@ -54,6 +54,7 @@ use LogicException;
  * @property int|null $review_notified_attempt
  * @property string|null $review_notified_turn_id
  * @property string|null $review_workspace_head
+ * @property int|null $review_workspace_lease_id
  * @property string|null $review_workspace_tree
  * @property bool $assistance_requested
  * @property AssistanceKind|null $assistance_kind
@@ -72,6 +73,9 @@ use LogicException;
  * @property string|null $pi_restart_session_revision
  * @property int|null $deliverable_correction_check_id
  * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string}|null $deliverable_correction_resume
+ * @property string|null $pending_resolution_message
+ * @property string|null $pending_resolution_reason
+ * @property int|null $pending_resolution_comment_id
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -179,6 +183,7 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
+        'review_workspace_lease_id',
         'deliverables',
         'topology',
         'deliverable_correction_check_id',
@@ -186,6 +191,8 @@ final class Task extends Model
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
+        'pending_resolution_message', 'pending_resolution_reason',
+        'pending_resolution_comment_id',
         'resolution_delivered_comment_id',
         'direction_relay_comment_id',
         'consult_comment_id',
@@ -246,7 +253,8 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
-        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
+        'review_workspace_lease_id',
+        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'pending_resolution_message', 'pending_resolution_reason', 'pending_resolution_comment_id', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
         'ended_pr_notice_thread_id', 'ended_pr_notice_key', 'ended_pr_notice_state',
         'provider_retry', 'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
@@ -533,6 +541,7 @@ final class Task extends Model
             'completion_handoff_comment_id' => 'integer',
             'completion_reminder_attempt' => 'integer',
             'review_attempt' => 'integer',
+            'review_workspace_lease_id' => 'integer',
             'review_handled_comment_id' => 'integer',
             'review_reminder_attempt' => 'integer',
             'review_notified_attempt' => 'integer',
@@ -545,6 +554,7 @@ final class Task extends Model
             'ended_pr_notice_thread_id' => 'integer',
             'deliverable_correction_check_id' => 'integer',
             'deliverable_correction_resume' => 'array',
+            'pending_resolution_comment_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }

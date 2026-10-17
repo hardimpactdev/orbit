@@ -8,6 +8,8 @@ use RuntimeException;
 
 class AgentDriverException extends RuntimeException
 {
+    public bool $turnRejected = false;
+
     /** The conversation created before this failure, when a retry must reuse it. */
     public ?string $createdThreadId = null;
 

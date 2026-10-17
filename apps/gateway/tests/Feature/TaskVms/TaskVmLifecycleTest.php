@@ -48,6 +48,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
@@ -56,6 +57,7 @@ use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
@@ -80,6 +82,7 @@ use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -789,6 +792,31 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
+    it('never makes an ownership refusal eligible for offline VM destruction', function (): void {
+        Queue::fake();
+        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
+        $instance = tvm_life_workspace($vm->group, $vm->node);
+        $this->provider->observations = [null];
+        try {
+            TaskVmWorkspaceGuard::assertWorkspace($vm->group, Instance::query()->make([
+                'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            ]));
+            throw new RuntimeException('Expected ownership refusal.');
+        } catch (TaskVmException $exception) {
+            app(RemoveTaskWorkspaceAction::class)->recordFailure($vm->group, $exception);
+        }
+
+        app(DestroyEndedTaskVmsAction::class)->execute();
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        expect($this->provider->calls)->toBe([]);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+        $this->assertModelExists($instance);
+        Queue::assertNotPushed(DestroyTaskVm::class);
+        app(RemoveTaskWorkspaceAction::class)->clearFailure($vm->group);
+        expect($vm->group->fresh()->assistance_reason)->toBeNull();
+    });
+
     it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Cancelled);
@@ -969,17 +997,44 @@ describe(DestroyTaskVm::class, function (): void {
         $kept = $thread('example', 'session-one');
         $broken = $thread('unreadable', 'session-two');
         $pending = $thread('example', TaskAgentSpawner::PendingPrefix.'not-started');
+        // This actor completed under an earlier lease. A later unreadable transcript
+        // does not make its proven completion uncertain.
+        TaskWorkspaceLeaseRecord::query()->create([
+            'instance_id' => $instance->id, 'group_id' => $group->id, 'kind' => 'reviewer',
+            'owner' => 'thread:'.$broken->id, 'thread_id' => $broken->id,
+            'status' => 'released', 'released_at' => now(),
+        ]);
         Queue::fake();
 
         $removal->remove($group);
 
-        expect($readable->providerCalls)->toBe([[]])
+        expect($readable->providerCalls)->toBe([[], []])
             ->and($this->provider->calls)->toBe(['destroy'])
             ->and(json_decode((string) Storage::disk('local')->get(ArchiveAgentTranscriptsAction::path($kept)), true))
             ->toMatchArray(['state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']]])
             ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($broken)))->toBeFalse()
             ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($pending)))->toBeFalse()
             ->and(Instance::query()->find($instance->id))->toBeNull();
+    });
+
+    it('keeps the VM and workspace when an unreadable actor has no authoritative completion', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([new FakeAgentDriver('unreadable')]));
+        $thread = AgentThread::query()->create([
+            'task_group_id' => $group->id, 'node_id' => $vm->node_id, 'role' => 'reviewer',
+            'external_id' => 'unknown-session', 'driver' => 'unreadable', 'runtime_key' => 'node:'.$vm->node_id,
+        ]);
+        Queue::fake();
+
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
+            ->toThrow(TaskWorkspaceWaiting::class);
+
+        expect($this->provider->calls)->toBe([])
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+            ->and(TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $instance->id)->sole()->thread_id)->toBe($thread->id)
+            ->and(TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)->where('kind', 'teardown')->sole()->status)->toBe('queued');
+        Queue::assertNothingPushed();
     });
 
     it('keeps the workspace and records the error on the VM when the VM cannot be deleted', function (): void {

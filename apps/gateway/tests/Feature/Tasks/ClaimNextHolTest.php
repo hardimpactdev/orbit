@@ -82,6 +82,10 @@ it('claimNext continues after provision null', function (): void {
                 return null;
             }
 
+            if ($this->calls === 1) {
+                return null;
+            }
+
             return $intent->group->id === $this->instance->task_workspace_owner_id
                 ? $this->instance
                 : tap(claim_hol_instance($intent->group->project, 'claim-hol-'.$intent->group->id, $intent->group))->update(['starting_commit' => str_repeat('a', 40)]);
@@ -89,6 +93,11 @@ it('claimNext continues after provision null', function (): void {
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
@@ -125,7 +134,8 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->fresh()?->assistance_requested)->toBeFalse()
         ->and($oldest->fresh()?->assistance_reason)->toBeNull()
         ->and($oldest->tasks()->sole()->fresh()?->status)->toBe(TaskStatus::Running)
-        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
+        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull()
+        ->and($oldest->fresh()?->taskable_id)->not->toBe($second->fresh()?->taskable_id);
 });
 
 it('leaves every waiting group in todo, tries each once, and clears a provisioning failure', function (): void {
@@ -324,6 +334,7 @@ function claim_hol_instance(Project $project, string $name, ?Task $owner = null)
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
+        'branch_override' => $name,
         'checkout_path' => "/tmp/{$name}",
         'task_workspace_owner_id' => $owner?->id,
         'status' => 'reserved',
@@ -334,6 +345,11 @@ function claim_hol_spawner(): void
 {
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;

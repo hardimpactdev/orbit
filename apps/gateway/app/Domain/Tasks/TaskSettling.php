@@ -176,12 +176,29 @@ final readonly class TaskSettling
             }
 
             try {
-                $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($group);
-                $this->rememberBackoff($backoffKey, null, 'workspace removal');
-                $this->releaseRemovedWorkspace($group, $instance->id);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
-                $removed++;
+                $didRemove = app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $instance, $backoffKey): bool {
+                    $group->refresh();
+                    if (! $this->shouldRemoveWorkspace($group, $instance)) {
+                        return false;
+                    }
+                    $group->setRelation('taskable', $instance);
+                    $leases = app(TaskWorkspaceLease::class);
+                    $leases->cancelQueued($group, 'cancel-push:'.$group->id);
+                    $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance): void {
+                        $this->pushCancelledApproval($group, $instance);
+                        $this->workspaces->remove($group);
+                    });
+                    $this->rememberBackoff($backoffKey, null, 'workspace removal');
+                    $this->releaseRemovedWorkspace($group, $instance->id);
+                    Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
+
+                    return true;
+                });
+                if ($didRemove) {
+                    $removed++;
+                }
+            } catch (TaskWorkspaceWaiting) {
+                continue;
             } catch (Throwable $exception) {
                 // The push of a cancelled approval from a task VM runs in a queued job. A later sweep removes the workspace.
                 if ($exception instanceof TaskPullRequestException && $exception->pending) {
@@ -222,8 +239,10 @@ final readonly class TaskSettling
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
+        } catch (TaskWorkspaceWaiting) {
+            return;
         } catch (Throwable $exception) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(), replaceFailure: true);
+            $this->workspaces->recordFailure($group, $exception, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
             if (is_string($backoffKey)) {
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
@@ -477,7 +496,11 @@ final readonly class TaskSettling
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->runner->beginRunningTask($scheduler, $next);
+            try {
+                $this->runner->beginRunningTask($scheduler, $next);
+            } catch (TaskWorkspaceWaiting) {
+                // Cancellation succeeded; the next subtask keeps its FIFO admission.
+            }
         }
 
         if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
@@ -488,6 +511,14 @@ final readonly class TaskSettling
     }
 
     public function settle(TaskScheduler $scheduler,
+        Task $group,
+        bool $requestMissingPullRequest = true,
+        bool $checkReturningPullRequest = true,
+    ): Task {
+        return app(TaskWorkspaceLease::class)->run($group, 'settle', 'settle:'.$group->id, fn () => $this->settleWithLease($scheduler, $group, $requestMissingPullRequest, $checkReturningPullRequest));
+    }
+
+    private function settleWithLease(TaskScheduler $scheduler,
         Task $group,
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
@@ -1132,9 +1163,11 @@ final readonly class TaskSettling
      */
     private function prepareResumedWorkspace(TaskScheduler $scheduler, Task $group, Task $todo): bool
     {
-        if (app(TaskWorkspaceHead::class)->held($group)) {
-            return false;
-        }
+        return app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'resume:'.$todo->id, fn () => $this->prepareResumedWorkspaceWithLease($scheduler, $group, $todo), taskId: $todo->id);
+    }
+
+    private function prepareResumedWorkspaceWithLease(TaskScheduler $scheduler, Task $group, Task $todo): bool
+    {
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
             return false;
@@ -1143,6 +1176,8 @@ final readonly class TaskSettling
             $fresh = $group->fresh(['project', 'taskable']) ?? $group;
             $this->turnFetcher->fetch($fresh);
             $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
+        } catch (TaskWorkspaceWaiting) {
+            return false;
         } catch (Throwable $exception) {
             $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
             $scheduler->recordCommunicationFailure($todo, $group, $exception->getMessage());

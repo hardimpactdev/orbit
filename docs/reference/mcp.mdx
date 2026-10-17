@@ -104,6 +104,8 @@ The `tasks-*` tools belong to the Gateway-switched [tasks](/reference/tasks) ext
 
 `tasks-complete` takes the numeric `group` ID and requires Gateway access. It completes a settling task, or a running or reviewing task whose watched pull request has merged or closed. On the latter path it cancels open subtasks and stops their running agents and checks before workspace removal. Other tasks return `tasks.not_settling`; a failed stop returns `tasks.subtask_interrupt_failed`. The [completion contract](/reference/tasks#complete-and-cleanup) defines the durable receipt and cleanup retries.
 
+`tasks-status` returns the API `workspace_leases` list with each holder, queued actor, and uncertainty flag. Use these records to explain why work waits. The tool does not grant a new lease or reset an unknown owner; [workspace lease reconciliation](/reference/tasks#workspace-lease) stays in the scheduler.
+
 ## Connect a client
 
 Claude Code, from a Node or a WireGuard peer that trusts the Orbit CA:

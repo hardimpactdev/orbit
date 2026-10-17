@@ -312,6 +312,11 @@ it('still returns the created group, and fails it when the first implementer can
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;

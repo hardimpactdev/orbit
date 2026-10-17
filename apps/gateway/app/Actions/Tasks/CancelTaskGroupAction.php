@@ -9,11 +9,13 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +31,11 @@ final readonly class CancelTaskGroupAction
     ) {}
 
     public function execute(Task $group): Task
+    {
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group), wait: false);
+    }
+
+    private function cancel(Task $group): Task
     {
         $this->requireExtension->execute();
 
@@ -52,10 +59,7 @@ final readonly class CancelTaskGroupAction
         $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
-            if ($unpublished) {
-                $this->pushApprovedWork($group);
-            }
-            $this->removeWorkspace($group);
+            $this->teardownWorkspace($group, $instance, $unpublished || $group->status === TaskGroupStatus::Cancelled);
         }
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
@@ -83,7 +87,7 @@ final readonly class CancelTaskGroupAction
 
         if ($attachedByClaim instanceof Instance) {
             try {
-                $this->removeWorkspace($group);
+                $this->teardownWorkspace($group, $attachedByClaim);
             } catch (Throwable $exception) {
                 // The workspace stays attached for a retry, unless the failed removal already deleted its row.
                 $locked = Task::topLevel()->findOrFail($group->id);
@@ -113,6 +117,34 @@ final readonly class CancelTaskGroupAction
         }
 
         return $cancelled;
+    }
+
+    /** Cancellation owns one lifecycle admission across preservation and removal. */
+    private function teardownWorkspace(Task $group, Instance $instance, bool $pushApproved = false): void
+    {
+        $group->setRelation('taskable', $instance);
+        $leases = app(TaskWorkspaceLease::class);
+        $owner = 'teardown:'.$instance->id;
+        $leases->cancelQueued($group, 'cancel-push:'.$group->id);
+        try {
+            $leases->run($group, 'teardown', $owner, function () use ($group, $pushApproved): void {
+                if ($pushApproved) {
+                    $this->pushApprovedWork($group);
+                }
+                $this->removeWorkspace($group);
+            });
+        } catch (Throwable $exception) {
+            $current = Task::topLevel()->findOrFail($group->id);
+            $retryable = in_array($current->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
+                || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
+                    && is_string($current->assistance_reason) && str_starts_with($current->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
+            if (! $retryable) {
+                // This synchronous request did not end the group, so no scheduler path owns its waiter.
+                // The group lock prevents another cancellation from consuming or replacing it during cleanup.
+                $leases->cancelQueued($group, $owner);
+            }
+            throw $exception;
+        }
     }
 
     /** The probe is the one check that separates a Node that is gone from a Node that answered and refused. */
@@ -156,8 +188,8 @@ final readonly class CancelTaskGroupAction
             throw new ResourceOperationException(
                 errorCode: 'tasks.push_failed',
                 message: $exception->pending
-                    ? __('The group remains settling while its approved commits are pushed to task-:group: :reason Cancel again in a minute.', ['group' => $group->id, 'reason' => $exception->getMessage()])
-                    : __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
+                    ? __('The workspace stays while its approved commits are pushed to task-:group: :reason Cancel again in a minute.', ['group' => $group->id, 'reason' => $exception->getMessage()])
+                    : __('The workspace stays because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
                 status: 502,
             );
         }

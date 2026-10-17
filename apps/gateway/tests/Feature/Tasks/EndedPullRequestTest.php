@@ -10,6 +10,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskPullRequestHealth;
@@ -27,6 +28,11 @@ use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\FakeTaskCheckRunner;
+
+beforeEach(function (): void {
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+});
 
 /** An earlier approval is published, but the later implementer and reviewer still hold work. */
 function ended_pr_group(string $state, string $status = 'running'): Task
@@ -51,6 +57,16 @@ function ended_pr_group(string $state, string $status = 'running'): Task
         'status' => $status, 'assistance_requested' => true, 'assistance_reason' => 'An earlier question.',
         'pr_url' => $status === 'settling' ? 'https://github.com/acme/orbit/pull/42' : null,
     ]);
+    $node = Node::query()->create([
+        'name' => 'ended-pr-lease-node', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.91',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
+        'checkout_path' => '/srv/orbit/apps/ended-pr', 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
     foreach (['completed', 'running', 'reviewing', 'todo'] as $position => $taskStatus) {
         $task = Task::query()->create([
             'parent_id' => $group->id, 'position' => $position + 1,
@@ -78,10 +94,10 @@ function ended_pr_group(string $state, string $status = 'running'): Task
 /** A driver boundary double records accepted keys, including a lost response after acceptance. */
 function ended_pr_driver(): object
 {
-    $recording = (object) ['state' => AgentThreadState::Working, 'inputRequests' => [], 'calls' => [], 'accepted' => [], 'failure' => null];
+    $recording = (object) ['state' => AgentThreadState::Working, 'inputRequests' => [], 'calls' => [], 'accepted' => [], 'turns' => [], 'failure' => null];
     $driver = Mockery::mock(AgentDriver::class);
     $driver->shouldReceive('key')->andReturn('pi');
-    $driver->shouldReceive('observe')->andReturnUsing(static fn (): AgentObservation => new AgentObservation($recording->state, inputRequests: $recording->inputRequests));
+    $driver->shouldReceive('observe')->andReturnUsing(static fn (AgentThread $thread): AgentObservation => new AgentObservation($recording->state, turnId: $recording->turns[$thread->id] ?? 'initial-'.$thread->id, inputRequests: $recording->inputRequests));
     $driver->shouldReceive('interrupt')->never();
     $driver->shouldReceive('create')->never();
     $driver->shouldReceive('send')->andReturnUsing(static function (AgentThread $thread, string $message, ?string $key = null) use ($recording): void {
@@ -97,6 +113,8 @@ function ended_pr_driver(): object
         if ($recording->failure === 'after') {
             throw new AgentDriverException('Response lost after acceptance.');
         }
+        $recording->turns[$thread->id] = $key;
+        $recording->state = AgentThreadState::Done;
     });
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
 
@@ -173,11 +191,13 @@ it('retries an ended pull request notice with the committed key after a failed o
 
     expect(Task::query()->where('parent_id', $group->id)->where('ended_pr_notice_state', 'pending')->count())->toBe(2);
     expect($group->fresh())->assistance_requested->toBeTrue();
-    expect(Activity::query()->where('description', 'ended pull request notice delivery failed')->count())->toBe(2);
+    // A failed uncertain notice retains the lease; the other notice queues.
+    expect(Activity::query()->where('description', 'ended pull request notice delivery failed')->count())->toBe(1);
     $driver->failure = null;
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect(array_column($driver->calls, 'key'))->toBe([...$keys, ...$keys]);
+    app(TaskScheduler::class)->tick();
+    expect(array_column($driver->calls, 'key'))->toBe([$keys[0], $keys[0], $keys[1]]);
     expect($driver->accepted)->toHaveCount(2);
     expect(Task::query()->where('parent_id', $group->id)->where('ended_pr_notice_state', 'delivered')->count())->toBe(2);
 })->with(['before acceptance' => 'before', 'after acceptance' => 'after']);
@@ -204,8 +224,9 @@ it('retries an ended pull request notice after acceptance but before delivered w
     expect($driver->accepted)->toHaveCount(1);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect(array_column($driver->calls, 'key'))->toHaveCount(3)
-        ->and($driver->calls[0]['key'])->toBe($key)->and($driver->calls[1]['key'])->toBe($key);
+    app(TaskScheduler::class)->tick();
+    expect(array_column($driver->calls, 'key'))->toHaveCount(2)
+        ->and($driver->calls[0]['key'])->toBe($key);
     expect($driver->accepted)->toHaveCount(2);
     expect($running->fresh())->ended_pr_notice_state->toBe('delivered');
 });
@@ -264,16 +285,6 @@ it('does not auto complete open work from an ended reviewed pull request when th
 it('does not retry a committed approval push while ended pull request assistance stands', function (): void {
     $group = ended_pr_group('merged', 'reviewing');
     $driver = ended_pr_driver();
-    $node = Node::query()->create([
-        'name' => 'ended-pr-node', 'platform' => 'linux', 'status' => 'active',
-        'public_ssh_host' => '10.44.0.194', 'wireguard_ip' => '10.44.0.194',
-    ]);
-    $instance = Instance::query()->create([
-        'task_workspace_owner_id' => $group->id, 'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
-        'checkout_path' => '/tmp/ended-pr-workspace', 'status' => 'source_resolved',
-    ]);
-    $group->taskable()->associate($instance);
-    $group->save();
     $reviewing = $group->tasks->firstWhere('status', TaskStatus::Reviewing);
     $receipt = $reviewing->comments()->create([
         'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Approved before the external merge.',
@@ -308,6 +319,7 @@ it('notifies the ended pull request subtask reviewer rather than an earlier grou
     $driver->state = AgentThreadState::Done;
 
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
     expect(array_column($driver->calls, 'thread'))->toBe([
         $group->tasks->firstWhere('status', TaskStatus::Running)->implementer_agent_thread_id, $reviewerId,
@@ -323,6 +335,7 @@ it('delivers an ended pull request notice to a stopped input-waiting thread but 
     $driver->inputRequests = $pendingInput ? [new AgentInputRequest('approval-1', 'approval')] : [];
 
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
     $acting = $group->tasks->whereIn('status', [TaskStatus::Running, TaskStatus::Reviewing]);
     foreach ($acting as $task) {
@@ -333,6 +346,7 @@ it('delivers an ended pull request notice to a stopped input-waiting thread but 
     if ($pendingInput) {
         $keys = $acting->map(static fn (Task $task): ?string => $task->fresh()->ended_pr_notice_key)->values()->all();
         $driver->inputRequests = [];
+        app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
         expect(array_column($driver->calls, 'key'))->toBe($keys);
     }
@@ -346,7 +360,7 @@ it('preserves an ended pull request hold established while a resolution send is 
     $task->update(['assistance_requested' => true, 'assistance_reason' => 'An earlier question.']);
     $driver = Mockery::mock(AgentDriver::class);
     $driver->shouldReceive('key')->andReturn('pi');
-    $driver->shouldReceive('observe')->andReturn(new AgentObservation(AgentThreadState::Working));
+    $driver->shouldReceive('observe')->andReturn(new AgentObservation(AgentThreadState::Done, turnId: 'completed-before-resolution'));
     $driver->shouldReceive('interrupt')->never();
     $driver->shouldReceive('send')->once()->withArgs(static fn (AgentThread $thread, string $message): bool => $thread->task_id === $task->id && $message === TaskTurnFetchNotice::Failed."\n\nAnswer to the earlier question.")
         ->andReturnUsing(static function () use ($group): void {
@@ -418,9 +432,10 @@ it('keeps an ended pull request notice pending with its accepted key when the de
     expect(Activity::query()->where('description', 'ended pull request notice delivered')->count())->toBe(0);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
     expect($running->fresh())->ended_pr_notice_state->toBe('delivered')->ended_pr_notice_key->toBe($key);
-    expect(array_column($driver->calls, 'key'))->toHaveCount(3)
-        ->and($driver->calls[0]['key'])->toBe($key)->and($driver->calls[1]['key'])->toBe($key);
+    expect(array_column($driver->calls, 'key'))->toHaveCount(2)
+        ->and($driver->calls[0]['key'])->toBe($key);
     expect($driver->accepted)->toHaveCount(2);
     expect(Activity::query()->where('description', 'ended pull request notice delivered')->count())->toBe(2);
 });

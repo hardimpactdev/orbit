@@ -437,7 +437,7 @@ describe('wake', function (): void {
         {
             public function __construct(private object $test) {}
 
-            public function synchronized(int $groupId, Closure $operation): mixed
+            public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
             {
                 $this->test->locked[] = $groupId;
                 try {
@@ -449,12 +449,13 @@ describe('wake', function (): void {
         };
         app()->instance(TaskExecutionLock::class, $lock);
         [$this->group, $vm] = tvm_park_waiting();
-        tvm_park_workspace($this->group, $vm);
+        $workspace = tvm_park_workspace($this->group, $vm);
 
         app(CompleteTaskGroupAction::class)->execute($this->group);
 
         expect($this->group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
-            ->and($this->lockedDuringRemoval)->toBe([$this->group->id]);
+            ->and($this->lockedDuringRemoval)->toBe([$this->group->id])
+            ->and($this->locked)->toBe([]);
     });
 
     it('lets the ended-group sweep wait for a parked VM without a failure', function (): void {

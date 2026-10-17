@@ -1556,6 +1556,10 @@
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
+    },
+    {
+      "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
+      "destination": "/reference/tasks#workspace-lease"
     }
   ]
 }

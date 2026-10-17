@@ -23,6 +23,7 @@ use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
 use App\Models\Node;
@@ -54,8 +55,9 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
+        $leaseIssues = $this->workspaceLeaseIssues($rows);
         if (! $context->inspection->reachable) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), [new DoctorIssueData(
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), [...$leaseIssues, new DoctorIssueData(
                 InstanceDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'instance',
@@ -66,7 +68,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             )]);
         }
-        $issues = [];
+        $issues = $leaseIssues;
         foreach ($rows as $instance) {
             $instanceIssueOffset = count($issues);
 
@@ -215,6 +217,39 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    /** @param Collection<int, Instance> $instances
+     * @return list<DoctorIssueData>
+     */
+    private function workspaceLeaseIssues(Collection $instances): array
+    {
+        $issues = [];
+        foreach (app(TaskWorkspaceLease::class)->status() as $lease) {
+            $instance = $instances->find($lease['instance_id']);
+            if (! $instance instanceof Instance) {
+                continue;
+            }
+            $holder = $lease['holder'];
+            $observed = $holder === null ? 'no holder' : $holder['kind'].' ['.$holder['owner'].'] since '.($holder['acquired_at'] ?? 'not recorded');
+            if ($holder !== null && $holder['remote_uncertain']) {
+                $observed .= '; remote mutation result uncertain; lease retained';
+            }
+            $queued = array_map(static fn (array $waiter): string => $waiter['kind'].' ['.$waiter['owner'].'] since '.$waiter['queued_at'], $lease['waiters']);
+            $observed .= '; waiters: '.($queued === [] ? 'none' : implode(', ', $queued));
+            $issues[] = new DoctorIssueData(
+                InstanceDoctorIssueCode::WorkspaceLease,
+                DoctorIssueKind::Informational,
+                'instance',
+                $instance->id,
+                $instance->name,
+                'Task workspace lease holder and queue. Restore connectivity, then let a task tick reconcile exact receipts. For a stopped owner, investigate with tasks:lease:release LEASE_ID --reason=... on the Gateway; unproven ownership stays fenced.',
+                'one workspace actor at a time',
+                $observed,
+            );
+        }
+
+        return $issues;
     }
 
     private function isProvisioning(Instance $instance, InstanceState $settled): bool

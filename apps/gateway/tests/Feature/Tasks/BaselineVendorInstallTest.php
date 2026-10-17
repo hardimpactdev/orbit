@@ -223,6 +223,13 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
             return test_agent_thread($task->parent, 'implementer', $task)->id;
         }
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;

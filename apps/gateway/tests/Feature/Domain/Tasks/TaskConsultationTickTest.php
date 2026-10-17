@@ -498,6 +498,10 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages[0]['session'])->toBe('implementer-thread')
         ->and($messages[0]['key'])->toBe($implementerKey);
 
+    // The admitted implementer turn must finish before review can own the checkout.
+    $implementer->state = 'idle';
+    $implementer->error = null;
+    $implementer->turnId = (string) $implementerKey;
     $task->parent->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update([
         'status' => TaskStatus::Reviewing,
@@ -701,7 +705,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('idle');
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $receipts = new FakeTaskTurnReceipts([null, null]);
@@ -780,7 +784,7 @@ it('dispatches nothing when Jev selects noop', function (): void {
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
@@ -942,7 +946,7 @@ it('reminds the implementer with the failing check output once, then asks for as
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
@@ -978,7 +982,7 @@ it('shows an unexpected check error as a failed check whose output ends with the
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $output = "composer check\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'gateway'\n";
@@ -1008,7 +1012,7 @@ it('keeps an unexpected check error failed when the tree changed during the run'
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'idle']]];
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $output = "rm -rf app\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory\n";
@@ -1040,6 +1044,13 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     {
         public int $spawns = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->spawns++;
@@ -1064,7 +1075,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('idle');
+            return tick_checked_thread('idle', $threadId);
         }
     });
 
@@ -1178,7 +1189,9 @@ it('retries review findings until the implementer receives them', function (): v
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
         ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
-        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
+        ->and($dispatcher->commands[1]['commandId'])->toBe($dispatcher->commands[0]['commandId'])
+        // Retry the admitted send without recapturing metadata or the review baseline.
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer']);
 });
 
 it('repeated reminder send failures reach assistance', function (): void {
@@ -1188,6 +1201,10 @@ it('repeated reminder send failures reach assistance', function (): void {
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
+            if ($threadId === 'reviewer-thread') {
+                return tick_checked_thread('done', $threadId);
+            }
+
             return ['thread' => ['session' => ['status' => 'waiting'], 'pendingApprovals' => [['requestId' => 'pending-1']]]];
         }
     });
@@ -1309,6 +1326,7 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect(app(AgentCommandDispatcher::class)->commands[1]['message']['text'])->toContain('No turn receipt was found.');
 
+    $reader->turnId = 'after-reminder';
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running)
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running);
@@ -1323,7 +1341,8 @@ it('retains reminder send failures across successful classifications and clears 
     $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
     $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
     app(TaskExtensionState::class)->enable();
-    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $receipts = new FakeTaskTurnReceipts([]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -1335,8 +1354,12 @@ it('retains reminder send failures across successful classifications and clears 
     {
         public bool $fails = true;
 
+        /** @var list<array<string, mixed>> */
+        public array $attempts = [];
+
         public function dispatch(Node $node, array $command): array
         {
+            $this->attempts[] = $command;
             if ($this->fails) {
                 throw new AgentDriverException('send failed');
             }
@@ -1348,7 +1371,10 @@ it('retains reminder send failures across successful classifications and clears 
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()->communication_failures)->toBe(2);
+    expect($task->fresh()->communication_failures)->toBe(2)
+        ->and($receipts->reads())->toBe(1)
+        ->and($dispatcher->attempts)->toHaveCount(2)
+        ->and($dispatcher->attempts[1])->toBe($dispatcher->attempts[0]);
 
     $dispatcher->fails = false;
     app(TaskScheduler::class)->tick();
