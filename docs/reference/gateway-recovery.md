@@ -207,6 +207,8 @@ Before snapshot, migration and promotion, staging checks a root-owned `/run/orbi
 
 The supported Gateway uses PHP 8.5 and the four queues declared in `config/horizon.php`: `tasks`, `task-vms`, `builds` and `operations`. The observer checks this closed runtime contract, including `php8.5-fpm.service`; a different runtime needs a reviewed observer change.
 
+The observer inventories all installed and loaded service and timer units with full unit names. Other systemd unit types do not consume the inventory output limit. Unknown managed writers, templates and loaded concrete instances still require the hold. Each observation has a 65,536-byte output limit; truncation or command failure refuses admission. The separate all-owner process scan keeps this limit too. If a service/timer inventory or the all-owner process scan exceeds it, keep the hold and obtain a reviewed observer change; never remove host units or hide processes to pass the check.
+
 Every Gateway queue must have zero reservations. Other PHP processes refuse staging. Missing observations and changed inventory refuse it too. Waiting and delayed jobs stay intact. The manifest records an operator-maintained hold; it does not replace live checks or stop external console users by itself.
 
 The Gateway's `retry_after` is 1,800 seconds. Expiry alone does not remove a reservation while workers are stopped: Laravel moves expired reservations when a worker next pops that queue. A stuck reservation therefore has no safe fixed waiting period under a stopped hold. Establish whether its worker is still running, then let the source worker complete or retry it under a separate controlled maintenance window before draining again. Never delete a reservation to make the observer pass.
