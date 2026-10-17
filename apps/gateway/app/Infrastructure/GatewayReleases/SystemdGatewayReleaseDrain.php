@@ -61,7 +61,7 @@ final readonly class SystemdGatewayReleaseDrain implements GatewayReleaseDrain
         $units = [];
         $installed = [];
         foreach (['list-unit-files', 'list-units'] as $verb) {
-            $output = $this->read(['systemctl', $verb, '--all', '--plain', '--no-legend', '--no-pager']);
+            $output = $this->read(['systemctl', $verb, '--type=service,timer', '--all', '--full', '--plain', '--no-legend', '--no-pager']);
             foreach (explode("\n", trim($output)) as $line) {
                 $columns = preg_split('/\s+/', trim($line));
                 $name = $columns[0] ?? '';
