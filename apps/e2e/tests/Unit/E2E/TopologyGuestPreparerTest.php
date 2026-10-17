@@ -9,6 +9,7 @@ use App\E2E\Value\TopologyTarget;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Tests\Support\FakeIncus;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -52,11 +53,11 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
             return Process::result(json_encode(array_map(
                 static fn (string $role): array => [
                     'name' => preparerTarget()->instance($role),
-                    'type' => $role === 'operator' ? 'container' : 'virtual-machine',
+                    'type' => 'virtual-machine',
                     'status' => 'Running',
                     'status_code' => 103,
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                    'devices' => ['root' => ['pool' => 'default']],
+                    'devices' => ['root' => ['pool' => IncusHost::POOL]],
                 ],
                 preparerTarget()->recipe->nodeKeys(),
             ), JSON_THROW_ON_ERROR));
@@ -80,6 +81,17 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
 function preparerTarget(): TopologyTarget
 {
     return featureTarget('TST-123');
+}
+
+/** Running copies of the template for every Node of the preparer target. */
+function settlingGuests(): FakeIncus
+{
+    $incus = new FakeIncus()->install();
+    foreach (preparerTarget()->instances() as $instance) {
+        $incus->instances[$instance] = [...$incus->instances[IncusHost::TEMPLATE], 'status' => 'Running', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']];
+    }
+
+    return $incus;
 }
 
 describe('mount.source', function () {
@@ -304,5 +316,64 @@ describe('prepare.schema', function () {
             )
             ->and($execs)
             ->toHaveCount(1);
+    });
+});
+
+describe('settle', function () {
+    it('sets public DNS once, waits through the first-boot reboot, then prepares pnpm', function (): void {
+        $incus = settlingGuests();
+        $probes = [];
+        $incus->respond(function (string $instance, array $argv) use (&$probes): ?array {
+            if ($argv[0] !== 'sh' || ! str_contains($argv[2], 'boot_id')) {
+                return null;
+            }
+            $probes[$instance] = ($probes[$instance] ?? 0) + 1;
+
+            return [$probes[$instance] === 1 ? "before-reboot\n" : "after-reboot\n", '', 0];
+        });
+        $target = preparerTarget();
+
+        new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0)->settle($target);
+
+        $kinds = array_map(static fn (array $exec): string => match (true) {
+            $exec['argv'][0] === 'bash' => 'dns',
+            $exec['argv'][0] === 'python3' => 'pnpm',
+            default => 'probe',
+        }, $incus->execs);
+        $guests = count($target->instances());
+
+        expect(array_count_values($kinds))->toBe(['dns' => $guests, 'probe' => 3 * $guests, 'pnpm' => $guests])
+            ->and(array_slice($kinds, 0, $guests))->toBe(array_fill(0, $guests, 'dns'))
+            ->and(array_slice($kinds, -$guests))->toBe(array_fill(0, $guests, 'pnpm'))
+            ->and($probes)->toBe(array_fill_keys(array_values($target->instances()), 3));
+    });
+
+    it('retries public DNS until every guest accepts it', function (): void {
+        $incus = settlingGuests();
+        $attempts = 0;
+        $incus->respond(function (string $instance, array $argv) use (&$attempts): ?array {
+            if ($argv[0] === 'bash' && $instance === preparerTarget()->instance('gateway') && ++$attempts === 1) {
+                return ['', 'resolver not ready', 1];
+            }
+
+            return $argv[0] === 'sh' ? ["boot\n", '', 0] : null;
+        });
+
+        new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0)->settle(preparerTarget());
+
+        expect($attempts)->toBe(2)
+            ->and(count(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'python3')))->toBe(count(preparerTarget()->instances()));
+    });
+
+    it('names the guest whose pnpm preparation failed', function (): void {
+        $incus = settlingGuests();
+        $incus->respond(static fn (string $instance, array $argv): ?array => match (true) {
+            $argv[0] === 'sh' => ["boot\n", '', 0],
+            $argv[0] === 'python3' && $instance === preparerTarget()->instance('operator') => ['', 'pinned artifact digest mismatch', 1],
+            default => null,
+        });
+
+        expect(fn () => new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0)->settle(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed on '.preparerTarget()->instance('operator').'.');
     });
 });

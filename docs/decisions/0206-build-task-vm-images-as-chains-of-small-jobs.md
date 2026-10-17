@@ -36,7 +36,7 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 A base image build is one Laravel job chain (`Bus::chain`) on `builds`. A failed step stops the chain and records its error. The build row reports the whole build; Horizon shows individual jobs.
 
-**Build phases superseded by ADR 0207.** The old enrollment-program steps are replaced by [recipe phases](/reference/compute-drivers#build-the-base-image). Every host builds the current recipe from stock. Two [build workers](/reference/gateway-queue#queues) can serve different hosts in parallel; each chain preserves its step order.
+**Build phases superseded by ADR 0207.** The old enrollment-program steps are replaced by [recipe phases](/reference/compute-drivers#build-the-base-image). Every host builds the current recipe from stock. [ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed) adds the phase `topology-seed` after `smoke`: it builds the host's [topology seed](/reference/compute-drivers#the-topology-seed) of the base in the smoke VM, and promotion requires it. Two [build workers](/reference/gateway-queue#queues) can serve different hosts in parallel; each chain preserves its step order.
 
 ### The build row holds the state
 

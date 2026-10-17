@@ -31,7 +31,7 @@ A spike on beast, with Incus 6.0.5 in the VM, measured both paths:
 | Pool | A btrfs loop file on the VM's root disk | The clone as a disk; `incus admin recover` adopts it in 58 ms |
 | Node | Created from the imported image | `incus copy node-template` is a btrfs snapshot in 45 ms. The Node answers in about 25 s, as today |
 
-The spike's device path, `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_seed`, is the same in every VM, because the serial comes from the device name. This ADR names the device `topology-seed`, so the path ends in `incus_topology-seed`. Recovery does not restore images, because image records live in the VM's database and in `/var/lib/incus/images`. So the template must be a stopped instance, not an image.
+The spike's device path, `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_seed`, is the same in every VM, because the serial comes from the device name. This ADR names the device `topology-seed`. Incus doubles each `-` of a device name in the serial, so the path ends in `incus_topology--seed`, as a VM on beast showed. Recovery does not restore images, because image records live in the VM's database and in `/var/lib/incus/images`. So the template must be a stopped instance, not an image.
 
 **The live bug.** Since #1240 (15 Oct 2026), the Gateway sends `role-images-transfer.sh` to the host on standard input, with `bash -s`. Its first `incus exec` inherits that input and reads the rest of the script. Bash then exits 0 after it created only the target directory. So every topology preparation failed at `images` with `The claimed recipe image manifest is missing or invalid.` The test of the script runs it as a file, so it did not catch this. Groups 1733, 1745, and 1752 were stuck there and are cancelled.
 
@@ -58,7 +58,7 @@ The image chain of [ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-
 3. In the VM, Incus creates the btrfs pool `topology-seed` on the device, imports the archive, creates the stopped VM `node-template` from it with no profiles and its own root disk on `topology-seed`, and deletes the image. The template never boots, so it holds no machine identity.
 4. The host deletes `<builder>-smoke` and renames the volume to `orbit-topology-seed-<12 hex>`.
 
-So an existing topology seed is always a finished one. A retry deletes the `-new` volume and starts again, and relaunches `<builder>-smoke` from the published base when it is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image. Promotion requires the finished phase, as it requires `smoke`.
+So an existing topology seed is always a finished one. The `-new` volume exists before anything changes in `<builder>-smoke`, so a retry that finds one replaces `<builder>-smoke` with a fresh VM from the published base, which may otherwise hold the failed attempt's Incus state. A retry also launches `<builder>-smoke` when it is gone. Then it deletes the `-new` volume and starts again. Like `smoke` and `publish`, the phase runs even when the build already holds its base image. Promotion requires the finished phase, as it requires `smoke`.
 
 Pruning deletes a topology seed in the same loop that deletes its base image, so a base kept for a VM keeps its topology seed. When clones still exist, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
 
@@ -68,13 +68,13 @@ Pruning deletes a topology seed in the same loop that deletes its base image, so
 
 The claim gate already requires a promoted base for the current recipe, and promotion now requires its topology seed. So no VM is claimed without one.
 
-Destroy deletes the clone after the VM, as it deletes a retained workspace volume. `TaskVmWorkspaceVolumes` becomes `TaskVmVolumes`, because it now owns live clones too. It and the stray report recognize `tvm-<id>-topology-seed` by name, as they recognize `tvm-<id>-workspace`, and treat the `orbit-topology-seed-*` volumes of retained bases as owned.
+Destroy deletes the clone after the VM, because Incus keeps custom volumes. `TaskVmWorkspaceVolumes` becomes `TaskVmVolumes`, because it now owns live clones. Its handling of the legacy claim clones `tvm-<id>-workspace` goes: none exist on beast or shark. It and the stray report recognize `tvm-<id>-topology-seed` by name, and treat the `orbit-topology-seed-*` volumes of retained bases as owned.
 
 ### Preparation adopts the clone
 
 `prepareTurn` admits the topology before each turn it prepares: the implementer's first turn, relays to the implementer, review requests, and rubric reminders. Every other turn in the subtask follows one of these. So the three calls before the baseline check go, and preparation runs after the Project setup has installed `apps/e2e`. The unit `orbit-task-topology-<run>` then runs two steps:
 
-- **`host-setup`.** `sudo bin/e2e-topology-host-setup` adopts the clone when the pool `topology-seed` is missing. It posts the pool (btrfs, source `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology-seed`) to the recovery endpoints `/internal/recover/validate` and `/internal/recover/import`, which `incus admin recover` uses. It also installs the isolation table and the UFW rules for the `oe` topology networks. When the device is missing, it fails, and the subtask asks for assistance.
+- **`host-setup`.** `sudo bin/e2e-topology-host-setup` adopts the clone when the pool `topology-seed` is missing. It posts the pool (btrfs, source `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`) to the recovery endpoints `/internal/recover/validate` and `/internal/recover/import`, which `incus admin recover` uses. It also installs the isolation table and the UFW rules for the `oe` topology networks. When the device is missing, it fails, and the subtask asks for assistance.
 - **`acquire`.** `bin/e2e-topology acquire` copies `node-template` for each Node. Then it sets what it sets at creation today: the NIC, address, memory, CPU, mount, ownership metadata, and `cloud-init.user-data`. It waits for the first boot and sets public DNS, as `RoleImages::settle()` does today.
 
 The clone is the pool, so it needs no size. Every clone carries the topology seed's btrfs UUID. That is safe, because each VM sees one clone. The host's udev registers each topology seed volume as a btrfs device, and the host never mounts it.

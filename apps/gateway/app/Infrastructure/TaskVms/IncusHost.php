@@ -48,15 +48,20 @@ final readonly class IncusHost
     /**
      * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC, and the CPU, memory, disk
      * and QEMU configuration of its size ({@see TaskVmSize::resources()}). Incus can set the QEMU configuration only
-     * before the VM first starts. `incus launch` reads instance config as YAML from a stdin that is not a terminal.
-     * JSON is YAML, but YAML knows no `\/` escape.
+     * before the VM first starts. `$topologySeed`, a volume in the host's pool, becomes the disk
+     * {@see TaskVmVolumes::SeedDevice}. `incus launch` reads instance config and devices as YAML from a stdin that is
+     * not a terminal. JSON is YAML, but YAML knows no `\/` escape.
      */
-    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal): CommandResult
+    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal, ?string $topologySeed = null): CommandResult
     {
         $resources = $size->resources();
         $config = ['cloud-init.user-data' => $userData];
         if ($resources->qemuConfig !== null) {
             $config['raw.qemu.conf'] = $resources->qemuConfig;
+        }
+        $instance = ['config' => $config];
+        if ($topologySeed !== null) {
+            $instance['devices'] = [TaskVmVolumes::SeedDevice => ['type' => 'disk', 'pool' => $host->pool, 'source' => $topologySeed]];
         }
 
         return $this->run($host, $node, [
@@ -66,7 +71,7 @@ final readonly class IncusHost
             '--device', 'root,size='.$resources->diskOn($host),
             '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
             '--', $image, $name,
-        ], json_encode(['config' => $config], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ], json_encode($instance, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     /**

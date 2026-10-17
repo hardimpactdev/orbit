@@ -8,13 +8,17 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\TaskVmImageBuild;
 
-/** Prunes only host-local recipe aliases whose build records establish ownership. */
+/**
+ * Prunes only host-local recipe aliases whose build records establish ownership. A base image goes with its topology
+ * seed, so a kept base keeps its seed. Incus keeps the dataset of a seed whose clones VMs still use until the last
+ * clone goes.
+ */
 final readonly class RecipeImagePruning
 {
     /** Retired images still exist on hosts; retain these names only for cleanup. */
     private const array RetiredProfiles = ['gateway', 'app-dev', 'app-prod', 'operator'];
 
-    public function __construct(private TaskVmSettings $settings, private IncusHost $incus, private IncusTaskVmBaseImage $image) {}
+    public function __construct(private TaskVmSettings $settings, private IncusHost $incus, private IncusTaskVmBaseImage $image, private TaskVmVolumes $volumes) {}
 
     public function prune(TaskVmImageBuild $current): void
     {
@@ -62,6 +66,9 @@ final readonly class RecipeImagePruning
 
                 continue;
             }
+            // The seed goes first: a failed deletion keeps the image, so the next prune finds the seed again.
+            $this->volumes->delete($host, $node, TaskVmVolumes::seed($fingerprint));
+            $this->volumes->delete($host, $node, TaskVmVolumes::newSeed($fingerprint));
             $result = $this->incus->run($host, $node, ['image', 'delete', '--', $fingerprint]);
             if (! $result->succeeded()) {
                 throw IncusHost::failed("the recipe image [{$fingerprint}]", 'image delete', $result);

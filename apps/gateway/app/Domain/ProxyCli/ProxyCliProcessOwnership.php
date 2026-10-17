@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\ProxyCli;
 
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
 
-final readonly class ProxyCliProcessOwnership
+final readonly class ProxyCliProcessOwnership implements ProcessRemovalGuard
 {
     public function __construct(private ProxyCliState $state) {}
 

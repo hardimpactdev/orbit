@@ -87,15 +87,6 @@ it('admits a subtask without a topology without touching the VM', function (): v
     expect($ssh->commands)->toBe([])->and($this->vm->fresh()?->topology_state)->toBeNull();
 });
 
-it('rejects pre-recipe groups before starting topology preparation', function (): void {
-    $this->vm->update(['recipe_identity' => null]);
-    $ssh = topology_admission_ssh([]);
-
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, topology_admission_subtask($this->group, ['app-dev'])))
-        ->toThrow(TaskTopologyFailedException::class, 'Drain or cancel it before deploying the recipe-only topology harness');
-    expect($ssh->commands)->toBe([]);
-});
-
 it('starts the preparation unit once, waits while it runs, and admits the subtask when it is ready', function (): void {
     $ssh = topology_admission_ssh([
         topology_admission_result(''),
@@ -112,7 +103,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
     expect($vm?->topology_state)->toBe(TaskVmTopologyState::Preparing)
         ->and($vm?->topology->toArray())->toBe(['app-prod+ingress'])
         ->and($vm?->topology_run)->toMatch('/\A[0-9a-f]{16}\z/')
-        ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '25GiB', '10.44.0.0/24', '/var/lib/orbit/task-vm-role-images/manifest.json'])
+        ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '10.44.0.0/24'])
         ->and($start->arguments[0])->toBe('bash')
         ->and($start->input)->toBe(file_get_contents(resource_path('task-vms/topology.sh')));
 
@@ -132,8 +123,7 @@ it('prepares the union again when a later subtask declares more than the ready t
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $later))
         ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev, app-prod+ingress.');
-    expect($ssh->commands[0]->arguments[8])->toBe('app-dev,app-prod+ingress')
-        ->and($ssh->commands[0]->arguments[9])->toBe('45GiB')
+    expect(array_slice($ssh->commands[0]->arguments, 8))->toBe(['app-dev,app-prod+ingress', '10.44.0.0/24'])
         ->and($this->vm->fresh()?->topology->toArray())->toBe(['app-dev', 'app-prod+ingress']);
 });
 

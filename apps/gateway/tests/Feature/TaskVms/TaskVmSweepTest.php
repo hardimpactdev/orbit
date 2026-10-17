@@ -61,6 +61,9 @@ final class TaskVmSweepIncus implements SshExecutor
     /** @var array<string, list<string>> custom volumes as `project/pool/name`, per host address */
     public array $volumes = [];
 
+    /** @var array<string, list<string>> image fingerprints of the task VM project, per host address */
+    public array $images = [];
+
     public bool $failInventory = false;
 
     /** Deterministic overlap hooks around the remote operation, without mocking database arbitration. */
@@ -103,7 +106,7 @@ final class TaskVmSweepIncus implements SshExecutor
             return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
         }
         if ($arguments === ['image', 'list', '--format', 'json']) {
-            return new CommandResult(0, '[]', '', 1, false);
+            return new CommandResult(0, json_encode(array_map(static fn (string $fingerprint): array => ['fingerprint' => $fingerprint, 'aliases' => []], $this->images[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
         }
         if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
             return new CommandResult(0, '[]', '', 1, false);
@@ -438,8 +441,11 @@ describe('strays', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
         $this->incus->instances = ['10.44.0.7' => [$ready->name, 'tvm-image-20261013133000-sync-smoke', 'tvm-template-20261013120000', 'dev-box']];
         $this->incus->foreign = ['10.44.0.7' => ['orbit-ci/ci-beast-1', 'default/ow-exp-20261006', 'default/renewed-ghost', 'orbit-templates/orbit-template-agent-base']];
+        $this->incus->images = ['10.44.0.7' => [str_repeat('a', 64)]];
         $this->incus->volumes = ['10.44.0.7' => [
-            'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819', 'orbit-tasks/orbit-tasks/'.$ready->name.'-workspace',
+            'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819',
+            'orbit-tasks/orbit-tasks/'.$ready->name.'-topology-seed', 'orbit-tasks/orbit-tasks/orbit-topology-seed-aaaaaaaaaaaa',
+            'orbit-tasks/orbit-tasks/orbit-topology-seed-bbbbbbbbbbbb', 'orbit-tasks/default/orbit-topology-seed-aaaaaaaaaaaa',
             'orbit-tasks/orbit-tasks/scratch', 'orbit-tasks/default/tvm-template-46-20261013083819', 'orbit-ci/default/runner-cache',
         ]];
         Log::spy();
@@ -452,8 +458,10 @@ describe('strays', function (): void {
             ['node.task_vm_stray_instance', 'orbit-tasks/dev-box'],
             ['node.task_vm_stray_instance', 'default/renewed-ghost'],
             ['node.task_vm_stray_instance', 'orbit-templates/orbit-template-agent-base'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/default/orbit-topology-seed-aaaaaaaaaaaa'],
             ['node.task_vm_stray_volume', 'orbit-tasks/default/tvm-template-46-20261013083819'],
             ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/orbit-topology-seed-bbbbbbbbbbbb'],
             ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/scratch'],
         ];
         foreach ($expected as [$code, $stray]) {

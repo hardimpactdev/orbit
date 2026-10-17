@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Analytics;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -15,7 +16,7 @@ use SensitiveParameter;
  * The Processes an assigned analytics role depends on: its own `plausible` Process, and the
  * PostgreSQL and ClickHouse Processes it was assigned with. An operator removes the role first.
  */
-final readonly class AnalyticsProcessOwnership
+final readonly class AnalyticsProcessOwnership implements ProcessRemovalGuard
 {
     public function __construct(private AnalyticsRoleSettingsRepository $settings) {}
 

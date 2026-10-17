@@ -29,9 +29,9 @@ function fakeWebHost(array &$commands, bool $published = false, string $failure 
         $commands[] = $command;
         if (($command[3] ?? '') === 'list') {
             return Process::result(json_encode($present ? [[
-                'name' => 'operator', 'type' => 'container', 'status' => 'Running', 'status_code' => 103,
+                'name' => 'operator', 'type' => 'virtual-machine', 'status' => 'Running', 'status_code' => 103,
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                'devices' => ['root' => ['pool' => 'default'], ...($state['published'] ? ['orbit-e2e-web' => ['type' => 'proxy', 'user.orbit.e2e.web-session' => $state['token']]] : [])],
+                'devices' => ['root' => ['pool' => IncusHost::POOL], ...($state['published'] ? ['orbit-e2e-web' => ['type' => 'proxy', 'user.orbit.e2e.web-session' => $state['token']]] : [])],
             ]] : [], JSON_THROW_ON_ERROR));
         }
         if ($failure === 'occupied' && in_array('ss', $command, true)) {
@@ -115,7 +115,7 @@ function fakeWebHost(array &$commands, bool $published = false, string $failure 
         return Process::result();
     });
 
-    return new IncusHost('local', 'default', 'default', redactor: new SecretRedactor);
+    return new IncusHost('local', 'default', redactor: new SecretRedactor);
 }
 
 it('starts a clean-environment strict-port unit, publishes loopback, streams output and stops on interruption', function () {
@@ -233,7 +233,7 @@ it('recovers a reservation whose owner crashed before or after starting the unit
     $state['unit'] = $started;
     $state['unit_token'] = $started ? $token : null;
     // Another command has no in-memory knowledge of the reservation or start.
-    new IncusHost('local', 'default', 'default', redactor: new SecretRedactor)->stopWeb('operator');
+    new IncusHost('local', 'default', redactor: new SecretRedactor)->stopWeb('operator');
     expect($state['published'])->toBeFalse();
     expect($state['unit'])->toBeFalse();
     expect($state['stop_attempts'])->toBe($started ? 1 : 0);

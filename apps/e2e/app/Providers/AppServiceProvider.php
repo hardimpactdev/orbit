@@ -10,8 +10,6 @@ use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\OrphanNetworkSweep;
-use App\E2E\RoleImagePrograms;
-use App\E2E\RoleImages;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
@@ -19,6 +17,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
+use App\E2E\TopologyNodePrograms;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
@@ -67,9 +66,8 @@ final class AppServiceProvider extends ServiceProvider
             $ownership = $configuration->get('e2e.incus.ownership');
             $remote = $configuration->get('e2e.incus.remote');
             $project = $configuration->get('e2e.incus.project');
-            $pool = $configuration->get('e2e.incus.storage_pool');
 
-            if (! is_string($remote) || ! is_string($project) || ! is_string($pool)) {
+            if (! is_string($remote) || ! is_string($project)) {
                 throw new \RuntimeException('Incus host configuration is invalid.');
             }
 
@@ -86,7 +84,6 @@ final class AppServiceProvider extends ServiceProvider
             return new IncusHost(
                 remote: $remote,
                 project: $project,
-                pool: $pool,
                 ownershipMetadata: $ownership,
                 redactor: $app->make(SecretRedactor::class),
                 guestReadinessTimeoutSeconds: self::seconds($configuration, 'e2e.readiness.guest_seconds'),
@@ -114,12 +111,10 @@ final class AppServiceProvider extends ServiceProvider
                 self::seconds($app->make(Repository::class), 'e2e.readiness.seconds'),
             ),
         );
-        $this->app->singleton(RoleImagePrograms::class, fn (): RoleImagePrograms => new RoleImagePrograms($repositoryRoot));
-        $this->app->singleton(RoleImages::class);
+        $this->app->singleton(TopologyNodePrograms::class, fn (): TopologyNodePrograms => new TopologyNodePrograms($repositoryRoot));
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
-            images: $app->make(RoleImages::class),
             composer: $app->make(TopologyComposer::class),
             synchronizer: $app->make(WorktreeSynchronizer::class),
             verifier: $app->make(TopologyVerifier::class),
