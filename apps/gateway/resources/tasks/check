@@ -986,7 +986,7 @@ def managed_run_finished(data):
     return True
 
 
-def status(pid, started, run_id=''):
+def status(pid, started, run_id='', checkout=None):
     # Read liveness before the result: the check writes check.json before it exits, so a check that
     # finishes between the two reads is still running on the first and finished on the second.
     alive = process_started(pid) == started
@@ -1002,6 +1002,19 @@ def status(pid, started, run_id=''):
         return
     result_path = managed_result_path(owned['run_id']) if owned else RESULT
     log_path = managed_log_path(owned['run_id']) if owned else LOG
+    if owned and checkout and not os.path.exists(result_path):
+        # The exact unit and empty cgroup prove termination, never success or attribution.
+        # This also recovers runs whose old supervisor exited on SIGTERM without a result.
+        administration = git(checkout, 'rev-parse', '--absolute-git-dir')
+        if os.path.realpath(os.path.join(administration, 'orbit')) != os.path.realpath(DIRECTORY):
+            raise RuntimeError('The terminated check belongs to another workspace')
+        head_after = git(checkout, 'rev-parse', 'HEAD')
+        tree_after = working_tree(checkout)
+        data = check_result(owned['head'], owned['tree'], head_after, tree_after,
+                            changed_paths(checkout, owned['tree'], tree_after), 1, CHECK_ERROR, None, None)
+        data.update({'checkout': checkout, 'causality_uncertain': True, 'managed_terminal_snapshot': True,
+                     'failure_output': 'The managed check terminated without a result. Its outcome and tree attribution are unknown.'})
+        write_check_result(data, result_path)
     if os.path.exists(result_path):
         with open(result_path) as result:
             data = json.load(result)
@@ -1072,8 +1085,9 @@ def main(arguments):
         run_owned(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])
-    elif command == 'status' and len(arguments) in (3, 4):
-        status(int(arguments[1]), arguments[2], arguments[3] if len(arguments) == 4 else '')
+    elif command == 'status' and len(arguments) in (3, 4, 5):
+        status(int(arguments[1]), arguments[2], arguments[3] if len(arguments) >= 4 else '',
+               arguments[4] if len(arguments) == 5 else None)
     elif command == 'cancel' and len(arguments) in (3, 4):
         cancel(int(arguments[1]), arguments[2], arguments[3] if len(arguments) == 4 else '')
     elif command == 'snapshot' and len(arguments) == 2:
