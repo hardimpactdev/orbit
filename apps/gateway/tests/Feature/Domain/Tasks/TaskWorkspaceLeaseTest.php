@@ -32,6 +32,7 @@ use App\Models\Task;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 
@@ -335,7 +336,7 @@ it('preserves merge provenance when the same lease continues into its detached g
     expect($leases->ownedChange($group, $beforeHead, $beforeTree, new TaskWorkspaceSnapshot($checks->head, $checks->tree), $baseline->id))->toBeTrue();
 });
 
-it('imports only a clean recorded historical Orbit merge with its matching gate', function (): void {
+it('refuses historical merge attribution without a review baseline lease', function (): void {
     $group = tick_group();
     $task = $group->tasks->first();
     $head = str_repeat('a', 40);
@@ -352,7 +353,8 @@ it('imports only a clean recorded historical Orbit merge with its matching gate'
     TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $merged, 'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $task->id]);
     expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, 'outside-tree', $head, $mergedTree, $tree, str_repeat('e', 40))))->toBeFalse();
     expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, $mergedTree, $head, $mergedTree, 'different-base', str_repeat('e', 40))))->toBeFalse();
-    expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeTrue();
+    expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeFalse();
+    expect(TaskWorkspaceLeaseRecord::query()->where('owner', 'like', 'recorded-merge:%')->exists())->toBeFalse();
 });
 
 it('retains uncertain teardown ownership but releases a confirmed remote refusal', function (int $exitCode): void {
@@ -373,12 +375,12 @@ it('retains uncertain teardown ownership but releases a confirmed remote refusal
         }
     };
     $action = new RemoveTaskWorkspaceAction($remover);
-    expect(fn () => $action->remove($group->taskable))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => $action->remove($group))->toThrow(RuntimeConvergenceException::class);
     $lease = TaskWorkspaceLeaseRecord::query()->where('kind', 'teardown')->sole();
     expect($lease->status)->toBe($exitCode === 255 ? 'held' : 'released');
     if ($exitCode === 255) {
         expect($lease->getAttribute('remote_uncertain'))->toBeTrue();
-        expect(fn () => $action->remove($group->taskable))->toThrow(TaskWorkspaceWaiting::class);
+        expect(fn () => $action->remove($group))->toThrow(TaskWorkspaceWaiting::class);
         expect($remover->calls)->toBe(1);
     }
 })->with([1, 255]);
@@ -510,8 +512,11 @@ it('credits a waiter admitted after review even when its request predates the ad
 
 it('adopts pre-lease ownership from another group using the same Instance before admitting new work', function (bool $remoteCheck): void {
     $first = tick_group();
-    $other = $first->replicate();
+    $other = $first->replicate(['taskable_id', 'taskable_type']);
     $other->save();
+    // Corrupt pre-owner attachment: the current model correctly refuses this write.
+    DB::table('tasks')->where('id', $other->id)->update(['taskable_id' => $first->taskable_id, 'taskable_type' => $first->getRawOriginal('taskable_type')]);
+    $other->refresh();
     $subtask = $first->tasks->first()->replicate();
     $subtask->parent_id = $other->id;
     $subtask->save();

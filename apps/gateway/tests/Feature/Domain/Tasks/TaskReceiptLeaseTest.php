@@ -48,8 +48,7 @@ function receipt_lease_value(TaskThreadRole $role, int $threadId): TaskTurnRecei
 it('queues receipt collection behind another group and does no checkout read or clear before admission', function (TaskThreadRole $role): void {
     [$group, $task, $thread] = receipt_lease_fixture($role);
     $other = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Other group', 'brief' => 'Shares the Instance.', 'status' => 'running']);
-    $other->taskable()->associate($group->taskable);
-    $other->save();
+    $other->setRelation('taskable', $group->taskable);
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($other, 'main_merge', 'other-group');
     $receipts = new FakeTaskTurnReceipts;

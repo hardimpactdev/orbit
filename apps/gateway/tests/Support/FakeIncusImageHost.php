@@ -71,6 +71,12 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var array<string, ?string> */
     public array $instances = [];
 
+    /** @var list<string> the custom volumes of the host's pool */
+    public array $volumes = [];
+
+    /** @var list<array<string, mixed>> the input of each `task-vms.build-topology-seed` run */
+    public array $seeds = [];
+
     public ?string $fail = null;
 
     public bool $recipeImages = false;
@@ -154,7 +160,32 @@ final class FakeIncusImageHost implements SshExecutor
             $operation[0] === 'image' && $operation[1] === 'delete' => $this->answer('image delete', function () use ($operation): void {
                 unset($this->images[end($operation)]);
             }),
+            $operation[0] === 'python3' && end($operation) === 'task-vms.build-topology-seed' => $this->answer('topology seed', function () use ($command): string {
+                $input = json_decode(explode("\0", (string) $command->input, 2)[1], true, flags: JSON_THROW_ON_ERROR);
+                $this->seeds[] = $input;
+                $this->volumes[] = $input['volume'];
+
+                return "{\"outcome\":\"built\",\"data\":{\"seconds\":{}}}\n";
+            }),
+            $operation[0] === 'storage' => $this->volume(array_slice($operation, 2)),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
+        };
+    }
+
+    /** @param  list<string>  $operation  the arguments after `incus storage volume` */
+    private function volume(array $operation): CommandResult
+    {
+        $names = array_slice($operation, array_search('--', $operation, true) + 1);
+
+        return match ($operation[0]) {
+            'list' => $this->answer('volume list', fn (): string => json_encode(array_map(static fn (string $name): array => ['name' => $name, 'type' => 'custom'], $this->volumes), JSON_THROW_ON_ERROR)),
+            'rename' => in_array($names[1], $this->volumes, true) ? $this->answer('volume rename', function () use ($names): void {
+                $this->volumes = [...array_values(array_diff($this->volumes, [$names[1]])), $names[2]];
+            }) : new CommandResult(1, '', "Error: Storage volume not found\n", 1, false),
+            'delete' => in_array($names[1], $this->volumes, true) ? $this->answer('volume delete '.$names[1], function () use ($names): void {
+                $this->volumes = array_values(array_diff($this->volumes, [$names[1]]));
+            }) : new CommandResult(1, '', "Error: Storage volume not found\n", 1, false),
+            default => throw new RuntimeException('Unexpected incus storage volume command: '.implode(' ', $operation)),
         };
     }
 

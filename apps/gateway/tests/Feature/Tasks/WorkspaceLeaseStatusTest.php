@@ -18,10 +18,10 @@ it('reports the workspace holder and ordered waiters without changing ownership 
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'code' => 'ORB',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id,
-        'name' => 'lease-status', 'checkout_path' => '/private/lease-status', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Workspace ownership',
         'brief' => 'Serialize the workspace.', 'status' => 'running']);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id,
+        'name' => 'lease-status', 'checkout_path' => '/private/lease-status', 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
     $leases = app(TaskWorkspaceLease::class);

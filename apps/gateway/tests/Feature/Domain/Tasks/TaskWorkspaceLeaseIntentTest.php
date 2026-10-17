@@ -19,7 +19,7 @@ use App\Models\AgentThread;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Tests\Support\FakeAgentDriver;
 
-it('withdraws an obsolete queued recovery when an operator resolution starts a new review attempt', function (): void {
+it('withdraws an obsolete queued verdict when an operator resolution starts a new review attempt', function (): void {
     tick_bind_defaults();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
@@ -38,8 +38,8 @@ it('withdraws an obsolete queued recovery when an operator resolution starts a n
     app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($group, 'check', 'other-actor');
-    expect(fn () => app(TaskScheduler::class)->recoverStaleReview($group, $task))->toThrow(TaskWorkspaceWaiting::class);
-    $obsolete = TaskWorkspaceLeaseRecord::query()->where('owner', 'recover-review:'.$task->id)->sole();
+    expect(fn () => $leases->run($group, 'verdict', 'review-outcome:'.$task->id, static fn (): bool => true, taskId: $task->id))->toThrow(TaskWorkspaceWaiting::class);
+    $obsolete = TaskWorkspaceLeaseRecord::query()->where('owner', 'review-outcome:'.$task->id)->sole();
 
     $attempt = $task->review_attempt;
     app(StoreTaskCommentAction::class)->execute($task, [

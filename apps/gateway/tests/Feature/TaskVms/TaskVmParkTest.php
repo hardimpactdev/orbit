@@ -101,7 +101,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
 function tvm_park_workspace(Task $group, TaskVm $vm): Instance
 {
     $instance = Instance::query()->create([
-        'project_id' => test()->project->id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'project_id' => test()->project->id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-'.$group->id,
         'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public',
         'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);
@@ -417,7 +417,7 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace))
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.parked'));
         expect(Instance::query()->whereKey($workspace->id)->exists())->toBeTrue();
         Queue::assertPushed(ResumeTaskVm::class);

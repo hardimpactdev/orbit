@@ -57,19 +57,20 @@ function cancel_subtask_in_baseline(int $suffix): array
         'public_ssh_host' => '192.0.3.'.$suffix,
         'wireguard_ip' => '10.44.2.'.$suffix,
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Cancel during baseline',
+        'brief' => 'Stop the baseline check.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Cancel during baseline',
-        'brief' => 'Stop the baseline check.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -166,19 +167,20 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'public_ssh_host' => '192.0.2.98',
         'wireguard_ip' => '10.44.0.98',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Cancel one subtask',
+        'brief' => 'Keep the group workspace.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Cancel one subtask',
-        'brief' => 'Keep the group workspace.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

@@ -294,22 +294,20 @@ it('still returns the created group, and fails it when the first implementer can
         'public_ssh_host' => '192.0.2.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'workspace',
-        'checkout_path' => '/tmp/tasks-spawn-failure',
-        'starting_commit' => str_repeat('a', 40),
-        'status' => 'reserved',
-    ]);
-
-    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    app()->instance(InstanceProvisioning::class, new class($node) implements InstanceProvisioning
     {
-        public function __construct(private Instance $instance) {}
+        public function __construct(private Node $node) {}
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, test_task_workspace($intent->group, [
+                'node_id' => $this->node->id,
+                'name' => 'workspace',
+                'branch_override' => null,
+                'checkout_path' => '/tmp/tasks-spawn-failure',
+                'starting_commit' => str_repeat('a', 40),
+                'status' => 'reserved',
+            ], attach: false));
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -525,19 +523,20 @@ it('completes a settling group and removes its App instance', function (): void 
         'public_ssh_host' => '192.0.2.86',
         'wireguard_ip' => '10.44.0.86',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-30',
-        'checkout_path' => '/tmp/task-30',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Ready',
         'brief' => 'PR is merged.',
         'status' => TaskGroupStatus::Settling,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-30',
+        'checkout_path' => '/tmp/task-30',
+        'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -631,8 +630,8 @@ it('cancels a running check and shows it on the task', function (): void {
     enable_tasks();
     $project = tasks_app('checks');
     $node = Node::query()->create(['name' => 'check-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
@@ -1017,7 +1016,7 @@ it('uses the resolved_base directly for subtask create and update', function (st
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
     $base = str_repeat('b', 40);
     if ($source === 'workspace') {
-        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'path-base', 'checkout_path' => '/srv/apps/path-base', 'starting_commit' => $base, 'status' => 'source_resolved']);
+        $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'path-base', 'checkout_path' => '/srv/apps/path-base', 'starting_commit' => $base, 'status' => 'source_resolved']);
         $group->taskable()->associate($instance);
         $group->save();
     } elseif ($source === 'approved') {
@@ -1280,7 +1279,7 @@ it('accepts a subtask appended after a review-and-merge approval that exists onl
     app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($origin, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::localExecutor()));
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Local approval', 'brief' => 'Keep approvals local.', 'status' => TaskGroupStatus::Running]);
     $workspaceNode = Node::query()->create(['name' => 'local-approval-vm', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.231', 'wireguard_ip' => '10.44.0.231', 'user' => 'orbit']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $workspaceNode->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $workspaceNode->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
     test_vm_group($group);

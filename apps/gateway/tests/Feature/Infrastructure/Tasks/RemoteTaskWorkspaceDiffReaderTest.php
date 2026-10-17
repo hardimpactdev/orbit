@@ -36,13 +36,10 @@ function remote_diff_instance(string $checkout = '/srv/orbit/apps/orbit/task-12'
         'user' => 'orbit',
     ]);
 
-    return Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
+    return test_ready_task_workspace($project, $node, [
         'name' => 'task-12',
         'checkout_path' => $checkout,
         'branch' => 'task-12',
-        'status' => 'source_resolved',
     ]);
 }
 

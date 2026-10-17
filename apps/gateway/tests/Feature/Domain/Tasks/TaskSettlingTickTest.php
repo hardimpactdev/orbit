@@ -683,7 +683,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
             'public_ssh_host' => '10.44.0.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet,
         ]);
         $workspace = Instance::query()->create([
-            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id,
+            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id, 'task_workspace_owner_id' => $owner->id,
             'checkout_path' => '/srv/orbit/apps/tick-app/workspace', 'branch' => 'task-'.$owner->id,
             'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved',
         ]);
@@ -2101,13 +2101,14 @@ it('records a turn receipt read failure without skipping the other group', funct
         'name' => 'tick-review-legacy-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.213', 'wireguard_ip' => '10.44.0.213',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
-        'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
-    ]);
     $reviewing = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $reviewing->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
+        'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
     $reviewing->taskable()->associate($instance);
     $reviewing->save();

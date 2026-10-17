@@ -266,7 +266,7 @@ function task_teardown_workspace(Project $project, Node $node, string $suffix, T
         'status' => $status,
     ]);
     $name = $attached ? 'workspace-'.$suffix : 'task-'.$group->id;
-    $workspace = task_teardown_instance($project, $node, $name, $attached ? null : $name);
+    $workspace = task_teardown_instance($project, $node, $name, $attached ? null : $name, $group);
     $neighbor = task_teardown_instance($project, $node, 'neighbor-'.$suffix, null);
 
     if ($attached) {
@@ -281,9 +281,10 @@ function task_teardown_workspace(Project $project, Node $node, string $suffix, T
     ];
 }
 
-function task_teardown_instance(Project $project, Node $node, string $name, ?string $branchOverride): Instance
+function task_teardown_instance(Project $project, Node $node, string $name, ?string $branchOverride, ?Task $owner = null): Instance
 {
     return Instance::query()->create([
+        'task_workspace_owner_id' => $owner?->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,

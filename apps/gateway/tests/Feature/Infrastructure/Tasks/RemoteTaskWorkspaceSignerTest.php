@@ -42,12 +42,9 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
         'user' => 'orbit',
     ]);
 
-    return Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
+    return test_ready_task_workspace($project, $node, [
         'name' => 'task-9',
         'checkout_path' => $checkout,
-        'status' => 'source_resolved',
     ]);
 }
 
@@ -87,11 +84,7 @@ function task_signer_admitted(SshExecutor $transport): object
 
         public function commit(Instance $instance, string $message): ?string
         {
-            $group = Task::topLevel()->create(['project_id' => $instance->project_id,
-                'title' => 'Sign admitted workspace', 'brief' => 'Commit under exact ownership.', 'status' => 'running']);
-            $group->taskable()->associate($instance);
-            $group->save();
-            test_vm_group($group);
+            $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
 
             return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message));
         }
@@ -175,11 +168,7 @@ it('returns null when the remote git commit fails', function (): void {
 
 it('keeps a synchronous lease when a swallowed commit failure has an unknown remote result', function (int $exit, bool $uncertain): void {
     $instance = task_signer_instance();
-    $group = Task::topLevel()->create(['project_id' => $instance->project_id,
-        'title' => 'Commit', 'brief' => 'Commit approved work.', 'status' => 'running']);
-    $group->taskable()->associate($instance);
-    $group->save();
-    test_vm_group($group);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $transport = new AppDevFakeSshExecutor([new CommandResult($exit, '', 'failed', 1, false)]);
     $signer = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)));
     $leases = app(TaskWorkspaceLease::class);

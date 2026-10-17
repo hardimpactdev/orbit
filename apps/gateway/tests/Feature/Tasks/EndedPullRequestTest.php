@@ -62,7 +62,7 @@ function ended_pr_group(string $state, string $status = 'running'): Task
         'public_ssh_host' => '10.44.0.91',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
+        'task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
         'checkout_path' => '/srv/orbit/apps/ended-pr', 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
@@ -285,16 +285,6 @@ it('does not auto complete open work from an ended reviewed pull request when th
 it('does not retry a committed approval push while ended pull request assistance stands', function (): void {
     $group = ended_pr_group('merged', 'reviewing');
     $driver = ended_pr_driver();
-    $node = Node::query()->create([
-        'name' => 'ended-pr-node', 'platform' => 'linux', 'status' => 'active',
-        'public_ssh_host' => '10.44.0.194', 'wireguard_ip' => '10.44.0.194',
-    ]);
-    $instance = Instance::query()->create([
-        'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'ended-pr-approved-workspace',
-        'checkout_path' => '/tmp/ended-pr-workspace', 'status' => 'source_resolved',
-    ]);
-    $group->taskable()->associate($instance);
-    $group->save();
     $reviewing = $group->tasks->firstWhere('status', TaskStatus::Reviewing);
     $receipt = $reviewing->comments()->create([
         'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Approved before the external merge.',

@@ -198,19 +198,20 @@ it('counts a communication failure and does not send the review when the context
         'wireguard_ip' => '10.44.0.76',
         'user' => 'orbit',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Context failure',
+        'brief' => 'The review context cannot be written.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'context-failure',
         'checkout_path' => '/tmp/context-failure',
         'branch' => 'task',
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Context failure',
-        'brief' => 'The review context cannot be written.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -281,19 +282,20 @@ it('does not send the review when the context path is a directory', function ():
         'wireguard_ip' => '10.44.0.74',
         'user' => 'orbit',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Context directory',
+        'brief' => 'The context path is a directory.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'context-directory',
         'checkout_path' => $checkout,
         'branch' => 'task',
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Context directory',
-        'brief' => 'The context path is a directory.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -359,15 +361,6 @@ function review_context_opening(): array
         'wireguard_ip' => '10.44.0.75',
         'user' => 'orbit',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'review-context',
-        'checkout_path' => $checkout,
-        'branch' => 'task',
-        'status' => 'source_resolved',
-        'starting_commit' => str_repeat('b', 40),
-    ]);
     $taskBrief = "it's \$HOME\n".str_repeat('é', 2_100)."\nGROUP-END";
     $subtaskBrief = str_repeat('S', 2_100)."\nSUBTASK-END";
     $description = str_repeat('D', 400)."\nDELIVERABLE-END";
@@ -380,6 +373,16 @@ function review_context_opening(): array
         'title' => 'Review context',
         'brief' => $taskBrief,
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'review-context',
+        'checkout_path' => $checkout,
+        'branch' => 'task',
+        'status' => 'source_resolved',
+        'starting_commit' => str_repeat('b', 40),
     ]);
     $group->taskable()->associate($instance);
     $group->save();

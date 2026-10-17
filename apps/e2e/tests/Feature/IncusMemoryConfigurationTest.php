@@ -13,22 +13,20 @@ it('sizes newly created guests by their catalog Node, with the uniform override'
     }
     Process::fake(['*' => Process::result()]);
 
-    app(IncusHost::class)->initGuests([$node => [
-        'image' => 'orbit-e2e-base',
+    app(IncusHost::class)->createGuests([$node => [
         'name' => 'orbit-memory-'.$node,
         'network' => 'oe-memory',
         'node' => $node,
         'address' => $address,
         'slot' => 2,
-        'container' => false,
         'memory' => TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2')->node($node)->memory,
         'metadata' => [],
     ]]);
 
     Process::assertRan(fn (PendingProcess $process): bool => (
         is_array($process->command)
-        && in_array('init', $process->command, true)
-        && in_array('--vm', $process->command, true)
+        && in_array('copy', $process->command, true)
+        && in_array('local:'.IncusHost::TEMPLATE, $process->command, true)
         && in_array('limits.memory='.$memory, $process->command, true)
         && in_array('limits.cpu=1', $process->command, true)
     ));

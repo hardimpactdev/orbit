@@ -89,8 +89,8 @@ final readonly class StoreTaskCommentAction
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
-                    // A failed topology preparation has no agent to tell: the admission forgot the run, so clearing
-                    // assistance lets the next tick prepare the topology again.
+                    // A resolution of a failed topology preparation goes to no agent: the admission forgot the run, so
+                    // clearing assistance lets the next prepared turn prepare the topology again.
                     $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
                     if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
                         $group->update(TaskAssistance::cleared());
@@ -422,9 +422,13 @@ final readonly class StoreTaskCommentAction
     {
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            $fields = ['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason'];
+            if (! $locked->assistance_requested || $locked->only($fields) !== $task->only($fields)) {
                 return;
             }
+            $clearParent = $parent->only($fields) === $locked->only($fields)
+                && ! $parent->tasks()->whereKeyNot($locked->id)->where('assistance_requested', true)->exists();
             $attempt = $locked->review_attempt + 1;
             $comment->update(['review_attempt' => $attempt]);
             TaskQuestions::attachResolution($locked, $comment);
@@ -432,7 +436,9 @@ final readonly class StoreTaskCommentAction
                 ...TaskAssistance::cleared(), 'review_attempt' => $attempt,
                 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(TaskAssistance::cleared());
+            if ($clearParent) {
+                $parent->update(TaskAssistance::cleared());
+            }
             $this->log($locked, $comment, 'resolution waits for workspace check');
         });
     }

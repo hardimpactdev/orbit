@@ -65,13 +65,14 @@ function effort_task(): Task
         'name' => 'effort-node', 'platform' => 'linux', 'status' => 'active',
         'wireguard_ip' => '10.44.0.110', 'public_ssh_host' => '10.44.0.110',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1',
-        'checkout_path' => '/srv/orbit/task-1', 'branch' => 'task-1', 'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Effort', 'brief' => 'Configure effort.', 'status' => 'running',
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1',
+        'checkout_path' => '/srv/orbit/task-1', 'branch' => 'task-1', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

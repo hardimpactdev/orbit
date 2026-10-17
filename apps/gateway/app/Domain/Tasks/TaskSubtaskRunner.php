@@ -203,7 +203,7 @@ final readonly class TaskSubtaskRunner
         $item = match (true) {
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
             $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran, twice. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
@@ -351,20 +351,20 @@ final readonly class TaskSubtaskRunner
     }
 
     /** @throws TaskTurnReceiptException */
-    public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false, ?string $sendKey = null): bool
+    public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false, ?string $sendKey = null, bool $topologyAdmitted = false): bool
     {
         $leases = app(TaskWorkspaceLease::class);
         if ($threadId === null) {
             return $leases->run($group, $role->value, 'prepare:'.$task->id.':'.$role->value,
-                fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey), taskId: $task->id);
+                fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey, $topologyAdmitted), taskId: $task->id);
         }
         $thread = AgentThread::query()->findOrFail($threadId);
 
         return $leases->withThreadLock($thread,
-            fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey));
+            fn (): bool => $this->prepareAdmittedTurn($scheduler, $group, $task, $role, $threadId, $alreadyFetched, $sendKey, $topologyAdmitted));
     }
 
-    private function prepareAdmittedTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId, bool $alreadyFetched, ?string $sendKey): bool
+    private function prepareAdmittedTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId, bool $alreadyFetched, ?string $sendKey, bool $topologyAdmitted): bool
     {
         $thread = $threadId === null ? null : AgentThread::query()->find($threadId);
         if ($thread instanceof AgentThread && (app(TaskWorkspaceLease::class)->retrying($thread, $sendKey)
@@ -381,11 +381,11 @@ final readonly class TaskSubtaskRunner
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
+        if (! $topologyAdmitted && ! $this->admitTopology($scheduler, $group, $task)) {
+            return false;
+        }
         if (! $alreadyFetched) {
             $this->turnFetcher->beforeTurn($group);
-        }
-        if (! $this->admitTopology($scheduler, $group, $task)) {
-            return false;
         }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $mode = TaskTurnMode::forTask($task, $role);
@@ -541,9 +541,7 @@ final readonly class TaskSubtaskRunner
             // An incoming pull request has no implementer before its first final review, so that review runs the
             // baseline on the fresh workspace first. Setup then serves the fixups that follow.
             if ($group->reviewsIncomingPullRequest() && ($this->baselineCheck($task)?->status === TaskCheckStatus::Running || $this->needsBaseline($task))) {
-                if ($this->admitTopology($scheduler, $group, $task)) {
-                    $this->handleBaseline($scheduler, $group, $task);
-                }
+                $this->handleBaseline($scheduler, $group, $task);
 
                 return;
             }
@@ -556,11 +554,7 @@ final readonly class TaskSubtaskRunner
 
             return;
         }
-        if (! $this->admitTopology($scheduler, $group, $task)) {
-            return;
-        }
         if ($this->needsBaseline($task)) {
-            $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $this->handleBaseline($scheduler, $group, $task);
         } else {
             $this->assignImplementer($scheduler, $task, $alreadyFetched);
@@ -678,7 +672,7 @@ final readonly class TaskSubtaskRunner
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed => 'The workspace changed while the baseline check ran. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
             $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
             default => null,
         };
@@ -688,9 +682,6 @@ final readonly class TaskSubtaskRunner
             return;
         }
 
-        if ($check instanceof TaskCheck && ! $this->admitTopology($scheduler, $group, $task)) {
-            return;
-        }
         $this->startBaseline($scheduler, $group, $task);
     }
 
@@ -885,8 +876,13 @@ final readonly class TaskSubtaskRunner
         if ($task->status !== TaskStatus::Running || $this->skipStaleConflictFixup($scheduler, $task)) {
             return;
         }
-
+        // A preparing topology can wait for many ticks, so admit it before the remote work below. prepareTurn then
+        // does not admit it again.
         $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->admitTopology($scheduler, $group, $task)) {
+            return;
+        }
+
         if ($group instanceof Task && ! $this->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
@@ -901,7 +897,7 @@ final readonly class TaskSubtaskRunner
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
                 }
-                if (! $this->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched)) {
+                if (! $this->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched, topologyAdmitted: true)) {
                     return;
                 }
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
@@ -1094,12 +1090,6 @@ final readonly class TaskSubtaskRunner
 
                     continue;
                 }
-            }
-            if ($task->status === TaskStatus::Reviewing && $task->assistance_requested
-                && TaskExecutionHold::run($group, fn (): bool => $scheduler->recoverStaleReview($group, $task)) === true) {
-                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-
-                continue;
             }
             if ($task->assistance_requested || $scheduler->progressBlockedByAssistance($group)) {
                 if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {

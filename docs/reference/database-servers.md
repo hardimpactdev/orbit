@@ -44,7 +44,7 @@ A retry of the same request continues from the first step that did not finish. A
 
 The response holds `id`, `slug`, `node_id`, `process_id`, `tag`, `port`, `status`, and `databases_count`. `database:server:show` also returns `databases`, the connections of the databases on the server. No response, Activity entry, or error contains the password.
 
-The server's Process is an ordinary Docker Node Process: read its logs, stop it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead.
+The server's Process is an ordinary Docker Node Process: read its logs, stop it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
 
 ## Create a database on a server
 

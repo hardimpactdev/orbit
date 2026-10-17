@@ -45,6 +45,7 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
+use App\Models\ProxyCliProcessSource;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
@@ -106,6 +107,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteAnalyticsTracking::class,
         RouteRemovalResidue::class,
         ProcessDefinition::class,
+        ProxyCliProcessSource::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,
     ];

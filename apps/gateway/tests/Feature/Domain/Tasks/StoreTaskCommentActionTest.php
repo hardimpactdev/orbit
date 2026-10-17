@@ -24,6 +24,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
 use App\Models\Activity;
@@ -57,15 +58,16 @@ function blocked_task(TaskStatus $status): Task
         'name' => 'blocked-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.190', 'wireguard_ip' => '10.44.0.190',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
-        'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
         'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
+        'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -535,15 +537,16 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'name' => 'resolution-target-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.191', 'wireguard_ip' => '10.44.0.191',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
-        'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
+        'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -664,3 +667,31 @@ it('captures a fresh formal review baseline before an operator resolution is sen
     app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the current source.', 'author' => 'operator']);
     expect($turns->threads)->toBe(['reviewer-thread'])->and($task->fresh()->review_attempt)->toBe(4);
 })->with([false, true]);
+
+it('preserves unrelated group or sibling assistance when a review resolution waits for the workspace', function (string $other): void {
+    $task = blocked_task(TaskStatus::Reviewing);
+    $group = $task->parent;
+    $request = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Review needs a decision.');
+    $task->update($request);
+    $group->update($request);
+    if ($other === 'direction') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', 'Choose an environment.'));
+    } elseif ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+    } elseif ($other === 'sibling') {
+        $group->tasks()->create(['title' => 'Other request', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
+    }
+    $before = $group->only(['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason']);
+    $turns = recording_t3_turns();
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'check', 'active-check');
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the current source.', 'author' => 'operator']);
+
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($task->fresh()->review_attempt)->toBe(4);
+    expect($comment->fresh()->review_attempt)->toBe(4);
+    expect($holder->fresh()->status)->toBe('held');
+    expect($turns->commands)->toBe([]);
+    expect($group->fresh()->only(array_keys($before)))->toBe($other === 'matching' ? TaskAssistance::cleared() : $before);
+})->with(['direction', 'failure', 'sibling', 'matching']);

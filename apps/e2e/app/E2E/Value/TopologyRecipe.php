@@ -8,8 +8,7 @@ use InvalidArgumentException;
 
 /**
  * The Nodes of one topology: the Gateway and the operator always, plus the declared workload Nodes, all from the
- * {@see TopologyNodeCatalog}. The declared list alone determines every Node, its role image, address, roles, and
- * checkout. An entry names one workload Node and may add roles after a `+`, such as `app-prod+ingress`; the composer
+ * {@see TopologyNodeCatalog}. The declared list alone determines every Node, its address, roles, and checkout. An entry names one workload Node and may add roles after a `+`, such as `app-prod+ingress`; the composer
  * adds them with `orbit node:role:add`, so the Gateway's own role rules decide whether they fit.
  */
 final readonly class TopologyRecipe
@@ -36,15 +35,10 @@ final readonly class TopologyRecipe
             }
             $nodes[] = new TopologyNode(
                 $key,
-                $entry['image'],
-                match (true) {
-                    $entry['declarable'] => TopologyNodePurpose::Workload,
-                    $entry['image'] === RoleImage::Gateway => TopologyNodePurpose::Gateway,
-                    default => TopologyNodePurpose::Operator,
-                },
+                $entry['purpose'],
                 $entry['address'],
                 $entry['checkout'],
-                $entry['declarable'] ? [(string) $entry['base_role'], ...$extras[$key]] : $entry['image']->programRoles(),
+                $entry['declarable'] ? [(string) $entry['base_role'], ...$extras[$key]] : $entry['purpose']->roles(),
                 $entry['memory'],
                 $entry['tld'],
             );
@@ -156,9 +150,10 @@ final readonly class TopologyRecipe
         return max(0, ...array_map(static fn (TopologyNode $node): int => $node->address, $this->nodes));
     }
 
+    /** Every Node is a VM. */
     public function vmCount(): int
     {
-        return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => ! $node->isContainer()));
+        return count($this->nodes);
     }
 
     /** @return list<string> */
@@ -208,17 +203,6 @@ final readonly class TopologyRecipe
         }
 
         return $assignments;
-    }
-
-    /** @return list<RoleImage> */
-    public function images(): array
-    {
-        $images = [];
-        foreach ($this->nodes as $node) {
-            $images[$node->image->value] = $node->image;
-        }
-
-        return array_values($images);
     }
 
     public function hasNode(string $key): bool

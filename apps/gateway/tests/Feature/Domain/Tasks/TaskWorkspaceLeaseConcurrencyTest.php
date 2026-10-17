@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Schema;
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
     tick_bind_defaults();
     $first = tick_group();
-    $second = $first->replicate();
+    $second = $first->replicate(['taskable_id', 'taskable_type']);
     $second->title = 'Another group sharing the Instance';
     $second->save();
     $second->setRelation('taskable', $first->taskable);

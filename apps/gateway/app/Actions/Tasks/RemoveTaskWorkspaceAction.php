@@ -18,8 +18,8 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
-use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -34,9 +34,9 @@ use Throwable;
 /**
  * Finds and removes a task group's workspace, including one that a claim provisioned but never attached.
  *
- * A claim can provision the `task-{group id}` Instance and then fail, or stop, before it attaches it. The
- * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
- * when the group holds no Instance.
+ * Provisioning records the group as the workspace's owner when it creates the Instance, before any remote work, so
+ * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
+ * owner is never a task workspace, whatever its name or branch.
  *
  * A workspace on a task VM goes with its VM. A workspace whose VM is already gone uses the generic forced Instance
  * remover, which runs the Project's teardown steps, then deletes the checkout and only then the Instance row. A
@@ -45,6 +45,8 @@ use Throwable;
  */
 final readonly class RemoveTaskWorkspaceAction
 {
+    public const string OwnershipRefusedPrefix = 'Workspace ownership refused: ';
+
     public const string RemovalFailedPrefix = 'Workspace removal failed: ';
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
@@ -52,24 +54,6 @@ final readonly class RemoveTaskWorkspaceAction
     public function __construct(
         private InstanceRemover $remover,
     ) {}
-
-    /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
-    public function find(Task $group): ?Instance
-    {
-        $attached = $group->taskable;
-
-        if ($attached instanceof Instance) {
-            return $attached;
-        }
-
-        $name = TaskWorkspaceName::for($group);
-
-        return Instance::query()
-            ->where('project_id', $group->project_id)
-            ->where('name', $name)
-            ->where('branch_override', $name)
-            ->first();
-    }
 
     /**
      * Whether a live claim still owns the group's unattached workspace. A group reserved within
@@ -88,54 +72,36 @@ final readonly class RemoveTaskWorkspaceAction
         return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
-    /** Removes the group's workspace when it has one. It returns the removed Instance. */
-    public function execute(Task $group): ?Instance
+    /**
+     * Removes the workspace the group owns, and returns it, or null when the group owns none. Every task path removes
+     * a workspace here, so only the owner decides which Instance goes.
+     *
+     * The workspace goes with its task VM, or through the generic Instance remover when the VM is gone. The source
+     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
+     * fails with `task_vm.parked` until it is ready.
+     */
+    public function remove(Task $group): ?Instance
     {
-        $instance = $this->find($group);
-
-        if ($instance instanceof Instance) {
-            $this->remove($instance, $group);
+        $instance = $group->workspace()->first();
+        if (! $instance instanceof Instance) {
+            return null;
         }
+        $group->setRelation('taskable', $instance);
+        $leases = app(TaskWorkspaceLease::class);
+        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
+            $lease = $leases->remoteStarted($instance);
+            try {
+                $this->removeWithLease($instance);
+                $leases->remoteFinished($lease);
+            } catch (Throwable $exception) {
+                if (! $this->uncertainRemoteRemoval($exception)) {
+                    $leases->remoteFinished($lease);
+                }
+                throw $exception;
+            }
+        });
 
         return $instance;
-    }
-
-    /**
-     * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
-     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
-     */
-    public function remove(Instance $instance, ?Task $group = null): void
-    {
-        $group ??= Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
-        if (! $group instanceof Task && is_string($instance->branch_override)
-            && $instance->name === $instance->branch_override && preg_match('/\Atask-([1-9][0-9]*)\z/', $instance->branch_override, $match) === 1) {
-            $group = Task::topLevel()->where('project_id', $instance->project_id)->find((int) $match[1]);
-        }
-        if ($group instanceof Task && ($group->project_id !== $instance->project_id || $this->find($group)?->id !== $instance->id)) {
-            throw new TaskWorkspaceWaiting('The workspace removal owner does not match this Instance.');
-        }
-        if ($group instanceof Task) {
-            $group->setRelation('taskable', $instance);
-            $leases = app(TaskWorkspaceLease::class);
-            $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
-                $lease = $leases->remoteStarted($instance);
-                try {
-                    $this->removeWithLease($instance);
-                    $leases->remoteFinished($lease);
-                } catch (Throwable $exception) {
-                    if ($this->uncertainRemoteRemoval($exception)) {
-                        // The synchronous holder also survives a Gateway crash. Keep it
-                        // after a caught transport loss while teardown may still run.
-                        throw $exception;
-                    }
-                    $leases->remoteFinished($lease);
-                    throw $exception;
-                }
-            });
-
-            return;
-        }
-        $this->removeWithLease($instance);
     }
 
     private function uncertainRemoteRemoval(Throwable $exception): bool
@@ -193,6 +159,12 @@ final readonly class RemoveTaskWorkspaceAction
         if ($exception instanceof TaskWorkspaceWaiting) {
             return;
         }
+        for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
+            if ($cause instanceof TaskVmException && in_array($cause->errorCode, [TaskVmError::WorkspaceMismatch->value, TaskVmError::ForeignInstance->value], true)) {
+                $prefix = self::OwnershipRefusedPrefix;
+                break;
+            }
+        }
         TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
     }
 
@@ -206,7 +178,7 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix)) {
+        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix) && ! str_starts_with($reason, self::OwnershipRefusedPrefix)) {
             return;
         }
 

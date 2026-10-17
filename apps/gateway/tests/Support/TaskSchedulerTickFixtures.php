@@ -121,7 +121,15 @@ function tick_group(): Task
         'public_ssh_host' => '10.44.0.212',
         'wireguard_ip' => '10.44.0.212',
     ]);
+    $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => $project->id,
+        'title' => 'Tick routing',
+        'brief' => 'Observe, classify, and execute.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
@@ -129,13 +137,6 @@ function tick_group(): Task
         'starting_commit' => str_repeat('a', 40),
         'branch' => 'task-21',
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-        'project_id' => $project->id,
-        'title' => 'Tick routing',
-        'brief' => 'Observe, classify, and execute.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -1059,20 +1060,21 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
         'public_ssh_host' => $ip,
         'wireguard_ip' => $ip,
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => $slug,
-        'checkout_path' => '/tmp/tasks-'.$slug,
-        'starting_commit' => str_repeat('a', 40),
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => $slug,
         'brief' => 'Baseline setup only.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $slug,
+        'checkout_path' => '/tmp/tasks-'.$slug,
+        'starting_commit' => str_repeat('a', 40),
+        'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

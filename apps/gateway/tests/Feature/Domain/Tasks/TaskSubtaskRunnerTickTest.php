@@ -22,6 +22,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -72,22 +73,42 @@ it('waits while the check process runs and starts the reviewer only after it pas
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
-it('starts the check again when the tree changed during the run, then names the changed paths the second time', function (): void {
-    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['storage/check.cache'], "ok\n");
-    [$group, $task, $checks] = tick_checking([$changed, $changed]);
+it('requires implementer correction instead of accepting check leftovers as a new baseline', function (): void {
+    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], "ok\n");
+    [$group, $task, $checks] = tick_checking([$changed, FakeTaskCheckRunner::passed()]);
 
+    $signer = Mockery::mock(TaskWorkspaceSigner::class);
+    $signer->shouldNotReceive('commit');
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+
+    app(TaskScheduler::class)->tick();
+    $checks->tree = str_repeat('c', 40);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Changed, TaskCheckStatus::Running])
-        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
+    expect($checks->starts)->toBe(1);
+    expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Changed);
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran. Changed paths: orbit_tia_fixture/test.php.');
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect($task->fresh()->review_workspace_head)->toBeNull();
+});
+
+it('holds a tree-changing baseline for assistance without restarting on its leftovers', function (): void {
+    $group = tick_baseline_group('changed-baseline', 'composer check', [], '10.51.0.19');
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], 'check changed tree')]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    app(TaskExtensionState::class)->enable();
 
     app(TaskScheduler::class)->tick();
+    $checks->tree = str_repeat('c', 40);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran, twice. Changed paths: storage/check.cache.')
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+    expect($checks->starts)->toBe(1);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+    expect($group->tasks()->sole()->assistance_reason)->toContain('The workspace changed while the baseline check ran.');
+    expect($group->tasks()->sole()->implementer_agent_thread_id)->toBeNull();
+    expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Changed);
 });
 
 it('retains a lost check lease because its child command may still run', function (): void {

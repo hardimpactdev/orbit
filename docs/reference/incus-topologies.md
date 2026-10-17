@@ -1,10 +1,10 @@
 ---
 title: "Incus topologies"
-description: "How the harness composes a disposable Incus topology from declared Nodes and one recipe base image, runs it nested in a task VM or on a bare host, and releases it."
+description: "How the harness composes a disposable Incus topology from declared Nodes, copied from the task VM's topology seed, runs it nested in a task VM, and releases it."
 covers:
-  - bin/{e2e-topology,e2e-topology-images,e2e-topology-host-setup}
+  - bin/{e2e-topology,e2e-topology-host-setup}
   - apps/e2e/config/e2e.php
-  - apps/e2e/app/Console/Commands/{Topology,TopologyImages}/**
+  - apps/e2e/app/Console/Commands/Topology/**
   - apps/e2e/app/E2E/**
   - apps/e2e/resources/**
   - apps/gateway/app/Console/Commands/RenderNodeProgramsCommand.php
@@ -12,31 +12,31 @@ covers:
 
 # Incus topologies
 
-This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares. Each Node starts from the same prepared recipe base image, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, `bin/e2e-topology-images` imports the recipe base image, and `bin/e2e-topology-host-setup` prepares a machine, such as a task VM, to run topologies nested. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
 [Compute drivers](/reference/compute-drivers#clone-and-set-up-every-workspace) describes task workspace creation and its package and CI caches.
 
 ## Declared topologies in task VM groups
 
-An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
+An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, after the group's baseline check and before the first turn Orbit [prepares](/reference/compute-drivers#prepare-the-topology) for the subtask. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
 
 ## Declared Nodes
 
 Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add the role `ingress` after a `+`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
 
-| Node key | Image alias | Incus address | WireGuard address | Roles | Checkout |
-| --- | --- | --- | --- | --- | --- |
-| `gateway` | `orbit-e2e-base` | `.10` | `10.44.0.1` | `gateway`, `vpn` | yes |
-| `app-dev` | `orbit-e2e-base` | `.11` | `10.44.0.2` | `app-dev` | yes |
-| `app-prod` | `orbit-e2e-base` | `.12` | `10.44.0.3` | `app-prod` | no |
-| `app-prod-2` | `orbit-e2e-base` | `.13` | `10.44.0.4` | `app-prod` | no |
-| `operator` | `orbit-e2e-base` | `.14` | `10.44.0.5` | none | yes |
+| Node key | Incus address | WireGuard address | Roles | Checkout |
+| --- | --- | --- | --- | --- |
+| `gateway` | `.10` | `10.44.0.1` | `gateway`, `vpn` | yes |
+| `app-dev` | `.11` | `10.44.0.2` | `app-dev` | yes |
+| `app-prod` | `.12` | `10.44.0.3` | `app-prod` | no |
+| `app-prod-2` | `.13` | `10.44.0.4` | `app-prod` | no |
+| `operator` | `.14` | `10.44.0.5` | none | yes |
 
-`app-prod-2` is a second `app-prod` Node from the same base image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
+Every Node is a copy of the same `node-template`. `app-prod-2` is a second `app-prod` Node. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
-The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the software profile, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. Topology selection, composition, and readiness derive from it.
+The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the address position, checkout, memory, TLD, and the Node it requires. The two Nodes that are not declarable are named by their purpose: `gateway` and `operator`. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. Topology selection, composition, and readiness derive from it.
 
-The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind needs one catalog entry and one case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
+The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new workload Node kind needs one catalog entry. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
 The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
@@ -51,13 +51,13 @@ The harness assigns the roles in the table and the roles each entry adds, and no
 
 The operator is a roleless Node registered with the topology's Gateway, with a Gateway access grant and its own WireGuard peer in that topology. It has no workload role and hosts no Instance. It trusts the topology's Orbit CA and mounts the worktree live, so host edits reach `apps/web` without a copy or rebuild. Its CLI profile and web proxy configuration refer only to this topology. Missing configuration is an error, not permission to use the real Gateway or another user's credentials.
 
-The operator is separate from the host's network namespace. A host such as beast or a task VM may already belong to the real fleet, and the topology reuses the fleet's WireGuard address range. Joining that tunnel on the host would mix live and disposable traffic.
+The operator is separate from the task VM's network namespace. The task VM belongs to the real fleet, and the topology reuses the fleet's WireGuard address range. Joining that tunnel on the host would mix live and disposable traffic.
 
-## One recipe base image
+## One template Node
 
-Every topology Node launches the same base fingerprint built on its task VM host, including the operator VM. The task VM receives one archive and a manifest; `bin/e2e-topology-images ensure --recipe-images=PATH` imports and validates its recipe identity, base profile, fingerprint, and VM type. Imports are repeatable and remove the archive after verification. The harness does not build images. Standalone hosts must import an approved base archive through the same manifest contract.
+Every topology Node is a copy of the stopped VM `node-template` in the Incus pool `topology-seed`. The task VM's host builds that template from the task VM's own base image, in its [topology seed](/reference/compute-drivers#the-topology-seed), and the task VM boots with a clone of the seed. [Host setup](#run-topologies-nested-in-a-task-vm) adopts the clone. So the harness builds, imports, and selects no image, and it runs topologies only in a task VM.
 
-The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
+The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The template never booted, so it holds no machine identity, and each copy gets its own. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
 
 Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
 
@@ -65,12 +65,7 @@ Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launc
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Workload and operator enrollment still use the normal product paths. All Nodes keep the source image's minimum disk size. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
-
-| Command | What it does |
-| --- | --- |
-| `bin/e2e-topology-images ensure --nodes=LIST --recipe-images=PATH` | Imports one recipe base for every declared role; builds none |
-| `bin/e2e-topology-images status` | Reports the imported base fingerprint and recipe identity |
+The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Workload and operator enrollment still use the normal product paths. Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 
 ## Composition
 
@@ -78,14 +73,23 @@ The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap
 
 | Step | Work |
 | --- | --- |
-| `reserve` | Under the host lock `topology-create`, counts the declared VMs against the budget, picks a network slot, and creates the network |
-| `create` | Creates each guest from the recipe base image, with a fixed MAC and Incus address, and mounts the worktree on the checkout Nodes |
+| `reserve` | Under the host lock `topology-create`, counts the declared VMs against the budget, picks a network slot, creates the network, and [creates every guest](#create-the-guests) |
 | `start` | Starts every guest and waits for its agent and its address. VMs also wait for cloud-init and a stable boot ID before composition. |
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env`, runs the Gateway and VPN programs, then runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
 | `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
+
+### Create the guests
+
+`reserve` creates every guest as a copy of `node-template`:
+
+1. `incus copy node-template <guest>` sets the guest's CPU, memory, ownership metadata, and cloud-init user-data.
+2. `incus config device add` adds its NIC on the topology network, with a fixed MAC and Incus address.
+3. On the checkout Nodes, `incus config device add` mounts the worktree.
+
+A copy can override only the devices of the template, which has its root disk and nothing else, so the NIC and the mount are added after the copy.
 
 `bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
 
@@ -119,31 +123,26 @@ Nested guests boot about three times slower than on a bare host, so the windows 
 
 ## Run topologies nested in a task VM
 
-A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo bin/e2e-topology-host-setup` once in that VM before the first recipe base import. The script is idempotent. Orbit [runs it](/reference/compute-drivers#prepare-the-topology) in a task VM group that declares a topology.
+A topology runs only inside a task VM that [boots with a clone](/reference/compute-drivers#incus-provider) of its host's topology seed, with nested KVM. Orbit [runs](/reference/compute-drivers#prepare-the-topology) `sudo bin/e2e-topology-host-setup` in a task VM group that declares a topology. The script is idempotent.
 
 | Step | What happens |
 | --- | --- |
-| Packages | Installs `incus`, the QEMU system emulator for the machine's architecture, `btrfs-progs`, and `nftables` |
-| Idmap | Adds `root:1000000:1000000000` to `/etc/subuid` and `/etc/subgid` when they have no root entry, and restarts Incus. This retains the host setup for other Incus containers. |
-| Incus | Initializes Incus when it has no `orbit-e2e` storage pool |
-| Access | Adds the invoking user to `incus-admin`. The group applies to new logins only, so start the harness in a new session, for example over SSH or with `sudo -u orbit -i`. |
-| AppArmor | Adds `file mr /usr/bin/bash,` to `/etc/apparmor.d/local/wg-quick` and reloads the profile, for container workloads that use `wg-quick`. |
-| Worktrees | Creates `/fast/worktrees/orbit`, the default worktree root, owned by the invoking user |
+| Topology seed | Adopts the clone as the Incus pool `topology-seed` when the pool is missing. It then checks that the pool holds the stopped VM `node-template`. |
 | Isolation | Installs the nftables table `orbit-e2e-isolation` and the boot unit `orbit-e2e-isolation.service` that loads it |
-| UFW | When UFW is active, as on an enrolled task VM, allows DHCP and DNS over UDP in, and routed traffic in, on `incusbr0` and `oe+` |
+| UFW | When UFW is active, as on an enrolled task VM, allows DHCP and DNS over UDP in, and routed traffic in, on `oe+` |
 
-A task VM's `/etc/subuid` holds only the range of its user `orbit`, which is why the Idmap step exists.
+The clone is the disk `topology-seed`, at `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`. Incus doubles each `-` of a device name in the disk's serial. `incus admin recover` asks its questions on a terminal, so the script posts the pool, btrfs with that source, to the recovery endpoints that the command uses: `/internal/recover/validate` and then `/internal/recover/import`, with `incus query`. Recovery restores the pool and the instance on it, not images. In the spike on beast, adoption and the isolation table took 0.65 seconds.
 
-Incus gets a btrfs pool `orbit-e2e` on a sparse loop file (`--pool-size`, default 45GiB), the bridge `incusbr0` on `10.99.0.1/24`, and a default profile with a root disk and an `eth0` NIC. The harness replaces that NIC for each guest.
+A machine without the disk fails with `e2e-topology-host-setup: this machine has no topology seed disk; only a task VM of a size that runs a topology boots with one.` A validation that reports missing dependencies fails too. The recovery API is internal, so a bump of the Incus pin must check it again.
+
+A copy of the template carries its own root disk and gets its NIC from the harness, so Incus needs no profile and no default bridge.
 
 The isolation table keeps topology guests away from the machine's own WireGuard network, `orbit` on `10.44.0.0/24` by default (`--wireguard-interface`, `--wireguard-subnet`).
 
 | Rule | Drops |
 | --- | --- |
 | Forward from `oe*` to the WireGuard interface | Topology guests reaching fleet Nodes through the machine's tunnel |
-| Forward from `incusbr0` to the WireGuard interface | Other inner guests doing the same |
 | Input from `oe*` to the WireGuard subnet | Topology guests reaching the machine's own WireGuard address |
-| Input from `incusbr0` to the WireGuard subnet | Other inner guests doing the same |
 
 A topology guest needs none of these paths: it talks to its own Gateway over its own WireGuard network. Its public egress and the WireGuard traffic between topology Nodes keep working.
 
@@ -153,10 +152,11 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 | Setting | Value |
 | --- | --- |
-| VM size | 1 vCPU (`e2e.incus.cpu`); root disks retain the recipe image size. Memory comes from the Node catalog, as below. |
+| VM size | 1 vCPU (`e2e.incus.cpu`); root disks keep the template's size. Memory comes from the Node catalog, as below. |
 | VM budget | `e2e.incus.max_vms`, default 24. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | 1 to 200 |
-| Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
+| Incus scope | `e2e.incus.remote` and `e2e.incus.project`, from `ORBIT_E2E_INCUS_REMOTE` and `ORBIT_E2E_INCUS_PROJECT`. The defaults are `local` and `default`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
+| Pool | Always `topology-seed` |
 
 The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 1 GiB to the operator VM. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
 
@@ -188,7 +188,7 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 
 An issue holds one topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
 
-`release` and `acquire --replace` also accept an older lease with `purpose: discovery`. Cleanup uses the lease's declared Nodes and exact issue and attempt ownership, without reading the older topology record. Other old formats and malformed leases are refused; release them with the harness that created them.
+`release` and `acquire --replace` refuse old formats and malformed leases; release them with the harness that created them.
 
 Task agents and reviewers use only the topology allocated to their task. They never acquire or release a topology, receive no sudo, and do not touch the host firewall. Use `exec`, `spawn`, `logs`, and `kill` from the task workspace to work on the allocated topology. Clean up processes you spawn, but leave the topology allocated for teardown.
 
@@ -277,21 +277,23 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 
 ### After a merge
 
-`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, queues a TIA cache refresh, releases the discovery topology, removes the worktree, deletes the merged branch, and prunes the worktree list.
+`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, queues a TIA cache refresh, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
 
-### Composed from one recipe base
+### Composed from one template
 
-A topology starts only the Nodes the work declares, from one shared recipe base image, and the harness wires them together for that topology.
+A topology starts only the Nodes the work declares, each a copy of one template from the recipe base image, and the harness wires them together for that topology.
 
 One shared whole-topology snapshot was rejected. It baked every Node, the Gateway database, the CA, and every key into a single generation. So it could not start a subset, and its extension Node took a cold build of about 20 minutes. Every change to prepared state needed a refresh, promotion, and recovery machinery. A snapshot for each combination of Nodes was rejected for the same reasons, multiplied.
 
 The base image holds no identity, so a topology always has its own Gateway, CA, and keys. Composition takes longer than cloning a snapshot, and that is acceptable: start time matters little for the groups that need a topology, and a composed topology is simple and the same every time.
 
-The base supplies pinned software. Convergence runs the checkout's Gateway and VPN programs, then enrollment sets each Node's identity and role services. Separate role images add no software today, so they would duplicate build and transfer work.
+The base supplies pinned software. Convergence runs the checkout's Gateway and VPN programs, then enrollment sets each Node's identity and role services. Separate role images add no software today, so they would duplicate build work.
+
+The template comes from a topology seed that the host builds once per base image, and each task VM boots with a ZFS clone of it ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)). A clone takes 67 milliseconds, against about 33 seconds to export, push, import, and unpack the 4.29 GB base image in each VM, and 42 seconds of apt for Incus. A copy of the template is a btrfs snapshot of 48 milliseconds. On beast, a Node copied from the template answered on its agent 18 seconds after the copy. The template is a stopped instance, not an image, because recovery restores instances but not images.
 
 ### Declared roles only
 
@@ -299,7 +301,11 @@ The harness assigns the base roles of each declared Node and the roles its entry
 
 ### Nested in the task VM
 
-A group's topology runs inside the group's own task VM, so the VM edge stays the only boundary and an Orbit task VM is like any other task VM. The inner Incus uses a btrfs loop pool: a `dir` pool copies every disk in full, and ZFS on a ZFS volume caches twice. The isolation rules live in their own nftables table at a priority before the filter table, because the harness inserts its own forward rules at the top of the iptables `FORWARD` chain for each topology network.
+A group's topology runs inside the group's own task VM, so the VM edge stays the only boundary and an Orbit task VM is like any other task VM. Topology Nodes as siblings on the host were rejected: the host's Incus API would become reachable from every task VM.
+
+The inner Incus uses a btrfs pool on the clone: a `dir` pool copies every disk in full, and ZFS on a ZFS volume caches twice. Every clone carries the seed's btrfs UUID, which is safe, because each VM sees one clone and the host never mounts a seed.
+
+The isolation rules live in their own nftables table at a priority before the filter table, because the harness inserts its own forward rules at the top of the iptables `FORWARD` chain for each topology network.
 
 ### An isolated operator for web work
 

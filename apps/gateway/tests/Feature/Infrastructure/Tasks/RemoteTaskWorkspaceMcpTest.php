@@ -31,7 +31,7 @@ function workspace_mcp_instance(string $checkout): Instance
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'workspace-mcp-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
 
-    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    return test_ready_task_workspace($project, $node, ['name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14']);
 }
 
 function workspace_mcp(): object
@@ -71,14 +71,7 @@ function workspace_mcp(): object
             if ($leases->currentScope()?->instance_id === $instance->id || $instance->checkout_path === '') {
                 return $this->mcp->installWhenMissing($instance);
             }
-            $group = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
-            if ($group instanceof Task) {
-                return $leases->run($group, 'reviewer', 'mcp-test', fn (): bool => $this->mcp->installWhenMissing($instance));
-            }
-            $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Prepare MCP', 'brief' => 'Install under admitted ownership', 'status' => 'running']);
-            $group->taskable()->associate($instance);
-            $group->save();
-            test_vm_group($group);
+            $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
 
             return $leases->run($group, 'reviewer', 'mcp-test', fn (): bool => $this->mcp->installWhenMissing($instance));
         }
@@ -165,10 +158,7 @@ it('reports failure for a workspace without a checkout', function (): void {
 
 it('keeps MCP installation fenced without crediting changes to the reviewed checkout tree', function (): void {
     $instance = workspace_mcp_instance(workspace_mcp_checkout());
-    $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Install MCP', 'brief' => 'Prepare the task', 'status' => 'running']);
-    $group->taskable()->associate($instance);
-    $group->save();
-    $group = test_vm_group($group);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $instance->refresh();
     $lease = app(TaskWorkspaceLease::class)->acquire($group, 'reviewer', 'prepare');
     expect(app(TaskWorkspaceLease::class)->within($lease, fn (): bool => workspace_mcp()->installWhenMissing($instance)))->toBeTrue();

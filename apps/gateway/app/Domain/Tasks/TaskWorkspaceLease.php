@@ -9,7 +9,6 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use App\Models\TaskWorkspaceOperation;
@@ -716,7 +715,6 @@ final class TaskWorkspaceLease
                 } catch (TaskCheckException $exception) {
                     // Assistance would skip the normal handler, so account for this failed read here.
                     if ($group->assistance_requested || $checkTask->assistance_requested) {
-                        app(TaskReviewOutcome::class)->reportStaleReviewCheckFailure($group, $checkTask, $exception->getMessage());
                         app(TaskScheduler::class)->recordCommunicationFailure($checkTask, $group, $exception->getMessage());
                     }
 
@@ -850,11 +848,7 @@ final class TaskWorkspaceLease
     {
         $baseline = $baselineLeaseId === null ? null : TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->find($baselineLeaseId);
         if (! $baseline instanceof TaskWorkspaceLeaseRecord || $baseline->getAttribute('acquisition_sequence') === null) {
-            $this->importRecordedMerge($group, $head, $tree, $current);
-
-            return TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->where('kind', 'main_merge')
-                ->where('owner', 'like', 'recorded-merge:%')->where('status', 'released')
-                ->where('head_before', $head)->where('tree_before', $tree)->where('head_after', $current->head)->where('tree_after', $current->tree)->exists();
+            return false;
         }
         $changed = false;
         foreach (TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->where('status', 'released')->where('acquisition_sequence', '>', $baseline->getAttribute('acquisition_sequence'))->orderBy('acquisition_sequence')->get() as $record) {
@@ -871,34 +865,6 @@ final class TaskWorkspaceLease
         }
 
         return false;
-    }
-
-    /** Historical merge records prove a narrow clean merge; check snapshots alone never prove ownership. */
-    private function importRecordedMerge(Task $group, string $head, string $tree, TaskWorkspaceSnapshot $current): void
-    {
-        if ($current->parent !== $head || $current->parentTree !== $tree || $current->secondParent === null
-            || $current->commitTree !== $current->tree) {
-            return;
-        }
-        $merge = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $current->head)
-            ->where('source', TaskReviewedCommitSource::BaseMerge)->whereNotNull('review_task_id')->first();
-        if (! $merge instanceof TaskReviewedCommit || ! TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $head)->exists()) {
-            return;
-        }
-        $check = TaskCheck::query()->where('task_id', $merge->review_task_id)->where('kind', TaskCheckKind::BaseMerge)
-            ->where('status', TaskCheckStatus::Passed)->where('head_after', $current->head)->where('tree_after', $current->tree)
-            ->whereNotNull('finished_at')->where('finished_at', '<=', $merge->created_at)->latest('id')->first();
-        if (! $check instanceof TaskCheck) {
-            return;
-        }
-        TaskWorkspaceLeaseRecord::query()->firstOrCreate([
-            'instance_id' => $group->taskable_id, 'group_id' => $group->id,
-            'kind' => 'main_merge', 'owner' => 'recorded-merge:'.$merge->id,
-        ], [
-            'status' => 'released', 'orbit_mutation' => true, 'check_id' => $check->id, 'head_before' => $head, 'tree_before' => $tree,
-            'head_after' => $current->head, 'tree_after' => $current->tree,
-            'acquired_at' => $check->started_at, 'released_at' => $merge->created_at,
-        ]);
     }
 
     private function pruneQueued(int $instanceId): void

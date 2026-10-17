@@ -40,18 +40,19 @@ it('starts one baseline check and asks for no assistance when the todo move and 
         'public_ssh_host' => '10.44.0.194',
         'wireguard_ip' => '10.44.0.194',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'baseline-start-race',
-        'checkout_path' => '/tmp/tasks-baseline-start-race',
-        'status' => 'reserved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline start race',
         'brief' => 'One baseline check wins the start.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'baseline-start-race',
+        'checkout_path' => '/tmp/tasks-baseline-start-race',
+        'status' => 'reserved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -216,18 +217,19 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
         'public_ssh_host' => $ip,
         'wireguard_ip' => $ip,
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => $slug,
-        'checkout_path' => '/tmp/tasks-'.$slug,
-        'status' => 'reserved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => $slug,
         'brief' => 'Baseline claim.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $slug,
+        'checkout_path' => '/tmp/tasks-'.$slug,
+        'status' => 'reserved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

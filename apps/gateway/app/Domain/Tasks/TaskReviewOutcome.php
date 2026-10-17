@@ -17,8 +17,6 @@ use Throwable;
 
 final readonly class TaskReviewOutcome
 {
-    private const string StaleReviewInspectionFailure = 'Orbit could not inspect the workspace while recovering a stale review after a main merge: ';
-
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
@@ -33,7 +31,6 @@ final readonly class TaskReviewOutcome
         private TaskTurnFetcher $turnFetcher,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
-        private TaskSessionObserver $observer,
     ) {}
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -130,7 +127,7 @@ final readonly class TaskReviewOutcome
             $decision = $this->reviewWorkspaceDecision($scheduler, $group, $task, $reviewer, $receipt, $observation);
             if ($decision === 'orbit_commit') {
                 try {
-                    $recovered = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                    $recovered = $this->recoveredCommit($group, $task, $this->workspaceSnapshot($group));
                 } catch (TaskCheckException $exception) {
                     $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -247,9 +244,9 @@ final readonly class TaskReviewOutcome
         }
         $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
         if ($commit === null && $instance instanceof Instance) {
-            // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
+            // Recover only after a completed mutation lease attributes the matching commit to Orbit.
             try {
-                $commit = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                $commit = $this->recoveredCommit($group, $task, $this->workspaceSnapshot($group));
             } catch (TaskCheckException $exception) {
                 $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -592,14 +589,9 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
-     * from the pair recorded with the review request, unless a newer implementer turn explains the
-     * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
-     * stopped reviewer turn before it looks again. That later turn applies the outcome when the
-     * workspace matches, and asks for assistance when the working tree still differs. A changed
-     * HEAD starts a fresh delta review without attributing the change to an actor. Another poll of the reminded
-     * turn does neither. A failed read is a communication failure, not a change. A review notified
-     * before a baseline existed has nothing to compare, so its outcome applies as before.
+     * A reviewer turn is read-only. Only a newer implementer handoff, Orbit's committed approval, or a continuous
+     * Orbit mutation lease chain can explain a changed review baseline. An unattributed HEAD or tree change asks
+     * for assistance without restarting the review. A failed read is a communication failure, not a change.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
      * that commit and the working tree still matches. The HEAD from before the approval is not
      * accepted after Orbit has committed, so a reset that drops the commit is refused.
@@ -618,7 +610,7 @@ final readonly class TaskReviewOutcome
         if ($this->workspaceMatchesReview($task, $receipt, $current)) {
             return 'apply';
         }
-        if (! $task->isFinalReview() && $scheduler->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+        if (! $task->isFinalReview() && $scheduler->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($group, $task, $current) !== null) {
             return 'orbit_commit';
         }
         $implementer = $observation->thread(TaskThreadRole::Implementer);
@@ -641,125 +633,22 @@ final readonly class TaskReviewOutcome
         return 'reminded';
     }
 
-    /**
-     * Older deployments could consume a receipt and ask for assistance after Orbit changed the workspace.
-     * Run before the assistance gate; only an exact recorded Orbit check or merge tree can lift that failure.
-     */
-    public function recoverStaleReview(TaskScheduler $scheduler, Task $group, Task $task): bool
-    {
-        if ($task->status !== TaskStatus::Reviewing || ! $task->assistance_requested
-            || ! $this->workspaceFailure($task)
-            || ($group->assistance_requested && ! $this->workspaceFailure($group))
-            || $group->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-            return false;
-        }
-
-        try {
-            return app(TaskWorkspaceLease::class)->run($group, 'verdict', 'recover-review:'.$task->id,
-                fn (): bool => $this->recoverOwnedReview($scheduler, $group, $task), taskId: $task->id);
-        } catch (TaskCheckException $exception) {
-            $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
-            $this->reportStaleReviewInspectionFailure($group, $task, $reason);
-            $scheduler->recordCommunicationFailure($task, $group, $reason);
-
-            return false;
-        }
-    }
-
-    private function recoverOwnedReview(TaskScheduler $scheduler, Task $group, Task $task): bool
-    {
-        $head = $task->review_workspace_head;
-        if (! is_string($head) || $head === '') {
-            return false;
-        }
-        try {
-            // The surrounding workspace lease reconciles remote checks under the execution
-            // lock before this verdict can inspect the checkout or lift assistance.
-            $current = $this->workspaceSnapshot($group);
-        } catch (TaskCheckException $exception) {
-            $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
-            $this->reportStaleReviewInspectionFailure($group, $task, $reason);
-            $scheduler->recordCommunicationFailure($task, $group, $reason);
-
-            return false;
-        }
-        if (! $this->ownedWorkspaceChange($group, $task, $current)) {
-            return false;
-        }
-        $observation = $this->observer->observe($group, $task);
-        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        if (! $observation->available || $reviewer === null || $scheduler->isWorking($reviewer)
-            || $scheduler->isWorking($observation->thread(TaskThreadRole::Implementer))) {
-            return false;
-        }
-
-        return $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $task->review_handled_comment_id, recoverAssistance: true);
-    }
-
-    public function reportStaleReviewCheckFailure(Task $group, Task $task, string $reason): void
-    {
-        $this->reportStaleReviewInspectionFailure($group, $task, self::StaleReviewInspectionFailure.$reason);
-    }
-
-    private function reportStaleReviewInspectionFailure(Task $group, Task $task, string $reason): void
-    {
-        // Only replace this recovery's failure. An operator may have requested unrelated
-        // assistance while the workspace inspection was in flight.
-        DB::transaction(function () use ($group, $task, $reason): void {
-            $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
-            if ($lockedTask->status !== TaskStatus::Reviewing || ! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)) {
-                return;
-            }
-            TaskAssistance::apply($lockedTask, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            if ($lockedGroup->assistance_requested && $this->workspaceFailure($lockedGroup)
-                && ! $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-                TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            }
-        });
-        $task->refresh();
-        $group->refresh();
-    }
-
-    private function workspaceFailure(Task $task): bool
-    {
-        $reason = $task->assistance_reason;
-
-        return $task->assistance_kind === AssistanceKind::Failure && is_string($reason)
-            && (str_starts_with($reason, self::StaleReviewInspectionFailure) || in_array($reason, [
-                'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder,
-                TaskScheduler::WorkspaceChangedReminder,
-                'Checks still failed after the reminder. The workspace working tree no longer matches the review baseline. Orbit cannot attribute this change to the reviewer. Restore the reviewed tree or request the needed changes from the implementer.',
-                'Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.',
-            ], true));
-    }
-
     private function ownedWorkspaceChange(Task $group, Task $task, TaskWorkspaceSnapshot $current): bool
     {
         return is_string($task->review_workspace_head) && is_string($task->review_workspace_tree)
             && app(TaskWorkspaceLease::class)->ownedChange($group, $task->review_workspace_head, $task->review_workspace_tree, $current, $task->review_workspace_lease_id);
     }
 
-    private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment, bool $recoverAssistance = false): bool
+    private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment): bool
     {
         // Keep the previous tree until the packet is sent so it remains the delta base.
         $previousHead = $task->review_workspace_head;
-        $advanced = DB::transaction(function () use ($group, $task, $handledComment, $recoverAssistance): bool {
+        $advanced = DB::transaction(function () use ($task, $handledComment): bool {
             $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             if ($lockedTask->status !== TaskStatus::Reviewing || $lockedTask->review_attempt !== $task->review_attempt) {
                 return false;
             }
-            if ($recoverAssistance) {
-                if (! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)
-                    || ($lockedGroup->assistance_requested && ! $this->workspaceFailure($lockedGroup))
-                    || $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-                    return false;
-                }
-                $lockedGroup->update(TaskAssistance::cleared());
-            }
             $lockedTask->update([
-                ...($recoverAssistance ? TaskAssistance::cleared() : []),
                 'review_handled_comment_id' => $handledComment,
                 'review_attempt' => $lockedTask->review_attempt + 1,
                 'review_reminder_attempt' => null,
@@ -797,17 +686,17 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * Orbit's commit after a lost response: HEAD's parent is the HEAD recorded with the review
-     * request, and HEAD's tree is the tree recorded with that request (ADR 0133).
+     * Recover a matching parent and tree only when a completed Orbit mutation lease
+     * attributes the change. Git shape alone cannot distinguish a reviewer commit.
      */
-    private function recoveredCommit(Task $task, TaskWorkspaceSnapshot $current): ?string
+    private function recoveredCommit(Task $group, Task $task, TaskWorkspaceSnapshot $current): ?string
     {
         $head = $task->review_workspace_head;
         $tree = $task->review_workspace_tree;
         if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '' || $current->head === '' || $current->head === $head) {
             return null;
         }
-        if ($current->parent !== $head || $current->commitTree !== $tree) {
+        if ($current->parent !== $head || $current->commitTree !== $tree || ! $this->ownedWorkspaceChange($group, $task, $current)) {
             return null;
         }
 
