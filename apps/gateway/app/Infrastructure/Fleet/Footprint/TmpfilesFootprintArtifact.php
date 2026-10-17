@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -34,7 +35,7 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 
     public function name(): string
     {
-        return 'tmpfiles';
+        return ReservedNames::TmpfilesArtifact;
     }
 
     public function applies(Node $node): bool

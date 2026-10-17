@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddyfileSiteDiff;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
@@ -158,6 +159,38 @@ describe('building a Node', function (): void {
             });
         expect($this->ssh->commands)->toBe([]);
     });
+
+    it('publishes a valid contribution alongside the existing route', function (): void {
+        $node = node_caddy_builder_node('app-prod', '10.44.0.3');
+        $renderer = node_caddy_builder_renderer(contributions: [node_caddy_builder_contribution('collector.test')]);
+        $builder = new NodeCaddyBuilder($renderer, new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this));
+
+        expect($builder->build($node))->toBe(NodeCaddyBuildResult::Published);
+        $content = node_caddy_builder_pushed($this->ssh->commands[0]);
+        expect($content)->toContain('https://shop.test {', 'https://collector.test {', '# orbit: extension collector.test', 'bind 10.44.0.3');
+    });
+
+    it('refuses bad contributions before contacting the Node and can still publish the existing route', function (string $host, string $source, string $address, bool $duplicate): void {
+        $node = node_caddy_builder_node('app-prod', $address);
+        $contribution = node_caddy_builder_contribution($host, $source);
+        $renderer = node_caddy_builder_renderer(contributions: $duplicate ? [$contribution, node_caddy_builder_contribution($host)] : [$contribution]);
+        $builder = new NodeCaddyBuilder($renderer, new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this));
+
+        expect(fn () => $builder->build($node))->toThrow(NodeCaddyBuildException::class)
+            ->and($this->ssh->commands)->toBe([])
+            ->and($this->local->invocations)->toBe([]);
+
+        // No candidate was sent: the live configuration could not have changed. A later valid build still works.
+        $node->update(['wireguard_ip' => '10.44.0.3']);
+        expect(node_caddy_builder($this)->build($node))->toBe(NodeCaddyBuildResult::Published);
+        expect(node_caddy_builder_pushed($this->ssh->commands[0]))->toContain('https://shop.test {')->not->toContain('# orbit: extension');
+    })->with([
+        'reserved core source' => ['collector.test', 'gateway', '10.44.0.3', false],
+        'collision with an existing route' => ['shop.test', 'extension', '10.44.0.3', false],
+        'duplicate across contributions' => ['collector.test', 'extension', '10.44.0.3', true],
+        'out of range listener address' => ['collector.test', 'extension', '10.44.0.999', false],
+        'injected listener address' => ['collector.test', 'extension', "10.44.0.3\n0.0.0.0", false],
+    ]);
 
     it('reports the failed stage and the last Caddy message', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
@@ -515,7 +548,8 @@ function node_caddy_builder_node(string $name, ?string $wireguardIp): Node
     ]);
 }
 
-function node_caddy_builder_renderer(bool $duplicate = false): NodeCaddyfileRenderer
+/** @param list<ContributedCaddySiteSource> $contributions */
+function node_caddy_builder_renderer(bool $duplicate = false, array $contributions = []): NodeCaddyfileRenderer
 {
     $source = new readonly class($duplicate) implements NodeCaddySiteSource
     {
@@ -536,7 +570,33 @@ function node_caddy_builder_renderer(bool $duplicate = false): NodeCaddyfileRend
         }
     };
 
-    return new NodeCaddyfileRenderer([$source]);
+    return new NodeCaddyfileRenderer([$source], $contributions);
+}
+
+function node_caddy_builder_contribution(string $host, string $source = 'extension'): ContributedCaddySiteSource
+{
+    return new readonly class($host, $source) implements ContributedCaddySiteSource
+    {
+        public function __construct(private string $host, private string $source) {}
+
+        public function certificateSlug(): ?string
+        {
+            return null;
+        }
+
+        public function sites(Node $node): array
+        {
+            return [new CaddySite(
+                source: $this->source,
+                name: $this->host,
+                listener: CaddyListenerRule::Shared,
+                hosts: [$this->host],
+                port: 443,
+                body: "https://{$this->host} {\n    bind __BIND__\n    respond collector\n}\n",
+                bindPlaceholder: '__BIND__',
+            )];
+        }
+    };
 }
 
 function node_caddy_builder_pushed(RemoteCommand $command): string

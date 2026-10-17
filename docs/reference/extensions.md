@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,AppDev/ContributedPrivateDnsRecords,Routes/ContributedReservedHostnames,Processes/ProcessRemovalGuard}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
-  - apps/gateway/bootstrap/providers.php
+  - apps/gateway/{bootstrap/providers.php,tests/Helpers/PlugInAssertions.php,tests/Unit/Domain/Extensions/**,tests/Feature/Infrastructure/PlugInWiringTest.php}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
   - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Unit/Architecture/ProxyCliPlugInPointsTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
@@ -59,6 +59,24 @@ Each extension has one service provider. It extends `App\Providers\ExtensionServ
 The provider registers what the extension owns: its routes with `loadRoutesFrom()`, its migrations with `loadMigrationsFrom()`, its console commands, its schedule entries, and its plug-in contributions.
 
 `ExtensionRegistry` lists the registered providers that implement `Extension`. That list is the set of known slugs: `extension:list`, `extension:enable`, and `extension:disable` accept only those. No other list of slugs exists in the Gateway.
+
+## Add a plug-in point
+
+Use this checklist when core adds a place for extensions to contribute:
+
+- Resolve the typed interface with strict `Contributions::of()`; reject a wrong interface or a class tagged twice.
+- Reserve core names and slugs in `App\Domain\Extensions\ReservedNames`: Caddy sources, certificate slugs, private DNS names, and footprint artifact names.
+- Validate contributed values with `ConfigValue` at the boundary before rendering config to reject newlines, syntax separators and out-of-range addresses or ports according to the target field's grammar.
+- Refuse duplicate names, slugs, and addresses across contributions before writing anything; test collisions with core and with another contribution.
+- Name the disable lifecycle in the feature ADR: what stays active, what is removed, who removes it, and how a failed removal retries.
+- Test production wiring from the container with `assertPlugInContributions()` in `tests/Helpers/PlugInAssertions.php`; assert the consumer's contributed list, not just a manually constructed consumer.
+- Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
+
+`ReservedNames` is the shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
+
+Private DNS and footprint artifacts have contribution interfaces. Keep core entries in core wiring and reserve their names in the shared registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
+
+Test both sides of the publication boundary: a valid contribution renders beside existing Routes, while reserved source names, duplicate listener addresses, and invalid listener addresses stop a build before any transport call. A later valid build must still work. For the collector, switching the extension off keeps its deployed site; teardown withdraws that site and its certificate without changing the other site blocks.
 
 ## Plug-in points
 
