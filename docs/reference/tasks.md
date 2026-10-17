@@ -1852,7 +1852,7 @@ Orbit captures the review baseline after reviewer admission and preparation, imm
 
 A reviewer whose completed turn has durable confirmation does not regain ownership when its runtime later becomes unreadable. Working, paused, and unknown uncompleted turns retain the lease, including older conversations. Orbit reconciles authoritative completion before assistance gating and never expires an uncertain holder by elapsed time.
 
-Lease reconciliation reads running checks before assistance gating. A finished check updates its durable result and releases its holder only with terminal evidence. A failed read or a lost process keeps the holder fenced. Reconciliation never clears assistance by matching its text; an operator resolves an existing request.
+Lease reconciliation reads running checks before assistance gating. A finished check updates its durable result and releases its holder only with terminal evidence. A failed read or an unproven process lifetime keeps the holder fenced. If the exact managed check unit has stopped and its cgroup is empty but its result is missing, Orbit records a failed check with uncertain tree attribution. That terminal proof releases ownership without approving the check or its changes. Reconciliation never clears assistance by matching its text; an operator resolves an existing request.
 
 A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
 

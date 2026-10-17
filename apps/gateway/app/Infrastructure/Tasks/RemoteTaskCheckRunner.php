@@ -135,7 +135,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $data = $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" status "$2" "$3" "$4"');
+        $data = $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" status "$2" "$3" "$4" "$checkout"');
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
 
         return match ($data['state'] ?? null) {
