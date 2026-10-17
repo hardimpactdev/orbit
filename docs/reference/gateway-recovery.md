@@ -268,11 +268,15 @@ Do not use ordinary release rollback to restore the source link: rollback starts
 sudo -u orbit php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:abandon <full-SHA> <staged-record-id>
 ```
 
-The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
+The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction.
+
+The comparison preserves each cell’s SQLite storage class and exact value, including TEXT/BLOB bytes, row identity and duplicate rows. The command refuses a change to the storage class even if the displayed value or bytes match. Page layout and WAL mode may differ. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
 
 Repair the refusal's cause on the source under a separately controlled maintenance procedure. Repeat the drain and public `gateway:release:stage` command. A new attempt gets a new record and snapshot. It never overwrites the first recovery set.
 
-A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record. If the database differs, restore the same protected snapshot again and repeat. Missing or corrupt evidence refuses; recover the complete state saved before the update. Do not guess a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
+A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record, including its SQLite storage classes. If the database differs, restore the same protected snapshot again and repeat.
+
+Tables with an inaccessible intrinsic rowid (all three names `rowid`, `_rowid_` and `oid` shadowed) or virtual tables cannot be verified by abandon. Keep the hold and use a separately reviewed forward recovery for these unsupported schemas. Missing or corrupt evidence refuses; recover the complete state saved before the update. Do not guess a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
 
 
 #### Migrations and the snapshot

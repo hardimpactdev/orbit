@@ -302,6 +302,10 @@ it('accepts an exact typed restore across page layout and WAL changes', function
     DB::statement("INSERT INTO recovery_cells (value) VALUES (NULL), (0), (-9223372036854775808), (9223372036854775807), (1.0), (1.0000000000000002), (4.9406564584124654e-324), (1e999), (-1e999), (''), (CAST(X'6100FF' AS TEXT)), (X''), (X'0001FF'), (X'0001FF')");
     DB::statement('CREATE TABLE recovery_keyed (key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID');
     DB::statement("INSERT INTO recovery_keyed VALUES ('α', X'00FF')");
+    DB::statement('CREATE TABLE recovery_collisions ("__restore_rowid" TEXT, "_RoWiD_" TEXT, "rowid" TEXT, "quote""column" TEXT)');
+    DB::statement("INSERT INTO recovery_collisions VALUES ('real column', 'shadow', 'shadow', 'WITHOUT ROWID')");
+    DB::statement('CREATE TABLE recovery_duplicates (value BLOB)');
+    DB::statement("INSERT INTO recovery_duplicates VALUES (X'00'), (X'00')");
     expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
     $record = GatewayRelease::query()->sole();
     ($this->restore)($record->snapshot_path);
@@ -357,5 +361,35 @@ it('retains duplicate row counts in the restore proof', function (): void {
     DB::statement('DELETE FROM recovery_duplicates WHERE rowid = 2');
     expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
     expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('distinguishes adjacent real values even with reduced PHP serialization precision', function (): void {
+    DB::statement('CREATE TABLE recovery_reals (value)');
+    DB::statement('INSERT INTO recovery_reals VALUES (1.0)');
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    DB::statement('UPDATE recovery_reals SET value = 1.0000000000000002');
+    $precision = ini_set('serialize_precision', '3');
+    try {
+        expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+        expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+    } finally {
+        ini_set('serialize_precision', $precision);
+    }
+});
+
+it('keeps the hold when a virtual table prevents complete restore verification', function (): void {
+    DB::statement('CREATE VIRTUAL TABLE recovery_search USING fts5(body)');
+    DB::statement("INSERT INTO recovery_search VALUES ('retained')");
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    $record = GatewayRelease::query()->sole();
+    ($this->restore)($record->snapshot_path);
+    $attributes = GatewayRelease::query()->findOrFail($record->id)->getAttributes();
+    expect(Artisan::call('gateway:release:abandon', ['commit' => $this->target, 'record' => (string) $record->id]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_restore_required');
+    expect(GatewayRelease::query()->findOrFail($record->id)->getAttributes())->toBe($attributes);
     expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
 });
