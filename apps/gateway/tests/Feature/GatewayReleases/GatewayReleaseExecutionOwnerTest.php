@@ -23,11 +23,11 @@ afterEach(function (): void {
     $this->pipeline->cleanup();
 });
 
-it('refuses root and a different account at public mutation boundaries before locks or records', function (int $uid): void {
+it('refuses root and a different account at public release boundaries before observations locks or records', function (int $uid): void {
     app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, static fn (): int => $uid, posix_geteuid()));
     $before = $this->pipeline->fixture->layout->currentReleaseId();
-    foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize', 'gateway:release:abandon'] as $command) {
-        $arguments = ['commit' => str_repeat('a', 40), ...(in_array($command, ['gateway:release:finalize', 'gateway:release:abandon'], true) ? ['record' => '1'] : [])];
+    foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize', 'gateway:release:abandon', 'gateway:release:inspect-process'] as $command) {
+        $arguments = ['commit' => str_repeat('a', 40), ...(in_array($command, ['gateway:release:finalize', 'gateway:release:abandon'], true) ? ['record' => '1'] : []), ...($command === 'gateway:release:inspect-process' ? ['process' => '1'] : [])];
         $code = Artisan::call($command, $arguments);
         $output = Artisan::output();
         if (json_decode($output, true)['error_code'] !== 'gateway.release_owner_invalid') {

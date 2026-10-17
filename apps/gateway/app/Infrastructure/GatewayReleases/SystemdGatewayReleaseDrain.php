@@ -81,6 +81,30 @@ final readonly class SystemdGatewayReleaseDrain implements GatewayReleaseDrain
                 $this->refuse('The drain manifest contains an unsupported unit.');
             }
         }
+        if (count(array_unique($expected)) !== count($expected)) {
+            $this->refuse('The drain manifest contains duplicate units.');
+        }
+        $declarations = $hold['unrelated_processes'] ?? [];
+        if (! is_array($declarations) || ! array_is_list($declarations)
+            || (array_key_exists('unrelated_processes', $hold) && $hold['unrelated_processes'] === null)) {
+            $this->refuse('Unrelated Process declarations must be an explicit list.');
+        }
+        $unrelated = [];
+        foreach ($declarations as $declaration) {
+            if (! is_array($declaration) || ! is_int($declaration['process_id'] ?? null) || $declaration['process_id'] < 1) {
+                $this->refuse('An unrelated Process declaration is malformed.');
+            }
+            $observed = app(GatewayReleaseProcessDeclaration::class)->observe($targetSha, $declaration['process_id']);
+            ksort($declaration);
+            ksort($observed);
+            $unit = $observed['unit'];
+            if ($declaration !== $observed || ! in_array($unit, $units, true) || in_array($unit, $unrelated, true)) {
+                $this->refuse('An unrelated Process declaration is stale, duplicated or absent from the live inventory.');
+            }
+            $unrelated[] = $unit;
+        }
+        $units = array_values(array_diff($units, $unrelated));
+        $expected = array_values(array_diff($expected, $unrelated));
         sort($expected);
         if ($units !== $expected || ! in_array('php8.5-fpm.service', $units, true)
             || ! in_array('orbit-gateway-release.timer', $units, true)) {

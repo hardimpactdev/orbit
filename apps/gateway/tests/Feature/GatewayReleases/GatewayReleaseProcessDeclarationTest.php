@@ -86,7 +86,8 @@ beforeEach(function (): void {
     config(['queue.connections.gateway.driver' => 'redis', 'queue.connections.gateway.connection' => 'gateway']);
     $redis = Mockery::mock();
     Redis::shouldReceive('connection')->with('gateway')->andReturn($redis);
-    $redis->shouldReceive('zcard')->andReturn(0);
+    $redis->shouldReceive('zcard')->andReturn(0)->byDefault();
+    $this->redis = $redis;
     $this->declaration = function (): array {
         $code = Artisan::call('gateway:release:inspect-process', ['commit' => $this->target, 'process' => (string) $this->process->id]);
         $output = Artisan::output();
@@ -156,6 +157,7 @@ it('refuses changed Process identity and incomplete runtime observations', funct
         'spec' => $this->process->update(['restart_policy' => 'never']),
         'unknown-owner' => $this->process->update(['owner_type' => 'node']),
         'placement' => $this->process->update(['owner_id' => 999999]),
+        'serving-node' => app(GatewayServingHost::class)->remember(new Node()->forceFill(['id' => 999999])),
         'preset' => $this->process->update(['runtime_config' => ['command' => ['/usr/bin/sleep', 'infinity'], 'preset' => 'vp-dev']]),
         'pending' => $this->process->forceFill(['systemd_activation_pending' => true])->save(),
         'unit-bytes' => file_put_contents($this->unitsPath.'/'.$this->unit, "\nExecStop=/usr/bin/false\n", FILE_APPEND),
@@ -180,7 +182,7 @@ it('refuses changed Process identity and incomplete runtime observations', funct
     expect(json_decode($output, true)['error_code'])->toBe('gateway.release_not_drained');
     expect($output)->not->toContain('do-not-report');
     expect(GatewayRelease::query()->count())->toBe(0);
-})->with(['spec', 'unknown-owner', 'placement', 'preset', 'pending', 'unit-bytes', 'unit-mode', 'pid', 'invocation', 'reload', 'drop-in', 'incomplete', 'truncated', 'command-failed', 'absent-inventory', 'descendant', 'nested-cgroup', 'argv', 'environment', 'unreadable-runtime', 'standalone-php']);
+})->with(['spec', 'unknown-owner', 'placement', 'serving-node', 'preset', 'pending', 'unit-bytes', 'unit-mode', 'pid', 'invocation', 'reload', 'drop-in', 'incomplete', 'truncated', 'command-failed', 'absent-inventory', 'descendant', 'nested-cgroup', 'argv', 'environment', 'unreadable-runtime', 'standalone-php']);
 
 it('does not produce declarations for Gateway consumers', function (string $kind): void {
     if ($kind === 'release-directory') {
@@ -205,6 +207,50 @@ it('validates the execution owner before observing a Process', function (): void
     expect($this->observer->calls)->toBe([]);
 });
 
+it('keeps all writer and queue fences after validating an unrelated Process', function (string $fault): void {
+    $this->holdData['unrelated_processes'] = [($this->declaration)()];
+    ($this->writeHold)();
+    if ($fault === 'reservation') {
+        $this->redis->shouldReceive('zcard')->with('queues:tasks:reserved')->andReturn(1);
+    } elseif ($fault === 'unknown-unit') {
+        $this->observer->writers[] = 'orbit-process-999-unknown.service';
+    } elseif ($fault === 'template') {
+        $this->observer->unmaskedTemplate = true;
+    } else {
+        $this->observer->activeWriter = true;
+    }
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_not_drained');
+    expect(GatewayRelease::query()->count())->toBe(0);
+    expect($this->observer->properties['MainPID'])->toBe('3945');
+})->with(['reservation', 'unknown-unit', 'template', 'active-writer']);
+
+it('refuses malformed declaration collections rather than ignoring them', function (mixed $declarations): void {
+    $this->holdData['unrelated_processes'] = $declarations;
+    ($this->writeHold)();
+    expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
+    expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_not_drained');
+    expect(GatewayRelease::query()->count())->toBe(0);
+})->with([
+    'null' => [null],
+    'wildcard' => ['*'],
+    'not a list' => [['process_id' => 1]],
+    'not an object' => [['*']],
+]);
+
+it('only observes identity and leaves trust and product state to the operator', function (): void {
+    $before = $this->process->fresh()->getAttributes();
+    $manifest = file_get_contents($this->hold);
+    $observation = ($this->declaration)();
+    expect($observation['unit'])->toBe($this->unit);
+    expect($observation['source_sha'])->toBe($this->source);
+    expect($observation['target_sha'])->toBe($this->target);
+    expect(file_get_contents($this->hold))->toBe($manifest);
+    expect($this->process->fresh()->getAttributes())->toBe($before);
+    expect(GatewayRelease::query()->count())->toBe(0);
+    expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse();
+});
+
 final class ProcessDeclarationObservationRunner implements ProcessRunner
 {
     public array $writers = ['orbit-gateway-release-run@.service', 'orbit-gateway-release.timer', 'orbit-agent-view.service', 'php8.5-fpm.service'];
@@ -225,6 +271,10 @@ final class ProcessDeclarationObservationRunner implements ProcessRunner
 
     public bool $php = false;
 
+    public bool $activeWriter = false;
+
+    public bool $unmaskedTemplate = false;
+
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $args = $invocation->arguments;
@@ -237,6 +287,13 @@ final class ProcessDeclarationObservationRunner implements ProcessRunner
             '-eo' => getmypid()." php8.5\n3945 sleep\n1 systemd\n".($this->php ? "3946 php8.5\n" : ''),
             default => throw new RuntimeException('Unexpected mutating observation command'),
         };
+
+        if ($this->unmaskedTemplate && $args[1] === 'list-unit-files') {
+            $out = str_replace('orbit-gateway-release-run@.service masked', 'orbit-gateway-release-run@.service static', $out);
+        }
+        if ($this->activeWriter && $args[1] === 'show' && $args[2] !== $this->ordinaryUnit) {
+            $out = str_replace('ActiveState=inactive', 'ActiveState=active', $out);
+        }
 
         return new CommandResult($this->failed ? 1 : 0, $out, '', 0, $this->truncated);
     }
