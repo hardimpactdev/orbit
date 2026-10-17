@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
@@ -24,7 +25,7 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
 
     public function name(): string
     {
-        return 'caddy-package';
+        return ReservedNames::CaddyPackageArtifact;
     }
 
     public function applies(Node $node): bool

@@ -72,9 +72,11 @@ Use this checklist when core adds a place for extensions to contribute:
 - Test production wiring from the container with `assertPlugInContributions()` in `tests/Helpers/PlugInAssertions.php`; assert the consumer's contributed list, not just a manually constructed consumer.
 - Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
 
-`ReservedNames` is the shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::NAMES` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
+`ReservedNames` is the shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
 
-Private DNS and footprint artifacts have contribution interfaces. Keep core entries in core wiring and reserve their names in the shared registry; an extension contribution cannot replace a core entry.
+Private DNS and footprint artifacts have contribution interfaces. Keep core entries in core wiring and reserve their names in the shared registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
+
+Test both sides of the publication boundary: a valid contribution renders beside existing Routes, while reserved source names, duplicate listener addresses, and invalid listener addresses stop a build before any transport call. A later valid build must still work. For the collector, switching the extension off keeps its deployed site; teardown withdraws that site and its certificate without changing the other site blocks.
 
 ## Plug-in points
 
