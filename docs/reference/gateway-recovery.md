@@ -213,7 +213,32 @@ The Gateway's `retry_after` is 1,800 seconds. Expiry alone does not remove a res
 
 Before staging code that retires a job class, inspect waiting, delayed, reserved and failed job payload class names under the source release. Record affected classes and counts without logging payload secrets. Finish or reconcile those jobs on the source before the final drain; do not deserialize them with target code or clear queues. Staging checks reservations only and does not prove that waiting or delayed payloads remain compatible.
 
-Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its fields are `target_sha`, `source_sha` and `units`; it contains no secrets.
+Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its required fields are `target_sha`, `source_sha` and `units`. The optional `unrelated_processes` declarations below contain identities and hashes, not secrets.
+
+#### Keep an unrelated Node Process running
+
+The unit prefix alone does not identify a Gateway consumer: all managed systemd Processes use the same prefix. Process presets, names and working directories do not prove that arbitrary code has no Gateway data dependency. There is no durable Process purpose or capability field for that claim.
+
+The root operator may make that claim for one maintenance hold through an explicit `unrelated_processes` list. Each entry binds one exact Process record, serving Node, rendered unit and running invocation to the hold's source and target SHAs. This is an operator attestation that the reviewed program has no Gateway database, release or shared-state dependency. The observer verifies identity, not the universal absence of side effects. Nothing populates this trust automatically.
+
+This narrow path supports an active Node-owned systemd Process on the remembered serving Gateway Node. The Process must have no preset, Project definition, retired runtime, pending activation, environment map or environment file. Its unit must match the product renderer exactly, with no drop-ins or pending daemon reload. The observer requires readable native account, argv, executable, directory and start identity, a single main process, and no descendant cgroups. Missing or unsupported observations refuse; no permission is expanded to inspect them.
+
+Gateway application paths, Horizon and scheduler commands, PHP consumers, and the fixed FPM, agent-view and release units cannot be declared unrelated. Known consumers remain masked and stopped. Unknown managed units remain writers. The independent PHP inventory, required unit inventory, template and concrete-instance masks, descendant checks and all four queue reservations still apply.
+
+1. Review the Process record and its Node ownership and placement. The stored Node owner type is `App\Models\Node`, not the API input word `node`. Confirm the remembered `gateway.serving_node_id` identifies this host. Review the installed unit with `systemctl cat <exact-unit>` locally and review the actual executable or script and its external dependencies. Keep raw configuration and environment secrets out of shared logs.
+2. As the Gateway execution account, obtain a fresh observation from the reviewed prepared release:
+
+```sh
+sudo -u orbit -H php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:inspect-process <full-target-SHA> <process-id>
+```
+
+The read-only command prints one JSON object with `observation`. Its fields are `process_id`, `node_id`, `unit`, `source_sha`, `target_sha`, `spec_sha256`, `unit_sha256` and `runtime_sha256`. It emits hashes, not raw command arguments, environment values or record configuration. It neither authorizes an exclusion nor edits the manifest, service, Process record or release hold.
+
+3. After reviewing the program's independence, the root operator copies that exact observation object into `hold.json` under `unrelated_processes: [<observation>]`. Preserve the existing target, source, writer inventory, ownership and permissions. The exact declared ordinary unit may be present in `units` or omitted; it is removed from the writer comparison only after verification. Every other observed writer must still be listed and held.
+4. Keep the program specification and placement frozen through staging. Restarting it, changing its invocation, environment, unit, executable or specification invalidates the entry. A missing, duplicated, malformed or stale declaration refuses. Re-review the program before replacing a stale entry; do not refresh hashes merely to suppress a refusal.
+5. After the operator procedure succeeds, retire the root manifest and its declarations as part of restoring the documented consumer service state. On failure, keep the hold and use the restore/abandon procedure below. Removing an entry does not release a staged pause: it restores conservative writer treatment, which requires that unit to be listed, masked and stopped. Never reuse declarations for another source or target.
+
+Omitting `unrelated_processes` preserves the original conservative behavior. This is no wildcard, name-based exemption, or replacement for Process identity. An ordinary Process whose identity cannot be proved needs operator repair or a separately reviewed procedure.
 
 ### Execution identity
 
