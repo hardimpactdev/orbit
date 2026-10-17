@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
+use Tests\Support\ReleaseTestOwner;
 
 pest()->group('subprocess');
 
@@ -1056,6 +1057,7 @@ function release_deployer(
         new GatewayReleaseGuard($fixture->layout, $fixture),
         new GatewayReleaseRetry,
         GatewayReleasePipeline::newestGreen(),
+        new ReleaseTestOwner,
     );
 }
 

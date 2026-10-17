@@ -237,7 +237,7 @@ describe('gateway:release:prepare', function (): void {
         $sha = $this->fixture->commit('Second commit');
         $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
         @mkdir($this->fixture->base.'/home', 0700, true);
-        $this->fixture->builder(stepLock: $lock->stepPath())->prepare($sha);
+        $lock->run(fn () => $this->fixture->builder(stepLock: $lock->stepPath())->prepare($sha));
         $locked = array_values(array_filter($this->fixture->commands, static fn (array $arguments): bool => in_array('install', $arguments, true) || in_array('config:cache', $arguments, true)));
         // A migration left running by a release process that died.
         $orphan = fopen($lock->stepPath(), 'c');

@@ -70,7 +70,7 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
         $processes->exit = 1;
         $exception = release_failure(fn () => $database->migrate('/home/orbit/releases/0123456789ab'));
 
-        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction']))
+        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], ['APP_CONFIG_CACHE' => '/home/orbit/releases/0123456789ab/apps/gateway/bootstrap/cache/config.php']))
             ->and(array_slice($processes->ran[0]->arguments, 0, 2))->toBe(['env', '-i'])
             ->and($exception->step)->toBe('migrate')
             ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
@@ -137,4 +137,19 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
 
         expect(release_failure(fn () => $database->snapshot('0123456789ab'))->errorCode)->toBe('gateway.release_snapshot_unavailable');
     });
+});
+
+it('keeps the snapshot it just returned when an older file has a later timestamp', function (): void {
+    config(['database.connections.snapshot_order' => ['driver' => 'sqlite', 'database' => ':memory:']]);
+    DB::connection('snapshot_order')->statement('CREATE TABLE notes (body TEXT)');
+    $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'snapshot_order', keptSnapshots: 1, minimumFreeBytes: 0);
+    try {
+        $old = $database->snapshot('aaaaaaaaaaaa');
+        touch($old, time() + 60);
+        $new = $database->snapshot('bbbbbbbbbbbb');
+        expect(is_file($new))->toBeTrue()
+            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toBe([$new]);
+    } finally {
+        DB::purge('snapshot_order');
+    }
 });
