@@ -130,7 +130,8 @@ function workspace_receipt_transport(): array
 {
     $directory = sys_get_temp_dir().'/orbit-workspace-receipt-'.bin2hex(random_bytes(8));
     mkdir($directory, 0o700);
-    $transport = new LocalShellSshExecutor;
+    // The runner checkout may be a private mount that host systemd cannot see.
+    $transport = new LocalShellSshExecutor($directory);
     $transport->environment['HOME'] = $directory;
     app()->instance(SshExecutor::class, $transport);
 

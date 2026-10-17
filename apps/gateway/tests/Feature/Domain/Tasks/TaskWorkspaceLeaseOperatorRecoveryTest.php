@@ -376,7 +376,7 @@ it('never stops a native live managed unit to manufacture operator quiescence', 
     $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
     $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
         'bash', '-c', 'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo],
-        env: ['HOME' => $this->receiptHome]);
+        cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
     $process->start();
     try {
         expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
