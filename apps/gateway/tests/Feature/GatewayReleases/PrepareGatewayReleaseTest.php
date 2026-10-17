@@ -266,6 +266,49 @@ describe('gateway:release:prepare', function (): void {
             ->and(is_writable($application.'/bootstrap/cache'))->toBeTrue();
     });
 
+    it('prepares a private cache directory under a group-writable umask and keeps configuration refresh working', function (): void {
+        $sha = $this->fixture->commit('Private cache');
+        $mask = umask(0002);
+
+        try {
+            $release = $this->fixture->builder()->prepare($sha);
+            $cache = $release->path.'/apps/gateway/bootstrap/cache';
+
+            expect(fileperms($cache) & 0777)->toBe(0700);
+            $this->fixture->builder()->refreshConfiguration($release->id);
+            clearstatcache(true, $cache.'/config.php');
+            expect(fileperms($cache.'/config.php') & 0777)->toBe(0600)
+                ->and((require $cache.'/config.php')['app']['version'])->toBe($sha)
+                ->and(umask())->toBe(0002)
+                ->and(file_get_contents($this->live.'/apps/gateway/live.txt'))->toBe('serving');
+        } finally {
+            umask($mask);
+        }
+    });
+
+    it('refuses a linked cache directory without changing its target or publishing the release', function (): void {
+        $outside = $this->fixture->base.'/outside-cache';
+        mkdir($outside, 0755);
+        chmod($outside, 0755);
+        file_put_contents($outside.'/preserved', 'untouched');
+        $cache = $this->fixture->origin.'/apps/gateway/bootstrap/cache';
+        unlink($cache.'/.gitignore');
+        rmdir($cache);
+        symlink($outside, $cache);
+        $sha = $this->fixture->commit('Linked cache');
+
+        $exception = release_failure(fn () => $this->fixture->builder()->prepare($sha));
+
+        clearstatcache(true, $outside);
+        expect($exception->errorCode)->toBe('gateway.release_access_failed')
+            ->and($this->fixture->layout->preparedCommit(substr($sha, 0, 12)))->toBeNull()
+            ->and(fileperms($outside) & 0777)->toBe(0755)
+            ->and(file_get_contents($outside.'/preserved'))->toBe('untouched')
+            ->and(file_exists($outside.'/config.php'))->toBeFalse()
+            ->and(collect($this->fixture->commands)->flatten()->contains($this->fixture->composer))->toBeFalse()
+            ->and(file_get_contents($this->live.'/apps/gateway/live.txt'))->toBe('serving');
+    });
+
     it('caches the configuration again as a private file', function (): void {
         $sha = $this->fixture->commit('Second commit');
         $release = $this->fixture->builder()->prepare($sha);

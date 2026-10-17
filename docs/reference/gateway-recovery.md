@@ -87,7 +87,7 @@ A Gateway in the release layout runs from immutable releases instead of an in-pl
 | `/home/orbit/shared/gateway-storage/` | The Gateway storage directory. `apps/gateway/storage` in every release links to it, so the file cache, its locks, and the logs stay the same across releases. |
 | `ORBIT_HOME` | Gateway state, outside every release, as before. |
 
-The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable.
+The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable. Preparation makes the Gateway cache directory private (`0700`), independent of the preparing process's umask; PHP-FPM and release commands use the same service account.
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
 
@@ -101,7 +101,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 
 Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused. Prepare fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
-1. creates the worktree `releases/<id>` for the exact commit;
+1. creates the worktree `releases/<id>` for the exact commit and makes its Gateway cache directory private before Composer or Artisan runs; linked cache directories are refused;
 2. links the shared env file and the shared storage directory into it;
 3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
 4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
