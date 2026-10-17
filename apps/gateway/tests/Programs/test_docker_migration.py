@@ -37,6 +37,11 @@ class DockerMigrationTest(unittest.TestCase):
         (self.data / 'database').write_text('irreplaceable')
         self.journal = self.root / 'journal'
         self.journal.mkdir(mode=0o700)
+        # The suite also runs with TMPDIR on a small tmpfs. Disk capacity is an
+        # external boundary, like Docker/apt; low-space tests override this default.
+        capacity = patch.object(module.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=100 * 1024 ** 3))
+        capacity.start()
+        self.addCleanup(capacity.stop)
         self.dropin = self.root / 'systemd/docker.service.d/orbit-docker-migration.conf'
         self.policy = self.root / 'policy-rc.d'
         self.payload = {'recipe': 'sha256:fixture', 'snapshot': '20261014T000000Z', 'architecture': 'amd64',
@@ -56,7 +61,7 @@ class DockerMigrationTest(unittest.TestCase):
                           'IPAM': {'Driver': 'default', 'Config': [{'Subnet': '172.30.0.0/24', 'Gateway': '172.30.0.1'}]},
                           'Options': {}, 'Labels': {}}]
         self.pinned_image = 'registry.example/app@sha256:' + 'a' * 64
-        self.images = [{'Id': 'sha256:img', 'RepoDigests': [self.pinned_image], 'Architecture': 'amd64', 'Os': 'linux'}]
+        self.images = [{'Id': 'sha256:img', 'RepoDigests': [self.pinned_image], 'Architecture': 'amd64', 'Os': 'linux', 'Size': 1024 ** 3}]
         self.installed = dict.fromkeys(module.CE, 'ce-version')
         self.commands = []
         self.requests = []
@@ -102,6 +107,8 @@ class DockerMigrationTest(unittest.TestCase):
             return {}
         if path == '/containers/json?all=1':
             return [{'Id': c['Id']} for c in self.containers.values()]
+        if path.startswith('/containers/') and path.endswith('/json?size=1'):
+            return {'SizeRootFs': 1024 ** 3, 'SizeRw': 1024 ** 2}
         if path.startswith('/containers/') and path.endswith('/changes'):
             return self.changes
         if path.startswith('/containers/') and path.endswith('/json'):
@@ -237,7 +244,7 @@ class DockerMigrationTest(unittest.TestCase):
         self.assertEqual(self.installed['containerd'], '2.2.2-0ubuntu1.1')
         self.assertFalse(self.policy.exists())
         self.assertFalse(self.dropin.exists())
-        self.assertFalse(any(path == '/containers/two/changes' for _, path, _ in self.requests))
+        self.assertTrue(any(path == '/containers/two/changes' for _, path, _ in self.requests))
         self.assertFalse(any(method == 'POST' and not path.endswith('/update') for method, path, body in self.requests))
         self.assertFalse(module.migrate(self.payload, 'report')['healthy'])  # Gateway must restart its Process.
         self.command(['docker', 'start', 'orbit-process-7-mysql'])
@@ -309,7 +316,7 @@ class DockerMigrationTest(unittest.TestCase):
             module.migrate(self.payload, 'prepare')
         self.assertEqual(len(self.commands), before)
 
-    def test_shutdown_commit_failure_restarts_original_running_containers(self):
+    def test_shutdown_commit_failure_keeps_containers_stopped_and_resumes(self):
         command = self.command
         def shutdown_changes(argv, **kwargs):
             result = command(argv, **kwargs)
@@ -323,9 +330,10 @@ class DockerMigrationTest(unittest.TestCase):
         self.assertIn('docker-ce', self.installed)
         self.assertTrue(self.source.exists())
         self.assertFalse(any(argv[:2] == ['apt-get', 'install'] for argv in self.commands))
+        self.assertTrue(all(not c['State']['Running'] for c in self.containers.values()))
+        module.migrate(self.payload, 'prepare')
+        self.assertIn('docker.io', self.installed)
         self.assertTrue(self.containers['one']['State']['Running'])
-        self.assertTrue(self.containers['two']['State']['Running'])
-        self.assertFalse(self.containers['three']['State']['Running'])
 
     def test_report_includes_unreadable_containers_and_fails_health(self):
         module.migrate(self.payload, 'prepare')
@@ -407,13 +415,172 @@ class DockerMigrationTest(unittest.TestCase):
         module.migrate(self.payload, 'prepare')
         state = json.loads((self.journal / 'inventory.json').read_text())
         self.assertEqual(len(state['archives']), 2)
-        self.assertEqual(set(state['committed']), {'one:running', 'three:running', 'one:shutdown', 'three:shutdown'})
+        self.assertEqual(set(state['committed']), {'one:shutdown', 'three:shutdown'})
         self.assertNotIn('Env', state['containers'][1]['Config'])
         self.assertFalse(any(path == '/containers/two/changes' for _, path, _ in self.requests))
         self.assertEqual(len([a for a in self.commands if a[:2] == ['docker', 'load']]), 2)
         bodies = [body for _, path, body in self.requests if path.startswith('/containers/create')]
         self.assertEqual(bodies[0]['Image'], 'sha256:' + 'b' * 64)
         self.assertTrue(all(Path(archive).stat().st_mode & 0o077 == 0 for archive in state['archives'].values()))
+
+    def test_shared_source_scanner_preserves_comments_inline_keys_and_other_providers(self):
+        docker = self.source.read_text()
+        git = ('Types: deb deb-src\nURIs: http://ppa.launchpad.net/git-core/ppa/ubuntu/\n'
+               'Suites: resolute\nComponents: main\nSigned-By:\n -----BEGIN PGP PUBLIC KEY BLOCK-----\n'
+               ' .\n key-data\n -----END PGP PUBLIC KEY BLOCK-----\n')
+        comment = '# download.docker.com and ppa.launchpad.net/git-core/ppa are retired selectively\n'
+        before = comment + '\n' + docker + '\n' + git
+        self.source.write_text(before)
+        for scanner, retired, remaining, owner in ((module.docker_sources, docker, git, 'docker'),
+                                                  (module.git_sources, git, docker, 'git')):
+            with self.subTest(provider=owner):
+                changes = scanner()
+                self.assertEqual(len(changes), 1)
+                after = changes[0][2].decode()
+                self.assertIn(comment, after)
+                self.assertIn(remaining, after)
+                self.assertNotIn(retired, after)
+                self.assertEqual(self.source.read_text(), before)
+                self.assertFalse((self.apt / ('docker.sources.orbit-' + owner + '-backup')).exists())
+
+    def test_shared_source_scanner_refuses_mixed_or_incomplete_docker_entries(self):
+        before = self.source.read_text()
+        for invalid in (before.replace('Types: deb', 'Types:'),
+                        before.replace('Components: stable', 'Components: stable other'),
+                        before.replace('Suites: resolute', 'Suites: resolute noble'),
+                        before.replace('URIs: https://download.docker.com/linux/ubuntu',
+                                       'URIs: https://download.docker.com/linux/ubuntu https://example.org/ubuntu')):
+            with self.subTest(source=invalid):
+                self.source.write_text(invalid)
+                with self.assertRaisesRegex(module.RecipeFailure, 'apt-source'):
+                    module.docker_sources()
+                self.assertEqual(self.source.read_text(), invalid)
+
+    def test_only_container_used_unpullable_image_ids_are_archived(self):
+        self.images[0]['RepoDigests'] = []
+        unused = dict(self.images[0], Id='sha256:unused', Size=100 * 1024 ** 3)
+        state = module.inventory(self.payload)
+        state['images'].extend([unused, dict(self.images[0])])
+        module.preserve_images(state, shutdown=True)
+        saves = [c for c in self.commands if c[:2] == ['docker', 'save']]
+        self.assertEqual([c[-1] for c in saves], ['sha256:img'])
+        self.assertEqual(set(state['archives']), {'sha256:img'})
+        self.assertEqual(module.image_space(state)['image_bytes'], 0)
+
+    def test_space_plan_counts_used_ids_once_and_full_commit_archives(self):
+        self.images[0]['RepoDigests'] = []
+        plan = module.migrate(self.payload, 'plan')
+        space = plan['space']
+        self.assertEqual(space['image_bytes'], 1024 ** 3)
+        self.assertEqual(space['commit_bytes'], 2 * (1024 ** 3 + 2 * 1024 ** 2))
+        self.assertEqual(space['required_bytes'], space['image_bytes'] + space['commit_bytes'] + 2 * 1024 ** 3)
+        self.assertTrue(space['sufficient'])
+        self.assertFalse((self.journal / 'inventory.json').exists())
+        self.assertFalse(any(c[:2] in (['docker', 'stop'], ['docker', 'commit'], ['docker', 'save']) for c in self.commands))
+
+    def test_space_refusal_precedes_policy_changes_stops_and_package_mutations(self):
+        self.images[0]['RepoDigests'] = []
+        required = module.migrate(self.payload, 'plan')['space']['required_bytes']
+        with patch.object(module.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=required - 1)):
+            self.assertFalse(module.migrate(self.payload, 'plan')['space']['sufficient'])
+            with self.assertRaisesRegex(module.RecipeFailure, 'insufficient-space'):
+                module.migrate(self.payload, 'prepare')
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+        self.assertFalse(any(c[0] in ('apt-get', 'systemctl') or c[:2] in
+                             (['docker', 'stop'], ['docker', 'save'], ['docker', 'commit']) for c in self.commands))
+        self.assertEqual(self.containers, self.original)
+        self.assertEqual(self.source.read_bytes(), self.source_before)
+
+    def test_dry_run_space_works_before_journal_directory_exists(self):
+        self.journal.rmdir()
+        self.assertIn('required_bytes', module.migrate(self.payload, 'plan')['space'])
+        self.assertFalse(self.journal.exists())
+
+    def test_space_refuses_unknown_image_or_layer_sizes(self):
+        self.images[0]['RepoDigests'] = []
+        del self.images[0]['Size']
+        with self.assertRaisesRegex(module.RecipeFailure, 'image-size'):
+            module.migrate(self.payload, 'prepare')
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+
+    def test_commits_only_after_clean_stop_and_never_twice_on_archive_retry(self):
+        self.changes = [{'Kind': 1, 'Path': '/shutdown-data'}]
+        command = self.command
+        failed = False
+        def fail_save(argv, **kwargs):
+            nonlocal failed
+            if argv[:2] == ['docker', 'commit']:
+                self.assertTrue(all(not c['State']['Running'] for c in self.containers.values()))
+            if argv[:2] == ['docker', 'save'] and not failed:
+                failed = True
+                raise module.RecipeFailure('archive-fixture')
+            return command(argv, **kwargs)
+        with patch.object(module, 'run', fail_save), self.assertRaisesRegex(module.RecipeFailure, 'archive-fixture'):
+            module.migrate(self.payload, 'prepare')
+        state = json.loads((self.journal / 'inventory.json').read_text())
+        self.assertTrue(state['stopped'])
+        self.assertEqual(set(state['committed']), {'one:shutdown'})
+        module.migrate(self.payload, 'prepare')
+        commits = [c[-1] for c in self.commands if c[:2] == ['docker', 'commit']]
+        self.assertEqual(commits, ['one', 'three'])
+        self.assertEqual(len([c for c in self.commands if c[:2] == ['docker', 'save']]), 1)
+
+    def test_worker_archive_failure_leaves_stopped_snapshot_resumable(self):
+        self.changes = [{'Kind': 1, 'Path': '/shutdown-data'}]
+        command = self.command
+        def fail_save(argv, **kwargs):
+            if argv[:2] == ['docker', 'save']:
+                raise module.RecipeFailure('archive-fixture')
+            return command(argv, **kwargs)
+        with patch.object(module, 'journal_permissions'), patch.object(module, 'platform_check'), \
+             patch.object(module, 'run', fail_save):
+            outcome, report = module.migration_main(dict(self.payload, mode='prepare', worker=True))
+        self.assertEqual(outcome, 'failed')
+        self.assertEqual(report['failure'], 'docker-migration:archive-fixture')
+        state = json.loads((self.journal / 'inventory.json').read_text())
+        self.assertTrue(state['stopped'])
+        self.assertEqual(set(state['committed']), {'one:shutdown'})
+        self.assertTrue(all(not c['State']['Running'] for c in self.containers.values()))
+        module.migrate(self.payload, 'prepare')
+        self.assertEqual([c[-1] for c in self.commands if c[:2] == ['docker', 'commit']], ['one', 'three'])
+
+    def test_failed_policy_disable_does_not_take_a_running_snapshot(self):
+        self.changes = [{'Kind': 1, 'Path': '/running-data'}]
+        api = self.api
+        failed = False
+        def fail_update(method, path, body=None, **kwargs):
+            nonlocal failed
+            if path.endswith('/update') and not failed:
+                failed = True
+                raise module.RecipeFailure('policy-fixture')
+            return api(method, path, body, **kwargs)
+        with patch.object(module, 'api', fail_update), self.assertRaisesRegex(module.RecipeFailure, 'policy-fixture'):
+            module.migrate(self.payload, 'prepare')
+        self.assertFalse(any(c[:2] in (['docker', 'commit'], ['docker', 'save'], ['docker', 'stop']) for c in self.commands))
+
+    def test_running_snapshot_is_only_taken_when_stop_fails(self):
+        self.changes = [{'Kind': 1, 'Path': '/running-data'}]
+        command = self.command
+        def fail_stop(argv, **kwargs):
+            if argv[:2] == ['docker', 'stop']:
+                raise module.RecipeFailure('stop-fixture')
+            return command(argv, **kwargs)
+        with patch.object(module, 'run', fail_stop), self.assertRaisesRegex(module.RecipeFailure, 'stop-fixture'):
+            module.migrate(self.payload, 'prepare')
+        self.assertTrue(any(c[:2] == ['docker', 'commit'] for c in self.commands))
+        self.assertIn('docker-ce', self.installed)
+        self.assertTrue(self.containers['one']['State']['Running'])
+        self.assertTrue(self.containers['two']['State']['Running'])
+
+    def test_unreadable_orbit_changes_requires_fallback(self):
+        api = self.api
+        def unreadable(method, path, body=None, **kwargs):
+            if path == '/containers/two/changes' and 'docker.io' in self.installed:
+                raise module.RecipeFailure('docker-api')
+            return api(method, path, body, **kwargs)
+        self.payload['fallback'] = False
+        with patch.object(module, 'api', unreadable), self.assertRaisesRegex(module.RecipeFailure, 'fallback-required'):
+            module.migrate(self.payload, 'prepare')
 
     def test_local_tag_process_recovery_restores_all_inventory_tags(self):
         self.local_tag_process_recovery(interrupt=False)

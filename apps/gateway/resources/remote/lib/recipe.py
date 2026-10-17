@@ -455,8 +455,8 @@ def record_git(payload, versions):
     publish(APT_ETC / 'orbit-git.json', json.dumps({name: pin['version'] for name, pin in tools.items()}, sort_keys=True).encode())
 
 
-def git_sources():
-    """Retire only git-core's resolute/main entries; preserve unrelated source paragraphs and inline keys."""
+def provider_sources(pattern, allowed_uris, suite_pattern, components, owner):
+    """Scan list and Deb822 entries once; refuse mixed entries and preflight durable backups."""
     changes = []
     paths = [APT_ETC / 'sources.list', *sorted((APT_ETC / 'sources.list.d').glob('*.sources')),
              *sorted((APT_ETC / 'sources.list.d').glob('*.list'))]
@@ -464,7 +464,7 @@ def git_sources():
         if not path.is_file():
             continue
         content = path.read_text()
-        if not re.search(r'(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa', content):
+        if not re.search(pattern, content):
             continue
         if path.is_symlink():
             raise RecipeFailure('apt-source')
@@ -472,30 +472,44 @@ def git_sources():
         result = []
         for block in blocks:
             active = '\n'.join(line for line in block.splitlines() if not line.lstrip().startswith('#'))
-            if not re.search(r'(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa', active):
+            if not re.search(pattern, active):
                 result.append(block)
                 continue
             if path.suffix == '.sources':
                 fields = deb822_fields(block)
                 uris = fields.get('uris', '').split()
                 suites = fields.get('suites', '').split()
-                components = fields.get('components', '').split()
+                entry_components = fields.get('components', '').split()
                 types = fields.get('types', '').split()
             else:
                 entry = re.fullmatch(r'\s*(deb(?:-src)?)\s+(?:\[[^]]+\]\s+)?(\S+)\s+(\S+)\s+([^#]+?)(?:\s*#.*)?\s*', block)
                 if not entry:
                     raise RecipeFailure('apt-source')
-                types, uris, suites, components = [entry[1]], [entry[2]], [entry[3]], entry[4].split()
-            allowed = {scheme + '://' + host + '/git-core/ppa/ubuntu'
-                       for scheme in ('http', 'https') for host in ('ppa.launchpad.net', 'ppa.launchpadcontent.net')}
-            if (not uris or any(uri.rstrip('/') not in allowed for uri in uris)
-                    or suites != ['resolute'] or components != ['main'] or not types
+                types, uris, suites, components_value = [entry[1]], [entry[2]], [entry[3]], entry[4]
+                entry_components = components_value.split()
+            if (not uris or any(uri.rstrip('/') not in allowed_uris for uri in uris)
+                    or len(suites) != 1 or not re.fullmatch(suite_pattern, suites[0])
+                    or entry_components != components or not types
                     or set(types) - {'deb', 'deb-src'}):
                 raise RecipeFailure('apt-source')
         replacement = ''.join(result)
         if replacement != content:
+            backup_apt_source(path, content.encode(), owner, check_only=True)
             changes.append((path, content.encode(), replacement.encode()))
     return changes
+
+
+def git_sources():
+    """Retire only git-core's resolute/main entries."""
+    allowed = {scheme + '://' + host + '/git-core/ppa/ubuntu'
+               for scheme in ('http', 'https') for host in ('ppa.launchpad.net', 'ppa.launchpadcontent.net')}
+    return provider_sources(r'(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa',
+                            allowed, 'resolute', ['main'], 'git')
+
+
+def docker_sources():
+    return provider_sources(r'download\.docker\.com', {'https://download.docker.com/linux/ubuntu'},
+                            r'[a-z][a-z0-9-]*', ['stable'], 'docker')
 
 
 def git_preferences(tools):
@@ -514,8 +528,6 @@ def configure_git(payload, *, apply=False):
     expected = git_preferences(tools)
     pin_changed = not preference.is_file() or preference.read_bytes() != expected
     actions = (['retire_git_source'] if changes else []) + (['pin_git'] if pin_changed else [])
-    for path, before, _after in changes:
-        backup_apt_source(path, before, 'git', check_only=True)
     if apply:
         retire_sources(changes, 'git')
     return actions

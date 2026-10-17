@@ -19,8 +19,10 @@ DAEMON = Path('/etc/docker/daemon.json')
 DROPIN = Path('/etc/systemd/system/docker.service.d/orbit-docker-migration.conf')
 CE = ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin',
       'docker-compose-plugin', 'docker-ce-rootless-extras', 'docker-model-plugin']
-STEPS = ['inventory and storage driver', 'save local images and commit changed non-Orbit layers',
-         'disable restart policies', 'stop all containers', 'save shutdown layer changes',
+APT_MARGIN = 2 * 1024 ** 3
+STEPS = ['inventory and storage driver', 'check archive and commit space plus 2 GiB apt margin',
+         'disable restart policies', 'stop all containers',
+         'archive used local images and commit changed non-Orbit layers once after stop (running only on stop failure)',
          'back up offline Docker and containerd metadata databases', 'retire Docker apt sources with backups in /etc/apt',
          'swap CE packages for recipe docker.io, containerd, docker-buildx, docker-compose-v2',
          'record swapping; repair interrupted dpkg and dependencies; install with recipe snapshot sources',
@@ -55,43 +57,6 @@ def api(method, path, body=None, *, missing=False):
 
 def inspect_container(name, *, missing=False):
     return api('GET', '/containers/' + quote(name, safe='') + '/json', missing=missing)
-
-
-def docker_sources():
-    changes = []
-    paths = [APT_ETC / 'sources.list', *sorted((APT_ETC / 'sources.list.d').glob('*.list')),
-             *sorted((APT_ETC / 'sources.list.d').glob('*.sources'))]
-    for path in paths:
-        if not path.is_file():
-            continue
-        content = path.read_text()
-        if 'download.docker.com' not in content:
-            continue
-        if path.is_symlink():
-            raise RecipeFailure('apt-source')
-        blocks = re.split(r'(\n\s*\n)', content) if path.suffix == '.sources' else content.splitlines(keepends=True)
-        keep = []
-        for block in blocks:
-            active = '\n'.join(line for line in block.splitlines() if not line.lstrip().startswith('#'))
-            if 'download.docker.com' not in active:
-                keep.append(block)
-                continue
-            if path.suffix == '.sources':
-                fields = deb822_fields(block)
-                uris = fields.get('uris', '').split()
-                valid = (uris == ['https://download.docker.com/linux/ubuntu']
-                         and set(fields.get('types', '').split()) <= {'deb', 'deb-src'}
-                         and re.fullmatch(r'[a-z][a-z0-9-]*', fields.get('suites', ''))
-                         and fields.get('components') == 'stable')
-            else:
-                valid = re.fullmatch(r'\s*deb(?:-src)?\s+(?:\[[^]]+\]\s+)?https://download\.docker\.com/linux/ubuntu/?\s+[a-z][a-z0-9-]*\s+stable\s*(?:#.*)?\n?', block)
-            if not valid:
-                raise RecipeFailure('apt-source')
-        after = ''.join(keep).encode()
-        if after != content.encode():
-            backup_apt_source(path, content.encode(), 'docker', check_only=True)
-            changes.append((path, content.encode(), after))
-    return changes
 
 
 def record(name, value):
@@ -299,22 +264,56 @@ def archive_image(state, image):
         record('inventory.json', state)
 
 
+def archive_images(state):
+    # Inventory includes unused images for compatibility checks, not for archiving.
+    used = {c['Image'] for c in state['containers'] if not state['image_refs'][c['Id']]}
+    return {image['Id']: image for image in state['images'] if image['Id'] in used}
+
+
+def image_space(state):
+    images = archive_images(state)
+    if any(not isinstance(image.get('Size'), int) or image['Size'] < 0 for image in images.values()):
+        raise RecipeFailure('image-size')
+    image_bytes = sum(image['Size'] for image in images.values() if image['Id'] not in state['archives'])
+    commit_bytes = 0
+    if not state.get('images_preserved'):
+        for container in state['containers']:
+            if (container['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+                continue
+            committed = state['committed'].get(container['Id'] + ':shutdown')
+            if committed and committed in state['archives']:
+                continue
+            size = api('GET', '/containers/' + container['Id'] + '/json?size=1')
+            # A docker save of a committed image includes its base layers too. Budget
+            # every non-Orbit container, including shutdown-only writes, plus the
+            # writable-layer copy created by commit. Never count just SizeRw.
+            if not all(isinstance(size.get(key), int) and size[key] >= 0 for key in ('SizeRootFs', 'SizeRw')):
+                raise RecipeFailure('image-size')
+            commit_bytes += size['SizeRootFs'] + (1 if committed else 2) * size['SizeRw']
+    required = image_bytes + commit_bytes + APT_MARGIN
+    filesystem = JOURNAL
+    while not filesystem.exists():
+        filesystem = filesystem.parent
+    available = shutil.disk_usage(filesystem).free
+    return {'image_bytes': image_bytes, 'commit_bytes': commit_bytes, 'apt_margin_bytes': APT_MARGIN,
+            'required_bytes': required, 'available_bytes': available, 'sufficient': available >= required}
+
+
 def preserve_images(state, *, shutdown=False):
-    for image in state['images']:
-        if not image.get('RepoDigests') or any(c['Image'] == image['Id'] and not state['image_refs'][c['Id']]
-                                              for c in state['containers']):
-            archive_image(state, image['Id'])
+    for image in archive_images(state):
+        archive_image(state, image)
     for container in state['containers']:
         if (container['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
             continue
-        if api('GET', '/containers/' + container['Id'] + '/changes'):
-            key = container['Id'] + (':shutdown' if shutdown else ':running')
+        key = container['Id'] + (':shutdown' if shutdown else ':running')
+        if key not in state['committed'] and api('GET', '/containers/' + container['Id'] + '/changes'):
             image = run(['docker', 'commit', container['Id']], timeout=600).stdout.strip()
             if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
                 raise RecipeFailure('commit-image')
-            archive_image(state, image)
             state['committed'][key] = image
             record('inventory.json', state)
+        if key in state['committed']:
+            archive_image(state, state['committed'][key])
 
 
 METADATA_ROOTS = [Path('/var/lib/docker'), Path('/var/lib/containerd')]
@@ -368,7 +367,13 @@ def policies(state, restore=False):
 
 def restart_original(state):
     state['metadata_backed_up'] = False
+    # These snapshots become stale when the original applications restart.
+    for image in set(state['committed'].values()):
+        archive = state['archives'].pop(image, None)
+        if archive:
+            Path(archive).unlink(missing_ok=True)
     state['committed'] = {}
+    state['images_preserved'] = False
     record('inventory.json', state)
     start_daemon()
     policies(state, restore=True)
@@ -448,7 +453,7 @@ def readable(state):
         if any(api('GET', '/volumes/' + quote(v['Name'], safe=''), missing=True) is None for v in state['volumes']):
             return False
         durable = [c for c in state['containers'] if (c['Config'].get('Labels') or {}).get('orbit.managed') != 'true']
-        for container in durable:
+        for container in state['containers']:
             api('GET', '/containers/' + container['Id'] + '/changes')
         probe = next((c for c in durable if c['State']['Running']), None)
         if probe:
@@ -598,7 +603,8 @@ def migrate(payload, mode):
                 'source_backups': [str(APT_ETC / (p.name + '.orbit-docker-backup')) for p, _, _ in sources],
                 'resuming': path.exists(), 'daemon_json': 'unchanged', 'volume_data': 'never deleted',
                 'storage_driver': state.get('driver'), 'fallback_authorized': payload.get('fallback', False),
-                'local_images': [image['Id'] for image in state['images'] if not image.get('RepoDigests')],
+                'space': image_space(state),
+                'local_images': list(archive_images(state)),
                 'changed_layers': [c['Name'].lstrip('/') for c in state['containers']
                                    if (c['Config'].get('Labels') or {}).get('orbit.managed') != 'true'
                                    and api('GET', '/containers/' + c['Id'] + '/changes')]}
@@ -634,30 +640,45 @@ def migrate(payload, mode):
         known = {c['Id'] for c in state['containers']}
         if not state['fallback'] and any(c['Id'] not in known for c in current):
             raise RecipeFailure('inventory-drift')
+        space = image_space(state)
+        if not space['sufficient']:
+            raise RecipeFailure('insufficient-space')
         if state['stopped']:
             # A failed restart or verification may have left a container running. Stop it before opening metadata.
             for container in current:
                 api('POST', '/containers/' + container['Id'] + '/update', {'RestartPolicy': {'Name': 'no'}})
                 run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
         if not state['stopped']:
-            stage(state, 'preserve-images')
-            preserve_images(state)
             state['policies_disabled'] = True
             stage(state, 'disable-policies')
             try:
                 policies(state)
-                stage(state, 'stop-containers')
-                for container in current:
-                    run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
-                stage(state, 'preserve-shutdown-layers')
-                preserve_images(state, shutdown=True)
             except Exception:
                 restart_original(state)
                 state['policies_disabled'] = False
                 stage(state, 'post-stop-refusal')
                 raise
+            stage(state, 'stop-containers')
+            try:
+                for container in current:
+                    run(['docker', 'stop', '--time', '60', container['Id']], timeout=90)
+            except Exception:
+                # Only a failed stop justifies taking a running snapshot. No
+                # package mutation follows this path; restore the original service.
+                try:
+                    preserve_images(state)
+                finally:
+                    restart_original(state)
+                state['policies_disabled'] = False
+                stage(state, 'post-stop-refusal')
+                raise
             state['stopped'] = True
             stage(state, 'stopped')
+        if not state.get('images_preserved'):
+            stage(state, 'preserve-shutdown-layers')
+            preserve_images(state, shutdown=True)
+            state['images_preserved'] = True
+            record('inventory.json', state)
         stage(state, 'stop-services')
         stop_loaded(['docker.service', 'docker.socket', 'containerd.service'])
         backup_metadata(state)
@@ -757,7 +778,8 @@ def migration_main(payload):
                     path = JOURNAL / 'inventory.json'
                     if mode == 'prepare' and path.exists():
                         state = json.loads(path.read_text())
-                        if state.get('stopped') and not state.get('swapping') and not state.get('swapped'):
+                        if (state.get('stopped') and not state.get('swapping') and not state.get('swapped')
+                                and state['stage'] != 'preserve-shutdown-layers'):
                             restart_original(state)
                             state['stopped'] = False
                             stage(state, 'post-stop-refusal')
