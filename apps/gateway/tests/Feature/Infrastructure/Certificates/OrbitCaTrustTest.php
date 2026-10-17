@@ -87,6 +87,44 @@ it('disables the compiled-in cURL CA directory while retaining the Orbit CA file
     expect(is_dir($directory))->toBeFalse();
 });
 
+it('keeps the owner CA directory when an inherited factory exits in a child process', function (): void {
+    // Keep the fork outside Pest so the child cannot run destructors for other tests' objects.
+    $process = new Process([PHP_BINARY, '-r', <<<'PHP'
+        require $argv[1];
+        $factory = new App\Infrastructure\Certificates\OrbitCaCurlFactory;
+        $directories = glob(sys_get_temp_dir().'/orbit-ca-*');
+        if (count($directories) !== 1) {
+            throw new RuntimeException('Expected one private CA directory.');
+        }
+        $directory = $directories[0];
+        $child = pcntl_fork();
+        if ($child === -1) {
+            throw new RuntimeException('Could not fork the factory owner.');
+        }
+        if ($child === 0) {
+            exit(0);
+        }
+        pcntl_waitpid($child, $status);
+        clearstatcache(true, $directory);
+        $survived = is_dir($directory);
+        unset($factory);
+        clearstatcache(true, $directory);
+        echo json_encode([
+            'child_exited' => pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0,
+            'survived_child' => $survived,
+            'removed_by_owner' => ! is_dir($directory),
+        ], JSON_THROW_ON_ERROR);
+        PHP, base_path('vendor/autoload.php')], base_path(), ['TMPDIR' => $this->directory], timeout: 10);
+
+    $process->mustRun();
+
+    expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'child_exited' => true,
+        'survived_child' => true,
+        'removed_by_owner' => true,
+    ]);
+});
+
 it('uses the checked state CA in place for proxycli account updates', function (): void {
     $verify = null;
     Http::fake(function ($request, array $options) use (&$verify) {
