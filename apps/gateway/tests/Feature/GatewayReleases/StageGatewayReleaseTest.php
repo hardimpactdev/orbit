@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
 use Tests\Support\GatewayReleasePipeline;
@@ -27,6 +28,9 @@ it('stages the exact release without starting any consumer or claiming verificat
 
     expect($result->outcome)->toBe('paused')
         ->and($result->succeeded())->toBeFalse()
+        ->and($result->trigger)->toBe('stage')
+        ->and($this->pipeline->automation()->pause()['reason'])->toBe('held')
+        ->and($this->pipeline->alerts)->toBe([])
         ->and($result->errorCode)->toBe('gateway.release_held')
         ->and($result->previousId)->toBe(substr($source, 0, 12))
         ->and($result->migrationsRan)->toBeTrue()
@@ -129,3 +133,13 @@ final class RecordingStageDrain implements GatewayReleaseDrain
         }
     }
 }
+
+it('keeps stage drain failures out of the normal deployment retry budget', function (): void {
+    $this->pipeline->adopt();
+    $target = $this->pipeline->fixture->commit('Drain retries');
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        expect(fn () => $this->pipeline->deployer(new RecordingStageDrain(2))->stage($target))->toThrow(GatewayReleaseException::class);
+    }
+    expect(GatewayRelease::query()->pluck('trigger')->all())->toBe(['stage', 'stage', 'stage'])
+        ->and((new GatewayReleaseRetry)->retryable('gateway.release_not_drained', $target))->toBeTrue();
+});

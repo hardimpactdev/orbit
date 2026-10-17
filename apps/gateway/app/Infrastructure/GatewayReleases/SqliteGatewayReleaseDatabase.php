@@ -106,7 +106,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
             throw $this->snapshotFailed("The snapshot [{$target}] cannot be put in place.");
         }
 
-        $this->prune($directory);
+        $this->prune($directory, $target);
 
         return $target;
     }
@@ -145,11 +145,12 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         }
     }
 
-    private function prune(string $directory): void
+    private function prune(string $directory, string $created): void
     {
-        $snapshots = glob($directory.'/pre-*.sqlite') ?: [];
+        $snapshots = array_values(array_diff(glob($directory.'/pre-*.sqlite') ?: [], [$created]));
         usort($snapshots, static fn (string $left, string $right): int => [(int) @filemtime($right), $right] <=> [(int) @filemtime($left), $left]);
 
+        $snapshots = [$created, ...$snapshots];
         $paused = $this->pausedSnapshot();
 
         foreach (array_slice($snapshots, max(1, $this->keptSnapshots)) as $old) {

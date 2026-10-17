@@ -74,7 +74,7 @@ final readonly class DeployGatewayReleaseAction
             }
             $this->assertDrained($commit);
 
-            return $this->deploy($commit, false, 'deploy', null, held: true);
+            return $this->deploy($commit, false, 'stage', null, held: true);
         });
     }
 
@@ -153,6 +153,7 @@ final readonly class DeployGatewayReleaseAction
                 $this->assertDrained($prepared->sha);
             }
             if ($held) {
+                $phases['recovery'] = $this->recorder->protectSnapshot($record, $snapshot);
                 $phases['hold'] = ['outcome' => 'held', 'record' => $record?->id, ...$this->guard->source()];
                 $this->recorder->stageIntent($record, $prepared->sha, $snapshot, $phases);
             }

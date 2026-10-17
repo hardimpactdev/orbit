@@ -45,7 +45,7 @@ final readonly class GatewayReleaseAutomation
     public const string PauseKey = 'gateway.release.auto.pause';
 
     /** @var list<string> */
-    public const array PauseReasons = ['migration_failure', 'rollback', 'manual_deploy', 'interrupted', 'marker'];
+    public const array PauseReasons = ['held', 'migration_failure', 'rollback', 'manual_deploy', 'interrupted', 'marker'];
 
     public function __construct(
         private SettingRepository $settings,

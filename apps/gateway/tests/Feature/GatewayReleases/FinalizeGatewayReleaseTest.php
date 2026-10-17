@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -112,7 +113,7 @@ it('refuses pending migrations and wrong staged identities before runtime or rec
     $this->status->pending = true;
     expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
         ->and($this->pipeline->steps)->toBe([])
-        ->and(is_dir($this->pipeline->home.'/recovery'))->toBeFalse()
+        ->and(hash_file('sha256', $this->staged->phases['recovery']['path']))->toBe($this->originalHash)
         ->and($this->staged->fresh()->outcome)->toBe('paused');
 });
 
@@ -135,9 +136,42 @@ it('keeps original source and protected recovery after failed finalization and r
 });
 
 it('refuses missing or invalid original recovery before any consumer starts', function (): void {
-    file_put_contents($this->original, 'not SQLite');
+    file_put_contents($this->staged->phases['recovery']['path'], 'not SQLite');
     expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
         ->and($this->pipeline->steps)->toBe([])
         ->and($this->staged->fresh()->outcome)->toBe('paused')
+        ->and(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('retains the hold if protected recovery changes after runtime handoff', function (): void {
+    $smoke = new class($this->staged->phases['recovery']['path']) implements GatewayReleaseSmoke
+    {
+        public function __construct(private string $path) {}
+
+        public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
+        {
+            file_put_contents($this->path, 'changed after handoff');
+
+            return ['outcome' => 'passed', 'report' => null];
+        }
+    };
+    app()->instance(GatewayReleaseSmoke::class, $smoke);
+    expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
+        ->and(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_recovery_invalid')
+        ->and($this->pipeline->steps)->toContain('handoff:'.substr($this->target, 0, 12))
+        ->and($this->staged->fresh()->outcome)->toBe('paused')
+        ->and(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
+});
+
+it('refuses recovery with uncheckpointed WAL data before runtime handoff', function (): void {
+    $path = $this->staged->phases['recovery']['path'];
+    $writer = new PDO('sqlite:'.$path);
+    $writer->exec('PRAGMA journal_mode=WAL');
+    $writer->exec('PRAGMA wal_autocheckpoint=0');
+    $writer->exec("UPDATE notes SET body='changed in WAL'");
+    expect(is_file($path.'-wal'))->toBeTrue();
+    expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
+        ->and(json_decode(Artisan::output(), true)['message'])->toContain('standalone SQLite snapshot')
+        ->and($this->pipeline->steps)->toBe([])
         ->and(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeTrue();
 });

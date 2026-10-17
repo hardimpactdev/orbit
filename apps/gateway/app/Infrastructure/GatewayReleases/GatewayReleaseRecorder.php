@@ -208,6 +208,17 @@ final readonly class GatewayReleaseRecorder
         }
     }
 
+    /** @return array{outcome: string, original: string, path: string, sha256: string} */
+    public function protectSnapshot(?GatewayRelease $record, string $snapshot): array
+    {
+        if (! $record instanceof GatewayRelease) {
+            throw new GatewayReleaseException('hold', 'gateway.release_hold_unrecorded', 'A durable staged record is required before migration.');
+        }
+        $record->snapshot_path = $snapshot;
+
+        return (new GatewayReleaseRecovery)->protect($record);
+    }
+
     /** @param array<string, mixed> $phases */
     public function stageIntent(?GatewayRelease $record, string $sha, string $snapshot, array $phases): void
     {
@@ -216,7 +227,9 @@ final readonly class GatewayReleaseRecorder
         }
         $record->forceFill(['sha' => $sha, 'release_id' => GatewayReleaseCommit::id($sha), 'snapshot_path' => $snapshot,
             'previous_release_id' => data_get($phases, 'hold.source'), 'phases' => $phases])->saveOrFail();
-        $this->writeMarker(['release' => GatewayReleaseCommit::id($sha), 'sha' => $sha,
+        $record->refresh();
+        new GatewayReleaseRestore(new GatewayReleaseRecovery)->remember($record);
+        $this->writeMarker(['staged_record' => $record->id, 'release' => GatewayReleaseCommit::id($sha), 'sha' => $sha,
             'error_code' => 'gateway.release_held', 'snapshot' => $snapshot], strict: true);
     }
 
@@ -367,7 +380,7 @@ final readonly class GatewayReleaseRecorder
 
         try {
             match (true) {
-                $release->outcome === 'paused' => $this->automation->pauseFor('migration_failure', $row),
+                $release->outcome === 'paused' => $this->automation->pauseFor($release->errorCode === 'gateway.release_held' ? 'held' : 'migration_failure', $row),
                 $release->outcome === 'verified' && $release->trigger === 'rollback' => $this->pauseAfterRollback($row),
                 $release->outcome === 'verified' => $this->automation->clearPause(),
                 default => null,
@@ -423,6 +436,7 @@ final readonly class GatewayReleaseRecorder
             'sha' => $release->sha,
             'error_code' => $release->errorCode,
             'snapshot' => $release->snapshotPath,
+            'staged_record' => data_get($release->phases, 'hold.record'),
         ], strict: data_get($release->phases, 'hold.outcome') === 'held');
     }
 

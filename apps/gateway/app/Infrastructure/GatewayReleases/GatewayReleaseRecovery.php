@@ -29,6 +29,7 @@ final readonly class GatewayReleaseRecovery
             $this->refuse();
         }
         $this->privateOwned($directory);
+        $this->standalone($source);
         $target = $directory.'/stage-'.$record->id.'-'.$record->sha.'.sqlite';
         $hash = hash_file('sha256', $source);
         if (! is_string($hash)) {
@@ -87,20 +88,44 @@ final readonly class GatewayReleaseRecovery
     private function check(string $path, string $hash): void
     {
         $this->privateOwned($path);
+        $this->standalone($path);
         if (! is_file($path) || ! hash_equals($hash, (string) hash_file('sha256', $path))) {
             $this->refuse();
         }
         try {
-            $database = new PDO('sqlite:file:'.$path.'?mode=ro', options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $database = new PDO('sqlite:file:'.rawurlencode($path).'?mode=ro&immutable=1', options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
             $database->exec('PRAGMA query_only=ON');
             $integrity = $database->query('PRAGMA integrity_check');
-            $foreignKeys = $database->query('PRAGMA foreign_key_check');
-            if ($integrity === false || $foreignKeys === false || $integrity->fetchAll(PDO::FETCH_COLUMN) !== ['ok']
-                || $foreignKeys->fetchAll() !== []) {
+            if ($integrity === false || $integrity->fetchAll(PDO::FETCH_COLUMN) !== ['ok']) {
                 $this->refuse();
             }
+            $foreignKeys = $database->query('PRAGMA foreign_key_check');
+            if ($foreignKeys === false) {
+                $this->refuse();
+            }
+            $violations = [];
+            while (count($violations) < 20 && ($row = $foreignKeys->fetch(PDO::FETCH_ASSOC)) !== false) {
+                $violations[] = $row;
+            }
+            if ($violations !== []) {
+                throw new GatewayReleaseException('recovery', 'gateway.release_recovery_foreign_keys',
+                    'The original snapshot has foreign-key violations. Keep consumers held; repair the source data before a new stage or recover a verified complete recovery point. Never edit the protected snapshot.',
+                    phase: ['violations' => $violations, 'limit' => 20]);
+            }
+        } catch (GatewayReleaseException $exception) {
+            throw $exception;
         } catch (Throwable) {
             $this->refuse();
+        }
+    }
+
+    private function standalone(string $path): void
+    {
+        foreach (['-wal', '-journal'] as $suffix) {
+            clearstatcache(true, $path.$suffix);
+            if (is_link($path.$suffix) || (file_exists($path.$suffix) && filesize($path.$suffix) !== 0)) {
+                throw new GatewayReleaseException('recovery', 'gateway.release_recovery_invalid', 'Recovery requires a standalone SQLite snapshot, without a live WAL or journal. Keep the hold.');
+            }
         }
     }
 

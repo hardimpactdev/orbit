@@ -302,7 +302,16 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             throw new GatewayReleaseException('snapshot', 'gateway.release_disk_low', 'Not enough room for the snapshot.', 500);
         }
 
-        return $this->home.'/backups/pre-'.$id.'-'.$this->snapshots.'.sqlite';
+        $directory = $this->home.'/backups';
+        if (! is_dir($directory)) {
+            mkdir($directory, 0700);
+        }
+        $path = $directory.'/pre-'.$id.'-'.$this->snapshots.'.sqlite';
+        $database = new \PDO('sqlite:'.$path);
+        $database->exec('CREATE TABLE snapshot_fixture (id INTEGER PRIMARY KEY)');
+        chmod($path, 0600);
+
+        return $path;
     }
 
     public function migrate(string $releasePath): void

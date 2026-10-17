@@ -128,3 +128,12 @@ final class DrainObservationRunner implements ProcessRunner
         return new CommandResult($this->fault === 'command-failed' ? 1 : 0, $out, '', 0, $this->fault === 'truncated');
     }
 }
+
+it('observes a loaded concrete release runner in addition to its masked template', function (): void {
+    $this->observer->units[] = 'orbit-gateway-release-run@42.service';
+    file_put_contents($this->hold, json_encode(['target_sha' => $this->target, 'source_sha' => $this->source, 'units' => $this->observer->units]));
+    $this->drain->assertHeld($this->target);
+    expect($this->observer->verbs)->toBe(['list-unit-files', 'list-units', 'show', 'show', 'show', 'show', '-eo']);
+    $this->observer->fault = 'pid';
+    expect(fn () => $this->drain->assertHeld($this->target))->toThrow(GatewayReleaseException::class);
+});

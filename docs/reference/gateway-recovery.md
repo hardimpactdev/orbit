@@ -201,25 +201,33 @@ Deploy keeps an incomplete directory that is the current or the previous release
 
 #### Stage a release with consumers held
 
-For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, smoke, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its result is `paused`, with `gateway.release_held`; it is not a verified release.
+For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, smoke, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its trigger is `stage` and its result is `paused`, with `gateway.release_held` and pause reason `held`; it is not a verified release. Intentional staging raises no failure alert and does not consume normal deploy retry attempts.
 
 Before snapshot, migration and promotion, staging checks a root-owned `/run/orbit-gateway-drain/hold.json` bound to that exact SHA. The file lists the complete installed and loaded Gateway writer units and the previous release SHA. Every writer unit and timer must be masked, inactive with no MainPID and no remaining cgroup members. PHP-FPM must be masked and stopped, so no HTTP request, including health requests, reaches application code during migration.
 
+The supported Gateway uses PHP 8.5 and the four queues declared in `config/horizon.php`: `tasks`, `task-vms`, `builds` and `operations`. The observer checks this closed runtime contract, including `php8.5-fpm.service`; a different runtime needs a reviewed observer change.
+
 Every Gateway queue must have zero reservations. Other PHP processes refuse staging. Missing observations and changed inventory refuse it too. Waiting and delayed jobs stay intact. The manifest records an operator-maintained hold; it does not replace live checks or stop external console users by itself.
+
+The Gateway's `retry_after` is 1,800 seconds. Expiry alone does not remove a reservation while workers are stopped: Laravel moves expired reservations when a worker next pops that queue. A stuck reservation therefore has no safe fixed waiting period under a stopped hold. Establish whether its worker is still running, then let the source worker complete or retry it under a separate controlled maintenance window before draining again. Never delete a reservation to make the observer pass.
+
+Before staging code that retires a job class, inspect waiting, delayed, reserved and failed job payload class names under the source release. Record affected classes and counts without logging payload secrets. Finish or reconcile those jobs on the source before the final drain; do not deserialize them with target code or clear queues. Staging checks reservations only and does not prove that waiting or delayed payloads remain compatible.
 
 Quiesce ingress, suppress service restart, then let requests and jobs finish. Never force an idle claim by killing work or clearing reservations. Keep the hold on timeout and every failure. The normal handoff is not a pre-migration drain: it can restart consumers and replace Caddy configuration. Stop external console writers too. The manifest and its directory must be root-owned and not group- or other-writable. Its fields are `target_sha`, `source_sha` and `units`; it contains no secrets.
 
 ### Execution identity
 
-Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:stage <full-SHA>` from the reviewed prepared release, using shared configuration and stable release-layout paths. Stage, deploy and finalize refuse root, a different execution account, or mismatched ownership/configuration before opening release locks or writing shared state. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.
+Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:stage <full-SHA>` from the reviewed prepared release, using shared configuration and stable release-layout paths. Stage, deploy, finalize and abandon refuse root, a different execution account, or mismatched ownership/configuration before opening release locks or writing shared state. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.
 
-Release stage, deploy and finalize require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.
+Release stage, deploy, finalize and abandon require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.
 
 Release admission creates absent release and step lock files exclusively with mode `0600`, independent of the caller’s umask. Existing locks must be regular, owned by the executing account and mode `0600`; symlinks, foreign ownership and permissive modes refuse without changing the file or its inode. The command does not repair existing locks.
 
 ### Finalization
 
 After staging, verify the ledger and new source while holds remain. Restore only PHP-FPM first, with Caddy allowing only GET `/up` and GET `/api/v1/gateway/status`; require the exact target version. When the operator approves consumer startup, run `sudo -u orbit php /home/orbit/orbit/apps/gateway/artisan gateway:release:finalize <full-SHA> <staged-record-id>`. Finalization binds to that original record and source, refuses pending migrations, and verifies a private SQLite recovery copy under `ORBIT_HOME/recovery` outside ordinary snapshot retention before clearing the hold. It does not snapshot, migrate or switch again.
+
+Recovery is checked before runtime handoff and again immediately before recording verification and clearing the pause. If recovery changes during handoff or smoke, the second check refuses and retains the logical hold. Consumers may already have started: stop them and re-establish the full drain before recovery. A held record does not prove that services are stopped.
 
 Repeating the same successful finalization verifies its recovery copy and returns the recorded result without restarting consumers. Keep this recovery copy until an operator explicitly retires it; release retention never removes it. Deploy, rollback and automatic resume cannot bypass a staged hold, including after failed finalization. Automatic releases remain disabled until explicitly enabled.
 
@@ -233,14 +241,38 @@ Do not use code rollback or migration down to claim deleted data was recovered. 
 
 Before migration, stage protects the original snapshot and writes a private recovery receipt under `ORBIT_HOME/recovery`. The receipt binds the target SHA, original record, source release and snapshot hash. Keep both files and the pause marker. They survive a database restore and ordinary backup retention. Never edit the receipt or delete the marker to bypass a refusal.
 
-1. Keep ingress, all writers and automatic releases disabled. Re-establish the exact maintenance drain, including PHP-FPM and external console writers. Preserve the failed database, its WAL/SHM, release record and logs as a separate recovery set. Preserve annotation files and their associations; this command never removes them.
-2. Read the receipt and its named protected snapshot. Check its SHA-256, `PRAGMA integrity_check` and `PRAGMA foreign_key_check`. A foreign-key violation needs a source-data repair or a different verified recovery point; there is no bypass. Do not edit the protected snapshot.
-3. With every SQLite connection closed and both release locks held exclusively by the recovery operator, restore that exact snapshot to the canonical database path with the original account ownership and mode `0600`. Move the failed database and its sidecars together to the recovery set before replacing it; never reuse its WAL/SHM with the restored database. Keep `ORBIT_HOME/recovery` and `gateway-release.paused` in place. This restores database data only; use [Recover a failed update](#recover-a-failed-update) for any external migration effects or machine-state restore.
-4. Restore the receipt's exact prepared source release as current while consumers remain stopped. Do not use ordinary release rollback, which starts consumers. Verify its `REVISION`, link and shared database/configuration identity. Release the operator's locks before the command acquires them.
-5. Run `sudo -u orbit php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:abandon <full-SHA> <staged-record-id>`. The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
-6. Repair the refusal's cause on the source under a separately controlled maintenance procedure. Repeat the drain and public `gateway:release:stage` command. A new attempt gets a new record and snapshot; it never overwrites the first recovery set.
+1. Keep ingress, all writers and automatic releases disabled.
+2. Re-establish the exact maintenance drain, including PHP-FPM and external console writers.
+3. Preserve the failed database, its WAL/SHM, release record and logs as a separate recovery set.
+4. Preserve annotation files and their associations.
+5. Read the receipt and its named protected snapshot.
+6. Check the snapshot's SHA-256, `PRAGMA integrity_check` and `PRAGMA foreign_key_check`.
 
-A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record. If the database differs, restore the same protected snapshot again and repeat. Missing or corrupt evidence refuses; recover the complete saved pre-update state rather than guessing a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
+A foreign-key violation needs a source-data repair or a different verified recovery point. There is no bypass. Do not edit the protected snapshot.
+
+7. Close every SQLite connection.
+8. Acquire both release locks exclusively as the recovery operator.
+9. Move the failed database and its sidecars together to the recovery set.
+10. Restore the exact protected snapshot to the canonical database path with the original account ownership and mode `0600`.
+11. Keep `ORBIT_HOME/recovery` and `gateway-release.paused` in place.
+
+Never reuse the failed database's WAL/SHM with the restored database. This restores database data only. Use [Recover a failed update](#recover-a-failed-update) for external migration effects or machine-state restore.
+
+12. Restore the receipt's exact prepared source release as current while consumers remain stopped.
+13. Verify its `REVISION`, link and shared database/configuration identity.
+14. Release the operator's locks before the command acquires them.
+
+Do not use ordinary release rollback to restore the source link: rollback starts consumers. Run abandon from the reviewed prepared release, which contains the new tooling:
+
+```bash
+sudo -u orbit php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:abandon <full-SHA> <staged-record-id>
+```
+
+The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
+
+Repair the refusal's cause on the source under a separately controlled maintenance procedure. Repeat the drain and public `gateway:release:stage` command. A new attempt gets a new record and snapshot. It never overwrites the first recovery set.
+
+A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record. If the database differs, restore the same protected snapshot again and repeat. Missing or corrupt evidence refuses; recover the complete state saved before the update. Do not guess a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
 
 
 #### Migrations and the snapshot

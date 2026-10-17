@@ -26,8 +26,8 @@ afterEach(function (): void {
 it('refuses root and a different account at public mutation boundaries before locks or records', function (int $uid): void {
     app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, static fn (): int => $uid, posix_geteuid()));
     $before = $this->pipeline->fixture->layout->currentReleaseId();
-    foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize'] as $command) {
-        $arguments = ['commit' => str_repeat('a', 40), ...($command === 'gateway:release:finalize' ? ['record' => '1'] : [])];
+    foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize', 'gateway:release:abandon'] as $command) {
+        $arguments = ['commit' => str_repeat('a', 40), ...(in_array($command, ['gateway:release:finalize', 'gateway:release:abandon'], true) ? ['record' => '1'] : [])];
         $code = Artisan::call($command, $arguments);
         $output = Artisan::output();
         if (json_decode($output, true)['error_code'] !== 'gateway.release_owner_invalid') {
@@ -176,6 +176,7 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     $this->pipeline->fixture->write('apps/gateway/artisan', <<<'PHP'
         <?php
         $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
+        chmod(dirname($cache), 0750);
         $values = json_decode(file_get_contents(__DIR__.'/.env'), true, flags: JSON_THROW_ON_ERROR);
         file_put_contents($cache, '<?php return '.var_export($values, true).';');
         PHP);
@@ -201,6 +202,14 @@ it('revalidates the refreshed target before snapshot or migration at the public 
         foreach (['gateway-release.lock', 'gateway-release-step.lock'] as $name) {
             expect(fileperms($this->pipeline->home.'/'.$name) & 0777)->toBe(0600);
         }
+        $targetCache = $layout->releaseApplicationPath(substr($target, 0, 12)).'/bootstrap/cache/config.php';
+        expect(fileperms(dirname($targetCache)) & 0777)->toBe(0750);
+        $refreshed = require $targetCache;
+        expect($refreshed['database']['connections']['refresh_owner']['database'])->toBe($other);
+        $refreshed['database']['connections']['refresh_owner']['database'] = $database;
+        file_put_contents($targetCache, '<?php return '.var_export($refreshed, true).';');
+        app(GatewayReleaseExecutionOwner::class)->assertAllowed($target);
+        expect($this->pipeline->snapshots)->toBe(0);
     } finally {
         umask($mask);
         config(['database.default' => $oldDefault]);

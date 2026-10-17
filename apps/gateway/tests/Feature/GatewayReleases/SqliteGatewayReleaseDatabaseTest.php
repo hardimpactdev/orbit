@@ -139,7 +139,6 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
     });
 });
 
-
 it('keeps the snapshot it just returned when an older file has a later timestamp', function (): void {
     config(['database.connections.snapshot_order' => ['driver' => 'sqlite', 'database' => ':memory:']]);
     DB::connection('snapshot_order')->statement('CREATE TABLE notes (body TEXT)');

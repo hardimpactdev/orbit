@@ -43,6 +43,7 @@ final readonly class FinalizeGatewayReleaseAction
                 || data_get($record->phases, 'hold.source') !== $record->previous_release_id
                 || ! in_array($record->outcome, ['paused', 'verified'], true)
                 || $record->release_id === null || $record->previous_release_id === null || $record->previous_release_id === $record->release_id
+                || $this->layout->preparedCommit($record->previous_release_id) !== data_get($record->phases, 'hold.source_sha')
                 || $this->layout->currentReleaseId() !== $record->release_id
                 || $this->layout->preparedCommit($record->release_id) !== $sha) {
                 throw new GatewayReleaseException('finalize', 'gateway.release_finalize_invalid', 'Finalize requires the original staged record, full SHA and current prepared target.', 422);
