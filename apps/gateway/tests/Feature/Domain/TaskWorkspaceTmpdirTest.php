@@ -125,13 +125,10 @@ function tmpdir_instance(string $checkout, string $name): Instance
     $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'git@github.com:acme/'.$slug.'.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => $slug, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $host, 'wireguard_ip' => $host, 'user' => 'orbit']);
 
-    return Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
+    return test_ready_task_workspace($project, $node, [
         'name' => 'task-'.$slug,
         'checkout_path' => $checkout,
         'branch' => 'task-'.$slug,
-        'status' => 'source_resolved',
     ]);
 }
 

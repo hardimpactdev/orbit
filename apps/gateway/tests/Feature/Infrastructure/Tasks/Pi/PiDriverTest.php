@@ -47,7 +47,7 @@ function pi_workspace(Node $node, bool $taskVm = true): Instance
 {
     $project = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
-    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
     $group->taskable()->associate($workspace)->save();
     if ($taskVm) {
         test_task_vm($group, $node);

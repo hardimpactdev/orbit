@@ -1069,6 +1069,7 @@ function instance_probe_instance(
     Project $project,
     Node $node,
     InstanceState $status = InstanceState::Active,
+    ?Task $owner = null,
 ): Instance {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppDev],
@@ -1076,10 +1077,14 @@ function instance_probe_instance(
     );
     $suffix = $project->instances()->count() + 1;
 
+    $name = $owner instanceof Task ? TaskWorkspaceName::for($owner) : "development-{$suffix}";
+
     return Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => "development-{$suffix}",
+        'task_workspace_owner_id' => $owner?->id,
+        'branch_override' => $owner instanceof Task ? $name : null,
+        'name' => $name,
         'environment' => 'development',
         'checkout_path' => "/private/instance/{$project->slug}/development-{$suffix}",
         'branch' => "development-{$suffix}",
@@ -1137,15 +1142,8 @@ function instance_probe_mark_removing(Instance $instance): void
 
 function instance_probe_task_workspace_for_removal(): Instance
 {
-    [$node, , $instance] = instance_probe_private_cluster_route();
-    $group = Task::topLevel()->create([
-        'project_id' => $instance->project_id,
-        'title' => 'Task workspace removal',
-        'brief' => 'Build the feature.',
-        'status' => 'running',
-    ]);
-    $name = TaskWorkspaceName::for($group);
-    $instance->update(['name' => $name, 'branch_override' => $name]);
+    [$node, , $instance] = instance_probe_private_cluster_route(taskWorkspace: true);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -1160,12 +1158,10 @@ function instance_probe_task_workspace(Project $project, Node $node, InstanceSta
         'brief' => 'Build the feature.',
         'status' => 'running',
     ]);
-    $instance = instance_probe_instance($project, $node, $status);
-    $attributes = ['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)];
+    $instance = instance_probe_instance($project, $node, $status, $group);
     if (is_bool($routed)) {
-        $attributes['task_workspace_routed'] = $routed;
+        $instance->update(['task_workspace_routed' => $routed]);
     }
-    $instance->update($attributes);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -1244,7 +1240,8 @@ function instance_probe_public_route(): array
 }
 
 /** @return array{Node, Node, Instance, Route} */
-function instance_probe_private_cluster_route(): array
+/** With `$taskWorkspace`, the Instance is a running group's workspace, created as provisioning does. */
+function instance_probe_private_cluster_route(bool $taskWorkspace = false): array
 {
     static $number = 0;
     $number++;
@@ -1263,7 +1260,9 @@ function instance_probe_private_cluster_route(): array
         'status' => LifecycleStatus::Active,
     ]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = instance_probe_instance(instance_probe_app(), $workload);
+    $project = instance_probe_app();
+    $owner = $taskWorkspace ? Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Task workspace removal', 'brief' => 'Build the feature.', 'status' => 'running']) : null;
+    $instance = instance_probe_instance($project, $workload, owner: $owner);
     $instance->update(['source_is_laravel' => true]);
     $route = Route::query()->create([
         'project_id' => $instance->project_id,

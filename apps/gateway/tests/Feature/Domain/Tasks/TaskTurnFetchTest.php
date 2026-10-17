@@ -47,19 +47,20 @@ function turn_fetch_group(string $slug, string $status = TaskGroupStatus::Todo->
         'public_ssh_host' => '10.44.0.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Fetch before the turn',
+        'brief' => 'Fetch origin first.',
+        'status' => $status,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
         'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Fetch before the turn',
-        'brief' => 'Fetch origin first.',
-        'status' => $status,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

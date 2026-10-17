@@ -37,20 +37,21 @@ function router_group(): Task
         'public_ssh_host' => '10.44.0.211',
         'wireguard_ip' => '10.44.0.211',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-21',
-        'checkout_path' => '/srv/orbit/apps/router-app/task-21',
-        'branch' => 'task-21',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-21',
+        'checkout_path' => '/srv/orbit/apps/router-app/task-21',
+        'branch' => 'task-21',
+        'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

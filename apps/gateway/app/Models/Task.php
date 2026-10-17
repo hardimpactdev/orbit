@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
@@ -279,6 +281,7 @@ final class Task extends Model
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
+            $task->guardWorkspace();
             $task->guardStatus();
             $task->clearAssistanceWhenEnded();
         });
@@ -378,6 +381,17 @@ final class Task extends Model
     public function taskable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * The workspace this group owns: the Instance that provisioning created for it. It is the only record of task
+     * workspace ownership. An Instance name or branch never makes an Instance a group's workspace.
+     *
+     * @return HasOne<Instance, $this>
+     */
+    public function workspace(): HasOne
+    {
+        return $this->hasOne(Instance::class, 'task_workspace_owner_id');
     }
 
     /** @return BelongsTo<AgentThread, $this> */
@@ -657,6 +671,22 @@ final class Task extends Model
             if (! array_key_exists($column, $this->attributes) || $this->attributes[$column] === null) {
                 $this->setAttribute($column, $value);
             }
+        }
+    }
+
+    /** A task holds only the workspace it owns: the Instance that provisioning created with this task as its owner. */
+    private function guardWorkspace(): void
+    {
+        if ($this->parentKey() !== null || $this->getAttribute('taskable_id') === null || ! $this->isDirty(['taskable_type', 'taskable_id'])) {
+            return;
+        }
+
+        $owned = $this->exists
+            && $this->getAttribute('taskable_type') === TaskableType::Instance
+            && Instance::query()->whereKey($this->getAttribute('taskable_id'))->where('task_workspace_owner_id', $this->getKey())->exists();
+
+        if (! $owned) {
+            throw new LogicException('A task holds only the workspace it owns.');
         }
     }
 

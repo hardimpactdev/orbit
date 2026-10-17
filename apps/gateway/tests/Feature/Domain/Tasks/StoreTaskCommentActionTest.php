@@ -57,15 +57,16 @@ function blocked_task(TaskStatus $status): Task
         'name' => 'blocked-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.190', 'wireguard_ip' => '10.44.0.190',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
-        'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
         'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
+        'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -519,15 +520,16 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'name' => 'resolution-target-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.191', 'wireguard_ip' => '10.44.0.191',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
-        'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
+        'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

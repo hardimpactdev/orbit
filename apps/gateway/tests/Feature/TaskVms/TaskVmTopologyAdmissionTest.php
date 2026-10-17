@@ -17,7 +17,6 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -70,11 +69,10 @@ beforeEach(function (): void {
         'name' => 'tvm-1', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.130', 'wireguard_ip' => '10.44.0.130', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:vm',
     ]);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace']);
     $this->group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-        'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
     ]);
+    test_task_workspace($this->group, ['node_id' => $this->node->id, 'name' => 'task-1', 'branch_override' => null, 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'status' => 'reserved']);
     $this->vm = TaskVm::query()->create([
         'group_id' => $this->group->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'size' => TaskVmSize::Medium,
         'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130',

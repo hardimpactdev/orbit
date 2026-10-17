@@ -38,12 +38,9 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
         'user' => 'orbit',
     ]);
 
-    return Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
+    return test_ready_task_workspace($project, $node, [
         'name' => 'task-9',
         'checkout_path' => $checkout,
-        'status' => 'source_resolved',
     ]);
 }
 

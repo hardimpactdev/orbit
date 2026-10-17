@@ -13,7 +13,6 @@ use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -27,9 +26,9 @@ use Throwable;
 /**
  * Finds and removes a task group's workspace, including one that a claim provisioned but never attached.
  *
- * A claim can provision the `task-{group id}` Instance and then fail, or stop, before it attaches it. The
- * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
- * when the group holds no Instance.
+ * Provisioning records the group as the workspace's owner when it creates the Instance, before any remote work, so
+ * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
+ * owner is never a task workspace, whatever its name or branch.
  *
  * A workspace on a task VM goes with its VM. A workspace whose VM is already gone uses the generic forced Instance
  * remover, which runs the Project's teardown steps, then deletes the checkout and only then the Instance row. A
@@ -45,24 +44,6 @@ final readonly class RemoveTaskWorkspaceAction
     public function __construct(
         private InstanceRemover $remover,
     ) {}
-
-    /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
-    public function find(Task $group): ?Instance
-    {
-        $attached = $group->taskable;
-
-        if ($attached instanceof Instance) {
-            return $attached;
-        }
-
-        $name = TaskWorkspaceName::for($group);
-
-        return Instance::query()
-            ->where('project_id', $group->project_id)
-            ->where('name', $name)
-            ->where('branch_override', $name)
-            ->first();
-    }
 
     /**
      * Whether a live claim still owns the group's unattached workspace. A group reserved within
@@ -81,24 +62,20 @@ final readonly class RemoveTaskWorkspaceAction
         return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
-    /** Removes the group's workspace when it has one. It returns the removed Instance. */
-    public function execute(Task $group): ?Instance
-    {
-        $instance = $this->find($group);
-
-        if ($instance instanceof Instance) {
-            $this->remove($instance);
-        }
-
-        return $instance;
-    }
-
     /**
-     * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
-     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
+     * Removes the workspace the group owns, and returns it, or null when the group owns none. Every task path removes
+     * a workspace here, so only the owner decides which Instance goes.
+     *
+     * The workspace goes with its task VM, or through the generic Instance remover when the VM is gone. The source
+     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
+     * fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Instance $instance): void
+    public function remove(Task $group): ?Instance
     {
+        $instance = $group->workspace()->first();
+        if (! $instance instanceof Instance) {
+            return null;
+        }
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
@@ -106,10 +83,12 @@ final readonly class RemoveTaskWorkspaceAction
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);
 
-            return;
+            return $instance;
         }
 
         $this->remover->execute($instance, true);
+
+        return $instance;
     }
 
     /**
