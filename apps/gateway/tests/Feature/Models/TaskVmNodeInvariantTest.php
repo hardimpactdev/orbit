@@ -122,3 +122,18 @@ it('keeps access edges between other Nodes', function (): void {
     expect($added->alreadyExists)->toBeFalse()
         ->and(NodeAccess::query()->where('consumer_node_id', $this->shared->id)->exists())->toBeTrue();
 });
+
+it('refuses creating a group with an existing Instance attached', function (bool $owned): void {
+    $instance = invariant_instance([
+        'project_id' => $this->project->id, 'node_id' => $this->shared->id, 'name' => 'existing',
+        'task_workspace_owner_id' => $owned ? $this->group->id : null,
+    ]);
+
+    expect(fn () => Task::topLevel()->create([
+        'project_id' => $this->project->id, 'title' => 'Foreign attachment', 'brief' => 'Work', 'status' => 'todo',
+        'taskable_type' => 'instance', 'taskable_id' => $instance->id,
+    ]))->toThrow(LogicException::class, 'A task holds only the workspace it owns.');
+
+    $this->assertDatabaseMissing('tasks', ['title' => 'Foreign attachment']);
+    $this->assertModelExists($instance);
+})->with(['user Instance' => false, 'another group workspace' => true]);

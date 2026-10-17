@@ -85,10 +85,14 @@ final readonly class CancelTaskGroupAction
             try {
                 $this->removeWorkspace($group);
             } catch (Throwable $exception) {
+                // The workspace stays attached for a retry, unless the failed removal already deleted its row.
                 $locked = Task::topLevel()->findOrFail($group->id);
-                $locked->taskable()->associate($attachedByClaim);
-                $locked->save();
                 $this->workspace->recordFailure($locked, $exception);
+                $remaining = $locked->workspace()->whereKey($attachedByClaim->id)->first();
+                if ($remaining instanceof Instance) {
+                    $locked->taskable()->associate($remaining);
+                    $locked->save();
+                }
 
                 throw $exception;
             }

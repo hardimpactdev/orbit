@@ -96,7 +96,7 @@ it('records owners from explicit records only, never from names', function (): v
 
     // A group holds only the workspace it owns. The others lose their attachment; an open group asks for assistance.
     expect(DB::table('tasks')->whereNull('parent_id')->whereNotNull('taskable_id')->orderBy('id')->pluck('taskable_id', 'id')->all())->toBe([10 => 1]);
-    $reason = 'Orbit detached the Instance of this task because the task does not own it. Cancel the task and start a new one.';
+    $reason = 'Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.';
     expect((array) DB::table('tasks')->where('id', 15)->first(['assistance_requested', 'assistance_kind', 'assistance_reason']))
         ->toBe(['assistance_requested' => 1, 'assistance_kind' => 'failure', 'assistance_reason' => $reason]);
     expect(DB::table('tasks')->where('id', 14)->value('assistance_requested'))->toBe(0);
@@ -114,3 +114,47 @@ it('records owners from explicit records only, never from names', function (): v
     owners_migration()->down();
     expect(Schema::hasColumn('instances', 'task_workspace_owner_id'))->toBeFalse();
 });
+
+it('does not backfill a VM placement from another Project or a subtask', function (bool $subtask): void {
+    DB::table('projects')->insert([
+        ['id' => 1, 'name' => 'Orbit', 'slug' => 'orbit', 'code' => 'ORB', 'repository_url' => 'git@example.test:orbit.git', 'repository_identity' => 'example.test/orbit'],
+        ['id' => 2, 'name' => 'Other', 'slug' => 'other', 'code' => 'OTH', 'repository_url' => 'git@example.test:other.git', 'repository_identity' => 'example.test/other'],
+    ]);
+    DB::table('nodes')->insert(['id' => 1, 'name' => 'node', 'public_ssh_host' => '10.44.0.1', 'status' => 'active', 'platform' => 'linux']);
+    owners_instance(1, 1, 'task-11', 'task-11');
+    owners_group(10);
+    owners_group(11, parent: $subtask ? 10 : null);
+    DB::table('tasks')->where('id', 11)->update(['project_id' => $subtask ? 1 : 2]);
+    owners_vm(11, 1);
+
+    owners_migration()->up();
+
+    expect(DB::table('instances')->where('id', 1)->value('task_workspace_owner_id'))->toBeNull();
+    expect(DB::select('PRAGMA foreign_key_check'))->toBe([]);
+})->with(['different Project' => false, 'subtask with a Project' => true]);
+
+it('detaches missing or cross-Project Instances and asks unfinished groups for assistance', function (string $status, bool $missing): void {
+    DB::table('projects')->insert([
+        ['id' => 1, 'name' => 'Orbit', 'slug' => 'orbit', 'code' => 'ORB', 'repository_url' => 'git@example.test:orbit.git', 'repository_identity' => 'example.test/orbit'],
+        ['id' => 2, 'name' => 'Other', 'slug' => 'other', 'code' => 'OTH', 'repository_url' => 'git@example.test:other.git', 'repository_identity' => 'example.test/other'],
+    ]);
+    DB::table('nodes')->insert(['id' => 1, 'name' => 'node', 'public_ssh_host' => '10.44.0.1', 'status' => 'active', 'platform' => 'linux']);
+    if (! $missing) {
+        owners_instance(1, 1, 'user');
+        DB::table('instances')->where('id', 1)->update(['project_id' => 2]);
+    }
+    owners_group(10, 1, status: $status);
+
+    owners_migration()->up();
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => 10, 'status' => $status, 'taskable_type' => null, 'taskable_id' => null,
+        'assistance_requested' => true, 'assistance_kind' => 'failure',
+        'assistance_reason' => 'Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.',
+    ]);
+    expect(DB::table('instances')->whereNotNull('task_workspace_owner_id')->exists())->toBeFalse();
+
+    owners_migration()->down();
+
+    $this->assertDatabaseHas('tasks', ['id' => 10, 'taskable_type' => null, 'taskable_id' => null]);
+})->with(['waiting_for_review', 'settling'])->with(['missing' => true, 'different Project' => false]);

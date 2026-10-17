@@ -11,20 +11,21 @@ use Illuminate\Support\Facades\Schema;
  * Records the task group that owns each task workspace. Task cleanup removes an Instance only through this owner.
  *
  * Existing owners come from explicit records only, never from an Instance name or branch:
- * - an Instance on the Node of a task VM that is not destroyed belongs to the VM's group;
+ * - an Instance on the Node of a task VM that is not destroyed belongs to the VM's group, in the same Project;
  * - any other Instance belongs to the one top-level group of its Project that has it as its Instance.
  * An Instance that no record names, that several groups have, or that shares its group with another Instance gets no
  * owner. Task cleanup never removes it. Deleting the group clears the owner.
  *
  * A group holds only the workspace it owns. A group whose Instance did not get that group as its owner loses the
- * attachment. A group that has not ended then asks for assistance with a fixed reason. Rollback keeps those groups
- * detached.
+ * attachment. A group that is not completed or cancelled then asks for assistance with a fixed reason, unless it
+ * already asks for direction. Rollback keeps those groups detached.
  *
- * On SQLite a trigger keeps a set owner from changing. Clearing it, as deleting the group does, stays possible.
+ * On SQLite a trigger sets an owner only when the row is created: it refuses any new owner afterwards, and still
+ * lets deleting the group clear it. The Gateway runs on SQLite, so other drivers get no trigger.
  */
 return new class extends Migration
 {
-    private const string DetachedReason = 'Orbit detached the Instance of this task because the task does not own it. Cancel the task and start a new one.';
+    private const string DetachedReason = 'Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.';
 
     public function up(): void
     {
@@ -40,8 +41,9 @@ return new class extends Migration
 
         $placed = DB::table('instances')
             ->join('task_vms', 'task_vms.node_id', '=', 'instances.node_id')
+            ->join('tasks', static fn ($join) => $join->on('tasks.id', '=', 'task_vms.group_id')->on('tasks.project_id', '=', 'instances.project_id'))
             ->where('task_vms.state', '!=', 'destroyed')
-            ->whereNotNull('task_vms.group_id')
+            ->whereNull('tasks.parent_id')
             ->pluck('task_vms.group_id', 'instances.id');
         $attached = DB::table('tasks')
             ->join('instances', static fn ($join) => $join->on('instances.id', '=', 'tasks.taskable_id')->on('instances.project_id', '=', 'tasks.project_id'))

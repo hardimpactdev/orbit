@@ -697,3 +697,43 @@ it('cancels open subtasks left in a cancelled group', function (): void {
         DB::purge('cancelled_open_subtasks');
     }
 });
+
+it('preserves the removal error after a claim attaches during cancellation', function (bool $deleted): void {
+    app(TaskExtensionState::class)->enable();
+    [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
+    $group->forceFill(['reserved_at' => now()])->save();
+    $failure = new ResourceOperationException('instance.remove_refused', 'Original removal failure.', 409);
+    $remover = Mockery::mock(InstanceRemover::class);
+    $remover->shouldReceive('execute')->once()->withArgs(static fn (Instance $instance, bool $force): bool => $instance->is($workspace) && $force)
+        ->andReturnUsing(static function (Instance $instance) use ($deleted, $failure): never {
+            if ($deleted) {
+                $instance->delete();
+            }
+
+            throw $failure;
+        });
+    app()->instance(InstanceRemover::class, $remover);
+    $database = app('db');
+    $double = Mockery::mock($database);
+    $double->shouldReceive('transaction')->once()->andReturnUsing(static function (Closure $callback, int $attempts = 1) use ($database, $group, $workspace): mixed {
+        $claimed = Task::topLevel()->findOrFail($group->id);
+        $claimed->taskable()->associate($workspace);
+        $claimed->save();
+
+        return $database->connection()->transaction($callback, $attempts);
+    });
+    DB::swap($double);
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception)->toBe($failure));
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $group->id,
+        'status' => 'cancelled',
+        'taskable_id' => $deleted ? null : $workspace->id,
+        'assistance_requested' => false,
+        'assistance_kind' => 'failure',
+        'assistance_reason' => 'Workspace removal failed: Original removal failure.',
+    ]);
+    expect(Instance::query()->whereKey($workspace->id)->exists())->toBe(! $deleted);
+})->with(['row already removed' => true, 'row retained for cleanup' => false]);

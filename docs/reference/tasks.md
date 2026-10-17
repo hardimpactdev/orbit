@@ -558,7 +558,7 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Workspace ownership
 
-When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. The owner never changes: the database refuses a new owner once one is set. Deleting the task clears it. A task owns at most one Instance.
+When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.
 
 The owner is the only record of task workspace ownership:
 
@@ -571,12 +571,12 @@ Task operations include agent turns, checks, pushes, commit signing, and `.mcp.j
 
 Workspaces created before the owner existed get it from explicit records:
 
-- An Instance on the Node of a task VM that is not destroyed belongs to the VM's task.
+- An Instance on the Node of a live task VM belongs to the VM's task of the same Project. A destroyed VM is no record.
 - Any other Instance belongs to the one task of its Project that holds it as its Instance.
 
 An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
 
-The same migration detaches every Instance that its task does not own. A task that has not ended then asks for assistance with the reason `Orbit detached the Instance of this task because the task does not own it. Cancel the task and start a new one.` Rolling the migration back keeps those tasks detached.
+The same migration detaches every Instance that its task does not own. A task that is not `completed` or `cancelled` then asks for assistance with the reason `Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.` A task that already asks for direction keeps that request, and the detach adds no reason to it. Rolling the migration back keeps those tasks detached.
 
 A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
