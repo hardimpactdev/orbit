@@ -9,6 +9,8 @@ Follow the [contributor guide](docs/contributor-guide.md): **architecture → do
 - Check existing ADRs and propose significant architectural changes in the feature PR.
 - Write documentation before coding. Keep the code, tests, documentation, and ADRs consistent.
 - Keep the PR focused on the feature, including any harness changes it needs.
+- Follow [Add a plug-in point](docs/reference/extensions.md#add-a-plug-in-point) when adding or changing extension contributions.
+- Before opening or updating a PR, run one independent review in a fresh subagent with the PR diff and the [plug-in point checklist](docs/reference/extensions.md#add-a-plug-in-point). Fix its findings first. State in the PR body that this review ran.
 - Request maintainer review when the feature is complete.
 - Orbit's independent reviewer checks the code and reproduces the feature on Incus. Record the reviewed commit, environment, results, and limitations.
 - Merge requires passing CI, resolved findings, independent code and Incus review, and maintainer approval.
