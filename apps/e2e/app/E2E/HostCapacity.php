@@ -10,7 +10,7 @@ use RuntimeException;
  * Host capacity comes from Incus itself: the harness VMs that exist now and
  * the deterministic `10.232.<slot>.0/24` subnets in use. There is no ledger.
  *
- * Every topology and every role image build count against the same host budget.
+ * Every topology counts against the same host budget.
  */
 final readonly class HostCapacity
 {

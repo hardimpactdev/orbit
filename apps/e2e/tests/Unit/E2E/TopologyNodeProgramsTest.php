@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\E2E\RoleImagePrograms;
-use App\E2E\Value\RoleImage;
+use App\E2E\TopologyNodePrograms;
+use App\E2E\Value\TopologyRecipe;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 
 /** A repository whose Gateway artisan prints the programs it was asked for, and records its environment. */
-function roleImageProgramsRoot(string $artisan): string
+function topologyNodeProgramsRoot(string $artisan): string
 {
     $root = temporaryPath('orbit-role-programs-', 5);
     mkdir($root.'/apps/gateway', 0700, true);
@@ -32,7 +32,7 @@ function renderingArtisan(): string
         PHP;
 }
 
-describe('RoleImagePrograms', function () {
+describe('TopologyNodePrograms', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -43,29 +43,39 @@ describe('RoleImagePrograms', function () {
 
     afterEach(fn () => putenv('APP_KEY'));
 
-    it('renders gateway and vpn programs for convergence without bootstrap or image preparation', function (): void {
-        $programs = new RoleImagePrograms(roleImageProgramsRoot(renderingArtisan()))->for(RoleImage::Gateway);
-        expect(array_column($programs, 'name'))->toBe(['gateway-prerequisites', 'vpn-prerequisites']);
-        expect(array_unique(array_column($programs, 'user')))->toBe(['orbit']);
+    it('renders the Gateway purpose roles for convergence without the SSH bootstrap program', function (): void {
+        $root = topologyNodeProgramsRoot(renderingArtisan());
+        $programs = new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('gateway'));
+        $rendered = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
+
+        expect($rendered['argv'])->toBe(['orbit:node-programs', 'gateway', 'vpn', '--json', '--no-interaction'])
+            ->and(array_column($programs, 'name'))->toBe(['gateway-prerequisites', 'vpn-prerequisites'])
+            ->and(array_unique(array_column($programs, 'user')))->toBe(['orbit']);
+    });
+
+    it('keeps the SSH bootstrap program for a workload Node', function (): void {
+        $programs = new TopologyNodePrograms(topologyNodeProgramsRoot(renderingArtisan()))->for(TopologyRecipe::fromOption('app-prod+ingress')->node('app-prod'));
+
+        expect(array_column($programs, 'name'))->toBe(['bootstrap', 'app-prod-prerequisites', 'ingress-prerequisites']);
     });
 
     it('renders with a throwaway Orbit home and SSH key and none of the harness environment', function () {
-        $root = roleImageProgramsRoot(renderingArtisan());
-        new RoleImagePrograms($root)->for(RoleImage::AppProd);
+        $root = topologyNodeProgramsRoot(renderingArtisan());
+        new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('app-prod'));
         $rendered = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
 
         expect($rendered['argv'])->toBe(['orbit:node-programs', 'app-prod', '--json', '--no-interaction'])
             ->and($rendered['orbit_home'])->toBe($rendered['home'])
             ->and($rendered['orbit_home'])->toStartWith(sys_get_temp_dir().'/orbit-e2e-programs-')
-            ->and($rendered['key'])->toBe(RoleImagePrograms::PLACEHOLDER_KEY."\n")
+            ->and($rendered['key'])->toBe(TopologyNodePrograms::PLACEHOLDER_KEY."\n")
             ->and($rendered['app_key'])->toBeFalse()
             ->and(is_dir($rendered['orbit_home']))->toBeFalse();
     });
 
     it('fails loudly when the Gateway cannot render or returns an invalid program', function (string $artisan, string $message) {
-        $root = roleImageProgramsRoot($artisan);
+        $root = topologyNodeProgramsRoot($artisan);
 
-        expect(fn () => new RoleImagePrograms($root)->for(RoleImage::AppDev))->toThrow(RuntimeException::class, $message);
+        expect(fn () => new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('app-dev')))->toThrow(RuntimeException::class, $message);
     })->with([
         'command failure' => ["<?php fwrite(STDERR, 'Unknown role [app-dev].'); exit(1);", 'orbit:node-programs app-dev failed: Unknown role [app-dev].'],
         'invalid JSON' => ['<?php echo "not json";', 'returned invalid JSON'],

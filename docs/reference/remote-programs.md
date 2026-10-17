@@ -121,6 +121,7 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | `instances.finalize-source-removal` | Moves a recorded source into quarantine and deletes it. |
 | `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
+| `task-vms.build-topology-seed` | Builds a task VM host's [topology seed](/reference/compute-drivers#the-topology-seed) in the smoke VM, as root. |
 
 ## Why it works this way
 

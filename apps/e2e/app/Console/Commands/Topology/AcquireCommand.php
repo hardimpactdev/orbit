@@ -22,7 +22,7 @@ final class AcquireCommand extends E2ECommand
         .' {--json}';
 
     #[\Override]
-    protected $description = 'Compose a fresh topology from role images on the mounted worktree';
+    protected $description = 'Compose a fresh topology from node-template copies on the mounted worktree';
 
     public function handle(TopologyAcquirer $acquirer, TopologyReleaser $releaser): int
     {

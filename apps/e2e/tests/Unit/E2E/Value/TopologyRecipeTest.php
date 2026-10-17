@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyRecipe;
 
 it('always composes the Gateway and the operator around the declared workload Nodes', function (array $declared, array $keys, int $vms) {
@@ -12,8 +12,7 @@ it('always composes the Gateway and the operator around the declared workload No
     expect($recipe->nodeKeys())->toBe($keys)
         ->and($recipe->vmCount())->toBe($vms)
         ->and($recipe->node('gateway')->roles)->toBe(['gateway', 'vpn'])
-        ->and($recipe->node('operator')->roles)->toBe([])
-        ->and($recipe->node('operator')->isContainer())->toBeFalse();
+        ->and($recipe->node('operator')->roles)->toBe([]);
 })->with([
     'gateway only' => [[], ['gateway', 'operator'], 2],
     'app-dev' => [['app-dev'], ['gateway', 'app-dev', 'operator'], 3],
@@ -21,11 +20,11 @@ it('always composes the Gateway and the operator around the declared workload No
     'full, declared out of order' => [['app-prod-2', 'app-prod', 'app-dev'], ['gateway', 'app-dev', 'app-prod', 'app-prod-2', 'operator'], 5],
 ]);
 
-it('gives every Node its role image, fixed address, WireGuard address, roles, and checkout', function () {
+it('gives every Node its purpose, fixed address, WireGuard address, roles, and checkout', function () {
     $recipe = TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2');
     $rows = array_map(static fn (TopologyNode $node): array => [
         $node->key,
-        $node->image,
+        $node->purpose,
         $node->address,
         $node->wireGuardAddress(),
         $node->roles,
@@ -33,14 +32,13 @@ it('gives every Node its role image, fixed address, WireGuard address, roles, an
     ], $recipe->nodes);
 
     expect($rows)->toBe([
-        ['gateway', RoleImage::Gateway, 10, '10.44.0.1', ['gateway', 'vpn'], true],
-        ['app-dev', RoleImage::AppDev, 11, '10.44.0.2', ['app-dev'], true],
-        ['app-prod', RoleImage::AppProd, 12, '10.44.0.3', ['app-prod'], false],
-        ['app-prod-2', RoleImage::AppProd, 13, '10.44.0.4', ['app-prod'], false],
-        ['operator', RoleImage::Operator, 14, '10.44.0.5', [], true],
+        ['gateway', TopologyNodePurpose::Gateway, 10, '10.44.0.1', ['gateway', 'vpn'], true],
+        ['app-dev', TopologyNodePurpose::Workload, 11, '10.44.0.2', ['app-dev'], true],
+        ['app-prod', TopologyNodePurpose::Workload, 12, '10.44.0.3', ['app-prod'], false],
+        ['app-prod-2', TopologyNodePurpose::Workload, 13, '10.44.0.4', ['app-prod'], false],
+        ['operator', TopologyNodePurpose::Operator, 14, '10.44.0.5', [], true],
     ])
-        ->and($recipe->checkoutNodeKeys())->toBe(['gateway', 'app-dev', 'operator'])
-        ->and($recipe->images())->toBe([RoleImage::Gateway, RoleImage::AppDev, RoleImage::AppProd, RoleImage::Operator]);
+        ->and($recipe->checkoutNodeKeys())->toBe(['gateway', 'app-dev', 'operator']);
 });
 
 it('reads the --nodes option, with app-dev and app-prod by default and an empty list for none', function (?string $option, array $workloads) {

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\RoleImage;
+use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyNodePurpose;
 use Illuminate\Support\Facades\Process;
 use JsonException;
 use RuntimeException;
@@ -15,19 +16,24 @@ use RuntimeException;
  * Gateway programs for topology convergence. These are what Node enrollment runs for the role's Orbit roles, rendered by the checkout's own Gateway
  * with `orbit:node-programs`; they run as `orbit` and start with `sudo`, as enrollment runs them over SSH.
  */
-final readonly class RoleImagePrograms
+final readonly class TopologyNodePrograms
 {
     /** A public key with no private half anywhere; it only fills the Gateway key slot while rendering. */
-    public const string PLACEHOLDER_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPb2YoLP14UR+XxEQ1nPvQAlpRc7B9/4xS201KFQ3tyu orbit-e2e-role-image';
+    public const string PLACEHOLDER_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPb2YoLP14UR+XxEQ1nPvQAlpRc7B9/4xS201KFQ3tyu orbit-e2e-node-programs';
 
     public function __construct(private string $repositoryRoot) {}
 
-    /** @return list<Program> */
-    public function for(RoleImage $image): array
+    /**
+     * The programs of the Node's roles. The test Gateway is never enrolled over SSH: `orbit:bootstrap` registers it
+     * locally, so it skips the program that prepares a Node for the Gateway's SSH access.
+     *
+     * @return list<Program>
+     */
+    public function for(TopologyNode $node): array
     {
         $programs = [];
-        foreach ($this->render($image->programRoles()) as $program) {
-            if ($program['name'] === 'bootstrap' && ! $image->runsBootstrapProgram()) {
+        foreach ($this->render($node->roles) as $program) {
+            if ($program['name'] === 'bootstrap' && $node->purpose === TopologyNodePurpose::Gateway) {
                 continue;
             }
             $programs[] = $program;

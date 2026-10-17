@@ -24,6 +24,11 @@
             "package": "bind9-dnsutils",
             "version": "1:9.20.24-1ubuntu0.3"
         },
+        "btrfs-progs": {
+            "source": "ubuntu",
+            "package": "btrfs-progs",
+            "version": "6.17.1-1build1"
+        },
         "bun": {
             "source": "artifact",
             "version": "1.4.3",
@@ -100,6 +105,11 @@
             "version": "2.92-1ubuntu0.5",
             "package": "dnsmasq"
         },
+        "dnsmasq-base": {
+            "source": "ubuntu",
+            "package": "dnsmasq-base",
+            "version": "2.92-1ubuntu0.5"
+        },
         "docker.io": {
             "source": "ubuntu",
             "package": "docker.io",
@@ -147,6 +157,11 @@
             "source": "ubuntu",
             "package": "gnupg",
             "version": "2.4.8-4ubuntu3.1"
+        },
+        "incus": {
+            "source": "ubuntu",
+            "package": "incus",
+            "version": "6.0.5-8"
         },
         "libasound2t64": {
             "source": "ubuntu",
@@ -277,6 +292,11 @@
             "package": "libxrandr2",
             "version": "2:1.5.4-1build1"
         },
+        "nftables": {
+            "source": "ubuntu",
+            "package": "nftables",
+            "version": "1.1.6-1"
+        },
         "node": {
             "source": "artifact",
             "version": "24.22.0",
@@ -319,6 +339,11 @@
                     "sha256": "edddd97040290d7a4cc8ba83c8cc68121c46c714bb8fbf05bd60f06f94bf2bb1"
                 }
             }
+        },
+        "ovmf": {
+            "source": "ubuntu",
+            "package": "ovmf",
+            "version": "2025.11-3ubuntu7.3"
         },
         "php-common": {
             "source": "artifact",
@@ -915,6 +940,21 @@
                 }
             }
         },
+        "qemu-system-modules-spice": {
+            "source": "ubuntu",
+            "package": "qemu-system-modules-spice",
+            "version": "1:10.2.1+ds-1ubuntu3.2"
+        },
+        "qemu-system-x86": {
+            "source": "ubuntu",
+            "package": "qemu-system-x86",
+            "version": "1:10.2.1+ds-1ubuntu3.2"
+        },
+        "qemu-utils": {
+            "source": "ubuntu",
+            "package": "qemu-utils",
+            "version": "1:10.2.1+ds-1ubuntu3.2"
+        },
         "rsync": {
             "source": "ubuntu",
             "package": "rsync",
@@ -976,6 +1016,11 @@
             "source": "ubuntu",
             "package": "unzip",
             "version": "6.0-29ubuntu1"
+        },
+        "virtiofsd": {
+            "source": "ubuntu",
+            "package": "virtiofsd",
+            "version": "1.13.2-6ubuntu0.1"
         },
         "vp": {
             "source": "artifact",
@@ -1321,6 +1366,15 @@
         "bind9-dnsutils",
         "gcc",
         "libc6-dev",
+        "incus",
+        "qemu-system-x86",
+        "ovmf",
+        "qemu-system-modules-spice",
+        "qemu-utils",
+        "virtiofsd",
+        "dnsmasq-base",
+        "btrfs-progs",
+        "nftables",
         "libasound2t64",
         "libatk-bridge2.0-0t64",
         "libatk1.0-0t64",

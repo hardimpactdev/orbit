@@ -906,7 +906,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0222"
             ]
         },
         {
@@ -1670,7 +1671,8 @@
             "governing_adrs": [
                 "0200",
                 "0206",
-                "0216"
+                "0216",
+                "0222"
             ]
         },
         {
@@ -2113,7 +2115,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -2956,10 +2960,11 @@
                 "Extension",
                 "Gateway",
                 "Node",
-                "Role",
                 "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
