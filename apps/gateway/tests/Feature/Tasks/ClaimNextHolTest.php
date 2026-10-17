@@ -3,25 +3,21 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
-use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSettling;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWait;
-use App\Domain\Tasks\TaskWorkspaceOwnership;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -34,7 +30,6 @@ use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
-use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskModelRouter;
 
 it('claimNext continues after provision null', function (): void {
@@ -65,6 +60,7 @@ it('claimNext continues after provision null', function (): void {
         'wireguard_ip' => '10.44.0.88',
     ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $second->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'claim-hol-second',
@@ -82,12 +78,26 @@ it('claimNext continues after provision null', function (): void {
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls++;
+            if ($this->calls === 1) {
+                return null;
+            }
 
-            return $this->calls === 1 ? null : $this->instance;
+            if ($this->calls === 1) {
+                return null;
+            }
+
+            return $intent->group->id === $this->instance->task_workspace_owner_id
+                ? $this->instance
+                : tap(claim_hol_instance($intent->group->project, 'claim-hol-'.$intent->group->id, $intent->group))->update(['starting_commit' => str_repeat('a', 40)]);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
@@ -124,7 +134,8 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->fresh()?->assistance_requested)->toBeFalse()
         ->and($oldest->fresh()?->assistance_reason)->toBeNull()
         ->and($oldest->tasks()->sole()->fresh()?->status)->toBe(TaskStatus::Running)
-        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
+        ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull()
+        ->and($oldest->fresh()?->taskable_id)->not->toBe($second->fresh()?->taskable_id);
 });
 
 it('leaves every waiting group in todo, tries each once, and clears a provisioning failure', function (): void {
@@ -161,7 +172,7 @@ it('passes a group that waits for its task VM without a failure reason', functio
     $waiting = claim_hol_group($project, 'Waiting');
     $waiting->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $next = claim_hol_group($project, 'Next');
-    $instance = claim_hol_instance($project, 'claim-hol-next');
+    $instance = claim_hol_instance($project, 'claim-hol-next', $next);
     app()->instance(InstanceProvisioning::class, new class($waiting->id, $instance) implements InstanceProvisioning
     {
         public function __construct(private int $waitingId, private Instance $instance) {}
@@ -201,7 +212,7 @@ it('tries a failing group once per tick', function (): void {
         {
             $this->calls[$intent->group->id] = ($this->calls[$intent->group->id] ?? 0) + 1;
 
-            return $intent->group->id === $this->failingId ? null : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+            return $intent->group->id === $this->failingId ? null : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -236,7 +247,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
                 throw new RuntimeException('Lock wait timeout for token secret-value-123');
             }
 
-            return claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+            return claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -310,7 +321,7 @@ function claim_hol_app(): Project
     ]);
 }
 
-function claim_hol_instance(Project $project, string $name): Instance
+function claim_hol_instance(Project $project, string $name, ?Task $owner = null): Instance
 {
     $node = Node::query()->firstOrCreate(['name' => 'claim-hol-node'], [
         'status' => LifecycleStatus::Active,
@@ -323,7 +334,9 @@ function claim_hol_instance(Project $project, string $name): Instance
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
+        'branch_override' => $name,
         'checkout_path' => "/tmp/{$name}",
+        'task_workspace_owner_id' => $owner?->id,
         'status' => 'reserved',
     ]);
 }
@@ -332,6 +345,11 @@ function claim_hol_spawner(): void
 {
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
@@ -410,7 +428,7 @@ describe('the end of a claim', function (): void {
                 test()->travel(5)->seconds();
                 Task::topLevel()->whereKey($intent->group->id)->update(['status' => TaskGroupStatus::Cancelled, 'reserved_at' => now()]);
 
-                return claim_hol_instance($this->project, 'task-'.$intent->group->id);
+                return claim_hol_instance($this->project, 'task-'.$intent->group->id, $intent->group);
             }
         });
 
@@ -477,7 +495,7 @@ describe('the stale reservation sweep', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
         $slow = claim_hol_group($project, 'Slow');
-        $instance = claim_hol_instance($project, 'claim-hol-slow');
+        $instance = claim_hol_instance($project, 'claim-hol-slow', $slow);
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
             public function __construct(private Instance $instance) {}
@@ -509,8 +527,7 @@ describe('a group cancelled while its claim runs', function (): void {
         $project = claim_hol_app();
         $group = claim_hol_group($project, 'Cancelled mid-claim');
         $removed = claim_hol_recording_remover();
-        $instance = claim_hol_instance($project, 'task-'.$group->id);
-        $instance->update(['task_workspace_owner_id' => $group->id]);
+        $instance = claim_hol_instance($project, 'task-'.$group->id, $group);
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
             public function __construct(private Instance $instance) {}
@@ -544,7 +561,7 @@ describe('a group cancelled while its claim runs', function (): void {
             public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 $name = 'task-'.$intent->group->id;
-                claim_hol_instance($this->project, $name)->update(['branch_override' => $name, 'task_workspace_owner_id' => $intent->group->id]);
+                claim_hol_instance($this->project, $name, $intent->group)->update(['branch_override' => $name]);
                 app(CancelTaskGroupAction::class)->execute($intent->group);
 
                 throw new RuntimeException('The checkout failed part way.');
@@ -557,6 +574,34 @@ describe('a group cancelled while its claim runs', function (): void {
             ->and($group->fresh()?->assistance_reason)->toBeNull()
             ->and($removed->ids)->toHaveCount(1)
             ->and(Instance::query()->where('name', 'task-'.$group->id)->exists())->toBeFalse();
+    });
+});
+
+describe('a user Instance named and branched like the workspace', function (): void {
+    it('stays when the claim refuses it and the group is cancelled meanwhile', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $group = claim_hol_group($project, 'Cancelled before its workspace');
+        $removed = claim_hol_recording_remover();
+        $name = 'task-'.$group->id;
+        $user = claim_hol_instance($project, $name);
+        $user->update(['branch_override' => $name]);
+        app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
+        {
+            public function provision(InstanceProvisionIntent $intent): ?Instance
+            {
+                app(CancelTaskGroupAction::class)->execute($intent->group);
+
+                throw new ResourceOperationException('instance.name_taken', 'The Instance exists and is not this group\'s workspace.', 409);
+            }
+        });
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($removed->ids)->toBe([])
+            ->and(Instance::query()->find($user->id))->branch_override->toBe($name);
     });
 });
 
@@ -581,7 +626,7 @@ describe('the abandoned workspace sweep', function (): void {
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
     });
 
-    it('keeps workspaces of live groups and Instances that only share the name', function (): void {
+    it('keeps workspaces of live groups and user Instances named and branched like a workspace', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
         $removed = claim_hol_recording_remover();
@@ -589,11 +634,30 @@ describe('the abandoned workspace sweep', function (): void {
         claim_hol_workspace($project, $todo);
         $cancelled = claim_hol_group($project, 'Cancelled lookalike');
         $cancelled->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        claim_hol_instance($project, 'task-'.$cancelled->id);
+        claim_hol_instance($project, 'task-'.$cancelled->id)->update(['branch_override' => 'task-'.$cancelled->id]);
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([])
             ->and(Instance::query()->count())->toBe(2);
+    });
+
+    it('removes a workspace once, for its owner, and never when another group ends', function (): void {
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $removed = claim_hol_recording_remover();
+        $owner = claim_hol_group($project, 'Owner');
+        $workspace = claim_hol_workspace($project, $owner, 'source_resolved');
+        $other = claim_hol_group($project, 'Other');
+        $other->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([]);
+
+        $owner->forceFill(['status' => TaskGroupStatus::Completed])->save();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
+            ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+            ->and($removed->ids)->toBe([$workspace->id]);
     });
 
     it('backs off failing removals per Instance so a later workspace is still removed', function (): void {
@@ -857,8 +921,8 @@ function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
 function claim_hol_workspace(Project $project, Task $group, string $status = 'reserved'): Instance
 {
     $name = 'task-'.$group->id;
-    $workspace = claim_hol_instance($project, $name);
-    $workspace->update(['branch_override' => $name, 'status' => $status, 'task_workspace_owner_id' => $group->id]);
+    $workspace = claim_hol_instance($project, $name, $group);
+    $workspace->update(['branch_override' => $name, 'status' => $status]);
 
     return $workspace;
 }
@@ -906,7 +970,7 @@ function claim_hol_recording_provisioning(Project $project): object
 
             return $this->instances[$intent->group->id] = $held instanceof Instance
                 ? $held
-                : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+                : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
 }
@@ -947,83 +1011,4 @@ it('releases only expired top-level reservations without an execution mode', fun
         TaskGroupStatus::Running, TaskGroupStatus::Backlog,
     ]);
     expect(Task::query()->whereNotNull('parent_id')->get()->pluck('status')->unique()->all())->toBe([TaskStatus::Todo]);
-});
-
-it('never admits a name and branch collision without durable workspace ownership', function (): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Unrelated ended task');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_instance($project, 'task-'.$group->id);
-    $instance->update(['branch_override' => $instance->name]);
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $group, $instance))->toBeFalse();
-    expect(app(RemoveTaskWorkspaceAction::class)->find($group))->toBeNull();
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))
-        ->toThrow(RuntimeException::class, 'ownership is missing or ambiguous');
-    expect($instance->fresh())->not->toBeNull();
-});
-
-it('refuses conflicting owners and associations at both cleanup gates', function (string $conflict): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Ended owner');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_workspace($project, $group);
-    $other = claim_hol_group($project, 'Other owner');
-    if ($conflict === 'recorded owner') {
-        $instance->update(['task_workspace_owner_id' => $other->id]);
-        $group->taskable()->associate($instance);
-        $group->save();
-    } else {
-        $other->taskable()->associate($instance);
-        $other->save();
-    }
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $group, $instance))->toBeFalse();
-    expect(app(RemoveTaskWorkspaceAction::class)->find($group))->toBeNull();
-    expect($instance->fresh())->not->toBeNull();
-})->with(['recorded owner', 'other association']);
-
-it('refuses a workspace on another task VM before waking or removing anything', function (): void {
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Ended owner');
-    $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $instance = claim_hol_workspace($project, $group);
-    $other = claim_hol_group($project, 'Other VM owner');
-    $vm = test_task_vm($other, $instance->node);
-    $vm->update(['state' => TaskVmState::Parked]);
-    Queue::fake();
-
-    expect(TaskWorkspaceOwnership::owns($group, $instance))->toBeFalse();
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))
-        ->toThrow(RuntimeException::class, 'ownership is missing or ambiguous');
-    Queue::assertNothingPushed();
-    expect($instance->fresh())->not->toBeNull();
-});
-
-it('retains ambiguous associations when completing a group so another ended group cannot acquire cleanup authority', function (): void {
-    app(TaskExtensionState::class)->enable();
-    $project = claim_hol_app();
-    $group = claim_hol_group($project, 'Completing group');
-    $other = claim_hol_group($project, 'Ended group');
-    $instance = claim_hol_instance($project, 'task-'.$other->id);
-    $instance->update(['branch_override' => $instance->name]);
-    foreach ([$group, $other] as $owner) {
-        $owner->taskable()->associate($instance);
-        $owner->status = $owner->id === $group->id ? TaskGroupStatus::Settling : TaskGroupStatus::Cancelled;
-        $owner->save();
-    }
-    app(CompleteTaskGroupAction::class)->execute($group);
-    expect($group->fresh()?->taskable_id)->toBe($instance->id);
-    expect($group->fresh()?->assistance_reason)->toContain('ownership is missing or ambiguous');
-    $reflection = new ReflectionClass(TaskSettling::class);
-    $settling = $reflection->newInstanceWithoutConstructor();
-    expect($reflection->getMethod('abandonedWorkspaces')->invoke($settling)->pluck('id')->all())->toBe([]);
-    expect($reflection->getMethod('shouldRemoveWorkspace')->invoke($settling, $other, $instance))->toBeFalse();
-    expect($instance->fresh())->not->toBeNull();
 });

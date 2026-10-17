@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -61,6 +62,7 @@ use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -69,6 +71,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Classification;
 use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -84,6 +87,30 @@ use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     tick_bind_defaults();
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => 'done'],
+                'latestTurn' => ['id' => 'settled-'.$threadId, 'state' => 'completed'],
+            ]];
+        }
+    });
+});
+
+it('writes and reads real transcript observations only in its temporary archive', function (): void {
+    $group = tick_group();
+    $thread = test_agent_thread($group, 'archive-regression');
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $archive = app(ArchiveAgentTranscriptsAction::class);
+
+    $archive->execute($group->id, $thread->node_id);
+
+    Storage::disk('local')->assertExists(ArchiveAgentTranscriptsAction::path($thread));
+    expect($archive->read($thread))->toBe(app(AgentDriverRegistry::class)->get($thread->driver)->observe($thread)->toArray());
 });
 
 it('deletes stale pending thread rows for finished tasks', function (): void {
@@ -289,7 +316,7 @@ it('preserves unresolved review assistance while CI and conflict fixes activate 
         {
             $this->reads++;
 
-            return tick_checked_thread('running');
+            return tick_checked_thread($threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'done' : 'running');
         }
     };
     app()->instance(AgentSnapshotReader::class, $snapshots);
@@ -656,7 +683,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
             'public_ssh_host' => '10.44.0.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet,
         ]);
         $workspace = Instance::query()->create([
-            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id,
+            'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id, 'task_workspace_owner_id' => $owner->id,
             'checkout_path' => '/srv/orbit/apps/tick-app/workspace', 'branch' => 'task-'.$owner->id,
             'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved',
         ]);
@@ -1933,6 +1960,13 @@ it('advances the current subtask when Jev marks it done', function (): void {
     {
         public int $spawned = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->spawned++;
@@ -2067,13 +2101,14 @@ it('records a turn receipt read failure without skipping the other group', funct
         'name' => 'tick-review-legacy-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.213', 'wireguard_ip' => '10.44.0.213',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
-        'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
-    ]);
     $reviewing = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $reviewing->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
+        'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
     $reviewing->taskable()->associate($instance);
     $reviewing->save();
@@ -2225,20 +2260,26 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
 
     app(TaskScheduler::class)->tick();
 
-    $blocked = $task->comments()->where('type', 'blocked')->sole();
-    $sendKey = $task->fresh()?->direction_answer_key;
+    $waiter = TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole();
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
-        ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
-        ->and($sendKey)->not->toBeNull()
-        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and($task->fresh()?->consult_comment_id)->toBeNull()
+        ->and($task->comments()->where('type', 'blocked')->count())->toBe(0)
+        ->and(TaskQuestion::query()->count())->toBe(0)
         ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->count())->toBe(0)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->kind)->toBe('check')
+        ->and($waiter->kind)->toBe('verdict')
+        ->and($receipts->reads())->toBe(0)
+        ->and($receipts->cleared)->toBe([])
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
     app(TaskScheduler::class)->tick();
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
-        ->and($task->fresh()?->direction_answer_key)->toBe($sendKey)
+        ->and($task->fresh()?->direction_answer_key)->toBeNull()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->id)->toBe($waiter->id)
+        ->and($receipts->reads())->toBe(0)
+        ->and($receipts->cleared)->toBe([])
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
@@ -2247,11 +2288,16 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
     app(TaskScheduler::class)->tick();
 
     $starts = tick_reviewer_starts($dispatcher);
+    $blocked = $task->comments()->where('type', 'blocked')->sole();
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
         ->and($starts)->toHaveCount(1)
-        ->and($starts[0]['commandId'])->toBe($sendKey)
+        ->and($waiter->fresh()?->status)->toBe('released')
+        ->and($starts[0]['commandId'])->toBe(TaskWorkspaceLeaseRecord::query()->where('thread_id', $reviewer->id)->where('adopted', false)->sole()->dispatch_key)
         ->and($starts[0]['message']['text'])->toContain('Which contract should I use?')
         ->and($receipts->modes)->toBe(['consult', 'consult'])
+        ->and($receipts->reads())->toBe(1)
+        ->and($receipts->cleared)->toHaveCount(1)
         ->and($task->fresh()?->direction_answer_key)->toBeNull()
         ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
         ->and($task->fresh()?->completion_attempt)->toBe($attempt)

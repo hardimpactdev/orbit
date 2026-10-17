@@ -31,12 +31,11 @@ final readonly class TaskVmTopologyUnit
      *
      * @throws RuntimeConvergenceException when the call failed, which can happen after the unit started
      */
-    public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology, string $pool): void
+    public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology): void
     {
         $script = TaskVmScripts::read(self::Script);
-        $imports = TaskVmRoleImages::Directory.'/manifest.json';
         $this->run($node, new RemoteCommand(
-            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $pool, $this->vpn->subnet(), $imports],
+            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $this->vpn->subnet()],
             input: $script,
             maxOutputBytes: 16384,
             timeout: 60,

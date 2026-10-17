@@ -120,12 +120,13 @@ final class Instance extends Model
     ];
 
     /**
-     * A task VM Node serves only its group's workspace, whichever path places the Instance there.
+     * A task VM Node serves only its group's workspace, whichever path places the Instance there. The database keeps
+     * a task workspace's owner from changing once it is set.
      */
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
-            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
+            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'task_workspace_owner_id'])) {
                 TaskVmWorkspaceGuard::assertInstance($instance);
             }
         });

@@ -26,7 +26,6 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -63,15 +62,17 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
 
     private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
-        $group = $intent->group->loadMissing(['project', 'taskable']);
+        $group = $intent->group->loadMissing('project');
         $node = $this->taskVms->node($group);
-        $existing = $group->taskable;
+        // A workspace that an interrupted claim created but never attached keeps its owner and Node, so this claim
+        // resumes it there instead of creating a second one.
+        $existing = $group->workspace()->first();
 
-        if ($existing instanceof Instance) {
+        if ($existing instanceof Instance && $group->taskable_id === $existing->id) {
             return $existing;
         }
 
-        $visitable = $this->existingWorkspace($group)->task_workspace_routed ?? $intent->visitable;
+        $visitable = $existing->task_workspace_routed ?? $intent->visitable;
         $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
         if ($sourceFailure instanceof InstanceProvisionFailure) {
             return $sourceFailure;
@@ -82,7 +83,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         $started = now()->getPreciseTimestamp() / 1_000_000;
         $this->clock->start($vm, $started);
         try {
-            return $this->createWorkspace($group, $node, $visitable, $vm);
+            return $this->createWorkspace($group, $node, $visitable, $vm, $existing);
         } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
             report($exception);
 
@@ -100,24 +101,11 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
      * source profile, `.env`, and PHP packages, which the baseline check needs, and stays `source_resolved`. The
      * scheduler starts the check and then finishes the Route through {@see self::complete()}.
      */
-    private function createWorkspace(Task $group, Node $node, bool $visitable, TaskVm $vm): Instance
+    private function createWorkspace(Task $group, Node $node, bool $visitable, TaskVm $vm, ?Instance $existing): Instance
     {
         $name = TaskWorkspaceName::for($group);
-        $existing = Instance::query()
-            ->where('project_id', $group->project_id)
-            ->where('name', $name)
-            ->first();
 
         if ($existing instanceof Instance) {
-            // Only the group's own workspace carries its task branch. Another Instance with the name is never adopted.
-            if ($existing->branch_override !== $name || ! TaskWorkspaceOwnership::owns($group, $existing)) {
-                throw new ResourceOperationException(
-                    'instance.name_taken',
-                    "Instance [{$name}] exists without proven task ownership and is not this group's workspace.",
-                    409,
-                );
-            }
-
             if ($existing->node_id !== $node->id) {
                 throw new ResourceOperationException(
                     'instance.placement_conflict',
@@ -129,6 +117,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             $instance = $existing;
             $visitable = $instance->task_workspace_routed ?? $visitable;
         } else {
+            // Another Instance with the name is never adopted: only the owner record makes an Instance this workspace.
+            if (Instance::query()->where('project_id', $group->project_id)->where('name', $name)->exists()) {
+                throw new ResourceOperationException(
+                    'instance.name_taken',
+                    "Instance [{$name}] exists and is not this group's workspace.",
+                    409,
+                );
+            }
+
             $account = $this->accounts->resolve($node);
             $roots = $this->storageRoots->resolveApps(
                 $this->nodeSettings->fromStored($node->settings),
@@ -343,19 +340,5 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         }
 
         return null;
-    }
-
-    /**
-     * A workspace that an interrupted claim created but never attached keeps its Node, so a later claim resumes it
-     * there instead of creating a second one.
-     */
-    private function existingWorkspace(Task $group): ?Instance
-    {
-        $name = TaskWorkspaceName::for($group);
-
-        return TaskWorkspaceOwnership::forGroup($group)
-            ->where('name', $name)
-            ->where('branch_override', $name)
-            ->first();
     }
 }

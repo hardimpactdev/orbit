@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
@@ -31,15 +32,6 @@ function observer_group(): Task
         'public_ssh_host' => '10.44.0.210',
         'wireguard_ip' => '10.44.0.210',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-21',
-        'checkout_path' => '/srv/orbit/apps/observe-app/task-21',
-        'branch' => 'task-21',
-        'status' => 'source_resolved',
-        'starting_commit' => str_repeat('a', 40),
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -47,6 +39,16 @@ function observer_group(): Task
         'brief' => 'Route idle implementer threads.',
         'status' => TaskGroupStatus::Running,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/21',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-21',
+        'checkout_path' => '/srv/orbit/apps/observe-app/task-21',
+        'branch' => 'task-21',
+        'status' => 'source_resolved',
+        'starting_commit' => str_repeat('a', 40),
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -69,7 +71,7 @@ function observer_group(): Task
  */
 function observer_reader(array $snapshots): AgentSnapshotReader
 {
-    return new class($snapshots) implements AgentSnapshotReader
+    $reader = new class($snapshots) implements AgentSnapshotReader
     {
         /** @param array<string, array<string, mixed>> $snapshots */
         public function __construct(private array $snapshots) {}
@@ -79,6 +81,9 @@ function observer_reader(array $snapshots): AgentSnapshotReader
             return $this->snapshots[$threadId] ?? null;
         }
     };
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(reader: $reader));
+
+    return $reader;
 }
 
 it('marks an idle implementer observation with the last turn text', function (): void {

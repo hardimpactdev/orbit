@@ -15,13 +15,9 @@ use App\E2E\Value\VerificationReport;
 function issueStateTopology(string $issue, AttemptId $attempt, ?TopologyRecipe $recipe = null): TopologyRecord
 {
     $target = TopologyTarget::for($issue, $attempt, $recipe ?? TopologyRecipe::fromOption(null));
-    $images = [];
-    foreach ($target->recipe->images() as $image) {
-        $images[$image->value] = str_repeat('f', 64);
-    }
 
     return new TopologyRecord(
-        TopologyConstructionInputs::create($target, 2, $images),
+        TopologyConstructionInputs::create($target, 2),
         new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
     );

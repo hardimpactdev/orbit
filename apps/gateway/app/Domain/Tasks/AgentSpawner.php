@@ -15,6 +15,8 @@ use App\Models\Task;
  */
 interface AgentSpawner
 {
+    public function reserveReviewer(Task $task): ?int;
+
     public function spawnReviewer(Task $task): ?int;
 
     public function spawnImplementer(Task $task): ?int;

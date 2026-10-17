@@ -76,7 +76,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `max_vms` | Yes | | Slot capacity, integer from 1 to 64; VM sizes consume one, two, or three slots |
 | `project` | No | `orbit-tasks` | Incus project name |
 | `network` | No | `orbittask0` | Bridge name: `orbittask` followed by 1 to 6 lowercase letters or digits |
-| `pool` | No | `orbit-tasks` | Incus ZFS storage pool for images, root disks, and workspace volumes |
+| `pool` | No | `orbit-tasks` | Incus ZFS storage pool for images, root disks, topology seeds, and their clones |
 | `image_alias` | No | `orbit-task-base` | Local base image alias used for task VM launches; a non-empty valid Incus alias |
 | `zfs_dataset` | No | `null` | New dataset below a ZFS pool, such as `fast/orbit-tasks`, used when preparing a missing pool; never the whole ZFS pool or an existing dataset |
 | `cpus` | No | `2` | vCPUs per normal VM, integer from 1 to 64 |

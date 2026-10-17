@@ -42,17 +42,28 @@ function driver_group(): array
 {
     $project = Project::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main', 'task_check' => 'composer check']);
     $node = Node::query()->create(['name' => 'agent-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.5', 'public_ssh_host' => '10.44.0.5']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
-    $driver = new FakeAgentDriver;
+    $driver = new class extends FakeAgentDriver
+    {
+        #[Override]
+        public function observe(AgentThread $thread): AgentObservation
+        {
+            return $thread->role === 'reviewer'
+                ? new AgentObservation(AgentThreadState::Done, turnId: 'reviewer-opening-done')
+                : parent::observe($thread);
+        }
+    };
     $registry = new AgentDriverRegistry([$driver]);
     app()->instance(AgentDriverRegistry::class, $registry);
     $spawner = app(AgentSpawner::class);
     $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($task)]);
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'reviewer-opening-done');
     $task->update(['implementer_agent_thread_id' => $spawner->spawnImplementer($task)]);
+    $driver->observation = null;
 
     return [$group, $task, $driver, $registry];
 }
@@ -60,13 +71,14 @@ function driver_group(): array
 it('creates the conversation for each role through the driver recorded for that role', function (): void {
     $project = Project::query()->create(['name' => 'roles', 'slug' => 'roles', 'repository_url' => 'git@example.test:roles.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'role-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.6', 'public_ssh_host' => '10.44.0.6']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/roles', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'implementer-runtime', 'reviewer_agent_driver' => 'reviewer-runtime', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/roles', 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
     $implementer = new FakeAgentDriver('implementer-runtime');
     $reviewer = new FakeAgentDriver('reviewer-runtime');
+    $reviewer->observation = new AgentObservation(AgentThreadState::Done, turnId: 'role-reviewer-opening-done');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));
     $spawner = app(AgentSpawner::class);
 
@@ -81,7 +93,7 @@ it('creates the conversation for each role through the driver recorded for that 
 
 it('creates and resumes conversations through a second driver without T3', function (): void {
     [$group, $task, $driver, $registry] = driver_group();
-    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     $observer = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader);
     $observation = $observer->observe($group, $group->tasks()->firstOrFail());
     new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 1.0, 'Continue.'));
@@ -182,7 +194,7 @@ it('scopes external identifiers to the driver and runtime', function (): void {
 it('routes an attached conversation without a legacy pointer', function (): void {
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
-    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
@@ -198,7 +210,7 @@ it('routes an attached conversation without a legacy pointer', function (): void
 
 it('rejects a drain when the requested input is no longer available', function (): void {
     [$group, , $driver, $registry] = driver_group();
-    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
 
     expect(fn () => new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))

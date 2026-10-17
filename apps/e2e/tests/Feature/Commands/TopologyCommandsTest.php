@@ -13,6 +13,7 @@ use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
 use App\Console\Commands\Topology\WebCommand;
+use App\E2E\IncusHost;
 use App\E2E\IssueState;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
@@ -75,10 +76,10 @@ function commandIncusFixture(TopologyRecord $topology, ?Closure $responder = nul
     ];
     foreach ($topology->instances as $node => $instance) {
         $incus->instances[$instance] = [
-            'type' => $node === 'operator' ? 'container' : 'virtual-machine',
+            'type' => 'virtual-machine',
             'status' => 'Running',
             'config' => $owner,
-            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/'], 'eth0' => ['type' => 'nic', 'network' => $topology->network]],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => IncusHost::POOL, 'path' => '/'], 'eth0' => ['type' => 'nic', 'network' => $topology->network]],
         ];
     }
     $incus->networks[$topology->network] = ['config' => ['ipv4.address' => '10.232.2.1/24', ...$owner]];
@@ -104,8 +105,6 @@ describe('topology commands', function () {
         sort($harness);
 
         expect($harness)->toBe([
-            'topology-images:ensure',
-            'topology-images:status',
             'topology:acquire',
             'topology:exec',
             'topology:kill',
@@ -180,56 +179,17 @@ describe('topology commands', function () {
         // The fixture repository is not Orbit, so acquire itself refuses after the release.
         expect($replaced['state'])->toBe('failed')
             ->and($replaced['error'])->toContain('The worktree repository identity does not match Orbit.')
-            ->and($incus->instances)->toBe([])
+            ->and($incus->guests())->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeFalse();
     });
 
-    it('releases an old discovery lease with --replace before it acquires', function (): void {
+    it('refuses old and malformed leases without touching Incus', function (string $field, mixed $value): void {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $topology = commandTopologyFixture('TST-12', $worktree);
         $incus = commandIncusFixture($topology);
         $state = IssueState::forWorktree('TST-12', $worktree);
-        $lease = $state->attempt();
-        $oldLease = ['issue' => $lease['issue'], 'attempt_id' => $lease['attempt_id'], 'purpose' => 'discovery', 'operation_id' => $lease['operation_id'], 'acquired_at' => $lease['acquired_at'], 'recipe' => $lease['recipe']];
-        file_put_contents($worktree.'/.e2e/attempt.json', json_encode($oldLease, JSON_THROW_ON_ERROR));
-        file_put_contents($worktree.'/.e2e/topology.json', '{"schema":5}');
-
-        $replaced = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => 'app-dev', '--replace' => true]);
-
-        expect($replaced['error'])->toContain('The worktree repository identity does not match Orbit.')
-            ->and($incus->instances)->toBe([])
-            ->and($incus->networks)->toBe([])
-            ->and($state->hasAttempt())->toBeFalse();
-    });
-
-    it('keeps an old discovery lease when a guest has different ownership', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $topology = commandTopologyFixture('TST-12', $worktree);
-        $incus = commandIncusFixture($topology);
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $lease = $state->attempt();
-        $oldLease = ['issue' => $lease['issue'], 'attempt_id' => $lease['attempt_id'], 'purpose' => 'discovery', 'operation_id' => $lease['operation_id'], 'acquired_at' => $lease['acquired_at'], 'recipe' => $lease['recipe']];
-        file_put_contents($worktree.'/.e2e/attempt.json', json_encode($oldLease, JSON_THROW_ON_ERROR));
-        file_put_contents($worktree.'/.e2e/topology.json', '{"schema":5}');
-        $incus->instances[$topology->target->instance('operator')]['config']['user.orbit.e2e.attempt'] = str_repeat('b', 32);
-
-        $replaced = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--replace' => true]);
-
-        expect($replaced['state'])->toBe('failed')
-            ->and($replaced['error'])->toContain('ownership does not match the issue attempt')
-            ->and($incus->instances)->toHaveCount(3)
-            ->and($incus->networks)->toHaveCount(1)
-            ->and(file_get_contents($worktree.'/.e2e/attempt.json'))->toBe(json_encode($oldLease, JSON_THROW_ON_ERROR));
-    });
-
-    it('refuses old leases outside the known discovery format without touching Incus', function (string $field, mixed $value): void {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $topology = commandTopologyFixture('TST-12', $worktree);
-        $incus = commandIncusFixture($topology);
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $lease = $state->attempt();
-        $oldLease = ['issue' => $lease['issue'], 'attempt_id' => $lease['attempt_id'], 'purpose' => 'discovery', 'operation_id' => $lease['operation_id'], 'acquired_at' => $lease['acquired_at'], 'recipe' => $lease['recipe']];
+        $oldLease = $state->attempt();
         $oldLease[$field] = $value;
         file_put_contents($worktree.'/.e2e/attempt.json', json_encode($oldLease, JSON_THROW_ON_ERROR));
         unlink($worktree.'/.e2e/topology.json');
@@ -238,9 +198,10 @@ describe('topology commands', function () {
 
         expect($replaced['state'])->toBe('failed')
             ->and($incus->calls)->toBe([])
-            ->and($incus->instances)->toHaveCount(3)
+            ->and($incus->guests())->toHaveCount(3)
             ->and(file_get_contents($worktree.'/.e2e/attempt.json'))->toBe(json_encode($oldLease, JSON_THROW_ON_ERROR));
     })->with([
+        'retired discovery purpose' => ['purpose', 'discovery'],
         'retired snapshot' => ['purpose', 'snapshot'],
         'another issue' => ['issue', 'TST-13'],
         'bad attempt' => ['attempt_id', 'invalid'],
@@ -419,7 +380,7 @@ describe('topology commands', function () {
             'already_absent' => [],
             'networks_reaped' => [],
         ])
-            ->and($incus->instances)->toBe([])
+            ->and($incus->guests())->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(commandJson('topology:status', ['issue' => 'TST-12'])['state'])->toBe('absent')
             ->and(file_get_contents($worktree.'/.e2e/log'))->toContain('topology:release attempt='.str_repeat('a', 32).' ok');

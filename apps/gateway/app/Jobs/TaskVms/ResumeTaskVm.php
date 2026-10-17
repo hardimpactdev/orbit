@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Actions\TaskVms\FailTaskVmAction;
-use App\Domain\Tasks\TaskWorkspaceOwnership;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
@@ -64,8 +63,6 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
         if ($vm?->state !== TaskVmState::Parked) {
             return;
         }
-
-        TaskWorkspaceOwnership::requireVmWorkspaces($vm);
 
         if (now()->greaterThanOrEqualTo($this->retryUntil())) {
             $this->fail($this->timeoutException($vm));

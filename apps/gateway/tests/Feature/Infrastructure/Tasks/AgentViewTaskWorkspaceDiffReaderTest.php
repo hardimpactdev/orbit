@@ -26,9 +26,8 @@ function view_diff_instance(): Instance
         'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit',
     ]);
 
-    return Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-12',
-        'checkout_path' => '/srv/orbit/apps/orbit/task-12', 'branch' => 'task-12', 'status' => 'source_resolved',
+    return test_ready_task_workspace($project, $node, ['name' => 'task-12',
+        'checkout_path' => '/srv/orbit/apps/orbit/task-12', 'branch' => 'task-12',
     ]);
 }
 

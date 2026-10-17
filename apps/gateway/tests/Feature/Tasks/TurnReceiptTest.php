@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -47,17 +48,18 @@ function turn_receipt_checkout(): string
     return $checkout;
 }
 
-function turn_receipt_instance(string $checkout): Instance
+/** @param  array<string, mixed>  $group */
+function turn_receipt_instance(string $checkout, array $group = []): Instance
 {
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'receipt-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit']);
 
-    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13', 'status' => 'source_resolved']);
+    return test_ready_task_workspace($project, $node, ['name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13'], $group);
 }
 
-function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
+function turn_receipts(SshExecutor $transport): object
 {
-    return new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+    $receipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -81,6 +83,28 @@ function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
             public function put(string $host, int $port, HostKey $key): void {}
         },
     )));
+
+    return new class($receipts)
+    {
+        public function __construct(private RemoteTaskTurnReceipts $receipts) {}
+
+        /** @param array<int|string, mixed> $arguments */
+        public function __call(string $method, array $arguments): mixed
+        {
+            $instance = $arguments[0];
+            $group = $instance->tasks()->first();
+            if (! $group instanceof Task) {
+                $group = Task::topLevel()->create(['project_id' => $instance->project_id,
+                    'title' => 'Receipt admission', 'brief' => 'Exercise receipt metadata under ownership.', 'status' => TaskGroupStatus::Running]);
+                $group->taskable()->associate($instance);
+                $group->save();
+                test_vm_group($group);
+            }
+
+            return app(TaskWorkspaceLease::class)->run($group, 'implementer', 'receipt-test',
+                fn (): mixed => $this->receipts->{$method}(...$arguments));
+        }
+    };
 }
 
 /** @param list<string> $arguments */
@@ -449,14 +473,11 @@ it('requires a cause on every outcome of the review after a direction resolution
 
 it('accepts the prompted verdict after an operator resolution and stops requiring cause once answered', function (string $outcome, bool $continued): void {
     $checkout = turn_receipt_checkout();
-    $instance = turn_receipt_instance($checkout);
-    $group = Task::query()->create([
-        'project_id' => $instance->project_id, 'title' => 'Direction', 'brief' => 'Follow the contract.',
+    $instance = turn_receipt_instance($checkout, group: [
+        'title' => 'Direction', 'brief' => 'Follow the contract.',
         'status' => TaskGroupStatus::Running,
     ]);
-    $group->taskable()->associate($instance);
-    $group->save();
-    test_vm_workspace($group, $instance);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $task = Task::query()->create([
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Check the fix.',
         'status' => TaskStatus::Reviewing, 'review_attempt' => 1,

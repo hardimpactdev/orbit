@@ -63,7 +63,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
         $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->run($instance, [], TaskWorkspaceMetadata::operation('turn', [
             'script' => base64_encode($script), 'turn' => $turn, 'context' => $context,
-        ]));
+        ]), mutates: true);
     }
 
     public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
@@ -124,11 +124,11 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 
     public function clear(Instance $instance, TaskTurnReceipt $receipt): void
     {
-        $this->run($instance, [], TaskWorkspaceMetadata::operation('clear', ['hash' => $receipt->hash]));
+        $this->run($instance, [], TaskWorkspaceMetadata::operation('clear', ['hash' => $receipt->hash]), mutates: true);
     }
 
     /** @param list<string> $arguments */
-    private function run(Instance $instance, array $arguments, string $command): string
+    private function run(Instance $instance, array $arguments, string $command, bool $mutates = false): string
     {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
@@ -138,7 +138,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().$command,
-            ), 'task-turn-receipt', 'tasks.turn_receipt_failed');
+            ), 'task-turn-receipt', 'tasks.turn_receipt_failed', mutates: $mutates);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.', previous: $exception);
         }

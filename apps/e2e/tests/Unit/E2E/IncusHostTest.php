@@ -95,7 +95,7 @@ function vmJson(
     string $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway',
     string $owner = 'orbit-e2e',
     string $type = 'virtual-machine',
-    string $pool = 'orbit-e2e',
+    string $pool = IncusHost::POOL,
     ?string $network = null,
     ?string $mac = null,
     ?string $ipv4 = null,
@@ -138,25 +138,22 @@ function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutS
     return new IncusHost(
         remote: 'lab',
         project: 'orbit',
-        pool: 'orbit-e2e',
         redactor: $redactor ?? new SecretRedactor,
         guestReadinessTimeoutSeconds: $guestReadinessTimeoutSeconds,
     );
 }
 
 /**
- * @return array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,metadata:array<string,string>}
+ * @return array{name:string,network:string,node:string,address:int,slot:int,memory:string,metadata:array<string,string>}
  */
-function incusGuestSpec(string $node, int $address, bool $container = false, string $memory = '2GiB'): array
+function incusGuestSpec(string $node, int $address, string $memory = '2GiB'): array
 {
     return [
-        'image' => $container ? 'orbit-e2e-operator' : 'images:ubuntu/26.04',
         'name' => "orbit-e2e-tst-123-aaaaaaaa-{$node}",
         'network' => 'oe-b32d6c83af72',
         'node' => $node,
         'address' => $address,
         'slot' => 30,
-        'container' => $container,
         'memory' => $memory,
         'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
     ];
@@ -170,7 +167,6 @@ function topologyIdentityResources(TopologyTarget $target, int $slot): array
         $resources[$node->key] = json_decode(
             vmJson(
                 $target->instance($node->key),
-                type: $node->image->instanceType(),
                 network: $target->network(),
                 mac: $target->mac($node->key),
                 ipv4: TopologyTarget::ipv4For($slot, $node->address),
@@ -218,7 +214,7 @@ describe('IncusHost reads', function () {
         expect($exact)
             ->toEqual($batch[$name])
             ->and($exact?->pool)
-            ->toBe('orbit-e2e')
+            ->toBe(IncusHost::POOL)
             ->and($exact?->network)
             ->toBe('oe-b32d6c83af72')
             ->and($exact?->mac)
@@ -255,6 +251,7 @@ describe('IncusHost reads', function () {
         'unknown type' => ['type', 'unknown', 'not a virtual machine', 'identity is not a virtual machine'],
         'missing pool' => ['pool', null, 'no storage pool identity', 'identity is invalid'],
         'wrong pool' => ['pool', 'other', 'storage pool identity does not match', 'identity is invalid'],
+        'retired harness pool' => ['pool', 'orbit-e2e', 'storage pool identity does not match', 'identity is invalid'],
         'missing status' => ['status', null, 'no valid power status', 'identity is invalid'],
         'invalid status code' => ['status_code', '102', 'no valid power status', 'identity is invalid'],
         'invalid network' => ['network', 12, 'invalid network identity', 'network identity is invalid'],
@@ -521,7 +518,7 @@ describe('IncusHost reads', function () {
         expect(fn () => incusHost()->assertTopologyNetworkIdentity($target))
             ->toThrow(RuntimeException::class, $message);
     })->with([
-        'operator as a container' => ['operator', 'type', 'container', 'type does not match topology'],
+        'a guest as a container' => ['operator', 'type', 'container', 'type does not match topology'],
         'another network' => ['app-dev', 'network', 'oe-other', 'network identity does not match topology'],
         'another MAC' => ['gateway', 'hwaddr', '00:16:3e:00:00:00', 'MAC identity does not match topology'],
         'another Node address' => ['app-dev', 'ipv4.address', '10.232.30.12', 'IPv4 identity does not match topology'],
@@ -553,9 +550,8 @@ describe('IncusHost reads', function () {
             ->toThrow(RuntimeException::class, 'network '.$target->network().' ownership metadata does not match');
     });
 
-    it('reads exact VM, network, and image identities as JSON', function () {
-        $fingerprint = str_repeat('a', 64);
-        Process::fake(function (PendingProcess $process) use ($fingerprint) {
+    it('reads exact VM and network identities as JSON', function () {
+        Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
                 incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
@@ -563,11 +559,6 @@ describe('IncusHost reads', function () {
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
-                incusCommand('image', 'list', 'images:', 'ubuntu/26.04', '--format=json') => Process::result(json_encode([[
-                    'fingerprint' => $fingerprint,
-                    'type' => 'virtual-machine',
-                    'aliases' => [['name' => 'ubuntu/26.04']],
-                ]], JSON_THROW_ON_ERROR)),
                 default => Process::result('', 'Unexpected command.', 1),
             };
         });
@@ -578,13 +569,11 @@ describe('IncusHost reads', function () {
         expect($instance)
             ->toBeInstanceOf(IncusInstance::class)
             ->and($instance?->pool)
-            ->toBe('orbit-e2e')
+            ->toBe(IncusHost::POOL)
             ->and($instance?->isStopped())
             ->toBeTrue()
             ->and($host->network('orbit-e2e-tst-123')?->name)
-            ->toBe('orbit-e2e-tst-123')
-            ->and($host->imageFingerprint('images:ubuntu/26.04'))
-            ->toBe($fingerprint);
+            ->toBe('orbit-e2e-tst-123');
     });
 
     it('returns null when an exact identity is absent', function () {
@@ -612,44 +601,22 @@ describe('IncusHost reads', function () {
         'non-string value' => [['ipv4.nat' => true]],
     ]);
 
-    it('resolves an exact local VM image alias on the configured remote', function () {
-        $fingerprint = str_repeat('b', 64);
-        Process::fake(function (PendingProcess $process) use ($fingerprint) {
-            expect($process->command)->toBe(incusCommand(
-                'image',
-                'list',
-                incusTarget(),
-                'orbit-base',
-                '--format=json',
-            ));
-
-            return Process::result(json_encode([[
-                'fingerprint' => $fingerprint,
-                'type' => 'virtual-machine',
-                'aliases' => [['name' => 'orbit-base']],
-            ]], JSON_THROW_ON_ERROR));
-        });
-
-        expect(incusHost()->imageFingerprint('orbit-base'))->toBe($fingerprint);
-    });
-
     it('creates a guest with an integer CPU limit and the memory its spec names', function () {
         app()->instance('config', new Repository([
             'e2e' => [
                 'incus' => [
                     'cpu' => 2,
-                    'root_size' => '16GiB',
                 ],
             ],
         ]));
         try {
-            Process::fake(function (PendingProcess $process) {
-                expect($process->command)->toContain('--config', 'limits.cpu=2', 'limits.memory=1GiB');
+            Process::fake(['*' => Process::result()]);
 
-                return Process::result();
-            });
+            incusHost()->createGuests(['operator' => incusGuestSpec('operator', 14, memory: '1GiB')]);
 
-            incusHost()->initGuests(['operator' => incusGuestSpec('operator', 14, container: true, memory: '1GiB')]);
+            Process::assertRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'copy'
+                && in_array('limits.cpu=2', $process->command, true)
+                && in_array('limits.memory=1GiB', $process->command, true));
         } finally {
             app()->forgetInstance('config');
         }
@@ -660,7 +627,7 @@ describe('IncusHost reads', function () {
             'e2e' => ['incus' => ['cpu' => ['1']]],
         ]));
         try {
-            expect(fn () => incusHost()->initGuests(['gateway' => incusGuestSpec('gateway', 10)]))
+            expect(fn () => incusHost()->createGuests(['gateway' => incusGuestSpec('gateway', 10)]))
                 ->toThrow(InvalidArgumentException::class, 'Incus CPU limit must be a positive integer.');
         } finally {
             app()->forgetInstance('config');
@@ -670,7 +637,7 @@ describe('IncusHost reads', function () {
     it('rejects creation metadata that overrides ownership', function () {
         Process::fake();
 
-        expect(fn () => incusHost()->initGuests(['gateway' => [
+        expect(fn () => incusHost()->createGuests(['gateway' => [
             ...incusGuestSpec('gateway', 10),
             'metadata' => ['user.orbit.e2e.owner' => 'attacker'],
         ]]))->toThrow(RuntimeException::class, 'cannot override ownership metadata');
@@ -722,195 +689,12 @@ describe('IncusHost network creation', function () {
     });
 });
 
-describe('IncusHost images', function () {
-    it('reads every image with its aliases, string properties, and creation time', function () {
-        Process::fake(function (PendingProcess $process) {
-            expect($process->command)->toBe(incusCommand('image', 'list', incusTarget(), '--format=json'));
-
-            return Process::result(json_encode([
-                [
-                    'fingerprint' => str_repeat('a', 64),
-                    'type' => 'virtual-machine',
-                    'aliases' => [['name' => 'orbit-e2e-gateway'], ['name' => 'orbit-e2e-gateway-20261012000000']],
-                    'properties' => ['orbit.e2e.role' => 'gateway', 'size' => 12],
-                    'created_at' => '2026-10-12T00:00:00Z',
-                ],
-                ['fingerprint' => str_repeat('b', 64), 'type' => 'container'],
-            ], JSON_THROW_ON_ERROR));
-        });
-
-        expect(incusHost()->images())->toBe([
-            [
-                'fingerprint' => str_repeat('a', 64),
-                'type' => 'virtual-machine',
-                'aliases' => ['orbit-e2e-gateway', 'orbit-e2e-gateway-20261012000000'],
-                'properties' => ['orbit.e2e.role' => 'gateway'],
-                'created_at' => '2026-10-12T00:00:00Z',
-            ],
-            [
-                'fingerprint' => str_repeat('b', 64),
-                'type' => 'container',
-                'aliases' => [],
-                'properties' => [],
-                'created_at' => '',
-            ],
-        ]);
-    });
-
-    it('rejects an image inventory row without a valid fingerprint', function (mixed $row) {
-        Process::fake(['*' => Process::result(json_encode([$row], JSON_THROW_ON_ERROR))]);
-
-        expect(fn () => incusHost()->images())->toThrow(RuntimeException::class, 'Incus returned an invalid image inventory.');
-    })->with([
-        'short fingerprint' => [['fingerprint' => 'abc', 'type' => 'container']],
-        'not an object' => ['image'],
-    ]);
-
-    it('publishes an owned guest uncompressed with its properties and returns the new fingerprint', function () {
-        $builder = 'orbit-e2e-image-aaaaaaaa-operator';
-        $alias = 'orbit-e2e-operator-20261012000000';
-        $publish = incusCommand(
-            'publish',
-            incusTarget($builder),
-            incusTarget(),
-            '--alias',
-            $alias,
-            '--compression',
-            'none',
-            'orbit.e2e.role=operator',
-            'orbit.e2e.commit='.str_repeat('d', 40),
-        );
-        Process::fake(function (PendingProcess $process) use ($builder, $alias, $publish) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget($builder), '--format=json') => Process::result(vmJson($builder, type: 'container')),
-                $publish => Process::result(),
-                incusCommand('image', 'list', incusTarget(), $alias, '--format=json') => Process::result(json_encode([[
-                    'fingerprint' => str_repeat('c', 64),
-                    'type' => 'container',
-                    'aliases' => [['name' => $alias]],
-                ]], JSON_THROW_ON_ERROR)),
-                default => Process::result('', 'Unexpected command.', 1),
-            };
-        });
-
-        $fingerprint = incusHost()->publish(
-            $builder,
-            $alias,
-            ['orbit.e2e.role' => 'operator', 'orbit.e2e.commit' => str_repeat('d', 40)],
-            'container',
-        );
-
-        expect($fingerprint)->toBe(str_repeat('c', 64));
-        Process::assertRan($publish);
-    });
-
-    it('refuses an invalid image property before publishing', function (array $properties) {
-        Process::fake(['*' => Process::result(vmJson('orbit-e2e-image-aaaaaaaa-gateway'))]);
-
-        expect(fn () => incusHost()->publish(
-            'orbit-e2e-image-aaaaaaaa-gateway',
-            'orbit-e2e-gateway-20261012000000',
-            $properties,
-            'virtual-machine',
-        ))->toThrow(RuntimeException::class, 'Invalid Incus image property.');
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'publish');
-    })->with([
-        'uppercase key' => [['Orbit.role' => 'gateway']],
-        'empty value' => [['orbit.e2e.role' => '']],
-        'space in value' => [['orbit.e2e.role' => 'two words']],
-    ]);
-
-    it('refuses to publish a guest that Orbit does not own', function () {
-        Process::fake(['*' => Process::result(vmJson('orbit-e2e-image-aaaaaaaa-gateway', owner: 'someone-else'))]);
-
-        expect(fn () => incusHost()->publish(
-            'orbit-e2e-image-aaaaaaaa-gateway',
-            'orbit-e2e-gateway-20261012000000',
-            [],
-            'virtual-machine',
-        ))->toThrow(RuntimeException::class, 'ownership metadata does not match');
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'publish');
-    });
-
-    it('points an alias at a fingerprint in one request', function (string $existingAlias, array $mutation) {
-        $commands = [];
-        Process::fake(function (PendingProcess $process) use ($existingAlias, &$commands) {
-            if ($process->command === incusCommand('image', 'list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([[
-                    'fingerprint' => str_repeat('a', 64),
-                    'type' => 'virtual-machine',
-                    'aliases' => [['name' => $existingAlias]],
-                ]], JSON_THROW_ON_ERROR));
-            }
-            $commands[] = $process->command;
-
-            return Process::result();
-        });
-
-        incusHost()->pointAlias('orbit-e2e-gateway', str_repeat('c', 64));
-
-        expect($commands)->toBe([$mutation[0] === 'query' ? ['incus', ...$mutation] : incusCommand(...$mutation)]);
-    })->with([
-        'existing alias, with the project in the URL because incus query refuses --project' => [
-            'orbit-e2e-gateway',
-            [
-                'query',
-                '--request',
-                'PATCH',
-                '--data',
-                '{"target":"'.str_repeat('c', 64).'"}',
-                'lab:/1.0/images/aliases/orbit-e2e-gateway?project=orbit',
-            ],
-        ],
-        'new alias' => [
-            'orbit-e2e-gateway-20261012000000',
-            ['image', 'alias', 'create', 'lab:orbit-e2e-gateway', str_repeat('c', 64)],
-        ],
-    ]);
-
-    it('deletes an image by its exact fingerprint', function () {
-        Process::fake();
-
-        incusHost()->deleteImage(str_repeat('c', 64));
-
-        Process::assertRan(incusCommand('image', 'delete', incusTarget(str_repeat('c', 64))));
-    });
-
-    it('rejects an invalid fingerprint before touching an alias or image', function (string $method, array $arguments) {
-        Process::fake();
-
-        expect(fn () => incusHost()->{$method}(...$arguments))
-            ->toThrow(RuntimeException::class, 'Invalid Incus image fingerprint.');
-        Process::assertNothingRan();
-    })->with([
-        'point alias' => ['pointAlias', ['orbit-e2e-gateway', 'not-a-fingerprint']],
-        'delete image' => ['deleteImage', [str_repeat('A', 64)]],
-    ]);
-
-    it('maps each instance to the image it started from', function () {
-        Process::fake(function (PendingProcess $process) {
-            expect($process->command)->toBe(incusCommand('list', incusTarget(), '--format=json'));
-
-            return Process::result(json_encode([
-                ['name' => 'orbit-e2e-image-aaaaaaaa-gateway', 'config' => ['volatile.base_image' => str_repeat('a', 64)]],
-                ['name' => 'orbit-e2e-image-aaaaaaaa-operator', 'config' => ['volatile.base_image' => str_repeat('b', 64)]],
-                ['name' => 'unrelated', 'config' => []],
-            ], JSON_THROW_ON_ERROR));
-        });
-
-        expect(incusHost()->instanceBaseImages())->toBe([
-            'orbit-e2e-image-aaaaaaaa-gateway' => str_repeat('a', 64),
-            'orbit-e2e-image-aaaaaaaa-operator' => str_repeat('b', 64),
-        ]);
-    });
-});
-
 describe('IncusHost mutations', function () {
     it('rejects duplicate guest targets before starting any process', function () {
         Process::fake();
         $guest = incusGuestSpec('gateway', 10);
 
-        expect(fn () => incusHost()->initGuests(['one' => $guest, 'two' => [...$guest, 'node' => 'app-dev']]))
+        expect(fn () => incusHost()->createGuests(['one' => $guest, 'two' => [...$guest, 'node' => 'app-dev']]))
             ->toThrow(RuntimeException::class, 'targets must be unique');
         Process::assertNothingRan();
     });
@@ -948,50 +732,57 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'), '--force'));
     });
 
-    it('creates VMs and unprivileged nesting containers in one batch with fixed network identity', function () {
-        Process::fake(['*' => Process::result()]);
+    it('copies every guest from the template, then adds each NIC with its fixed network identity', function () {
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
 
-        $instances = incusHost()->initGuests([
-            'gateway' => incusGuestSpec('gateway', 10),
-            'operator' => incusGuestSpec('operator', 14, container: true),
+            return Process::result();
+        });
+
+        $instances = incusHost()->createGuests([
+            'gateway' => [...incusGuestSpec('gateway', 10), 'config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"]],
+            'operator' => incusGuestSpec('operator', 14, memory: '1GiB'),
         ]);
 
-        $init = static fn (string $node, string $image, array $type, string $ipv4): array => incusCommand(...[
-            'init',
-            $image,
+        $copy = static fn (string $node, string $memory, string ...$config): array => incusCommand(
+            'copy',
+            incusTarget(IncusHost::TEMPLATE),
             incusTarget("orbit-e2e-tst-123-aaaaaaaa-{$node}"),
-            ...$type,
-            '--storage',
-            'orbit-e2e',
             '--config',
             'limits.cpu=1',
             '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--device',
-            'eth0,network=oe-b32d6c83af72',
-            '--device',
-            "eth0,ipv4.address={$ipv4}",
-            '--device',
-            'eth0,hwaddr='.TopologyTarget::macFor('oe-b32d6c83af72', $node),
+            "limits.memory={$memory}",
             '--config',
             'user.orbit.e2e.owner=orbit-e2e',
             '--config',
             'user.orbit.e2e.operation=op-1',
-        ]);
-        Process::assertRan($init('gateway', 'images:ubuntu/26.04', ['--vm'], '10.232.30.10'));
-        Process::assertRan($init(
-            'operator',
-            incusTarget('orbit-e2e-operator'),
-            ['--config', 'security.privileged=false', '--config', 'security.nesting=true'],
-            '10.232.30.14',
-        ));
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config');
-        expect(array_keys($instances))
+            ...$config,
+        );
+        $nic = static fn (string $node, string $ipv4): array => incusCommand(
+            'config',
+            'device',
+            'add',
+            incusTarget("orbit-e2e-tst-123-aaaaaaaa-{$node}"),
+            'eth0',
+            'nic',
+            'network=oe-b32d6c83af72',
+            "ipv4.address={$ipv4}",
+            'hwaddr='.TopologyTarget::macFor('oe-b32d6c83af72', $node),
+        );
+        expect(array_slice($commands, 0, 2))
+            ->toEqualCanonicalizing([
+                $copy('gateway', '2GiB', '--config', "cloud-init.user-data=#cloud-config\nusers: []\n"),
+                $copy('operator', '1GiB'),
+            ])
+            ->and(array_slice($commands, 2))
+            ->toEqualCanonicalizing([$nic('gateway', '10.232.30.10'), $nic('operator', '10.232.30.14')])
+            ->and(array_filter($commands, static fn (array $command): bool => array_intersect(['init', '--vm', '--storage', '--device', 'shift=true'], $command) !== []))
+            ->toBe([])
+            ->and(array_keys($instances))
             ->toBe(['gateway', 'operator'])
+            ->and($instances['operator']->pool)
+            ->toBe(IncusHost::POOL)
             ->and($instances['operator']->network)
             ->toBe('oe-b32d6c83af72')
             ->and($instances['operator']->metadata)
@@ -1000,7 +791,25 @@ describe('IncusHost mutations', function () {
             ->toBe([]);
     });
 
-    it('adds the worktree mount after every guest exists, shifted for containers', function () {
+    it('refuses guest configuration outside the allowed keys before copying', function () {
+        Process::fake();
+
+        expect(fn () => incusHost()->createGuests(['gateway' => [
+            ...incusGuestSpec('gateway', 10),
+            'config' => ['security.privileged' => 'true'],
+        ]]))->toThrow(RuntimeException::class, 'Incus guest configuration [security.privileged] is not allowed.');
+        Process::assertNothingRan();
+    });
+
+    it('refuses an empty guest batch', function () {
+        Process::fake();
+
+        expect(fn () => incusHost()->createGuests([]))
+            ->toThrow(RuntimeException::class, 'Incus guest creation batch must be non-empty.');
+        Process::assertNothingRan();
+    });
+
+    it('adds the worktree mount after every guest has its NIC', function () {
         $worktree = temporaryPath('orbit-incus-mount-', 4);
         mkdir($worktree, 0700, true);
         $mount = ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'];
@@ -1011,12 +820,12 @@ describe('IncusHost mutations', function () {
             return Process::result();
         });
 
-        $instances = incusHost()->initGuests([
+        $instances = incusHost()->createGuests([
             'app-dev' => [...incusGuestSpec('app-dev', 11), 'mount' => $mount],
-            'operator' => [...incusGuestSpec('operator', 14, container: true), 'mount' => $mount],
+            'operator' => [...incusGuestSpec('operator', 14), 'mount' => $mount],
         ]);
 
-        $add = static fn (string $node, string ...$shift): array => incusCommand(
+        $add = static fn (string $node): array => incusCommand(
             'config',
             'device',
             'add',
@@ -1025,28 +834,41 @@ describe('IncusHost mutations', function () {
             'disk',
             "source={$worktree}",
             'path=/home/orbit/orbit',
-            ...$shift,
         );
-        expect(array_map(static fn (array $command): string => $command[3], $commands))
-            ->toBe(['init', 'init', 'config', 'config'])
-            ->and(array_slice($commands, 2))
-            ->toEqualCanonicalizing([$add('app-dev'), $add('operator', 'shift=true')])
+        expect(array_map(static fn (array $command): string => $command[3] === 'copy' ? 'copy '.$command[4] : 'config '.$command[7], $commands))
+            ->toBe(['copy '.incusTarget(IncusHost::TEMPLATE), 'copy '.incusTarget(IncusHost::TEMPLATE), 'config eth0', 'config eth0', 'config orbit-source', 'config orbit-source'])
+            ->and(array_slice($commands, 4))
+            ->toEqualCanonicalizing([$add('app-dev'), $add('operator')])
             ->and($instances['app-dev']->disks)
             ->toBe(['orbit-source' => ['source' => $worktree, 'path' => '/home/orbit/orbit']]);
     });
 
-    it('adds no mount when the guest initialization batch fails', function () {
+    it('adds no NIC or mount when the copy batch fails', function () {
         $worktree = temporaryPath('orbit-incus-mount-', 4);
         mkdir($worktree, 0700, true);
-        Process::fake(static fn (PendingProcess $process): ProcessResult => ($process->command[3] ?? null) === 'init'
-            ? Process::result('', 'image missing', 1)
+        Process::fake(static fn (PendingProcess $process): ProcessResult => ($process->command[3] ?? null) === 'copy'
+            ? Process::result('', 'Error: Instance not found', 1)
             : Process::result());
 
-        expect(fn () => incusHost()->initGuests(['app-dev' => [
+        expect(fn () => incusHost()->createGuests(['app-dev' => [
             ...incusGuestSpec('app-dev', 11),
             'mount' => ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'],
-        ]]))->toThrow(RuntimeException::class, 'Incus guest initialization batch failed for app-dev: image missing');
+        ]]))->toThrow(RuntimeException::class, 'Incus guest copy batch failed for app-dev: Error: Instance not found');
         Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config');
+    });
+
+    it('adds no mount when the NIC batch fails', function () {
+        $worktree = temporaryPath('orbit-incus-mount-', 4);
+        mkdir($worktree, 0700, true);
+        Process::fake(static fn (PendingProcess $process): ProcessResult => in_array('eth0', $process->command, true)
+            ? Process::result('', 'network not found', 1)
+            : Process::result());
+
+        expect(fn () => incusHost()->createGuests(['app-dev' => [
+            ...incusGuestSpec('app-dev', 11),
+            'mount' => ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'],
+        ]]))->toThrow(RuntimeException::class, 'Incus guest NIC batch failed for app-dev: network not found');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => in_array('orbit-source', $process->command, true));
     });
 
     it('rejects a non-positive guest readiness timeout', function () {
@@ -1240,7 +1062,6 @@ describe('IncusHost mutations', function () {
         expect(fn () => new IncusHost(
             remote: 'lab',
             project: 'orbit',
-            pool: 'orbit-e2e',
             guestReadinessTimeoutSeconds: 1,
         )
             ->waitForAgents(['orbit-e2e-tst-123-aaaaaaaa-gateway']))
@@ -1470,7 +1291,7 @@ describe('IncusHost mutations', function () {
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 'devices' => [],
                 'expanded_devices' => [
-                    'root' => ['type' => 'disk', 'pool' => 'orbit-e2e'],
+                    'root' => ['type' => 'disk', 'pool' => IncusHost::POOL],
                     'eth0' => ['type' => 'nic', 'network' => 'oe-b32d6c83af72', 'hwaddr' => '00:16:3e:5e:4b:52'],
                 ],
             ]], JSON_THROW_ON_ERROR));
@@ -1479,7 +1300,7 @@ describe('IncusHost mutations', function () {
         $instance = incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         expect($instance?->pool)
-            ->toBe('orbit-e2e')
+            ->toBe(IncusHost::POOL)
             ->and($instance?->network)
             ->toBe('oe-b32d6c83af72')
             ->and($instance?->mac)
@@ -2002,7 +1823,7 @@ describe('IncusHost failures', function () {
         Process::fake(['*' => Process::result('', 'Bearer token-value', 9)]);
 
         try {
-            incusHost(new SecretRedactor(['token-value']))->imageFingerprint('ubuntu');
+            incusHost(new SecretRedactor(['token-value']))->instance('orbit-e2e-tst-123-aaaaaaaa-gateway');
             $this->fail('Expected the Incus command to fail.');
         } catch (RuntimeException $exception) {
             expect($exception->getMessage())
@@ -2017,7 +1838,7 @@ describe('IncusHost failures', function () {
             throw new RuntimeException('Timed out with password-value');
         });
 
-        expect(fn () => incusHost(new SecretRedactor(['password-value']))->imageFingerprint('ubuntu'))
+        expect(fn () => incusHost(new SecretRedactor(['password-value']))->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, '[REDACTED]');
     });
 
@@ -2026,7 +1847,7 @@ describe('IncusHost failures', function () {
 
         expect(fn () => incusHost()->deleteInstance('orbit-e2e-*'))
             ->toThrow(RuntimeException::class, 'Invalid')
-            ->and(fn () => incusHost()->initGuests(['gateway' => [
+            ->and(fn () => incusHost()->createGuests(['gateway' => [
                 ...incusGuestSpec('gateway', 10),
                 'metadata' => ['user.other.owner' => 'orbit-e2e'],
             ]]))
@@ -2037,7 +1858,7 @@ describe('IncusHost failures', function () {
     it('rejects an unsafe or missing source mount before creating any guest', function (array $mount, string $message) {
         Process::fake();
 
-        expect(fn () => incusHost()->initGuests(['gateway' => [...incusGuestSpec('gateway', 10), 'mount' => $mount]]))
+        expect(fn () => incusHost()->createGuests(['gateway' => [...incusGuestSpec('gateway', 10), 'mount' => $mount]]))
             ->toThrow(RuntimeException::class, $message);
         Process::assertNothingRan();
     })->with([

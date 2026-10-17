@@ -185,7 +185,7 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     $name = 'task-'.$group->id;
 
     try {
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
         $this->source->prepare($instance, false);
         $resolution = $this->source->resolve($instance->refresh());
     } finally {
@@ -414,7 +414,7 @@ it('fetches at resolve past planted command keys without running them', function
 describe('CheckoutProcesses', function (): void {
     it('stops the processes inside a task workspace before deleting it and leaves every other process alone', function (string $operation): void {
         $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id, $group);
         $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
         TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'removal-vm', 'wireguard_ip' => '10.44.0.130', 'state' => TaskVmState::Ready]);
         $checkout = (string) $instance->checkout_path;
@@ -456,13 +456,22 @@ describe('CheckoutProcesses', function (): void {
     })->with(['finalize', 'remove']);
 
     it('leaves the processes inside a development Instance running', function (string $name): void {
+        $sameNode = null;
         if ($name === 'group-name') {
             $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Separate workspace', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
             $name = 'task-'.$group->id;
             $vmNode = Node::query()->create(['name' => 'separate-task-vm', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.131', 'wireguard_ip' => '10.44.0.131']);
             TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $this->node->id, 'node_id' => $vmNode->id, 'provider' => 'incus', 'name' => 'separate-vm', 'wireguard_ip' => '10.44.0.131', 'state' => TaskVmState::Ready]);
         }
+        if ($name === 'unowned') {
+            $sameNode = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Not its workspace', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
+            $name = 'task-'.$sameNode->id;
+        }
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, $name);
+        if ($sameNode instanceof Task) {
+            // The group's live task VM is on this Node, but the group does not own the Instance.
+            TaskVm::query()->create(['group_id' => $sameNode->id, 'host_node_id' => $this->node->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'same-node-vm', 'wireguard_ip' => '10.44.0.132', 'state' => TaskVmState::Ready]);
+        }
         $checkout = (string) $instance->checkout_path;
         $kept = [
             'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
@@ -480,7 +489,7 @@ describe('CheckoutProcesses', function (): void {
                 orb178_run_allow_failure(['kill', '-KILL', (string) $pid]);
             }
         }
-    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999', 'task name with a group on another Node' => 'group-name']);
+    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999', 'task name with a group on another Node' => 'group-name', 'task name on the group\'s VM Node without an owner' => 'unowned']);
 });
 
 it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {
@@ -613,9 +622,8 @@ it('removes an absent pre-activation reserved worktree without touching its seed
         'status' => TaskGroupStatus::Todo,
     ]);
     $name = 'task-'.$group->id;
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
     $instance->update([
-        'task_workspace_owner_id' => $group->id,
         'source_prepare_id' => 'absent-task-prepare',
         'task_workspace_routed' => false,
         'seed_selected' => true,
@@ -2961,8 +2969,9 @@ function orb180_resolved_source(
     Node $node,
     string $appsRoot,
     string $name,
+    ?Task $owner = null,
 ): Instance {
-    $instance = orb76_source_instance($project, $node, $appsRoot, $name);
+    $instance = orb76_source_instance($project, $node, $appsRoot, $name, owner: $owner);
     $source->prepare($instance, false);
     $resolution = $source->resolve($instance);
     $instance->update([
@@ -3418,6 +3427,7 @@ function orb76_source_instance(
     string $appsRoot,
     string $name,
     ?string $branchOverride = null,
+    ?Task $owner = null,
 ): Instance {
     if (! $node->roles()->where('role', 'app-dev')->exists()) {
         $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
@@ -3431,6 +3441,7 @@ function orb76_source_instance(
             'source_layout' => 'checkout',
             'checkout_path' => "{$appsRoot}/{$project->slug}/{$name}",
             'branch_override' => $branchOverride,
+            'task_workspace_owner_id' => $owner?->id,
             'status' => InstanceState::Reserved,
         ])
         ->load(['project', 'node']);

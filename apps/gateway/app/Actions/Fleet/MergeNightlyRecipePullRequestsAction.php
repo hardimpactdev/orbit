@@ -27,6 +27,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
         private GitHubAppStore $store,
         private RecipeLoader $loader,
         private RecipeMaintenanceAlerts $alerts,
+        private NightlyRecipeContents $contents,
     ) {}
 
     public function execute(): void
@@ -68,7 +69,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
                     'Expected exactly one commit authored and committed by the Gateway App.');
                 $parents = data_get($commits, '0.parents');
                 $parent = data_get($commits, '0.parents.0.sha');
-                if (! is_array($parents) || count($parents) !== 1 || ! is_string($parent) || preg_match('/\A[0-9a-f]{40}\z/', $parent) !== 1) {
+                if (! is_array($parents) || count($parents) !== 1 || ! $this->contents->isSha($parent)) {
                     throw new UnexpectedValueException('Expected a single-parent snapshot commit.');
                 }
                 $this->patch($http, $files, $parent, $pull->headSha, substr($pull->headRef, -8).'T000000Z');
@@ -116,25 +117,14 @@ final readonly class MergeNightlyRecipePullRequestsAction
         if (count($removed) !== 1 || count($added) !== 1) {
             throw new UnexpectedValueException('The recipe patch changes more than one line.');
         }
-        $before = $this->contents($http, $parent);
-        $after = $this->contents($http, $head);
+        $before = $this->contents->read($http, $parent);
+        $after = $this->contents->read($http, $head);
         $old = $this->loader->decode($before)->snapshot;
         $this->require($snapshot > $old && $this->loader->decode($after)->snapshot === $snapshot
             && preg_match('/\A\s*"snapshot"\s*:\s*"'.preg_quote($old, '/').'"\s*,?\z/', $removed[0]) === 1
             && $added[0] === str_replace($old, $snapshot, $removed[0]), 'The patch does not advance only ubuntu.snapshot to its branch date.');
         $expected = str_replace($removed[0], $added[0], $before, $count);
         $this->require($count === 1 && $after === $expected, 'Recipe contents include changes outside the snapshot line.');
-    }
-
-    private function contents(PendingRequest $http, string $sha): string
-    {
-        $encoded = $http->get('/contents/'.OpenNightlyRecipePullRequestAction::Path, ['ref' => $sha])->throw()->json('content');
-        $content = is_string($encoded) ? base64_decode($encoded, true) : false;
-        if (! is_string($content)) {
-            throw new UnexpectedValueException('GitHub omitted the recipe contents.');
-        }
-
-        return $content;
     }
 
     private function require(bool $condition, string $reason): void

@@ -171,9 +171,9 @@ it('closes out a merged worktree when the repository has a long worktree listing
     )->toBeFalse();
 });
 
-it('releases the discovery topology before removing a merged worktree', function (): void {
+it('removes a merged worktree with a topology attempt without calling the topology tool', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
-    $remote = temporaryPath('orbit-flow-release-remote-', 6);
+    $remote = temporaryPath('orbit-flow-attempt-remote-', 6);
     $run->run(['git', 'init', '--bare', $remote])->throw();
     $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote])->throw();
     $run->path($root)->run(['git', 'push', '-u', 'origin', 'main'])->throw();
@@ -183,15 +183,15 @@ it('releases the discovery topology before removing a merged worktree', function
     file_put_contents($worktree.'/.e2e/attempt.json', '{}');
     file_put_contents(
         $root.'/bin/e2e-topology',
-        "#!/bin/sh\nprintf '%s\\n' \"\$*\" > \"\$(git rev-parse --git-common-dir)/topology-released\"\n",
+        "#!/bin/sh\nprintf '%s\\n' \"\$*\" > \"\$(git rev-parse --git-common-dir)/topology-called\"\n",
     );
     chmod($root.'/bin/e2e-topology', 0755);
 
     $result = $run->path($root)->run([$root.'/bin/worktree-remove', 'TST-48']);
 
     expect($result->successful())->toBeTrue($result->errorOutput())
-        ->and(trim((string) file_get_contents($root.'/.git/topology-released')))
-        ->toBe('release TST-48 --worktree='.$worktree)
+        ->and(file_exists($root.'/.git/topology-called'))
+        ->toBeFalse()
         ->and(is_dir($worktree))
         ->toBeFalse();
 });

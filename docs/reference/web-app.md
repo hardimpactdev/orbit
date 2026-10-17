@@ -115,7 +115,7 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries unattached leftovers. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
+The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
 
 The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies. A `question_closed` comment is labeled `Question closed`. The generated types also include `provider_retry` comments. These comments show the reserved attempt, delay, and failed turn for [transient provider retries](/reference/tasks#retry-a-transient-provider-error); the task stays in its current phase while it waits.
 
@@ -135,6 +135,8 @@ A card for a task that asks for direction says `Needs your direction`, and the t
 | `tasks.updated` | Nothing. It stores the new `enabled` value. |
 
 The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
+
+Checkout ownership is separate from the task board status. A task that waits for another [workspace lease](/reference/tasks#workspace-lease) stays in its current task state and does not gain a check failure. The `tasks:status` API and Doctor expose the holder and waiters for diagnosis.
 
 ## Live Activity
 
@@ -403,6 +405,4 @@ Annotations run outside Orbit. The web app uses the independent overlay package 
 
 The removal deletes the Gateway's annotation records, revision counter, and annotation-only Tasks. It removes the `annotation:*` API operations and matching MCP tools, `annotation.updated`, and the `annotator`, `agentation-mcp`, and dependent `antigravity-watch` presets. The CLI and SDK omit the Instance annotator port and URL fields; the CLI accepts only the `vp-dev` preset. Task `execution_mode` and `target_thread_id` are gone. This does not change ordinary Processes that run a standalone annotation server. Browser calls from private app Route origins now receive HTTP 403 `api.origin_refused`. This breaks the Orbit tool in `nckrtl/laravel-toolbar` (`useOrbitProcesses.ts`).
 
-Before deploying this removal, destroy all removed preset Processes through the old Gateway. The migration refuses to change data while any such Process remains and names its ID. It also refuses to erase an annotation association when another task links to that Instance or has a matching workspace name and branch. Resolve that ownership ambiguity before migration; rolling back cannot recover a deleted association. This blocks the release before activation.
-
-The destructive migration requires a verified pre-migration database backup to restore removed data. Rollback restores empty annotation tables and the Task schema and defaults required by the previous release, not deleted records. See [retained Node files](/reference/node-provisioning#converge-the-orbit-footprint) for cleanup.
+Before deploying this removal, destroy all removed preset Processes through the old Gateway. The migration refuses to change data while any such Process remains and names its ID. This blocks the release before activation. The destructive migration requires a verified pre-migration database backup to restore removed data. Rollback restores empty annotation tables and the Task schema and defaults required by the previous release, not deleted records. See [retained Node files](/reference/node-provisioning#converge-the-orbit-footprint) for cleanup.

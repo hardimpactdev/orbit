@@ -314,6 +314,7 @@ it('keeps an already claimed workspace without source or cache preparation', fun
         'node_id' => $node->id,
         'name' => TaskWorkspaceName::for($group),
         'checkout_path' => '/srv/orbit/apps/reuse/workspace',
+        'task_workspace_owner_id' => $group->id,
         'status' => InstanceState::Active,
     ]);
     $group->taskable()->associate($instance);
@@ -463,22 +464,24 @@ it('does not allow_existing task provision for a newly reserved Instance', funct
 });
 
 describe('a workspace an interrupted claim left unattached', function (): void {
-    it('never adopts an Instance that only shares the workspace name', function (): void {
+    it('never adopts a user Instance named and branched like the workspace', function (): void {
         $project = provisioner_app('orbit');
         $node = provisioner_node('only', '10.44.0.134');
         $group = provisioner_group($project, vmNode: $node);
+        $name = TaskWorkspaceName::for($group);
         $lookalike = Instance::query()->create([
             'project_id' => $project->id,
-            'node_id' => $node->id,
-            'name' => TaskWorkspaceName::for($group),
-            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
-            'branch_override' => 'feature-x',
+            'node_id' => provisioner_node('user-dev', '10.44.0.135')->id,
+            'name' => $name,
+            'checkout_path' => '/srv/orbit/apps/orbit/'.$name,
+            'branch_override' => $name,
             'status' => InstanceState::SourceResolved,
         ]);
         bind_task_workspace_fakes();
 
         expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
-            ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
+            ->cause->toContain('[instance.name_taken]')
+            ->and($lookalike->fresh()?->task_workspace_owner_id)->toBeNull()
             ->and($lookalike->fresh()?->status)->toBe(InstanceState::SourceResolved);
         $this->assertDatabaseCount('instances', 1);
     });

@@ -35,6 +35,6 @@ final class TaskExecutionHold
             }
 
             return $operation();
-        });
+        }, wait: false);
     }
 }

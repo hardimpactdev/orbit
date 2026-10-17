@@ -18,17 +18,18 @@ final readonly class OpenNightlyRecipePullRequestAction
 {
     public const string Path = 'apps/gateway/resources/machine-software/recipe.json';
 
-    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader) {}
+    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader, private RefreshNightlyRecipePullRequestAction $refresh, private NightlyRecipeContents $contents) {}
 
     public function execute(): ?string
     {
+        $this->refresh->execute();
         $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository())
             ?? throw new RuntimeException('The Orbit repository is invalid.');
         $token = $this->access->token($repository);
         $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
             ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
         $head = $http->get('/git/ref/heads/main')->throw()->json('object.sha');
-        if (! is_string($head) || preg_match('/\A[0-9a-f]{40}\z/', $head) !== 1) {
+        if (! $this->contents->isSha($head)) {
             throw new RuntimeException('GitHub did not return the main commit.');
         }
         $file = $http->get('/contents/'.self::Path, ['ref' => $head])->throw()->json();
@@ -62,10 +63,7 @@ final readonly class OpenNightlyRecipePullRequestAction
             if (($branchFile['sha'] ?? null) !== $file['sha']) {
                 throw new RuntimeException('The date branch recipe changed. Inspect it before retrying.');
             }
-            $updated = preg_replace('/("snapshot"\s*:\s*")'.preg_quote($recipe->snapshot, '/').'(")/', '${1}'.$snapshot.'${2}', $content, 1, $count);
-            if (! is_string($updated) || $count !== 1) {
-                throw new RuntimeException('The recipe snapshot could not be replaced.');
-            }
+            $updated = $this->contents->replace($content, $recipe->snapshot, $snapshot);
             $this->loader->decode($updated);
             $http->put('/contents/'.self::Path, ['branch' => $branch, 'sha' => $file['sha'], 'message' => $title, 'content' => base64_encode($updated)])->throw();
         }
