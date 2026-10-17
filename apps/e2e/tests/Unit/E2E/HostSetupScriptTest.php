@@ -6,7 +6,8 @@ use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
 
-const HOST_SETUP_SEED_DEVICE = '/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed';
+/** How the script derives the seed disk's udev path; the Gateway's TopologySeedContractTest checks the result. */
+const HOST_SETUP_SEED_DEVICE = '/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_${seed_device//-/--}';
 
 function hostSetupScript(): string
 {
@@ -261,7 +262,7 @@ describe('bin/e2e-topology-host-setup', function () {
     it('tests the seed device as a block device at its udev path', function () {
         $source = (string) file_get_contents(hostSetupScript());
 
-        expect($source)->toContain('device='.HOST_SETUP_SEED_DEVICE."\n")
+        expect($source)->toContain("seed_device=topology-seed\n", 'device='.HOST_SETUP_SEED_DEVICE."\n")
             ->toContain('[[ -b $device ]] || {');
     });
 

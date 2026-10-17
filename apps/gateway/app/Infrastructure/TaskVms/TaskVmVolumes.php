@@ -17,7 +17,6 @@ use App\Models\TaskVm;
  *   it as `orbit-topology-seed-<12 hex>-new` and renames it when it is finished, and pruning deletes it with its image.
  * - `tvm-<id>-topology-seed`: the clone of its base image's topology seed that a VM whose size runs a topology boots
  *   with. It goes with the VM.
- * - `tvm-<id>-workspace`: a legacy claim clone. It goes with its VM.
  *
  * Incus keeps a ZFS clone's origin until the last clone is gone, so a seed can go while VMs still use their clones.
  */
@@ -29,7 +28,7 @@ final readonly class TaskVmVolumes
     /** The size of every topology seed. ZFS volumes are thin, so a clone uses only what its Nodes write. */
     public const string SeedSize = '45GiB';
 
-    private const string VmVolume = '/\A(tvm-[0-9]+)-(?:workspace|topology-seed)\z/D';
+    private const string Clone = '/\A(tvm-[0-9]+)-topology-seed\z/D';
 
     private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new)?\z/D';
 
@@ -54,14 +53,14 @@ final readonly class TaskVmVolumes
     }
 
     /**
-     * Orbit owns the volume `$name` in the host's pool: a VM's clone or legacy workspace, or the topology seed of a
-     * base image in `$fingerprints`, the images the host keeps.
+     * Orbit owns the volume `$name` in the host's pool: a VM's clone, or the topology seed of a base image in
+     * `$fingerprints`, the images the host keeps.
      *
      * @param  list<string>  $fingerprints
      */
     public static function owns(string $name, array $fingerprints): bool
     {
-        if (preg_match(self::VmVolume, $name) === 1) {
+        if (preg_match(self::Clone, $name) === 1) {
             return true;
         }
 
@@ -93,19 +92,16 @@ final readonly class TaskVmVolumes
         return $clone;
     }
 
-    /** Deletes the clone and the legacy workspace of a VM whose instance is gone. Incus keeps both when it deletes the VM. */
+    /** Deletes the clone of a VM whose instance is gone. Incus keeps it when it deletes the VM. */
     public function release(TaskVmHost $host, Node $node, TaskVm $vm): void
     {
-        $names = $this->names($host, $node);
-        foreach ([self::clone($vm), $vm->name.'-workspace'] as $name) {
-            if (in_array($name, $names, true)) {
-                $this->delete($host, $node, $name);
-            }
+        if ($this->exists($host, $node, self::clone($vm))) {
+            $this->delete($host, $node, self::clone($vm));
         }
     }
 
     /**
-     * Deletes the clones and legacy workspaces whose VM has no live row on the host.
+     * Deletes the clones whose VM has no live row on the host.
      *
      * @return list<string>
      */
@@ -116,7 +112,7 @@ final readonly class TaskVmVolumes
         $live = TaskVm::query()->live()->where('host_node_id', $node->id)->pluck('name')->all();
         $deleted = [];
         foreach ($names as $name) {
-            if (preg_match(self::VmVolume, $name, $match) === 1 && ! in_array($match[1], $live, true)) {
+            if (preg_match(self::Clone, $name, $match) === 1 && ! in_array($match[1], $live, true)) {
                 $this->delete($host, $node, $name);
                 $deleted[] = $name;
             }

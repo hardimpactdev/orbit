@@ -345,14 +345,13 @@ it('refuses an invalid fingerprint', function (CommandResult $result, string $co
     'no key' => [incusResult(exitCode: 1, stderr: 'No such file'), 'task_vm.host_command_failed'],
 ]);
 
-it('deletes the VM, then its topology seed clone and legacy workspace, and accepts an absent one', function (): void {
-    ($this->answer)(incusResult(), incusVolumes('tvm-1-topology-seed', 'tvm-1-workspace', 'tvm-2-topology-seed'), incusResult(), incusResult());
+it('deletes the VM, then its topology seed clone, and accepts an absent one', function (): void {
+    ($this->answer)(incusResult(), incusVolumes('tvm-1-topology-seed', 'tvm-2-topology-seed'), incusResult());
     $this->provider->destroy($this->vm);
     expect(($this->argv)())->toBe([
         [...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1'],
         [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
         [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-1-topology-seed'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-1-workspace'],
     ]);
 
     $this->ssh->calls = [];
@@ -419,23 +418,22 @@ describe('park and resume', function (): void {
     });
 });
 
-it('sweeps only the clones and old workspaces of VMs without live rows, and keeps topology seeds', function (): void {
+it('sweeps only the clones of VMs without live rows, and keeps topology seeds', function (): void {
     $this->vm->update(['state' => TaskVmState::Parked]);
-    ($this->answer)(incusVolumes('tvm-1-workspace', 'tvm-1-topology-seed', 'tvm-999-workspace', 'tvm-999-topology-seed', 'orbit-topology-seed-cccccccccccc', 'tvm-template-1-20261011040000', 'operator-data'), incusResult(), incusResult());
+    ($this->answer)(incusVolumes('tvm-1-topology-seed', 'tvm-999-topology-seed', 'orbit-topology-seed-cccccccccccc', 'tvm-template-1-20261011040000', 'operator-data'), incusResult());
 
-    expect($this->volumes->sweepClones($this->hostSettings, $this->host))->toBe(['tvm-999-workspace', 'tvm-999-topology-seed']);
+    expect($this->volumes->sweepClones($this->hostSettings, $this->host))->toBe(['tvm-999-topology-seed']);
     expect(($this->argv)())->toBe([
         [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-999-workspace'],
         [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-999-topology-seed'],
     ]);
 });
 
-it('owns the clones and workspaces of VMs and only the topology seeds of images the host keeps', function (): void {
+it('owns the clones of VMs and only the topology seeds of images the host keeps', function (): void {
     $kept = [str_repeat('c', 64)];
 
     expect(TaskVmVolumes::owns('tvm-7-topology-seed', $kept))->toBeTrue()
-        ->and(TaskVmVolumes::owns('tvm-7-workspace', $kept))->toBeTrue()
+        ->and(TaskVmVolumes::owns('tvm-7-workspace', $kept))->toBeFalse()
         ->and(TaskVmVolumes::owns('orbit-topology-seed-cccccccccccc', $kept))->toBeTrue()
         ->and(TaskVmVolumes::owns('orbit-topology-seed-cccccccccccc-new', $kept))->toBeTrue()
         ->and(TaskVmVolumes::owns('orbit-topology-seed-dddddddddddd', $kept))->toBeFalse()
@@ -444,8 +442,8 @@ it('owns the clones and workspaces of VMs and only the topology seeds of images 
         ->and(TaskVmVolumes::newSeed(str_repeat('c', 64)))->toBe('orbit-topology-seed-cccccccccccc-new');
 });
 
-it('keeps an old claim volume when Incus refuses deletion and reports the failure', function (): void {
-    ($this->answer)(incusVolumes('tvm-1-workspace'), incusResult(exitCode: 1), incusVolumes('tvm-1-workspace'));
+it('keeps a clone when Incus refuses its deletion and reports the failure', function (): void {
+    ($this->answer)(incusVolumes('tvm-1-topology-seed'), incusResult(exitCode: 1), incusVolumes('tvm-1-topology-seed'));
 
     expect(fn () => $this->volumes->release($this->hostSettings, $this->host, $this->vm))->toThrow(TaskVmException::class);
 });

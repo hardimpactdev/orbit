@@ -28,8 +28,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Every 10 minutes, while task VMs are enabled: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the workspace
- * clones `tvm-<number>-workspace` that no live row owns, and fails the
+ * Every 10 minutes, while task VMs are enabled: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the
+ * topology seed clones `tvm-<number>-topology-seed` that no live row owns, and fails the
  * `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It changes only the
  * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for

@@ -58,7 +58,7 @@ The image chain of [ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-
 3. In the VM, Incus creates the btrfs pool `topology-seed` on the device, imports the archive, creates the stopped VM `node-template` from it with no profiles and its own root disk on `topology-seed`, and deletes the image. The template never boots, so it holds no machine identity.
 4. The host deletes `<builder>-smoke` and renames the volume to `orbit-topology-seed-<12 hex>`.
 
-So an existing topology seed is always a finished one. A retry deletes the `-new` volume and starts again, and relaunches `<builder>-smoke` from the published base when it is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image. Promotion requires the finished phase, as it requires `smoke`.
+So an existing topology seed is always a finished one. The `-new` volume exists before anything changes in `<builder>-smoke`, so a retry that finds one replaces `<builder>-smoke` with a fresh VM from the published base, which may otherwise hold the failed attempt's Incus state. A retry also launches `<builder>-smoke` when it is gone. Then it deletes the `-new` volume and starts again. Like `smoke` and `publish`, the phase runs even when the build already holds its base image. Promotion requires the finished phase, as it requires `smoke`.
 
 Pruning deletes a topology seed in the same loop that deletes its base image, so a base kept for a VM keeps its topology seed. When clones still exist, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
 
@@ -68,7 +68,7 @@ Pruning deletes a topology seed in the same loop that deletes its base image, so
 
 The claim gate already requires a promoted base for the current recipe, and promotion now requires its topology seed. So no VM is claimed without one.
 
-Destroy deletes the clone after the VM, as it deletes a retained workspace volume. `TaskVmWorkspaceVolumes` becomes `TaskVmVolumes`, because it now owns live clones too. It and the stray report recognize `tvm-<id>-topology-seed` by name, as they recognize `tvm-<id>-workspace`, and treat the `orbit-topology-seed-*` volumes of retained bases as owned.
+Destroy deletes the clone after the VM, because Incus keeps custom volumes. `TaskVmWorkspaceVolumes` becomes `TaskVmVolumes`, because it now owns live clones. Its handling of the legacy claim clones `tvm-<id>-workspace` goes: none exist on beast or shark. It and the stray report recognize `tvm-<id>-topology-seed` by name, and treat the `orbit-topology-seed-*` volumes of retained bases as owned.
 
 ### Preparation adopts the clone
 

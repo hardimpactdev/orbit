@@ -56,19 +56,6 @@ final readonly class TaskVmCloudInit
     public const array WorkspaceTools = ['rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev'];
 
     /**
-     * Incus and what a nested topology needs beside it, installed without recommended packages: QEMU for amd64, the
-     * only architecture of the `base` profile, with its UEFI firmware, SPICE module, `qemu-img`, `virtiofsd`, and
-     * dnsmasq, which Incus VMs need but the Incus package only recommends; btrfs for the pool of the topology seed; and
-     * nftables for the isolation table. Pinned to Incus 6.0.5, whose recovery API adopts the topology seed.
-     *
-     * @var list<string>
-     */
-    public const array TopologyPackages = [
-        'incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base',
-        'btrfs-progs', 'nftables',
-    ];
-
-    /**
      * The user-data of a task VM, which boots from the base image. The image build already put `orbit` in
      * `incus-admin`, because cloud-init adds groups only to a user it creates.
      */

@@ -7,8 +7,9 @@ set -euo pipefail
 
 pool=topology-seed
 template=node-template
+seed_device=topology-seed
 # Incus names a VM disk's SCSI serial `incus_<device>` with each `-` doubled, and udev links it by that serial.
-device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed
+device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_${seed_device//-/--}
 wireguard_interface=orbit
 wireguard_subnet=10.44.0.0/24
 

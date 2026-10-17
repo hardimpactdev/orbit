@@ -443,7 +443,7 @@ describe('strays', function (): void {
         $this->incus->foreign = ['10.44.0.7' => ['orbit-ci/ci-beast-1', 'default/ow-exp-20261006', 'default/renewed-ghost', 'orbit-templates/orbit-template-agent-base']];
         $this->incus->images = ['10.44.0.7' => [str_repeat('a', 64)]];
         $this->incus->volumes = ['10.44.0.7' => [
-            'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819', 'orbit-tasks/orbit-tasks/'.$ready->name.'-workspace',
+            'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819',
             'orbit-tasks/orbit-tasks/'.$ready->name.'-topology-seed', 'orbit-tasks/orbit-tasks/orbit-topology-seed-aaaaaaaaaaaa',
             'orbit-tasks/orbit-tasks/orbit-topology-seed-bbbbbbbbbbbb', 'orbit-tasks/default/orbit-topology-seed-aaaaaaaaaaaa',
             'orbit-tasks/orbit-tasks/scratch', 'orbit-tasks/default/tvm-template-46-20261013083819', 'orbit-ci/default/runner-cache',

@@ -15,7 +15,7 @@ TEMPLATE = {'name': 'node-template', 'type': 'virtual-machine', 'status': 'Stopp
 # Each call goes to $STATE/calls as one line, followed by `stdin=<bytes>`: no call may read the program's input.
 INCUS = '''#!/bin/bash
 printf '%s\\n' "$*" >> "$STATE/calls"
-printf 'stdin=%s\\n' "$(wc -c)" >> "$STATE/calls"
+printf 'stdin=%s\\n' "$(wc -c | tr -d ' ')" >> "$STATE/calls"
 shift 2
 case "$*" in
   'storage volume show '*) [ -f "$STATE/volume" ] ;;

@@ -119,10 +119,7 @@ final readonly class RecipeImageBuildSteps
                     break;
                 case 'smoke':
                     $smoke = $name.'-smoke';
-                    if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
-                        $this->image->launch($host, $node, $smoke, $build->images[$profile]['fingerprint'], $this->cloudInit->render($this->keys->publicKey()));
-                    }
-                    $this->image->awaitCloudInit($host, $node, $smoke);
+                    $this->ensureSmokeVm($host, $node, $smoke, $build->images[$profile]['fingerprint']);
                     $smokeShell = $this->image->shell($host, $node, $smoke)->forRecipePhase($profile, $phase);
                     $this->image->checkSmoke($smokeShell);
                     $this->image->checked($smoke, 'image check', $smokeShell->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot'])));
@@ -174,10 +171,7 @@ final readonly class RecipeImageBuildSteps
             if ($this->volumes->exists($host, $node, TaskVmVolumes::newSeed($fingerprint))) {
                 $this->image->delete($host, $node, $smoke);
             }
-            if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
-                $this->image->launch($host, $node, $smoke, $fingerprint, $this->cloudInit->render($this->keys->publicKey()));
-            }
-            $this->image->awaitCloudInit($host, $node, $smoke);
+            $this->ensureSmokeVm($host, $node, $smoke, $fingerprint);
             try {
                 $this->runner->run($node, $this->catalog->program(self::SeedProgram, user: 'root'), [
                     'project' => $host->project, 'pool' => $host->pool, 'vm' => $smoke, 'device' => TaskVmVolumes::SeedDevice,
@@ -190,6 +184,15 @@ final readonly class RecipeImageBuildSteps
         }
         $this->image->delete($host, $node, $smoke);
         $this->volumes->finishSeed($host, $node, $fingerprint);
+    }
+
+    /** Launches the smoke VM `$smoke` from the published base `$fingerprint` when it is missing, and waits for its cloud-init. */
+    private function ensureSmokeVm(TaskVmHost $host, Node $node, string $smoke, string $fingerprint): void
+    {
+        if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
+            $this->image->launch($host, $node, $smoke, $fingerprint, $this->cloudInit->render($this->keys->publicKey()));
+        }
+        $this->image->awaitCloudInit($host, $node, $smoke);
     }
 
     public function promote(TaskVmImageBuild $build): void

@@ -113,7 +113,7 @@ The base list explicitly contains the app-dev tools. It does not inherit a role.
 
 The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each uses an exact package version from the same authenticated snapshot on both architectures.
 
-The base also holds the nested Incus packages of `TaskVmCloudInit::TopologyPackages`, so a task VM [runs a topology](#prepare-the-topology) without an install:
+The base also holds the nested Incus packages, so a task VM [runs a topology](#prepare-the-topology) without an install:
 
 - `incus`, pinned to 6.0.5, whose recovery API adopts the [topology seed](#build-the-base-image).
 - `qemu-system-x86`, `ovmf`, `qemu-system-modules-spice`, `qemu-utils`, `virtiofsd`, and `dnsmasq-base`, which Incus VMs need but the Incus package only recommends.
@@ -378,7 +378,7 @@ A step that fails keeps the Instance and records the error on the row. The group
 Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
-2. It deletes the VM, then the VM's [clone of the topology seed](#incus-provider) and any legacy workspace volume. Incus keeps custom volumes after VM deletion. A VM or a volume that is gone counts as deleted.
+2. It deletes the VM, then the VM's [clone of the topology seed](#incus-provider). Incus keeps custom volumes after VM deletion. A VM or a volume that is gone counts as deleted.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
@@ -564,7 +564,7 @@ Every 10 minutes, while task VMs are enabled or the [UpCloud](#sweep-upcloud) to
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
-- An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` or `tvm-<number>-workspace` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
+- An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
 
 The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
@@ -591,7 +591,6 @@ A **stray instance** is an Incus instance in any project of the host that is non
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
 - a task VM's clone of the topology seed, `tvm-<number>-topology-seed`, in the host's project and pool;
-- a legacy claim clone `tvm-<number>-workspace` in the host's project and pool;
 - the [topology seed](#build-the-base-image) `orbit-topology-seed-<12 hex>`, or a seed under construction `orbit-topology-seed-<12 hex>-new`, of an image that the host's project keeps, in its project and pool;
 - an entry of the host's `operator_owned` list.
 
@@ -790,7 +789,7 @@ A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
 3. Run `task-vms:build-image {node}` to build the current recipe locally.
 
-To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, bridge, ACL, pool, and any unused legacy workspace volumes remain for manual removal.
+To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
 ### Limit fleet traffic on the hub
 

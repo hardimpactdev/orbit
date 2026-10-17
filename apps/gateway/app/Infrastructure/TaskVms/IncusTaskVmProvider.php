@@ -136,7 +136,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
     }
 
-    /** Deletes the VM, then its topology seed clone and legacy workspace, which Incus keeps when it deletes the VM. */
+    /** Deletes the VM, then its topology seed clone, which Incus keeps when it deletes the VM. */
     public function destroy(TaskVm $vm): void
     {
         $result = $this->incus($vm, ['delete', '--force', '--', $vm->name]);

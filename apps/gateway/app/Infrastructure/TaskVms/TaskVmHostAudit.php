@@ -60,7 +60,7 @@ final readonly class TaskVmHostAudit
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
      * against their rows), running and retained failed build VMs and, in the host's pool, the volumes of
-     * {@see TaskVmVolumes::owns()}: VM clones and legacy workspaces, and the topology seeds of the images the project keeps.
+     * {@see TaskVmVolumes::owns()}: VM clones and the topology seeds of the images the project keeps.
      * The host's `operator_owned` entries are the operator's. Everything else is a stray. Nothing here deletes or
      * changes anything.
      *
