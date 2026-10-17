@@ -227,6 +227,22 @@ Staged intent and its original source/snapshot are persisted before migration. A
 
 Do not use code rollback or migration down to claim deleted data was recovered. Restoring the paused record's snapshot is a separate operator action.
 
+### Abandon a failed stage after restoring its snapshot
+
+`gateway:release:abandon <full-SHA> <staged-record-id>` clears one staged hold only after a verified database restore. It does not restore data, switch code, run migrations, start consumers or enable automatic releases. Even a migration reporting “No data was removed” needs this procedure: a pending migration ledger cannot exclude partial or unrecorded changes.
+
+Before migration, stage protects the original snapshot and writes a private recovery receipt under `ORBIT_HOME/recovery`. The receipt binds the target SHA, original record, source release and snapshot hash. Keep both files and the pause marker. They survive a database restore and ordinary backup retention. Never edit the receipt or delete the marker to bypass a refusal.
+
+1. Keep ingress, all writers and automatic releases disabled. Re-establish the exact maintenance drain, including PHP-FPM and external console writers. Preserve the failed database, its WAL/SHM, release record and logs as a separate recovery set. Preserve annotation files and their associations; this command never removes them.
+2. Read the receipt and its named protected snapshot. Check its SHA-256, `PRAGMA integrity_check` and `PRAGMA foreign_key_check`. A foreign-key violation needs a source-data repair or a different verified recovery point; there is no bypass. Do not edit the protected snapshot.
+3. With every SQLite connection closed and both release locks held exclusively by the recovery operator, restore that exact snapshot to the canonical database path with the original account ownership and mode `0600`. Move the failed database and its sidecars together to the recovery set before replacing it; never reuse its WAL/SHM with the restored database. Keep `ORBIT_HOME/recovery` and `gateway-release.paused` in place. This restores database data only; use [Recover a failed update](#recover-a-failed-update) for any external migration effects or machine-state restore.
+4. Restore the receipt's exact prepared source release as current while consumers remain stopped. Do not use ordinary release rollback, which starts consumers. Verify its `REVISION`, link and shared database/configuration identity. Release the operator's locks before the command acquires them.
+5. Run `sudo -u orbit php <reviewed-prepared-release>/apps/gateway/artisan gateway:release:abandon <full-SHA> <staged-record-id>`. The command repeats account, lock, source, drain and recovery checks. It compares every schema object and every table row, including the migration ledger, with the protected snapshot in a database transaction. Differences refuse with the hold intact. It records `abandoned` on the original record, retaining source and snapshot provenance, then clears only that staged marker. Automatic releases remain disabled and consumers remain stopped.
+6. Repair the refusal's cause on the source under a separately controlled maintenance procedure. Repeat the drain and public `gateway:release:stage` command. A new attempt gets a new record and snapshot; it never overwrites the first recovery set.
+
+A crash after the abandoned record is committed but before marker removal is safe: repeat abandon with the same identities. It accepts only the restored database plus that exact completed record. If the database differs, restore the same protected snapshot again and repeat. Missing or corrupt evidence refuses; recover the complete saved pre-update state rather than guessing a migration result. A schema changed by a failed migration requires this verified restore, or a separately reviewed forward recovery under the hold.
+
+
 #### Migrations and the snapshot
 
 Before every deploy switch, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
