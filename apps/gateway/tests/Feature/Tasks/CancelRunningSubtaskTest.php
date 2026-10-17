@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -54,19 +57,20 @@ function cancel_subtask_in_baseline(int $suffix): array
         'public_ssh_host' => '192.0.3.'.$suffix,
         'wireguard_ip' => '10.44.2.'.$suffix,
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Cancel during baseline',
+        'brief' => 'Stop the baseline check.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Cancel during baseline',
-        'brief' => 'Stop the baseline check.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -113,6 +117,13 @@ function cancel_subtask_in_baseline(int $suffix): array
     {
         public int $implementers = 0;
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;
@@ -156,19 +167,20 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'public_ssh_host' => '192.0.2.98',
         'wireguard_ip' => '10.44.0.98',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Cancel one subtask',
+        'brief' => 'Keep the group workspace.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Cancel one subtask',
-        'brief' => 'Keep the group workspace.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -228,34 +240,9 @@ it('cancel running subtask preserves its group and Instance', function (): void 
             return 'task-test';
         }
     });
-    app()->instance(AgentSpawner::class, new class implements AgentSpawner
-    {
-        public function spawnReviewer(Task $task): ?int
-        {
-            return null;
-        }
-
-        public function spawnImplementer(Task $task): ?int
-        {
-            $group = $task->parent;
-            $instance = $group->taskable;
-            if (! $instance instanceof Instance) {
-                return null;
-            }
-
-            return AgentThread::query()->create([
-                'task_group_id' => $group->id,
-                'task_id' => $task->id,
-                'node_id' => $instance->node_id,
-                'driver' => 'fake',
-                'runtime_key' => 'node:'.$instance->node_id,
-                'external_id' => 'next-implementer-'.$task->id,
-                'role' => 'implementer',
-            ])->id;
-        }
-
-        public function requestReview(Task $task): void {}
-    });
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'interrupted-prior-turn');
+    $group->update(['implementer_agent_driver' => 'fake', 'reviewer_agent_driver' => 'fake']);
+    app()->instance(AgentSpawner::class, app(TaskAgentSpawner::class));
 
     $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$running->id}/cancel")
         ->assertOk()
@@ -271,7 +258,9 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()->taskable_id)->toBe($instance->id)
         ->and(Instance::query()->find($instance->id))->not->toBeNull()
-        ->and($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'implementer-session']]);
+        ->and($driver->calls[0])->toBe(['operation' => 'interrupt', 'thread' => 'implementer-session'])
+        ->and(array_column($driver->calls, 'operation'))->toBe(['interrupt', 'create'])
+        ->and($driver->calls[1]['prompt'])->toContain('Keep this work queued.');
 });
 
 it('cancels a running subtask through the generated MCP tool', function (): void {

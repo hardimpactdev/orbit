@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskConsultation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
@@ -32,6 +33,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -181,6 +183,13 @@ it('commits an approved subtask with the title and the reviewer summary, then st
     {
         /** @var list<int> */
         public array $implementers = [];
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -385,8 +394,10 @@ it('keeps a relay answer while the implementer is busy and delivers it once the 
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
     ]);
     $dispatcher = tick_dispatcher();
-    $state = (object) ['implementer' => 'running'];
+    $state = (object) ['implementer' => 'idle'];
     tick_relay_runtime($receipts, $dispatcher, $state);
+    app(TaskConsultation::class)->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+    $state->implementer = 'running';
     $completion = $task->completion_attempt;
 
     app(TaskScheduler::class)->tick();
@@ -711,7 +722,8 @@ it('preserves a real ended PR hold arriving during correction send before the fi
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure);
     $noticeKey = $task->fresh()?->ended_pr_notice_key;
     expect($noticeKey)->not->toBe($pending['key']);
-    expect(array_column($calls, 'key'))->toBe([$noticeKey, $pending['key']]);
+    // The ended-PR notice waits while the correction dispatch owns the workspace.
+    expect(array_column($calls, 'key'))->toBe([$pending['key']]);
     expect($driver->calls)->toBe($calls)
         ->and($receipts->prepared)->toBe(['implementer']);
     expect(Activity::query()->where('description', 'deliverable correction resumed')->count())->toBe(0);
@@ -762,6 +774,8 @@ it('supersedes an uncertain correction after completed direction without erasing
                     $this->state->messageId = $key;
                     file_put_contents($this->checkout.'/.git/orbit/run', $key);
                     file_put_contents($this->checkout.'/.git/orbit/run.json', json_encode(['turn' => $key], JSON_THROW_ON_ERROR));
+                } else {
+                    $this->state->reviewerTurnId = $key;
                 }
             }
             if ($implementer && $key === $this->correctionKey && str_starts_with($this->failure, 'lost-acceptance')) {
@@ -885,7 +899,6 @@ it('does not send a second implementer turn when an accepted relay answer lost i
     [$group, $task] = tick_held_relay();
     $receipts = new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
     ]);
     $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];
@@ -942,7 +955,6 @@ it('keeps the implementer handoff when the relay marker update fails after the s
     [$group, $task] = tick_held_relay();
     $receipts = new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
     ]);
     $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];
@@ -1044,7 +1056,7 @@ it('starts the reviewer with the first review request when the group has no revi
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('done');
+            return tick_checked_thread($threadId === 'reviewer-thread-2' ? 'running' : 'done', $threadId);
         }
     });
     $spawner = new class implements AgentSpawner
@@ -1052,11 +1064,23 @@ it('starts the reviewer with the first review request when the group has no revi
         /** @var list<int> */
         public array $reviewers = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->reviewers[] = $task->id;
 
-            return test_agent_thread($task->parent, 'reviewer-thread-2')->id;
+            $thread = test_agent_thread($task->parent, 'reviewer-thread-2');
+            $thread->update(['task_id' => $task->id]);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$thread->id, $thread->id);
+            app(TaskWorkspaceLease::class)->dispatch($thread);
+
+            return $thread->id;
         }
 
         public function spawnImplementer(Task $task): ?int

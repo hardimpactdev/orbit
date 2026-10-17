@@ -35,7 +35,6 @@ use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -1221,19 +1220,15 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     }
 
     /**
-     * Whether removal stops the processes inside the Instance's checkout: only for a task workspace, the
-     * Instance `task-<group id>` on the Node of its Project's live task VM for that group. Agents and checks leave servers there, such
-     * as Playwright's. A development Instance can be the working directory of the operator's own daemons and
+     * Whether removal stops the processes inside the Instance's checkout: only for a task workspace, the Instance
+     * a group owns on the Node of that group's live task VM. Agents and checks leave servers there, such as
+     * Playwright's. A development Instance can be the working directory of the operator's own daemons and
      * terminals, which removal must leave alone.
      */
     private static function stopsCheckoutProcesses(Instance $instance): bool
     {
-        if (preg_match('/\Atask-([1-9][0-9]*)\z/', $instance->name, $match) !== 1) {
-            return false;
-        }
-
-        return Task::topLevel()->whereKey((int) $match[1])->where('project_id', $instance->project_id)->exists()
-            && TaskVm::query()->live()->where('group_id', (int) $match[1])->where('node_id', $instance->node_id)->exists();
+        return $instance->task_workspace_owner_id !== null
+            && TaskVm::query()->live()->where('group_id', $instance->task_workspace_owner_id)->where('node_id', $instance->node_id)->exists();
     }
 
     /**

@@ -86,7 +86,7 @@ it('leaves an unchanged owned systemd unit untouched during convergence includin
         $process->save();
     }
     expect($process->refresh()->systemd_activation_pending)->toBeFalse()
-        ->and($process->proxycli_source_revision)->toBeNull();
+        ->and(array_key_exists('proxycli_source_revision', $process->getAttributes()))->toBeFalse();
     $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path, $rendered, $runtimeStatus): void {
         if ($command->arguments === ['sudo', 'cat', '--', $path]) {
             $this->ssh->responses[] = process_runtime_result(stdout: $rendered);

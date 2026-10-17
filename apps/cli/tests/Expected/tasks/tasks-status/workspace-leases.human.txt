@@ -1,0 +1,38 @@
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+├  Status      disabled
+│
+└  Last tick   not recorded
+
+No groups are asking for assistance.
+Workspace leases
+
+
+┌  lease-status (ORB-1)
+│
+├  Holder          reviewer [review:1]
+│
+├  Acquired        2026-10-16T07:52:07+00:00
+│
+├  Thread          —
+│
+├  Check           —
+│
+└  Remote result   uncertain; lease retained
+
+ ┌─────────────┬───────────────┬───────────────────────────┬────────┬───────┐
+ │ KIND        │ OWNER         │ QUEUED                    │ THREAD │ CHECK │
+ ├─────────────┼───────────────┼───────────────────────────┼────────┼───────┤
+ │ check       │ check:1       │ 2026-10-16T07:52:07+00:00 │ —      │ —     │
+ │ publication │ publication:1 │ 2026-10-16T07:52:07+00:00 │ —      │ —     │
+ └─────────────┴───────────────┴───────────────────────────┴────────┴───────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

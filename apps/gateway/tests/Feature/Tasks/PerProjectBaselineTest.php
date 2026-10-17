@@ -12,7 +12,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
@@ -84,14 +83,7 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'wireguard_ip' => '10.44.0.222',
         'user' => 'orbit',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-85',
-        'checkout_path' => $checkout,
-        'branch' => 'task-85',
-        'status' => 'source_resolved',
-    ]);
+    $instance = test_ready_task_workspace($project, $node, ['name' => 'task-85', 'checkout_path' => $checkout, 'branch' => 'task-85']);
     $runner = per_project_baseline_runner(new LocalShellSshExecutor);
 
     $failed = $runner->start($instance, command: $project->taskCheckCommand());
@@ -112,8 +104,8 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'repository_url' => 'git@github.com:acme/no-check.git',
     ]);
     expect($unsetProject->taskCheckCommand())->toBeNull();
-    $instance->project()->associate($unsetProject);
-    $instance->save();
+    $unsetNode = Node::query()->create(['name' => 'no-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
+    $instance = test_ready_task_workspace($unsetProject, $unsetNode, ['name' => 'task-86', 'checkout_path' => $checkout, 'branch' => 'task-86']);
     $noCheck = $runner->start($instance, command: $unsetProject->taskCheckCommand());
     $noOp = null;
     for ($attempt = 0; $attempt < 100; $attempt++) {

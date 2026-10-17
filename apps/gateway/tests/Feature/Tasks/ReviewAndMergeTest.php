@@ -43,11 +43,14 @@ use App\Domain\Tasks\TaskReviewSelection;
 use App\Domain\Tasks\TaskReviewTrust;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -65,6 +68,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\AgentCommandDispatcher;
@@ -115,6 +119,7 @@ function rm_group(array $subtasks, TaskGroupStatus $status = TaskGroupStatus::Re
         'status' => $status, 'pr_url' => $prUrl, 'pr_branch' => $prBranch,
     ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
         'checkout_path' => '/srv/orbit/apps/acme/task-'.$group->id, 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
         // The implementer admission gate validates deliverables against a resolved review base.
@@ -161,6 +166,9 @@ function rm_runtime(array $receipts = []): object
         /** @var list<int> */
         public array $reviewers = [];
 
+        /** @var array<string, string> */
+        public array $observedTurns = [];
+
         /** @var list<string> */
         public array $reviewPackets = [];
 
@@ -197,12 +205,21 @@ function rm_runtime(array $receipts = []): object
         /** @var list<GitHubListedPullRequest> */
         public array $open = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->reviewers[] = $task->id;
             $this->reviewPackets[] = app(TaskReviewPacketBuilder::class)->build($task, false);
             $thread = test_agent_thread($task->parent, 'reviewer-'.$task->id);
             $thread->update(['task_id' => $task->id, 'role' => 'reviewer']);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Reviewer, 'thread:'.$thread->id, $thread->id);
+            $this->observedTurns[$thread->external_id] = app(TaskWorkspaceLease::class)->dispatch($thread);
 
             return $thread->id;
         }
@@ -211,7 +228,12 @@ function rm_runtime(array $receipts = []): object
         {
             $this->implementers[] = $task->id;
 
-            return test_agent_thread($task->parent, 'implementer-'.$task->id, $task)->id;
+            $thread = AgentThread::query()->find($task->implementer_agent_thread_id)
+                ?? test_agent_thread($task->parent, 'implementer-'.$task->id, $task);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+            $this->observedTurns[$thread->external_id] = app(TaskWorkspaceLease::class)->dispatch($thread);
+
+            return $thread->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -364,11 +386,13 @@ function rm_runtime(array $receipts = []): object
             return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     });
-    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    app()->instance(AgentSnapshotReader::class, new class($runtime) implements AgentSnapshotReader
     {
+        public function __construct(private object $runtime) {}
+
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'turn-of-'.$threadId, 'state' => 'completed']]];
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => $this->runtime->observedTurns[$threadId] ?? 'turn-of-'.$threadId, 'state' => 'completed']]];
         }
     });
     rm_watch(null);
@@ -1157,13 +1181,26 @@ it('scopes a final re-review to the prior final tree and findings until an opera
     expect($packet)->toContain('git diff '.RM_BASE)->not->toContain('This is a delta re-review');
 });
 
+/** Direct callers surface a neutral wait; the scheduler normally catches it. */
+function rm_append_base_merge(Task $group): void
+{
+    try {
+        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+    } catch (TaskWorkspaceWaiting) {
+        expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)
+            ->where('kind', 'main_merge')->where('status', 'queued')->exists())->toBeTrue();
+    }
+}
+
 describe('mechanical main merges', function (): void {
     it('defers a main merge until the workspace review owner settles', function (string $hold): void {
         $group = rm_settled();
         $runtime = rm_runtime();
         $runtime->baseMergeHead = RM_COMMIT;
         rm_watch(rm_open(RM_HEAD, behind: true));
-        $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed')]);
+        $checks = new FakeTaskCheckRunner($hold === 'handoff check'
+            ? [TaskCheckReading::running(), TaskCheckReading::running(), TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed')]
+            : [TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed')]);
         app()->instance(TaskCheckRunner::class, $checks);
         $active = Task::query()->create([
             'parent_id' => $group->id, 'position' => 2, 'title' => 'New work', 'brief' => 'Review the new work.',
@@ -1184,14 +1221,14 @@ describe('mechanical main merges', function (): void {
             $handoff = TaskCheck::query()->create(['task_id' => $active->id, 'kind' => TaskCheckKind::Handoff,
                 'status' => TaskCheckStatus::Running, 'pid' => 42, 'process_started' => 'handoff',
                 'head_before' => RM_HEAD, 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
-        } elseif ($hold === 'reviewer turn') {
-            test_agent_thread($group, 'still-reviewing');
+        } else {
+            rm_reviewing($active);
             app()->instance(AgentSnapshotReader::class, $reader);
         }
         // Deliberately leave the group settling and its loaded tasks stale. Admission
         // must read all current subtasks, not trust the group phase or the merge's task.
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        rm_append_base_merge($group);
+        rm_append_base_merge($group);
         expect($runtime->baseMerges)->toBe(0)->and($checks->starts)->toBe(0)
             ->and(TaskCheck::query()->where('kind', TaskCheckKind::BaseMerge)->count())->toBe(0)
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
@@ -1199,9 +1236,9 @@ describe('mechanical main merges', function (): void {
         $active->update(['status' => TaskStatus::Completed]);
         $handoff?->update(['status' => TaskCheckStatus::Passed]);
         $reader->working = false;
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        rm_append_base_merge($group);
         expect($runtime->baseMerges)->toBe(1)->and($checks->starts)->toBe(1);
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        rm_append_base_merge($group);
         expect($runtime->pushes)->toBe([RM_COMMIT])
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
     })->with(['reviewing', 'reviewer turn', 'handoff check']);
@@ -1222,6 +1259,9 @@ describe('mechanical main merges', function (): void {
         Task::topLevel()->whereKey($group->id)->update(['reviewer_agent_thread_id' => $pointed ? $replacement->id : null]);
         $reader = new class($oldState, $replacementState) implements AgentSnapshotReader
         {
+            /** @var array<string, string> */
+            public array $turnIds = [];
+
             public function __construct(public ?string $oldState, public string $replacementState) {}
 
             public function snapshot(Node $node, string $threadId): ?array
@@ -1229,22 +1269,29 @@ describe('mechanical main merges', function (): void {
                 $state = $threadId === 'obsolete-reviewer' ? $this->oldState : $this->replacementState;
 
                 return $state === null ? null : ['thread' => ['session' => ['status' => $state],
-                    'latestTurn' => ['id' => 'review-'.$threadId, 'state' => $state === 'running' ? 'running' : 'completed']]];
+                    'latestTurn' => ['id' => $this->turnIds[$threadId] ?? 'review-'.$threadId, 'state' => $state === 'running' ? 'running' : 'completed']]];
             }
         };
         app()->instance(AgentSnapshotReader::class, $reader);
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        if ($oldState === null) {
+            $reader->oldState = 'done';
+            app(TaskWorkspaceLease::class)->acquire($group, 'reviewer', 'thread:'.$obsolete->id, $obsolete->id);
+            $reader->turnIds[$obsolete->external_id] = app(TaskWorkspaceLease::class)->dispatch($obsolete);
+            app(TaskWorkspaceLease::class)->reconcile($group);
+            $reader->oldState = null;
+        }
+        rm_append_base_merge($group);
         $held = $oldState === 'running' || $replacementState === 'running';
         expect($runtime->baseMerges)->toBe($held ? 0 : 1)
             ->and($checks->starts)->toBe($held ? 0 : 1)
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
-        $reader->oldState = null;
+        $reader->oldState = 'done';
         $reader->replacementState = 'done';
         if ($held) {
-            app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+            rm_append_base_merge($group);
         }
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        rm_append_base_merge($group);
         expect($runtime->baseMerges)->toBe(1)->and($checks->starts)->toBe(1)
             ->and($runtime->pushes)->toBe([RM_COMMIT])
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
@@ -1256,7 +1303,7 @@ describe('mechanical main merges', function (): void {
         'replacement reviewer still working' => [null, 'running', false, true],
     ]);
 
-    it('reports an unavailable current reviewer instead of an indefinite settling hold', function (): void {
+    it('shows an unavailable current reviewer as the lease holder and queues the main merge', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
         rm_watch(rm_open(RM_HEAD, behind: true));
@@ -1267,18 +1314,19 @@ describe('mechanical main merges', function (): void {
         {
             public function snapshot(Node $node, string $threadId): ?array
             {
-                return null;
+                // Completed actors have explicit evidence; only the current reviewer is unknown.
+                return $threadId === 'unavailable-reviewer' ? null : tick_checked_thread('done', $threadId);
             }
         });
 
-        app(TaskScheduler::class)->appendBaseMerge($group, 'main');
+        rm_append_base_merge($group);
 
+        $workspace = app(TaskWorkspaceLease::class)->status($group)[0];
         expect($runtime->baseMerges)->toBe(0)
-            ->and($group->fresh()?->assistance_requested)->toBeTrue()
-            ->and($group->fresh()?->merge_reason)->toContain('observation is unavailable')
-            ->and($group->fresh()?->assistance_reason)->toContain('reviewer thread #'.$reviewer->id,
-                'observation is unavailable', 'Restore access to its agent runtime or retry the review')
-            ->not->toContain('handoff check to settle');
+            ->and($workspace['holder']['thread_id'])->toBe($reviewer->id)
+            ->and($workspace['holder']['owner'])->toBe('thread:'.$reviewer->id)
+            ->and($workspace['waiters'][0]['kind'])->toBe('main_merge')
+            ->and($workspace['waiters'][0]['owner'])->toBe('base-merge:'.$group->id);
     });
 
     it('merges main and gates the merge before the final reviewer or PR starts', function (): void {
@@ -1324,7 +1372,10 @@ describe('mechanical main merges', function (): void {
         rm_watch(rm_open(RM_HEAD, behind: true));
 
         app(TaskScheduler::class)->tick();
+        expect(Cache::has('tasks.merge-gate.'.$group->id.'.'.RM_HEAD))->toBeTrue();
         app(TaskScheduler::class)->tick();
+        // A reconciled gate must finish publication while the GitHub reevaluation throttle remains set.
+        expect(Cache::has('tasks.merge-gate.'.$group->id.'.'.RM_HEAD))->toBeTrue();
 
         expect($checks->starts)->toBe(1)
             ->and($checks->commands)->toBe(['composer check'])
@@ -1547,11 +1598,11 @@ describe('main moving during final review', function (): void {
             ->and(TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', RM_COMMIT)->sole()->source)->toBe(TaskReviewedCommitSource::BaseMerge);
     });
 
-    it('retries a lost gate on the same merged head instead of merging a newer main tip', function (): void {
+    it('retains a lost gate lease instead of starting another command or merging a newer main tip', function (): void {
         $group = rm_group([[TaskFinalReview::Title, TaskStatus::Reviewing, TaskType::FinalReview]]);
         $final = $group->tasks->sole();
         $runtime = rm_runtime([rm_receipt('approved', deliverables: ['final-review' => 'Reviewed.'], pullRequest: true)]);
-        $checks = new FakeTaskCheckRunner([TaskCheckReading::lost('The gate process disappeared.')]);
+        $checks = new FakeTaskCheckRunner([TaskCheckReading::lost('The gate process disappeared.'), TaskCheckReading::lost('The child may still run.')]);
         app()->instance(TaskCheckRunner::class, $checks);
         rm_reviewing($final);
         $runtime->baseMergeHead = RM_COMMIT;
@@ -1562,12 +1613,14 @@ describe('main moving during final review', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($runtime->baseMerges)->toBe(1)
-            ->and($checks->starts)->toBe(2)
-            ->and($runtime->pushes)->toBe([RM_COMMIT])
+            ->and($checks->starts)->toBe(1)
+            ->and($runtime->pushes)->toBe([])
             ->and($runtime->implementers)->toBe([])
             ->and($runtime->reviewers)->toBe([])
-            ->and($final->checks()->where('status', TaskCheckStatus::Lost)->count())->toBe(1)
-            ->and($final->fresh()?->status)->toBe(TaskStatus::Completed);
+            // A lost result retains ownership until authoritative completion proves the children stopped.
+            ->and($final->checks()->sole()->status)->toBe(TaskCheckStatus::Lost)
+            ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->pid)->toBe(4001)
+            ->and($final->fresh()?->status)->toBe(TaskStatus::Reviewing);
     });
 
     it('reviews only the overlapping merge delta without an implementer or another main merge', function (): void {

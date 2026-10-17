@@ -23,6 +23,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProxyCliProcessSource;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 final class CollectorActivationSsh implements SshExecutor
@@ -71,8 +72,10 @@ beforeEach(function (): void {
     ]);
     $this->environment = ['PROXYCLI_CACHE_HOST' => '10.44.0.9', 'PROXYCLI_CACHE_PASSWORD' => 'secret'];
     $this->process = app(CreateProcessAction::class)->execute(ProxyCliProcess::data($this->node, $this->environment))['process'];
-    $this->process->proxycli_source_revision = hash('sha256', 'previous script');
-    $this->process->save();
+    $this->source = ProxyCliProcessSource::query()->create([
+        'process_id' => $this->process->id,
+        'source_revision' => hash('sha256', 'previous script'),
+    ]);
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->andReturn('/tmp/test-key');
     app()->instance(SshKeyProvider::class, $keys);
@@ -85,20 +88,21 @@ beforeEach(function (): void {
 
 it('recovers source publication with a lost response and leaves completed retries untouched', function (bool $legacy): void {
     if ($legacy) {
-        $this->process->proxycli_source_revision = null;
+        $this->source->source_revision = null;
+        $this->source->save();
         $this->process->systemd_activation_hash = null;
         $this->process->save();
     }
     $this->ssh->interruptPublication = true;
     $lifecycle = app(NativeProxyCliRuntimeLifecycle::class);
     expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(RuntimeException::class, 'response lost');
-    expect($this->process->refresh()->proxycli_source_revision)->toBeNull()
-        ->and($this->process->proxycli_source_activation_pending)->toBeTrue()
+    expect($this->source->refresh()->source_revision)->toBeNull()
+        ->and($this->source->refresh()->activation_pending)->toBeTrue()
         ->and($this->runtime->restarted)->toBeEmpty();
     $lifecycle->converge($this->node, $this->environment);
     expect($this->runtime->restarted)->toBe([$this->process->id])
-        ->and($this->process->refresh()->proxycli_source_revision)->toBe(hash('sha256', $this->ssh->source))
-        ->and($this->process->proxycli_source_activation_pending)->toBeFalse()
+        ->and($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source))
+        ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and(Process::query()->where('name', ProxyCliProcess::NAME)->sole()->id)->toBe($this->process->id);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->runtime->restarted)->toBe([$this->process->id]);
@@ -108,8 +112,8 @@ it('retains pending source activation if publication succeeds but Process conver
     $lifecycle = app(NativeProxyCliRuntimeLifecycle::class);
     $this->runtime->failConverge = true;
     expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(ProcessOperationException::class);
-    expect($this->process->refresh()->proxycli_source_revision)->toBeNull()
-        ->and($this->process->proxycli_source_activation_pending)->toBeTrue();
+    expect($this->source->refresh()->source_revision)->toBeNull()
+        ->and($this->source->refresh()->activation_pending)->toBeTrue();
     $this->runtime->failConverge = false;
     $lifecycle->converge($this->node, $this->environment);
     expect($this->runtime->restarted)->toBe([$this->process->id]);
@@ -127,10 +131,10 @@ it('retains source activation intent when restart fails and retries it', functio
     app()->instance(ProcessRuntimeManager::class, $runtime);
     $lifecycle = app(NativeProxyCliRuntimeLifecycle::class);
     expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(ProcessOperationException::class, 'restart response lost');
-    expect($this->process->refresh()->proxycli_source_revision)->toBeNull()
-        ->and($this->process->proxycli_source_activation_pending)->toBeTrue();
+    expect($this->source->refresh()->source_revision)->toBeNull()
+        ->and($this->source->refresh()->activation_pending)->toBeTrue();
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->process->refresh()->proxycli_source_revision)->toBe(hash('sha256', $this->ssh->source));
+    expect($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source));
     $lifecycle->converge($this->node, $this->environment);
 });
 
@@ -140,17 +144,22 @@ it('records a stopped collectors source revision without starting it', function 
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->process->refresh()->desired_state->value)->toBe('stopped')
-        ->and($this->process->proxycli_source_revision)->toBe(hash('sha256', $this->ssh->source))
-        ->and($this->process->proxycli_source_activation_pending)->toBeFalse()
+        ->and($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source))
+        ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and($this->runtime->restarted)->toBeEmpty()
         ->and($this->runtime->started)->toBeEmpty();
 });
 
-it('leaves an unchanged legacy collector with both activation revisions absent untouched on upgrade', function (string $desired, string $state): void {
-    $this->process->proxycli_source_revision = null;
+it('leaves an unchanged migrated collector untouched on upgrade', function (string $desired, string $state, bool $legacy): void {
+    $this->source->source_revision = $legacy ? null : hash_file('sha256', resource_path('proxycli/server.py'));
+    $this->source->save();
     $this->process->systemd_activation_hash = null;
     $this->process->desired_state = DesiredProcessState::from($desired);
     $this->process->save();
+    $migration = require database_path('migrations/2026_10_16_074137_move_proxycli_process_sources_to_extension_table.php');
+    $migration->down();
+    $migration->up();
+    expect(ProxyCliProcessSource::query()->whereKey($this->process->id)->exists())->toBe(! $legacy);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldReceive('resolve')->andReturn($account);
@@ -165,8 +174,8 @@ it('leaves an unchanged legacy collector with both activation revisions absent u
     $lifecycle->converge($this->node, $this->environment);
     expect($this->process->refresh()->systemd_activation_hash)->toBeNull()
         ->and($this->process->systemd_activation_pending)->toBeFalse()
-        ->and($this->process->proxycli_source_activation_pending)->toBeFalse();
+        ->and($this->source->refresh()->activation_pending)->toBeFalse();
     foreach ($this->ssh->commands as $command) {
         expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
     }
-})->with([['running', 'active'], ['stopped', 'inactive']]);
+})->with([['running', 'active', true], ['stopped', 'inactive', true], ['running', 'active', false], ['stopped', 'inactive', false]]);

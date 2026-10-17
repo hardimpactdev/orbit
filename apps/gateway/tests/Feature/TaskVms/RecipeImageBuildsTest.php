@@ -184,7 +184,7 @@ describe('recipe image triggers', function (): void {
         foreach ($builds as $build) {
             runRecipeImageBuild($build);
             expect(array_keys($build->images))->toBe(['base']);
-            expect(app(TaskVmImageBuildChain::class)->jobs($build))->toHaveCount(14);
+            expect(app(TaskVmImageBuildChain::class)->jobs($build))->toHaveCount(15);
             expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
             foreach ($build->images as $profile => $image) {
                 expect($incus->imageProperties[$image['fingerprint']])->toBe(['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => $profile]);
@@ -364,6 +364,87 @@ function recipeImageLegacyRoles(TaskVmImageBuild $build, FakeIncusImageHost $inc
     $build->update(['images' => $images]);
 }
 
+it('builds the topology seed in the smoke VM, then deletes the VM and gives the seed its final name', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+
+    runRecipeImageBuild($build);
+
+    $fingerprint = $build->images['base']['fingerprint'];
+    $seed = 'orbit-topology-seed-'.substr($fingerprint, 0, 12);
+    expect($incus->seeds)->toBe([['project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'vm' => 'tvm-image-1-smoke', 'device' => 'topology-seed',
+        'volume' => $seed.'-new', 'size' => '45GiB', 'fingerprint' => $fingerprint, 'git_read' => []]])
+        ->and($incus->volumes)->toBe([$seed])
+        ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke');
+    $program = array_values(array_filter($incus->commands, static fn ($command): bool => in_array('task-vms.build-topology-seed', $command->arguments, true)));
+    expect(array_slice($program[0]->arguments, 0, 6))->toBe(['sudo', '-n', '-u', 'root', '-H', 'python3']);
+    $order = array_map(static fn ($command): string => implode(' ', array_slice($command->arguments, 5, 4)), $incus->commands);
+    $built = array_search('python3 -I -c '.$program[0]->arguments[8], $order, true);
+    $deleted = min(array_filter(array_keys($order, 'delete --force -- tvm-image-1-smoke', true), static fn (int $index): bool => $index > $built));
+    $renamed = array_find_key($order, static fn (string $line): bool => str_starts_with($line, 'storage volume rename'));
+    expect($built)->toBeLessThan($deleted)->and($deleted)->toBeLessThan($renamed);
+    expect(array_find($build->steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['error'])->toBeNull()
+        ->and($build->promoted_at)->not->toBeNull();
+});
+
+it('fails the phase with the program log and no guest log, and builds the seed again in a fresh smoke VM on resume', function (bool $smokeGone): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    // The program created the `-new` volume and changed the smoke VM before it failed.
+    $incus->fail = 'topology seed';
+    $incus->afterExecute = function ($command) use ($incus): void {
+        if (in_array('task-vms.build-topology-seed', $command->arguments, true) && $incus->fail !== null) {
+            $incus->volumes[] = 'orbit-topology-seed-'.substr((string) json_decode(explode("\0", (string) $command->input, 2)[1], true)['fingerprint'], 0, 12).'-new';
+        }
+    };
+    expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class, 'topology seed');
+    $failed = array_find($build->refresh()->steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed');
+    expect($failed['error'])->toContain('Building the topology seed in [tvm-image-1-smoke] failed: no_result.', 'Error: topology seed failed')
+        ->not->toContain('/var/log/orbit/recipe-images/base-topology-seed.log')
+        ->and($build->promoted_at)->toBeNull()
+        ->and($incus->instances)->toHaveKey('tvm-image-1-smoke');
+    expect(array_filter($incus->guest, static fn ($call): bool => str_contains(implode(' ', $call->argv), 'topology-seed')))->toBe([]);
+
+    $incus->fail = null;
+    $incus->afterExecute = null;
+    if ($smokeGone) {
+        unset($incus->instances['tvm-image-1-smoke']);
+    }
+    $chain = app(TaskVmImageBuildChain::class);
+    $chain->resume($host, $build->id);
+    $remaining = false;
+    foreach ($chain->jobs($build->refresh()) as $job) {
+        $remaining = $remaining || $job->program() === 'base:topology-seed';
+        if ($remaining) {
+            $job->handle(app(RecipeImageBuildSteps::class));
+        }
+    }
+    $seed = 'orbit-topology-seed-'.substr((string) $build->refresh()->image_fingerprint, 0, 12);
+    expect($build->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($incus->volumes)->toBe([$seed])
+        ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke')
+        ->and(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch' && $command->arguments[array_key_last($command->arguments)] === 'tvm-image-1-smoke'))->toHaveCount(2);
+
+    $seeds = count($incus->seeds);
+    app(RecipeImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Recipe, 'base:topology-seed');
+    expect($incus->seeds)->toHaveCount($seeds);
+})->with(['smoke VM kept' => [false], 'smoke VM gone' => [true]]);
+
+it('refuses to promote a base without its topology seed', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($build, promote: false);
+    $build->forceFill(['steps' => array_values(array_filter($build->steps, static fn (array $step): bool => $step['program'] !== 'base:topology-seed'))])->save();
+
+    expect(fn () => app(RecipeImageBuildSteps::class)->promote($build))->toThrow(TaskVmException::class, 'have its topology seed before promotion');
+});
+
 it('prunes every profile of older identities while keeping the previous recipe and images in use', function (): void {
     $host = recipeImageHost();
     $incus = recipeImageTransport($host);
@@ -397,6 +478,15 @@ it('prunes every profile of older identities while keeping the previous recipe a
     foreach (['base', 'gateway', 'app-prod'] as $profile) {
         expect($incus->images)->not->toHaveKey($old->images[$profile]['fingerprint']);
     }
+    // A base goes with its topology seed; a kept base keeps its own.
+    $seed = static fn (TaskVmImageBuild $build): string => 'orbit-topology-seed-'.substr((string) $build->images['base']['fingerprint'], 0, 12);
+    expect($incus->volumes)->toEqualCanonicalizing([$seed($previous), $seed($current)]);
+    // A seed that a failed build left under construction goes with its base too.
+    $incus->volumes[] = $seed($previous).'-new';
+    recipeImageCurrent(recipeImageDocument('20261017T000000Z'));
+    $next = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($next);
+    expect($incus->volumes)->toEqualCanonicalizing([$seed($current), $seed($next)]);
     unset($incus->instances['tvm-running-task']);
     app(RecipeImagePruning::class)->prune($current);
     expect($incus->images)->not->toHaveKey($used);

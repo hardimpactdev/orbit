@@ -37,9 +37,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
         $pending = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($pending !== null) {
-            if (! $this->installReviewerMcp($task)) {
-                return null;
-            }
             $started = $this->startPending($pending, $this->reviewTitle($task), $this->reviewPacket($task, false, $pending->id));
             if ($started !== null) {
                 $this->markHeldResolutionDelivered($task);
@@ -75,17 +72,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
         $pending = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($pending instanceof AgentThread) {
-            if (! $this->installReviewerMcp($task)) {
-                return null;
-            }
             $this->installReceipt($pending, $mode);
 
             return $this->startPending($pending, $this->reviewTitle($task), $message, $key);
         }
 
-        if (! $this->installReviewerMcp($task)) {
-            return null;
-        }
         $thread = $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer);
         if (! $thread instanceof AgentThread) {
             return null;
@@ -172,7 +163,10 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
         try {
             $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($this->reviewPacket($task, true, $thread->id)));
-        } catch (AgentDriverException) {
+        } catch (AgentDriverException $exception) {
+            if (! $exception->turnRejected) {
+                throw $exception;
+            }
             // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
             $replacement = $this->openReviewer($task);
             if ($replacement === null) {
@@ -203,9 +197,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function openReviewer(Task $task): ?int
     {
-        if (! $this->installReviewerMcp($task)) {
-            return null;
-        }
         $thread = $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer);
         if ($thread === null) {
             return null;
@@ -274,6 +265,13 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function prepareReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
+        app(TaskWorkspaceLease::class)->withThreadLock($thread, fn () => $this->prepareAdmittedReceipt($thread, $mode));
+    }
+
+    private function prepareAdmittedReceipt(AgentThread $thread, ?TaskTurnMode $mode): void
+    {
+        $leaseGroup = Task::topLevel()->findOrFail($thread->task_group_id);
+        app(TaskWorkspaceLease::class)->turn($leaseGroup, TaskThreadRole::from($thread->role), 'thread:'.$thread->id, $thread->id);
         $group = Task::topLevel()->with(['taskable', 'project'])->find($thread->task_group_id);
         $instance = $group?->taskable;
         $role = TaskThreadRole::tryFrom((string) $thread->role);
@@ -300,9 +298,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         try {
             $this->prepareReceipt($thread, $mode);
+        } catch (TaskWorkspaceWaiting $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             if ($thread->exists) {
-                $thread->delete();
+                $this->discardUnstarted($thread);
             }
 
             throw $exception;
@@ -311,19 +311,30 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function startPending(AgentThread $thread, string $title, string $prompt, ?string $key = null): ?int
     {
+        return app(TaskWorkspaceLease::class)->withThreadLock($thread, fn (): ?int => $this->startAdmittedPending($thread, $title, $prompt, $key));
+    }
+
+    private function startAdmittedPending(AgentThread $thread, string $title, string $prompt, ?string $key): ?int
+    {
         $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
         if (! $group instanceof Task || ! $instance instanceof Instance
             || $thread->runtime_key !== 'node:'.$instance->node_id) {
-            $thread->delete();
+            $this->discardUnstarted($thread);
 
             return null;
         }
         $instance->loadMissing('node');
         $role = TaskThreadRole::tryFrom((string) $thread->role);
         if ($role === null) {
-            $thread->delete();
+            $this->discardUnstarted($thread);
+
+            return null;
+        }
+        app(TaskWorkspaceLease::class)->turn($group, $role, 'thread:'.$thread->id, $thread->id);
+        if ($role === TaskThreadRole::Reviewer && $thread->task_id !== null && ! $this->installReviewerMcp(Task::query()->findOrFail($thread->task_id))) {
+            $this->discardUnstarted($thread);
 
             return null;
         }
@@ -336,6 +347,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 $key,
                 $reserved,
                 $reserved !== null,
+                $thread->id,
             ));
         } catch (AgentDriverException $exception) {
             $created = $exception->createdThreadId;
@@ -345,18 +357,20 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 throw $exception;
             }
             Log::error('Agent conversation creation failed.', ['task_group_id' => $group->id, 'task_id' => $thread->task_id, 'role' => $thread->role]);
-            $thread->delete();
+            $this->discardUnstarted($thread);
 
             return null;
+        } catch (TaskWorkspaceWaiting $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             if ($thread->exists) {
-                $thread->delete();
+                $this->discardUnstarted($thread);
             }
 
             throw $exception;
         }
         if ($externalId === '') {
-            $thread->delete();
+            $this->discardUnstarted($thread);
 
             return null;
         }
@@ -367,7 +381,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             ->whereKeyNot($thread->id)
             ->first();
         if ($conflict instanceof AgentThread) {
-            $thread->delete();
+            $this->discardUnstarted($thread);
             if ($conflict->task_group_id !== $group->id || $conflict->task_id !== $thread->task_id || $conflict->role !== $thread->role) {
                 throw new AgentDriverException('Agent conversation ownership does not match.');
             }
@@ -393,6 +407,14 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         $thread->update(['external_id' => $externalId]);
 
         return $thread->id;
+    }
+
+    /** Only preparation or a protocol refusal proves that no remote turn owns this row. */
+    private function discardUnstarted(AgentThread $thread): void
+    {
+        if ($thread->exists && app(TaskWorkspaceLease::class)->abandonPreparation($thread)) {
+            $thread->delete();
+        }
     }
 
     /** The same local row always names the same remote conversation. */

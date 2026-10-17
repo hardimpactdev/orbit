@@ -9,7 +9,9 @@ use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
+use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
@@ -137,12 +139,12 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         return new GatewayReleaseAutomation(app(SettingRepository::class), $this->home.'/gateway-release.paused');
     }
 
-    public function deployer(): DeployGatewayReleaseAction
+    public function deployer(?GatewayReleaseDrain $drain = null): DeployGatewayReleaseAction
     {
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this));
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $drain);
     }
 
     public function rollback(): RollbackGatewayReleaseAction
@@ -199,6 +201,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
      */
     public function bindLeaves(): void
     {
+        app()->instance(GatewayReleaseExecutionOwner::class, new ReleaseTestOwner);
         app()->instance(GatewayReleaseLayout::class, $this->fixture->layout);
         app()->instance(GatewayReleaseLock::class, $this->lock());
         app()->instance(GatewayReleaseBuilder::class, $this->fixture->builder($this));
@@ -288,18 +291,35 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public bool $failSnapshot = false;
 
+    public int $snapshots = 0;
+
+    public bool $failMigrate = false;
+
     public function snapshot(string $id): string
     {
+        $this->snapshots++;
         if ($this->failSnapshot) {
             throw new GatewayReleaseException('snapshot', 'gateway.release_disk_low', 'Not enough room for the snapshot.', 500);
         }
 
-        return $this->home.'/backups/pre-'.$id.'.sqlite';
+        $directory = $this->home.'/backups';
+        if (! is_dir($directory)) {
+            mkdir($directory, 0700);
+        }
+        $path = $directory.'/pre-'.$id.'-'.$this->snapshots.'.sqlite';
+        $database = new \PDO('sqlite:'.$path);
+        $database->exec('CREATE TABLE snapshot_fixture (id INTEGER PRIMARY KEY)');
+        chmod($path, 0600);
+
+        return $path;
     }
 
     public function migrate(string $releasePath): void
     {
         $this->steps[] = 'migrate';
+        if ($this->failMigrate) {
+            throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'Interrupted schema change.');
+        }
     }
 
     public function snapshotBytes(): int

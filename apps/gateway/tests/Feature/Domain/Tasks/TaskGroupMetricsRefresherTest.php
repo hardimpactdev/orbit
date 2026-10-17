@@ -37,13 +37,6 @@ function metrics_running_group(): Task
         'public_ssh_host' => '10.44.0.161',
         'wireguard_ip' => '10.44.0.161',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-7',
-        'checkout_path' => '/tmp/task-7',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -51,6 +44,14 @@ function metrics_running_group(): Task
         'brief' => 'Show session totals.',
         'status' => TaskGroupStatus::Running,
         'started_at' => '2026-09-21 10:00:00',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-7',
+        'checkout_path' => '/tmp/task-7',
+        'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

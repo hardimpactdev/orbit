@@ -14,6 +14,8 @@ covers:
 
 Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
+[ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) is in progress. It proposes moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. The approved behavior returns members automatically to healthy LAN DNS after VPN fallback. The recovery mechanism and member acceptance checks remain implementation gates. Until it is built, this page describes the listener.
+
 ## Resolver selection
 
 The Gateway selects the resolver policy when it provisions a managed Linux peer.
@@ -69,7 +71,7 @@ Removing the `gateway` role removes the drop-in and reverts the `orbit` link. Wh
 
 ## The listener
 
-The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. When `gateway` and `vpn` share a Node, the Gateway writes the files locally. Otherwise it sends the same publication to the `vpn` Node over SSH.
+The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node. This uses the managed account and host key established during bootstrap. Local `sudo` would retain the HTTP worker’s read-only filesystem namespace and could not publish DNS configuration. The worker’s filesystem protection stays enabled.
 
 Gateway bootstrap starts `orbit-private-dns.service` after the dnsmasq backend is bound, so the first managed peer can resolve ordinary names during its role setup.
 

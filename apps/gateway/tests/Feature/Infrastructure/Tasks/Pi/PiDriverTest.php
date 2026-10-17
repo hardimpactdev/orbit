@@ -9,6 +9,8 @@ use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\LeasedAgentDriver;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\Pi\PiClient;
 use App\Infrastructure\Tasks\Pi\PiDriver;
@@ -29,6 +31,7 @@ use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\TaskModelRouter;
 
 const PI_TOKEN = TEST_TASK_VM_PI_TOKEN;
@@ -47,7 +50,7 @@ function pi_workspace(Node $node, bool $taskVm = true): Instance
 {
     $project = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
-    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
     $group->taskable()->associate($workspace)->save();
     if ($taskVm) {
         test_task_vm($group, $node);
@@ -128,8 +131,20 @@ function pi_check_transcript(string $checkResult, bool $failed = false): array
 }
 
 describe('registration and placement', function (): void {
-    it('is registered as the pi driver', function (): void {
-        expect(app(AgentDriverRegistry::class)->get('pi'))->toBeInstanceOf(PiDriver::class);
+    it('registers the lease-protected Pi driver and dispatches through Pi', function (): void {
+        Http::fake([
+            PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done')),
+            PI_BASE.'/sessions/session-1/messages' => Http::response(['duplicate' => false], 202),
+        ]);
+        app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        $driver = app(AgentDriverRegistry::class)->get('pi');
+        expect($driver)->toBeInstanceOf(LeasedAgentDriver::class)->and($driver->key())->toBe('pi');
+
+        $driver->send(pi_thread(pi_node()), 'Continue through the registered driver.', 'registration-key');
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/messages'
+            && $request->hasHeader('Authorization', 'Bearer '.PI_TOKEN)
+            && $request['text'] === 'Continue through the registered driver.' && $request['key'] === 'registration-key');
     });
 });
 

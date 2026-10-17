@@ -15,25 +15,23 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('releases only the discovery topology and only after merge', function () use ($read): void {
+it('removes a worktree only after merge and never releases a topology', function () use ($read): void {
     $script = $read('bin/worktree-remove');
 
-    expect($script)
-        ->toContain('if [[ -f "$worktree/.e2e/attempt.json" ]]')
-        ->toContain('release "$linear_id" "--worktree=$worktree"')
-        ->not->toContain('proof-attempt.json')
-        ->not->toContain('--proof');
+    expect($script)->not->toContain('e2e-topology');
+    expect($script)->not->toContain('release');
+    expect($script)->not->toContain('.e2e/attempt.json');
 
     expect($script)
         ->toContain('awk -v ref="branch refs/heads/$branch"')
         ->toContain('[[ -n "$worktree" ]] || worktree="$worktree_root/$name"');
 
     $mergeCheck = strpos($script, 'git merge-base --is-ancestor "$branch" origin/main');
-    $release = strpos($script, 'release "$linear_id" "--worktree=$worktree"');
+    $remove = strpos($script, 'git worktree remove "$worktree"');
 
     expect($mergeCheck)
-        ->not->toBeFalse()->and($release)
-        ->not->toBeFalse()->and($mergeCheck)->toBeLessThan($release);
+        ->not->toBeFalse()->and($remove)
+        ->not->toBeFalse()->and($mergeCheck)->toBeLessThan($remove);
 });
 
 it('documents Node selection for extended issue topologies', function () use ($read): void {

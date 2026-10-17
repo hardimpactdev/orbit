@@ -17,6 +17,14 @@ final readonly class GatewayReleaseGuard
         private ProcessRunner $processes,
     ) {}
 
+    /** @return array{source: string|null, source_sha: string|null} */
+    public function source(): array
+    {
+        $id = $this->layout->currentReleaseId();
+
+        return ['source' => $id, 'source_sha' => $id === null ? null : $this->layout->preparedCommit($id)];
+    }
+
     /** @throws GatewayReleaseException */
     public function assertForward(string $sha, bool $force): void
     {

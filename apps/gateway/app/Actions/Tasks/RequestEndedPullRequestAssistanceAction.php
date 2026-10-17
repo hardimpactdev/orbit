@@ -12,8 +12,8 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Task;
@@ -97,10 +97,6 @@ final readonly class RequestEndedPullRequestAssistanceAction
             return;
         }
         try {
-            if ($thread->role === TaskThreadRole::Reviewer->value
-                && app(TaskSubtaskRunner::class)->workspaceChecksRunning($group)) {
-                return;
-            }
             $driver = $this->drivers->get($thread->driver);
             $observed = $driver->observe($thread);
             $stopped = in_array($observed->state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true)
@@ -109,6 +105,8 @@ final readonly class RequestEndedPullRequestAssistanceAction
                 return;
             }
             $driver->send($thread, $group->assistance_reason ?? '', $reserved->ended_pr_notice_key);
+        } catch (TaskWorkspaceWaiting) {
+            return;
         } catch (Throwable) {
             $this->log($reserved, 'ended pull request notice delivery failed');
 

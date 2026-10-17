@@ -8,6 +8,7 @@ use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterRouterDnsSelection;
 use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Extensions\ConfigValue;
 use App\Domain\Extensions\Contributions;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -156,7 +157,7 @@ final readonly class DevelopmentDnsConfigRenderer
                     ! in_array($hostname, $reserved, true) => "the private DNS record [{$hostname}], which no extension reserves",
                     array_key_exists($hostname, $records) => "the private DNS record [{$hostname}], which another contribution publishes",
                     array_any($clusterTlds, static fn (string $tld): bool => $hostname === $tld || str_ends_with($hostname, ".{$tld}")) => "the private DNS record [{$hostname}], which is a Cluster TLD or a name under one",
-                    filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false => "the address [{$address}] for [{$hostname}], which is not an IPv4 address",
+                    ! ConfigValue::ipv4($address) => "the address [{$address}] for [{$hostname}], which is not an IPv4 address",
                     ! $subnet->containsUsableAddress($address) => "the address [{$address}] for [{$hostname}], which is not a host address in the VPN subnet [{$subnet->value()}]",
                     default => null,
                 };

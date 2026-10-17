@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Extensions\Contributions;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -241,6 +242,31 @@ describe('site sources', function (): void {
         ]);
 
         expect(app(NodeCaddyfileRenderer::class)->render($node)->content)->toBe($main);
+    });
+
+    it('keeps the contributed site on switch disable and removes it on teardown without changing the route', function (): void {
+        $node = caddy_build_node('app-prod', '10.44.0.7');
+        caddy_build_private_route($node, 'shop.test');
+        CaddySiteCertificateFixtures::recordAll($node);
+        $state = app(ProxyCliState::class);
+        $state->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
+        $extensions = app(ExtensionStore::class);
+        $extensions->set('proxycli', true);
+        $renderer = app(NodeCaddyfileRenderer::class);
+        $before = $renderer->render($node);
+        expect($before->buildable())->toBeTrue()
+            ->and($before->content)->toContain('# orbit: proxycli collector.cli-proxy-api.orbit', 'shop.test');
+
+        $extensions->set('proxycli', false);
+        expect($renderer->render($node)->content)->toBe($before->content);
+
+        $state->disable();
+        app(CaddySiteCertificates::class)->forget($node->id, ProxyCliCaddySiteSource::CertificateSlug);
+        $after = $renderer->render($node);
+        expect($after->buildable())->toBeTrue()
+            ->and($after->content)->not->toContain('collector.cli-proxy-api.orbit')
+            ->and(array_values(array_filter($after->blocks, static fn (array $block): bool => $block['source'] !== 'proxycli')))
+            ->toBe(array_values(array_filter($before->blocks, static fn (array $block): bool => $block['source'] !== 'proxycli')));
     });
 
     it('keeps the certificate slugs that live Nodes store', function (): void {

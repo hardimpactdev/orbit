@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+use App\Domain\Extensions\ConfigValue;
 use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -30,8 +31,6 @@ final readonly class NativeGatewayFpmConverger
     public const string START_HOOK_NAME = '/\A[a-z0-9]+(?:-[a-z0-9]+)*-start\z/D';
 
     public const string START_HOOK_DROP_IN = '/\Aorbit-[a-z0-9]+(?:-[a-z0-9]+)*\.conf\z/D';
-
-    private const string START_HOOK_DESCRIPTION = '/\A[!-~](?:[ -~]*[!-~])?\z/D';
 
     private const string START_HOOKS_PROGRAM = 'gateway.install-start-hooks';
 
@@ -207,7 +206,7 @@ final readonly class NativeGatewayFpmConverger
                 preg_match(self::START_HOOK_NAME, $name) !== 1 => 'a program name that does not end in -start',
                 preg_match(self::START_HOOK_DROP_IN, $dropIn) !== 1 => 'a drop-in that is not orbit-*.conf',
                 $dropIn === SystemdVpnOrderingDropIn::FILE_NAME => "the drop-in [{$dropIn}] that core writes",
-                preg_match(self::START_HOOK_DESCRIPTION, $hook->description()) !== 1 => 'a description that is not one printable line',
+                ! ConfigValue::printableLine($hook->description()) => 'a description that is not one printable line',
                 isset($names[$name]) => "the program name [{$name}] of another hook",
                 isset($dropIns[$dropIn]) => "the drop-in [{$dropIn}] of another hook",
                 default => null,

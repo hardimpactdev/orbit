@@ -6,6 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
@@ -24,12 +25,13 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Prepares a group's declared topology nested in its task VM, before a subtask that declares one runs its baseline
- * check or any turn. The first such subtask starts a preparation unit ({@see TaskVmTopologyUnit}), which runs the host
- * setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the group's declarations.
- * Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's declaration admits it
- * at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a resolution starts it
- * again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
+ * Prepares a group's declared topology nested in its task VM, before each turn that Orbit prepares for a subtask that
+ * declares one ({@see TaskSubtaskRunner::prepareTurn()}). So it runs after the group's baseline check, whose Project
+ * setup installs what the harness needs. The first such turn starts a preparation unit ({@see TaskVmTopologyUnit}),
+ * which runs the host setup, which adopts the VM's clone of the topology seed, and acquires `TASK-<group>` with the
+ * union of the group's declarations. Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's
+ * declaration admits it at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a
+ * resolution starts it again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
  */
 final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 {
@@ -52,9 +54,6 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         if (! $vm instanceof TaskVm || ! $node instanceof Node || ! $instance instanceof Instance) {
             throw new TaskCapacityException(TaskWait::Topology, self::NoWorkspace);
         }
-        if ($vm->recipe_identity === null) {
-            throw new TaskTopologyFailedException('This group predates recipe images. Drain or cancel it before deploying the recipe-only topology harness.');
-        }
         $topology = TaskTopology::forGroup($group);
         if (! $vm->size->holds($topology)) {
             throw new TaskCapacityException(TaskWait::Topology, self::TooSmall);
@@ -70,7 +69,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         }
         if ($vm->topology_state === TaskVmTopologyState::Ready && $vm->topology->covers($topology)) {
             // The VM can restart without a park, and its nested guests stop with it. A run from an earlier boot is
-            // stale, so the topology is prepared again; images and host setup stay.
+            // stale, so the topology is prepared again; the adopted pool and the host setup stay.
             if ($this->unit->status($node, (string) $vm->topology_run)->state === TaskVmTopologyRunState::Ready) {
                 return;
             }
@@ -109,7 +108,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
             'topology_error' => null,
         ]);
         try {
-            $this->unit->start($node, $run, (string) $instance->checkout_path, 'TASK-'.$group->id, $topology, (string) $vm->size->resources()->topologyPool);
+            $this->unit->start($node, $run, (string) $instance->checkout_path, 'TASK-'.$group->id, $topology);
         } catch (RuntimeConvergenceException $exception) {
             // The call can fail after systemd-run started the unit, for example when SSH timed out. A unit that runs
             // or finished is the run; only a run without a unit fails.

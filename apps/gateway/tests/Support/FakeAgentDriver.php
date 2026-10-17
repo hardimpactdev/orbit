@@ -75,7 +75,10 @@ class FakeAgentDriver implements AgentDriver
         if ($this->failNextSend) {
             $this->failNextSend = false;
 
-            throw new AgentDriverException('The thread cannot take a turn.');
+            $exception = new AgentDriverException('The thread cannot take a turn.');
+            $exception->turnRejected = true;
+
+            throw $exception;
         }
     }
 

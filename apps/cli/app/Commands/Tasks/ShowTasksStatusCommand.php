@@ -11,6 +11,8 @@ use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TaskMergeResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
+use Orbit\Sdk\Responses\Tasks\TaskWorkspaceActorResponse;
+use Orbit\Sdk\Responses\Tasks\TaskWorkspaceLeaseResponse;
 
 final class ShowTasksStatusCommand extends TaskCommand
 {
@@ -30,7 +32,7 @@ final class ShowTasksStatusCommand extends TaskCommand
     }
 
     #[\Override]
-    protected $description = 'Show whether the Gateway tasks extension is on, which groups are asking for assistance, and which review-and-merge groups are open.';
+    protected $description = 'Show whether the Gateway tasks extension is on, which groups are asking for assistance, which review-and-merge groups are open, and who holds or waits for workspace leases.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -58,6 +60,7 @@ final class ShowTasksStatusCommand extends TaskCommand
         ]));
         $this->renderAssistance($status->assistance ?? []);
         $this->renderMerges($status->merges);
+        $this->renderWorkspaceLeases($status->workspaceLeases);
         $this->writeHumanMessage("Request ID: {$status->requestId}");
 
         return self::SUCCESS;
@@ -128,6 +131,36 @@ final class ShowTasksStatusCommand extends TaskCommand
                 $group->mergeReason,
             ], $groups),
         ));
+    }
+
+    /** @param list<TaskWorkspaceLeaseResponse> $leases */
+    private function renderWorkspaceLeases(array $leases): void
+    {
+        if ($leases === []) {
+            return;
+        }
+        $this->writeSection('Workspace leases');
+        foreach ($leases as $lease) {
+            $holder = $lease->holder;
+            ConsoleWriter::write($this->output, $this->humanRenderer()->detail($lease->instanceName.' ('.$lease->reference().')', [
+                'Holder' => $holder === null ? 'none' : $holder->kind.' ['.$holder->owner.']',
+                'Acquired' => $holder->acquiredAt ?? 'not recorded',
+                'Thread' => $holder?->threadId,
+                'Check' => $holder?->checkId,
+                'Remote result' => $holder?->remoteUncertain === true ? 'uncertain; lease retained' : 'no uncertainty recorded',
+            ]));
+            if ($lease->waiters === []) {
+                $this->writeHumanMessage('No queued workspace actors.');
+
+                continue;
+            }
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Kind', 'Owner', 'Queued', 'Thread', 'Check'],
+                array_map(static fn (TaskWorkspaceActorResponse $actor): array => [
+                    $actor->kind, $actor->owner, $actor->queuedAt, $actor->threadId, $actor->checkId,
+                ], $lease->waiters),
+            ));
+        }
     }
 
     private function writeSection(string $heading): void
