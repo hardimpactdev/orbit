@@ -30,6 +30,7 @@ use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
@@ -51,10 +52,7 @@ use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
-use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
-use App\Infrastructure\Tasks\T3\HttpT3ThreadReader;
-use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
@@ -73,8 +71,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
-        T3Dispatcher::class => HttpT3Dispatcher::class,
-        T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
         TaskReviewDiff::class => RemoteTaskReviewDiff::class,
@@ -126,6 +122,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(TaskWorkspaceOperationRecovery::class, RemoteWorkspaceOperationJournal::class);
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));

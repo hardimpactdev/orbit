@@ -25,8 +25,7 @@ function topology_script(array $arguments, array $environment = []): array
     $stubs = [
         "{$work}/bin/sudo" => '[ "$1" = -n ] && shift; exec "$@"',
         "{$work}/bin/systemctl" => 'exit "${SYSTEMCTL_EXIT:-3}"',
-        "{$work}/checkout/bin/e2e-topology-host-setup" => 'echo "host-setup $*" >> "$WORK/harness.log"',
-        "{$work}/checkout/bin/e2e-topology-images" => 'echo "images $*" >> "$WORK/harness.log"; printf "%b" "${IMAGES_OUTPUT:-}"',
+        "{$work}/checkout/bin/e2e-topology-host-setup" => 'echo "host-setup $*" >> "$WORK/harness.log"; printf "%b" "${HOST_SETUP_OUTPUT:-}"; exit "${HOST_SETUP_EXIT:-0}"',
         "{$work}/checkout/bin/e2e-topology" => <<<'SH'
             echo "acquire $*" >> "$WORK/harness.log"
             count=$(grep -c '^acquire ' "$WORK/harness.log")
@@ -56,7 +55,7 @@ function topology_boot_id(): string
     return trim((string) file_get_contents('/proc/sys/kernel/random/boot_id'));
 }
 
-$runArguments = ['run', 'abcdef0123456789', '__CHECKOUT__', 'TASK-7', 'app-prod+ingress', '25GiB', '10.44.0.0/24', '/var/lib/orbit/task-vm-role-images/manifest.json'];
+$runArguments = ['run', 'abcdef0123456789', '__CHECKOUT__', 'TASK-7', 'app-prod+ingress', '10.44.0.0/24'];
 
 beforeEach(function (): void {
     if (! is_readable('/proc/sys/kernel/random/boot_id')) {
@@ -71,25 +70,28 @@ afterEach(function (): void {
 });
 
 describe('the topology run', function () use ($runArguments): void {
-    it('lets the harness ensure the images, acquires with --replace, and writes a ready result', function () use ($runArguments): void {
+    it('runs the host setup, which adopts the topology seed, acquires with --replace, and writes a ready result', function () use ($runArguments): void {
         [$process, $work] = topology_script($runArguments);
         $result = topology_result($work, 'abcdef0123456789');
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES))->toBe([
-                'host-setup --pool-size=25GiB --wireguard-subnet=10.44.0.0/24',
-                'images ensure --nodes=app-prod+ingress --recipe-images=/var/lib/orbit/task-vm-role-images/manifest.json',
+                'host-setup --wireguard-subnet=10.44.0.0/24',
                 "acquire acquire TASK-7 {$work}/checkout --nodes=app-prod+ingress --replace",
             ])
             ->and(array_keys($result))->toBe(['state', 'step', 'seconds', 'boot_id', 'log'])
             ->and($result)->toMatchArray(['state' => 'ready', 'step' => 'acquire', 'boot_id' => topology_boot_id()]);
     });
 
-    it('requires the claimed recipe manifest instead of building role images', function () use ($runArguments): void {
-        [$process, $work] = topology_script($runArguments);
+    it('fails at the host setup and acquires nothing when the VM has no topology seed disk', function () use ($runArguments): void {
+        $missing = 'e2e-topology-host-setup: this machine has no topology seed disk; only a task VM of a size that runs a topology boots with one.';
+        [$process, $work] = topology_script($runArguments, ['HOST_SETUP_OUTPUT' => $missing.'\n', 'HOST_SETUP_EXIT' => '1']);
+        $result = topology_result($work, 'abcdef0123456789');
 
-        expect($process->getExitCode())->toBe(0);
-        expect(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)[1])->toBe('images ensure --nodes=app-prod+ingress --recipe-images=/var/lib/orbit/task-vm-role-images/manifest.json');
+        expect($process->getExitCode())->not->toBe(0)
+            ->and(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES))->toBe(['host-setup --wireguard-subnet=10.44.0.0/24'])
+            ->and($result)->toMatchArray(['state' => 'failed', 'step' => 'host-setup'])
+            ->and($result['log'])->toContain($missing);
     });
 
     it('retries a failed acquire once and records it only in the log', function () use ($runArguments): void {
@@ -99,7 +101,7 @@ describe('the topology run', function () use ($runArguments): void {
         expect($process->getExitCode())->toBe(0)
             ->and($result)->toMatchArray(['state' => 'ready'])
             ->and($result)->not->toHaveKey('retries')
-            ->and(count(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)))->toBe(4)
+            ->and(count(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)))->toBe(3)
             ->and($result['log'])->toContain('topology: warning: acquire failed; retry 1 of 1.');
     });
 
@@ -111,7 +113,7 @@ describe('the topology run', function () use ($runArguments): void {
     });
 
     it('keeps the log tail as one valid JSON string, whatever the harness printed', function () use ($runArguments): void {
-        [, $work] = topology_script($runArguments, ['IMAGES_OUTPUT' => 'quote " back \\\\ tab \t bell \0007 bad \0377 end\n']);
+        [, $work] = topology_script($runArguments, ['HOST_SETUP_OUTPUT' => 'quote " back \\\\ tab \t bell \0007 bad \0377 end\n']);
 
         expect(topology_result($work, 'abcdef0123456789')['log'])->toContain("quote \" back \\ tab \t bell  bad  end");
     });

@@ -11,7 +11,7 @@ use LogicException;
 
 /**
  * The Gateway-rendered Orbit footprint of a managed Node (ADR 0202): its Caddyfile, Node agent
- * configuration, private-DNS listener on the `vpn` Node, annotator server files, and the artifacts
+ * configuration, private-DNS listener on the `vpn` Node, and the artifacts
  * that extensions contribute. Re-applying it never changes an Instance, a Process unit, or a role,
  * and never runs `node:add`.
  */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Fleet\Footprint;
 
 use App\Domain\Extensions\Contributions;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -31,7 +32,7 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
 
     public function name(): string
     {
-        return 'caddy';
+        return ReservedNames::CaddyArtifact;
     }
 
     public function applies(Node $node): bool

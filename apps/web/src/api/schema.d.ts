@@ -1315,58 +1315,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/instances/{instance}/annotations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** annotation:list */
-        get: operations["annotation-list"];
-        put?: never;
-        /** annotation:create */
-        post: operations["annotation-create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/instances/{instance}/annotations/{annotation}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** annotation:retry */
-        post: operations["annotation-retry"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/instances/{instance}/annotations/{annotation}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** annotation:update */
-        post: operations["annotation-update"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
         parameters: {
             query?: never;
@@ -3572,7 +3520,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes the unattached workspace the group owns, unless a live claim still uses it. An Instance name or branch never makes an Instance a task workspace. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -3755,7 +3703,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -4316,8 +4264,6 @@ export interface components {
             ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
-            annotator_port?: number | null;
-            annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
             shared_paths?: string[];
             auto_deploy?: components["schemas"]["InstanceAutoDeploy"] | null;
@@ -4442,44 +4388,6 @@ export interface components {
             task_workspace_routed?: boolean;
             review_and_merge?: boolean;
             merge_check?: string | null;
-        };
-        Annotation: {
-            id?: string;
-            threadId?: string | null;
-            comment?: string;
-            x?: number;
-            y?: number;
-            timestamp?: number;
-            /** Format: uri */
-            url?: string;
-            pathname?: string;
-            element?: string;
-            elementPath?: string;
-            isFixed?: boolean;
-            boundingBox?: {
-                x?: number;
-                y?: number;
-                width?: number;
-                height?: number;
-            };
-            screenshot?: string | null;
-            component?: string | null;
-            controller?: string | null;
-            route?: string | null;
-            screenSize?: string | null;
-            scrollPosition?: string | null;
-            breakpoint?: string | null;
-            react?: string | null;
-            instanceId?: number;
-            taskId?: number;
-            taskGroupId?: number;
-            revision?: number;
-            /** @enum {string} */
-            status?: "pending" | "in_progress" | "resolved" | "cancelled";
-            /** @enum {string} */
-            delivery?: "queued" | "sending" | "sent" | "error" | "cancelled";
-            syncError?: string | null;
-            summary?: string | null;
         };
         DatabaseConnectionAttachment: {
             instance_id?: number;
@@ -4832,8 +4740,6 @@ export interface components {
             questions?: number;
             escalations?: number;
             tasks?: components["schemas"]["Task"][];
-            /** @enum {string} */
-            execution_mode?: "managed" | "existing_thread";
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
             vm_power?: "running" | "stopped" | "destroyed" | null;
@@ -4859,8 +4765,7 @@ export interface components {
             questions?: number;
             escalations?: number;
             /** @enum {string} */
-            type?: "implementation" | "annotation" | "final_review";
-            target_thread_id?: string | null;
+            type?: "implementation" | "final_review";
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
@@ -4967,6 +4872,7 @@ export interface components {
             assistance?: components["schemas"]["TaskAssistance"][];
             last_tick_at?: string | null;
             merges?: components["schemas"]["TaskMerge"][];
+            workspace_leases?: components["schemas"]["TaskWorkspaceLease"][];
         };
         TaskAssistance: {
             id?: number;
@@ -4994,6 +4900,24 @@ export interface components {
             /** @enum {string|null} */
             merge_status?: "waiting" | "refused" | "merged" | null;
             merge_reason?: string | null;
+        };
+        TaskWorkspaceLease: {
+            instance_id?: number;
+            instance_name?: string;
+            group_id?: number;
+            project_code?: string;
+            holder?: components["schemas"]["TaskWorkspaceActor"] | null;
+            waiters?: components["schemas"]["TaskWorkspaceActor"][];
+        };
+        TaskWorkspaceActor: {
+            id?: number;
+            kind?: string;
+            owner?: string;
+            acquired_at?: string | null;
+            queued_at?: string | null;
+            thread_id?: number | null;
+            check_id?: number | null;
+            remote_uncertain?: boolean;
         };
         ToolInventory: {
             node_id?: number;
@@ -9772,296 +9696,6 @@ export interface operations {
             };
         };
     };
-    "annotation-list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"][];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    id: string;
-                    threadId?: string | null;
-                    comment: string;
-                    x: number;
-                    y: number;
-                    timestamp: number;
-                    /** Format: uri */
-                    url: string;
-                    pathname: string;
-                    element: string;
-                    elementPath: string;
-                    isFixed?: boolean;
-                    boundingBox?: {
-                        x?: number;
-                        y?: number;
-                        width?: number;
-                        height?: number;
-                    };
-                    screenshot?: string | null;
-                    component?: string | null;
-                    controller?: string | null;
-                    route?: string | null;
-                    screenSize?: string | null;
-                    scrollPosition?: string | null;
-                    breakpoint?: string | null;
-                    react?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-                annotation: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    threadId?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-                annotation: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    status: "in_progress" | "resolved";
-                    /** @description Conditionally required. */
-                    summary?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     "instance-database-add": {
         parameters: {
             query?: never;
@@ -13912,7 +13546,7 @@ export interface operations {
                     target_id: number;
                     /** @description Process name */
                     name: string;
-                    /** @description Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch */
+                    /** @description Process preset: vp-dev */
                     preset?: string;
                     /** @description Existing non-root account for a Node systemd Process */
                     user?: string;

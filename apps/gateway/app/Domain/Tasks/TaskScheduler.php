@@ -23,7 +23,7 @@ final readonly class TaskScheduler
 
     public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
 
-    public const string WorkspaceChangedReminder = 'The workspace working tree no longer matches the review baseline. Orbit cannot attribute this change to the reviewer. Restore the reviewed tree or request the needed changes from the implementer.';
+    public const string WorkspaceChangedReminder = 'The workspace working tree no longer matches the review baseline. Orbit cannot attribute this change. Assistance is required to identify and preserve it.';
 
     public const string TickFailedReason = 'The tick failed on this group. Fix the cause, then post a resolution. The error: ';
 
@@ -91,11 +91,22 @@ final readonly class TaskScheduler
      */
     public function tick(): array
     {
+        app(TaskWorkspaceLease::class)->beginTick();
+        try {
+            return $this->tickWithWorkspaceLeases();
+        } finally {
+            app(TaskWorkspaceLease::class)->endTick();
+        }
+    }
+
+    /** @return list<TaskSessionDecision> */
+    private function tickWithWorkspaceLeases(): array
+    {
         if (! $this->extension->enabled()) {
             return [];
         }
 
-        $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+        $groups = Task::topLevel()
             ->with(['project', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])
             ->orderBy('id')
@@ -109,7 +120,10 @@ final readonly class TaskScheduler
 
         $failed = [];
         foreach ($groups as $group) {
-            $this->isolateGroup($group, $failed, fn () => $this->settling->tickPullRequest($this, $group));
+            $this->isolateGroup($group, $failed, function () use ($group): void {
+                app(TaskWorkspaceLease::class)->reconcile($group);
+                $this->settling->tickPullRequest($this, $group);
+            });
         }
 
         $decisions = [];
@@ -118,6 +132,7 @@ final readonly class TaskScheduler
             if (! isset($failed[$group->id])) {
                 $this->isolateGroup($group, $failed, function () use ($group, $runningAtStart, &$decisions): void {
                     TaskExecutionHold::run($group, function () use ($group, $runningAtStart, &$decisions): void {
+                        app(TaskWorkspaceLease::class)->reconcile($group);
                         $this->runner->tickSubtasks($this, $group, isset($runningAtStart[$group->id]), $decisions);
                     });
                 });
@@ -147,6 +162,8 @@ final readonly class TaskScheduler
         Context::scope(function () use ($group, &$failed, $work): void {
             try {
                 $work();
+            } catch (TaskWorkspaceWaiting) {
+                return;
             } catch (Throwable $exception) {
                 $failed[$group->id] = true;
                 $key = self::TickFailureKey.$group->id;
@@ -174,11 +191,6 @@ final readonly class TaskScheduler
     public function handleReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
         return $this->reviews->handleReviewerOutcome($this, $group, $task, $observation);
-    }
-
-    public function recoverStaleReview(Task $group, Task $task): bool
-    {
-        return $this->reviews->recoverStaleReview($this, $group, $task);
     }
 
     public function retryCommittedApproval(Task $group, Task $task): bool

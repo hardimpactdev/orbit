@@ -26,7 +26,6 @@ final readonly class UpdateTaskGroupAction
 
     public function execute(Task $group, UpdateTaskGroupData $data): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
         if ($data->status === TaskGroupStatus::Todo && $group->status === TaskGroupStatus::Backlog) {
             self::requireDeliverables($group->tasks()->get());
@@ -69,7 +68,7 @@ final readonly class UpdateTaskGroupAction
             $locked->save();
 
             return $locked;
-        }));
+        }), wait: false);
 
         if ($data->status === TaskGroupStatus::Todo) {
             $this->scheduler->claimNext();

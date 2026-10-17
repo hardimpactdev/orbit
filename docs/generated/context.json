@@ -863,7 +863,8 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200"
+                "0200",
+                "0222"
             ]
         },
         {
@@ -905,7 +906,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0222"
             ]
         },
         {
@@ -1225,6 +1227,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
+            "title": "ADR 0222: Give task VMs a cloned topology seed",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0206",
+                "0222"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1287,7 +1314,8 @@
                 "0216",
                 "0217",
                 "0218",
-                "0219"
+                "0219",
+                "0222"
             ]
         },
         {
@@ -1388,44 +1416,6 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/agent-annotation.md",
-            "title": "Agent annotation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Subtask",
-                "Task"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/agentation.md",
-            "title": "Agentation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
                 "Route"
             ],
             "governing_adrs": []
@@ -1565,9 +1555,7 @@
             "concepts": [
                 "Access grant",
                 "Gateway",
-                "Instance",
-                "Node",
-                "Route"
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -1666,6 +1654,7 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -1716,7 +1705,8 @@
             "governing_adrs": [
                 "0200",
                 "0206",
-                "0216"
+                "0216",
+                "0222"
             ]
         },
         {
@@ -1949,6 +1939,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2025,6 +2016,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Placement",
                 "Process",
                 "Project",
                 "Role",
@@ -2158,7 +2150,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -2870,7 +2864,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Task",
@@ -2906,6 +2899,7 @@
             "concepts": [
                 "Activity",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -3004,10 +2998,11 @@
                 "Extension",
                 "Gateway",
                 "Node",
-                "Role",
                 "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",

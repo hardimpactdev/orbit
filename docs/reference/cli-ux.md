@@ -112,7 +112,7 @@ The title uses the singular human entity label and its selector. Align property 
 
 Property values wrap at spaces. Only a word longer than the line breaks by width.
 
-Optional feature properties follow the command's contract, not a second machine schema. For example, `instance:show` adds `Annotator port` and `Annotator URL` only when a port is assigned. An unavailable URL uses an em dash in the detail tree, while JSON always carries the nullable `annotator_port` and `annotator_url` fields. Keep this distinction in the response fixtures and expected CLI output.
+Optional feature properties follow the command's contract, not a second machine schema. For example, `instance:show` adds `Production user` and `Production home` only for a production Instance, while JSON always carries the nullable `production_user` and `production_home` fields. Keep this distinction in the response fixtures and expected CLI output.
 
 ## Progress and liveness
 
@@ -198,6 +198,8 @@ The Tasks JSON rendering preserves the distinction between a watched branch pull
 `tasks:question:close` reuses the progress tree and prints the closed question as `tasks:question:list` does. Its recordings are [closed.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/closed.human.txt) and the failure envelope [already-closed.json](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/already-closed.json).
 
 Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
+
+`tasks:status` includes workspace lease holders and queued actors in its human detail tree. JSON preserves the typed `workspace_leases` array. A busy checkout is a wait, so its queued actors do not appear as command failures. Doctor reports unresolved ownership without clearing it. See the [workspace lease contract](/reference/tasks#workspace-lease).
 
 ## Command reference
 

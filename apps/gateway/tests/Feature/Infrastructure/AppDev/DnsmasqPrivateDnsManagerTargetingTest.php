@@ -101,26 +101,35 @@ it('installs the listener from its release on a remote vpn node, not from a Gate
         ->not->toContain(base_path());
 });
 
-it('keeps local publication when gateway and vpn share a node', function (): void {
+it('publishes through pinned self SSH when gateway and vpn share a node', function (LifecycleStatus $status): void {
     $node = dns_target_node('gateway', '10.44.0.1', RoleName::Gateway);
     $node->roles()->create([
         'role' => RoleName::Vpn,
-        'status' => LifecycleStatus::Active,
+        'status' => $status,
     ]);
+    $node->update(['status' => $status]);
+    $node->roles()->update(['status' => $status]);
     $processes = new DnsTargetProcessRunner;
     $ssh = new DnsTargetSshExecutor;
 
     dns_target_manager($processes, $ssh)->converge();
 
     expect($processes->calls)
-        ->toBe(1)
+        ->toBe(0)
         ->and($ssh->hosts)
-        ->toBe([]);
-});
+        ->toBe(['10.44.0.1'])
+        ->and($ssh->connections[0]->identityFile)->toBe('/tmp/orbit-dns.key')
+        ->and($ssh->connections[0]->knownHostsFile)->toBe('/tmp/orbit-dns-known-hosts')
+        ->and($ssh->users)->toBe([$node->user]);
+})->with([LifecycleStatus::Active, LifecycleStatus::Provisioning]);
 
-it('fails remote publication without writing through the local process runner', function (): void {
-    dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
-    dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
+it('fails SSH publication without falling back to the local process runner', function (bool $shared): void {
+    $vpn = dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
+    if ($shared) {
+        $vpn->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    } else {
+        dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
+    }
     $processes = new DnsTargetProcessRunner;
     $ssh = new DnsTargetSshExecutor(succeed: false);
 
@@ -132,7 +141,7 @@ it('fails remote publication without writing through the local process runner', 
         })
         ->and($processes->calls)
         ->toBe(0);
-});
+})->with(['shared Node' => true, 'split Nodes' => false]);
 
 function dns_target_manager(ProcessRunner $processes, SshExecutor $ssh): DnsmasqPrivateDnsManager
 {
@@ -185,6 +194,9 @@ final class DnsTargetSshExecutor implements SshExecutor
     /** @var list<string> */
     public array $users = [];
 
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
@@ -194,6 +206,7 @@ final class DnsTargetSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $this->hosts[] = $connection->host;
         $this->users[] = $connection->user;
         $this->commands[] = $command;

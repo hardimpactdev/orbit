@@ -9,6 +9,7 @@ final readonly class TasksStatusResponse
     /**
      * @param  list<TaskAssistanceResponse>|null  $assistance  Null when this route does not report assistance.
      * @param  string|null  $lastTickAt  When the latest `tasks:tick` started its work. Null when no tick is remembered or this route does not report it.
+     * @param  list<TaskWorkspaceLeaseResponse>  $workspaceLeases
      * @param  list<TaskMergeResponse>  $merges  Open tasks of review-and-merge Projects. Empty when this route does not report them.
      */
     public function __construct(
@@ -17,6 +18,7 @@ final readonly class TasksStatusResponse
         public ?array $assistance = null,
         public ?string $lastTickAt = null,
         public array $merges = [],
+        public array $workspaceLeases = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -40,6 +42,7 @@ final readonly class TasksStatusResponse
             array_key_exists('assistance', $data) ? self::assistance($data['assistance'], $requestId) : null,
             $lastTickAt,
             array_key_exists('merges', $data) ? array_map(static fn (array $group): TaskMergeResponse => TaskMergeResponse::fromGatewayData($group, $requestId), self::rows($data['merges'], $requestId)) : [],
+            array_key_exists('workspace_leases', $data) ? array_map(static fn (array $lease): TaskWorkspaceLeaseResponse => TaskWorkspaceLeaseResponse::fromGatewayData($lease, $requestId), self::rows($data['workspace_leases'], $requestId)) : [],
         );
     }
 
@@ -60,6 +63,9 @@ final readonly class TasksStatusResponse
      *     last_tick_at: string|null,
      *     merges: list<array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string,
      *         pr_url: string|null, pr_branch: string|null, merge_status: string|null, merge_reason: string|null}>,
+     *     workspace_leases: list<array{instance_id: int, instance_name: string, group_id: int, project_code: string,
+     *         holder: array{id: int, kind: string, owner: string, acquired_at: ?string, queued_at: ?string, thread_id: ?int, check_id: ?int}|null,
+     *         waiters: list<array{id: int, kind: string, owner: string, acquired_at: ?string, queued_at: ?string, thread_id: ?int, check_id: ?int}>}>,
      *     request_id: string
      * }
      */
@@ -77,6 +83,7 @@ final readonly class TasksStatusResponse
             'assistance' => array_map(static fn (TaskAssistanceResponse $group): array => $group->toArray(), $this->assistance),
             'last_tick_at' => $this->lastTickAt,
             'merges' => array_map(static fn (TaskMergeResponse $group): array => $group->toArray(), $this->merges),
+            'workspace_leases' => array_map(static fn (TaskWorkspaceLeaseResponse $lease): array => $lease->toArray(), $this->workspaceLeases),
             'request_id' => $this->requestId,
         ];
     }

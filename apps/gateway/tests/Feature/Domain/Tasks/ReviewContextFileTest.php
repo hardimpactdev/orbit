@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskDeliverable;
@@ -196,19 +198,20 @@ it('counts a communication failure and does not send the review when the context
         'wireguard_ip' => '10.44.0.76',
         'user' => 'orbit',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Context failure',
+        'brief' => 'The review context cannot be written.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'context-failure',
         'checkout_path' => '/tmp/context-failure',
         'branch' => 'task',
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Context failure',
-        'brief' => 'The review context cannot be written.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -279,19 +282,20 @@ it('does not send the review when the context path is a directory', function ():
         'wireguard_ip' => '10.44.0.74',
         'user' => 'orbit',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Context directory',
+        'brief' => 'The context path is a directory.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'context-directory',
         'checkout_path' => $checkout,
         'branch' => 'task',
         'status' => 'source_resolved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Context directory',
-        'brief' => 'The context path is a directory.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -357,15 +361,6 @@ function review_context_opening(): array
         'wireguard_ip' => '10.44.0.75',
         'user' => 'orbit',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'review-context',
-        'checkout_path' => $checkout,
-        'branch' => 'task',
-        'status' => 'source_resolved',
-        'starting_commit' => str_repeat('b', 40),
-    ]);
     $taskBrief = "it's \$HOME\n".str_repeat('é', 2_100)."\nGROUP-END";
     $subtaskBrief = str_repeat('S', 2_100)."\nSUBTASK-END";
     $description = str_repeat('D', 400)."\nDELIVERABLE-END";
@@ -378,6 +373,16 @@ function review_context_opening(): array
         'title' => 'Review context',
         'brief' => $taskBrief,
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'review-context',
+        'checkout_path' => $checkout,
+        'branch' => 'task',
+        'status' => 'source_resolved',
+        'starting_commit' => str_repeat('b', 40),
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -429,12 +434,13 @@ function review_context_opening(): array
         /** @var list<array{message: string, context: ?string}> */
         public array $turns = [];
     };
-    $driver->beforeTurn = function (string $message) use ($log, $checkout): void {
+    $driver->beforeTurn = function (string $message) use ($driver, $log, $checkout): void {
         $path = review_context_file_path($checkout);
         $log->turns[] = [
             'message' => $message,
             'context' => is_file($path) ? (string) file_get_contents($path) : null,
         ];
+        $driver->observation = new AgentObservation(state: AgentThreadState::Done, turnId: 'context-turn-'.count($log->turns));
     };
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);

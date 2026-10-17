@@ -129,7 +129,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
 | `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside a task workspace](#processes-inside-a-task-workspace), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
-| `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
+| `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
 
@@ -145,7 +145,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 
 ### Processes inside a task workspace
 
-Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance `task-<group id>` of a task group of the same Project, on the Node linked to that group's live task VM. The name alone does not make a development Instance a task workspace.
+Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance that a task group [owns](/reference/tasks#workspace-ownership), on the Node of that group's live task VM. The name does not make a development Instance a task workspace.
 
 Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
 
@@ -204,14 +204,13 @@ Repeat the same command to resume at the first unfinished step. To take over a f
 
 Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
 
-
 Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
 
 Source finalization checks dirty and unpublished content before moving the tree into quarantine. A normal refusal leaves the source at its original path and does not change Git's worktree entry. It then moves the validated tree into quarantine and writes an authenticated receipt before deletion.
 
 The quarantine is `.orbit-removals` below the Node's apps directory. The move must keep the checkout's recorded device and inode, so it works only within one filesystem. When the checkout is on another filesystem, for example a volume mounted below the apps directory, finalization fails before it stops a process or moves a file. The step's error output, which the `instance:destroy` Activity keeps in `stderr`, then starts with `cross-device:`, and the checkout stays at its path.
 
-Before this check, `mv` copied such a checkout into quarantine and deleted the original, and every retry then failed the identity check. A task VM workspace avoids the move: its removal deletes the VM with its workspace volume. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
+Before this check, `mv` copied such a checkout into quarantine and deleted the original, and every retry then failed the identity check. A task VM workspace avoids the move: its removal deletes the VM, and the checkout with it. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
 After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. If its quarantine directory is already gone, the matching journal, receipt, and recovery record authorize removal of only its recorded Git administration entry. A replaced quarantine or mismatched receipt still stops removal.
 

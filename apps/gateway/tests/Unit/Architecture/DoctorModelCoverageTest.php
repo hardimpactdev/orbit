@@ -6,7 +6,6 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
-use App\Models\Annotation;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -46,6 +45,7 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
+use App\Models\ProxyCliProcessSource;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
@@ -61,6 +61,8 @@ use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\TaskWorkspaceLeaseRecord;
+use App\Models\TaskWorkspaceOperation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\UpCloudTaskVmImageBuild;
@@ -89,6 +91,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteCustomProxy::class => DoctorFamily::Route,
     ];
     $ownerInputs = [
+        TaskWorkspaceLeaseRecord::class,
+        TaskWorkspaceOperation::class,
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
@@ -103,6 +107,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteAnalyticsTracking::class,
         RouteRemovalResidue::class,
         ProcessDefinition::class,
+        ProxyCliProcessSource::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,
     ];
@@ -116,7 +121,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         FleetRollout::class,
         FleetRolloutNode::class,
         NodeFootprint::class,
-        Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,
         InstanceDependencyResolution::class,

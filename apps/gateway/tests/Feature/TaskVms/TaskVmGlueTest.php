@@ -11,6 +11,7 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -64,7 +65,7 @@ function tvm_glue_group(TaskVmState $state = TaskVmState::Ready): Task
         'state' => $state, 'wireguard_ip' => '10.44.0.130', 'pi_token' => TVM_GLUE_PI_TOKEN, 'model_key' => TVM_GLUE_MODEL_KEY,
     ]);
     $workspace = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id,
         'checkout_path' => '/home/orbit/apps/shop/task-'.$group->id, 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($workspace);
@@ -113,6 +114,23 @@ describe('workspace commands', function (): void {
         expect($transport->commands)->toBe([]);
     })->with([TaskVmState::Provisioning, TaskVmState::Failed, TaskVmState::Destroying]);
 
+    it('refuses an Instance that its group holds without owning it', function (): void {
+        $transport = tvm_glue_ssh();
+        $group = tvm_glue_group();
+        $workspace = tvm_glue_workspace($group);
+        // A row from before owners existed, attached without its group as owner. The migration detaches such a row, and
+        // the Task and Instance models refuse to create one, so the test writes it directly.
+        $legacy = Instance::withoutEvents(fn (): Instance => Instance::query()->create([
+            'project_id' => $group->project_id, 'node_id' => $workspace->node_id, 'name' => 'legacy',
+            'checkout_path' => '/home/orbit/apps/shop/legacy', 'status' => 'source_resolved',
+        ]));
+        Task::topLevel()->whereKey($group->id)->update(['taskable_type' => $legacy->getMorphClass(), 'taskable_id' => $legacy->id]);
+
+        expect(fn () => app(TaskWorkspaceExecutor::class)->execute($legacy, new RemoteCommand(['git', 'add', '-A']), 'proof', 'tasks.proof'))
+            ->toThrow(RuntimeConvergenceException::class, 'Instance [legacy] is not a task workspace.');
+        expect($transport->commands)->toBe([]);
+    });
+
     it('refuses a vm group workspace on another Node', function (): void {
         $transport = tvm_glue_ssh();
         $workspace = tvm_glue_workspace(tvm_glue_group());
@@ -153,7 +171,8 @@ describe('publish and fetch', function (): void {
         app()->instance(SshExecutor::class, $transport);
 
         try {
-            app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main');
+            app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'fetch-test',
+                fn () => app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main'));
             $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
             $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
             $commit = $git($root.'/vm', 'rev-parse', 'HEAD');

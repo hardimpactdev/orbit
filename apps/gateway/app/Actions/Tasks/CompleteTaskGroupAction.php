@@ -37,7 +37,6 @@ final readonly class CompleteTaskGroupAction
      */
     public function execute(Task $group, bool $finishWhenRemovalFails = true): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);
@@ -111,7 +110,7 @@ final readonly class CompleteTaskGroupAction
                     $locked->update(['watched_pr_completion' => $state]);
                 }
             });
-        });
+        }, wait: false);
         $group->refresh();
     }
 
@@ -163,7 +162,7 @@ final readonly class CompleteTaskGroupAction
                     return true;
                 });
             } while (! $completed);
-        });
+        }, wait: false);
         $group->refresh()->load(['project', 'tasks', 'taskable']);
     }
 
@@ -184,7 +183,7 @@ final readonly class CompleteTaskGroupAction
     {
         try {
             // Under the admission lock, so a tick cannot park the group's task VM while its workspace is removed.
-            $this->execution->synchronized($group->id, fn () => $this->removeWorkspace($group));
+            $this->execution->synchronized($group->id, fn () => $this->removeWorkspace($group), wait: false);
         } catch (Throwable $exception) {
             if (! $finishWhenRemovalFails) {
                 throw $exception;
@@ -202,7 +201,7 @@ final readonly class CompleteTaskGroupAction
         $instanceId = $group->taskable_id;
 
         try {
-            $this->workspace->execute($group);
+            $this->workspace->remove($group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

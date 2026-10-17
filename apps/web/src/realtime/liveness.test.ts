@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
     downForMs,
     fallbackPollMs,
-    isLive,
     POLL_MAX_MS,
     POLL_MIN_MS,
     resetPollBackoff,
@@ -20,7 +19,6 @@ afterEach(() => {
 
 describe("fallbackPollMs", () => {
     it("does not poll while realtime is live", () => {
-        expect(isLive()).toBe(true);
         expect(fallbackPollMs(Date.now())).toBe(false);
     });
 

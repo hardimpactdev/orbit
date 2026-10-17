@@ -93,7 +93,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             ? ''
             : 'export PATH='.escapeshellarg($this->executablePath).':"$PATH"'."\n";
         $remote = $this->remoteListenerOwner();
-        // The same publication runs on the vpn Node when the roles split: the listener release carries its own code.
+        // Pinned SSH also reaches a co-located VPN owner outside the HTTP worker's read-only mount namespace.
         $listener = $this->listenerPublication();
         $result = $this->runPublication($remote, <<<BASH
             {$pathExport}managed={$recordsDirectory}/{$recordsFile}
@@ -193,7 +193,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $listener = $this->roleHolder(RoleName::Vpn);
         $gateway = $this->roleHolder(RoleName::Gateway);
 
-        if (! $listener instanceof Node || ! $gateway instanceof Node || $listener->is($gateway)) {
+        if (! $listener instanceof Node || ! $gateway instanceof Node) {
             return null;
         }
 

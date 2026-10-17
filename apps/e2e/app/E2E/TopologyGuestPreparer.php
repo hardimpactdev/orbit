@@ -12,15 +12,90 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Prepare the mounted worktree on the checkout Nodes of one topology attempt: prove the mount, point the
- * worktree's Gateway `.env` at the mounted checkout, link the CLI onto the guest `PATH`, and apply the
- * Gateway migrations. The mount proof alone is what verify and sync re-run before touching a topology.
+ * Settle the guests of one topology attempt after their first boot, then prepare the mounted worktree on its checkout
+ * Nodes: prove the mount, point the worktree's Gateway `.env` at the mounted checkout, link the CLI onto the guest
+ * `PATH`, and apply the Gateway migrations. The mount proof alone is what verify and sync re-run before touching a
+ * topology.
  */
 final readonly class TopologyGuestPreparer
 {
     public function __construct(
         private IncusHost $host,
+        private int $settleIntervalMicroseconds = 1_000_000,
     ) {}
+
+    /**
+     * Waits until every guest has finished its first boot: a copy of the template keeps the base image's cloud-init,
+     * which can reboot it once. Before that, it sets each guest's public DNS. Then it prepares pnpm.
+     */
+    public function settle(TopologyTarget $target): void
+    {
+        $guests = array_values($target->instances());
+        $probe = 'case "$(cloud-init status 2>/dev/null)" in *done*|*disabled*) ;; *) exit 1 ;; esac; cat /proc/sys/kernel/random/boot_id';
+        $publicDns = file_get_contents(dirname(__DIR__, 2).'/resources/guest/public-dns.sh');
+        if ($publicDns === false || $publicDns === '') {
+            throw new RuntimeException('The topology guest public DNS program is missing.');
+        }
+        $configured = false;
+        $previous = null;
+        $deadline = microtime(true) + 900;
+        do {
+            $commands = [];
+            foreach ($guests as $guest) {
+                $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['sh', '-c', $probe], 15)];
+            }
+            try {
+                if (! $configured) {
+                    $dns = [];
+                    foreach ($guests as $guest) {
+                        $dns[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['bash', '-ceu', $publicDns], 30)];
+                    }
+                    $configured = array_all($this->host->execAll($dns), static fn (GuestCommandResult $result): bool => $result->successful());
+                    if (! $configured) {
+                        throw new RuntimeException('Guest public DNS is not ready.');
+                    }
+                }
+                $boots = array_map(static fn (GuestCommandResult $result): ?string => $result->successful() && trim($result->stdout) !== '' ? trim($result->stdout) : null, $this->host->execAll($commands));
+            } catch (RuntimeException) {
+                $boots = [];
+            }
+            if ($boots !== [] && ! in_array(null, $boots, true) && $boots === $previous) {
+                $this->preparePnpm($guests);
+
+                return;
+            }
+            $previous = $boots;
+            usleep($this->settleIntervalMicroseconds);
+        } while (microtime(true) < $deadline);
+
+        throw new RuntimeException('The topology guests did not finish their first boot.');
+    }
+
+    /** @param list<string> $guests */
+    private function preparePnpm(array $guests): void
+    {
+        $root = dirname(__DIR__, 4);
+        $recipe = json_decode((string) file_get_contents($root.'/apps/gateway/resources/machine-software/recipe.json'), true, flags: JSON_THROW_ON_ERROR);
+        $pin = is_array($recipe) && is_array($recipe['tools'] ?? null) ? $recipe['tools']['pnpm'] ?? null : null;
+        if (! is_array($pin)) {
+            throw new RuntimeException('The recipe pnpm pin is missing.');
+        }
+        $shared = file_get_contents($root.'/apps/gateway/resources/machine-software/converge-node.py');
+        $prepare = file_get_contents($root.'/apps/e2e/resources/guest/prepare-pnpm.py');
+        if ($shared === false || $prepare === false) {
+            throw new RuntimeException('The recipe pnpm program is missing.');
+        }
+        $script = str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".$prepare;
+        $commands = [];
+        foreach ($guests as $guest) {
+            $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['python3', '-', json_encode($pin, JSON_THROW_ON_ERROR)], 120, $script)];
+        }
+        foreach ($this->host->execAll($commands) as $guest => $result) {
+            if (! $result->successful()) {
+                throw new RuntimeException(new GuestFailureDetail()->append("Recipe pnpm preparation failed on {$guest}.", $result->stderr));
+            }
+        }
+    }
 
     /** Prove the worktree is mounted on every checkout role; nothing is written. */
     public function assertSourceMounted(TopologyTarget $target): void

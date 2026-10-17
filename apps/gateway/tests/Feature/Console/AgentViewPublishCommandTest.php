@@ -28,8 +28,8 @@ function publish_group(): array
         'public_ssh_host' => '192.0.2.71', 'wireguard_ip' => '10.44.0.71',
     ]);
     $project = Project::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
     $group->taskable()->associate($instance)->save();
     app(TaskBroadcasts::class)->flush();
 

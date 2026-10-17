@@ -2,14 +2,14 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
-  - "apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
-  - "apps/gateway/app/Actions/Tasks/**"
+  - "apps/gateway/app/{Data/Tasks,Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
+  - "apps/gateway/app/{Actions/Tasks/**,Jobs/PublishTaskVmCommit.php}"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -28,7 +28,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, and `merges`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -63,13 +63,10 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `notify_coder` | task | Whether settle posts the [Coder webhook](#coder-settle-webhook) |
-| `execution_mode` | task | `managed` for every task on this page |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
 
 Clearing the assistance flag can keep the last reason.
-
-An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, `tasks:agents`, and `tasks:agent:show` accept it. The scheduler never claims it.
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
@@ -180,7 +177,6 @@ The task and subtask operations return these errors.
 | `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
 | `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server could not serve, when Orbit saved no transcript |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
-| `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
 
 ## Deliverables
@@ -395,7 +391,7 @@ The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`]
 | Key | Match |
 | --- | --- |
 | `suppressed_fingerprints` | The whole fingerprint, exact and case-sensitive. Ships as an empty list |
-| `suppressed_path_prefixes` | The start of a source path. Ships with `app/Infrastructure/Tasks/T3/` |
+| `suppressed_path_prefixes` | The start of a source path. Empty by default |
 
 A log record's source path is the app frame path, the path before the colon in the fingerprint frame. An Activity source path is a path taken from `properties.path`. Doctor and assistance have no source path. A path prefix matches that source path, not the fingerprint string. An empty prefix matches nothing.
 
@@ -525,7 +521,7 @@ The scheduler records a successful workspace start in the activity log within th
 
 A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
 
-A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it by name and branch and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
+A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it through its [owner](#workspace-ownership) and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name is never adopted: the claim refuses it with HTTP 409 `instance.name_taken`. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
 ### Start a subtask
 
@@ -538,6 +534,64 @@ A subtask starts in this order:
 The opening prompt tells the implementer to finish the assigned work on its own. It may change disposable fixtures in its allocated environment, and it resolves routine test prerequisites. It does not name Orbit lease, Route, or publication rules. It ends with `Follow this repository's task instructions.`
 
 When the implementer cannot start, the subtask and the task become `failed`, and the Gateway logs which spawn failed. A task created in `todo` can therefore answer create as `failed`.
+
+## Workspace lease
+
+One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, main merges, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
+
+A busy workspace queues the next actor. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
+
+After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
+
+Agent turns keep ownership until Orbit observes that the turn stopped. Detached checks keep ownership until Orbit records their remote result. A timeout or an unavailable runtime never proves that a holder stopped. After authoritative completion, replaying the same keyed command acknowledges its durable result without opening another turn or lease.
+
+Before assistance can stop a tick, Orbit reconciles completed checks and stopped turns under the execution lock. A stale or unreachable holder stays visible and prevents another actor from entering the checkout. A missing check supervisor does not prove its child commands stopped, so a lost reading retains ownership.
+
+A stopped Gateway retains its synchronous lease when remote completion is unknown; there is no timeout reset. Synchronous SSH operations record an operation ID before dispatch and a remote completion receipt outside the checkout.
+
+Each operation runs as the managed user in a dedicated systemd service with a retained terminal state. The service receives command arguments unchanged, including literal dollar expressions; only the invoked program interprets them. Recovery verifies the exact operation binding, host boot, terminal service state, and empty cgroup, including descendants that closed inherited descriptors. A changed boot ends an old operation with an unknown exit status; it never establishes a successful command or an attributable resulting tree. An unavailable system manager or passwordless managed sudo refuses the operation; Orbit never falls back to an uncontained mutation.
+
+Recovery queries that exact ID. An absent ID is atomically tombstoned before it can count as not started, so a delayed original request cannot start afterward. A running or unreadable record retains ownership, even when its supervisor is missing. Proven local process death permits recovery only after every dispatched operation has a terminal receipt or tombstone. Gateway process identity includes its host, boot, PID, and process start ticks.
+
+On the Gateway, `php artisan tasks:lease:release LEASE_ID --reason="operator investigation"` requests guarded recovery of one exact held lease. It does not stop a process, discard a waiter, delete a checkout, or publish a verdict. Admission is sealed in the database and on every recorded remote binding before quiescence is checked. Late operation IDs and delayed service starts honor the same durable seal.
+
+Recovery reads the managed-unit inventory and proves terminal state and empty cgroups for this lease’s operation binding and journaled check run ID. A readable, consistently identified unit for another lease or check run does not block recovery. Unreadable or inconsistent unit identity retains the fence. Any separate check or agent turn still needs authoritative completion.
+
+A live or unreadable actor, unmanaged legacy ownership, uncertain provider destruction, or an unverifiable Node remains held. A missing Instance row is not termination evidence. Cross-host synchronous ownership can recover after sealing every recorded endpoint; a local live owner cannot be displaced. The command records its reason, proof and result in Activity. Operator release never credits an unknown tree change to Orbit.
+
+For an owner recorded on another Gateway host, pass `--gateway-node=ID`. Orbit uses that Node’s pinned SSH transport and verifies the exact recorded hostname, boot and process start identity. A live or unreadable owner is refused. On that pinned Node and matching hostname, a changed boot proves the recorded process ended, just as it does for a local Gateway. With the original boot, Orbit requires the exact PID and process start identity to prove death. An unreadable boot or mismatched hostname does not prove death.
+
+Remote operations and separate turns still need their own terminal evidence. A rebooted managed check ends as interrupted and failed; a result from its previous boot cannot pass a gate or establish a causal after-tree.
+
+A permanently lost Pi runtime can leave a dispatched turn without terminal evidence. The lease remains held, and the operator release command refuses it. There is no supported force-release or expiry for that turn; restoring authoritative runtime evidence or a separately reviewed recovery procedure is required. A ghost teardown with no Instance, saved endpoint, or authoritative provider destruction has the same evidence limit.
+
+Remote receipts, operation lock files and binding seals are retained. Removing a tombstone or seal could admit a delayed original; unlinking a lock while an old process holds its inode could create a second lock. Orbit has no automatic pruning procedure yet. Storage must remain available; age alone never permits deleting recovery evidence.
+
+A protocol-level turn refusal retires that exact released scope before cleanup or replacement. Cleanup inspects the existing reservation and never acquires a new lease. A sealed scope or uncertain dispatch still refuses new work.
+
+Orbit records the review HEAD and working tree after it acquires the reviewer lease and prepares the turn, immediately before it sends the review packet. A review that waited therefore reads the current tree. Review outcomes and publication use the same ownership rule.
+
+Every completed Orbit mutation records its before and after HEAD and tree under its lease. A failed after-snapshot leaves a completed holder pending that read; recovery retries the snapshot without repeating the mutation. The delayed snapshot cannot distinguish an intervening outside edit. A Gateway death before finalization leaves the same observation gap. Orbit marks these causal intervals uncertain and does not use it to clear assistance, even when ownership can safely end. A terminal check with its own durable final snapshot retains that exact evidence.
+
+Detached check starts have a durable run ID before dispatch. Their separate retained system service checks the start tombstone before running. A check result is terminal only after the service and all descendants stop; a later tree change fails the gate and records the final snapshot as causally uncertain. Each run stores its result and output by run ID, so an old status request cannot consume or overwrite a newer result. A lost start reply retains its check row; recovery adopts that exact run or atomically fences a start that never arrived.
+
+A durable mutation marker distinguishes executed Orbit commands from read-only verdicts; a changed snapshot under a read-only lease is not ownership proof.
+
+A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open. A running subtask whose direction relay waits for the workspace keeps its assistance request and the answer linked to its question. After a restart, the scheduler sends that answer to the subtask reviewer when the lease permits it, without advancing the formal review attempt.
+
+The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
+
+An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
+
+Existing assistance stays open until an operator resolves it. A review without a recorded baseline lease cannot inherit proof from merge or check records created before leases existed.
+
+### Why the workspace has one lease
+
+Separate guards for reviewers, checks, and main merges leave other actor pairs free to overlap. One durable lease gives every actor the same ownership rule and preserves detached ownership after a Gateway restart. Process locks alone end before an agent turn or detached check ends. Expiring locks could admit a second writer while the first still runs, so ownership ends only after authoritative reconciliation. Treating every changed HEAD as an Orbit mutation would allow an outside edit to bypass review protection. Exact recorded ownership keeps automatic recovery narrow.
+
+System services retain completion evidence after an SSH client or Gateway process dies. Orbit verifies that the exact service is terminal and its cgroup is empty before it releases ownership. A raw SSH exit status or a missing supervisor PID cannot prove that descendants stopped. Atomic tombstones exclude requests that reach the remote host after recovery. Missing or unreadable evidence keeps the fence; no elapsed-time expiry or blind release command bypasses it.
+
+Task work requires systemd 250 or newer, cgroup v2, and the managed account's passwordless sudo prerequisite. Unsupported supervision refuses remote operations. The remote receipt stores operation identity and completion, without commands, credentials, or output. Lease and operation history survives task or Instance removal because an older review can still refer to it. Operations restrict deletion of their lease; a retention policy must preserve referenced baselines before history can be removed.
 
 ## Task workspace
 
@@ -559,6 +613,30 @@ The setting defaults to true and does not depend on the Project slug. Provisioni
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one. An ordinary development Instance, including a monorepo `default` without a Route, settles at `active` instead. It runs the Project's create-time setup list and can supply dependencies to task workspaces without serving an endpoint. See [Provision the application endpoint](/domains/applications#provision-the-application-endpoint).
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
+
+### Workspace ownership
+
+When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.
+
+The owner is the only record of task workspace ownership:
+
+- A task holds only the workspace it owns. Orbit refuses to attach any other Instance to a task.
+- Claims, cancel, complete, and the sweep find and remove a task's workspace only through its owner, attached or not.
+- A task operation runs only in the workspace the task owns, on the task's ready task VM.
+- The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
+
+Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
+
+Workspaces created before the owner existed get it from explicit records:
+
+- An Instance on the Node of a live task VM belongs to the VM's task of the same Project. A destroyed VM is no record.
+- Any other Instance belongs to the one task of its Project that holds it as its Instance.
+
+An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
+
+The same migration detaches every Instance that its task does not own. A task that is not `completed` or `cancelled` then asks for assistance with the reason `Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.` A task that already asks for direction keeps that request, and the detach adds no reason to it. Rolling the migration back keeps those tasks detached.
+
+A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
 ## Agent threads
 
@@ -582,7 +660,7 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
 
-A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why. Annotations are not task agents: they stay on the operator's T3 threads, and [Agent annotation](/reference/agent-annotation) owns that behavior.
+A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
@@ -650,7 +728,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-Every task group runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology) and by the Project: a Project in `task_vms.medium_projects` gets a medium VM. A subtask that declares a topology runs with it nested in the VM. Orbit [prepares](/reference/compute-drivers#prepare-the-topology) it before the subtask's baseline check or implementer, and the reviewer [proves](/reference/compute-drivers#prove-work-on-a-topology) the deliverables on the declared nodes with recorded evidence.
+Every task group runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology) and by the Project: a Project in `task_vms.medium_projects` gets a medium VM. A subtask that declares a topology runs with it nested in the VM. Orbit [prepares](/reference/compute-drivers#prepare-the-topology) it after the group's baseline check and before the subtask's first turn, and the reviewer [proves](/reference/compute-drivers#prove-work-on-a-topology) the deliverables on the declared nodes with recorded evidence.
 
 The claim [creates a fresh VM from the current recipe](/reference/compute-drivers#claims-require-the-current-recipe), then waits until it is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
@@ -865,13 +943,15 @@ Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `
 | `running` | The tick waits. The subtask's `check` shows the start time. |
 | `passed` | Exit code 0, and HEAD and the tree did not change. Orbit [verifies the deliverables](#verify-deliverables), and the reviewer starts. |
 | `failed` | The exit code is not 0, or an invalid deliverable or an error in the check script stopped it. The reminder holds the exit code and the end of the output. |
-| `changed` | HEAD or the tree changed during the run. The check runs again once. A second change fails, and the reminder names the changed paths. |
-| `lost` | The process was killed from outside and left no result. The check runs again once. A second loss asks for assistance. |
+| `changed` | HEAD or the tree changed. The check does not restart; a handoff requires implementer correction, and a baseline asks for assistance. |
+| `lost` | The supervisor left no terminal result. Its lease stays held because descendants may still run. No replacement check starts without authoritative completion. |
 | `cancelled` | An operator cancelled it. The reminder says so. |
+
+A tree-changing check retains its original result and names the changed paths. Leftover files never become the baseline of an automatic retry.
 
 The scheduler identifies the process by its id and its start time, so a reused process id does not count. The start time is the kernel's count of clock ticks after boot, from `/proc/<pid>/stat`. A wall-clock start time would move while the clock of a freshly booted task VM settles, and a running check would look lost. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
 
-`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
+`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
 For Orbit handoffs, affected tests use the latest passed handoff tree of that subtask, including after requested changes and in a final-review fixup. With no passed handoff, they use its start commit. Failed, changed, cancelled, and lost checks never advance that base. File deliverables and reproduction commands still use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base and checks the full branch.
 
@@ -891,7 +971,7 @@ Each setup step owns one process group. The check stops that group when the shel
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
-A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
+A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
 
 When a baseline check fails and no implementer has started in the task, fix the cause and post an operator `resolution` on that subtask to retry the baseline. Before retrying, the engine moves the untouched workspace to the current `origin/<default branch>` and records the new start commit. The baseline then runs again before the first implementer starts. There is no need to cancel and recreate the task.
 
@@ -973,11 +1053,11 @@ When the Gateway sends the review request, it records the workspace HEAD and the
 
 - **Unchanged.** The Gateway applies the outcome.
 - **A newer implementer turn changed it.** That is a new handoff, for example after an operator talked to the implementer. The Gateway waits for a new receipt and a passing check.
-- **Orbit's own commit changed it.** HEAD's parent is the recorded HEAD, and HEAD's tree is the recorded tree. The Gateway stores that commit on the approval and publishes it.
-- **HEAD changed unexpectedly.** The Gateway consumes the old receipt and requests a fresh review of the delta from the previous review tree. It neither asks for assistance nor blames the reviewer.
-- **Only the working tree changed.** `workspace_unchanged` fails, and the outcome is not applied. The reminder describes the mismatch without attributing it to the reviewer. Restore the reviewed tree or request the needed changes from the implementer.
+- **Orbit's own commit changed it.** A completed mutation lease proves the change. HEAD has the recorded parent and tree. The Gateway stores that commit on the approval and publishes it.
+- **A lease proves an Orbit mutation.** A continuous mutation chain after the review baseline permits a fresh delta review.
+- **HEAD or the working tree changed without attribution.** The outcome stays unapplied and the task asks for assistance immediately. A reviewer commit never earns an automatic restart.
 
-After that reminder, the Gateway waits for a newer stopped reviewer turn. When that turn still leaves the working tree changed on the same head, the subtask asks for assistance with the workspace mismatch as the cause. A failed workspace read is a communication failure, not a change.
+Parent and tree equality alone do not prove who committed. A failed workspace read is a communication failure, not a change. An old merge record without a baseline lease cannot establish attribution.
 
 `changes_requested` sends the findings to the implementer and returns the subtask to `running`, once the implementer has stopped. The implementer then needs a new receipt and a passing check.
 
@@ -1429,20 +1509,21 @@ The body is `event` `task_group.assistance_requested`, `task_group_id`, `title`,
 
 Settle, escalate, and assistance that is not `direction` stay on the [Coder webhook](#coder-settle-webhook) only. They do not go to OpsBot.
 
-Annotations, not task agents, use a Node's T3 connection. A Node whose settings hold a `t3` object uses its own `t3.token`, and its `t3.url` as the base URL when set. Such a Node never falls back to `ORBIT_T3_TOKEN`, and a missing token fails closed. Without that object, the Gateway calls `http://{wireguard_ip}:{ORBIT_T3_PORT}` with the bearer `ORBIT_T3_TOKEN`. The port default is `3773`.
-
 ## Cancel a stuck task
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by Project, `task-{id}` name, and matching branch; a name alone never permits removal.
+Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns the lease-wait error and leaves the task status unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+
+Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Node unreachable.** Cancel still ends the task and keeps the Instance attached. The task does not ask for assistance. It keeps the reason `Workspace removal failed: The Node is unreachable.` The sweep removes the workspace later.
+- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It records `Workspace removal failed: The Node is unreachable.` without asking for assistance.
+- **Retry after an unreachable Node.** Once the Node returns, direct cancel and the sweep push eligible approved commits before removal. A failed or pending push keeps the workspace.
 - **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.
 - **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the [claim](#claim-and-provision) removes the workspace it provisions.
 
@@ -1481,12 +1562,14 @@ When a manual complete cannot remove the workspace, the task is already `complet
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
+- of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
-For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
 
-A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
+An ownership refusal keeps the workspace and records `Workspace ownership refused: `. This reason never permits offline task VM destruction.
+
+A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: `, `Merged pull request cleanup failed: `, or `Workspace ownership refused: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
 ## Configuration
 
@@ -1503,7 +1586,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
-| `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
 | `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
 | `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
@@ -1574,7 +1656,7 @@ A page on every server-class row is rejected. One command can fail dozens of tim
 
 Ten occurrences of one Activity, log, or assistance key are enough to file. An occurrence is one 5-minute window, so the many lines of one burst count once and are not enough to file. Ten windows means the same failure came back across separate windows. Three occurrences file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated occurrences do not file.
 
-Known noise stays in Gateway config, beside the Tasks settings, not in a hidden code list. The [suppression lists](#suppression) name exact fingerprints and source-path prefixes. A match is neither counted nor filed. The prefix list ships with `app/Infrastructure/Tasks/T3/`, so a log frame under that directory does not become a task. Keeping the list only in code is rejected, because an operator has to see it and extend it. The 14-day mute after a cancel stays. The list drops noise before a task exists. The mute waits after a person cancelled a draft.
+Known noise stays in Gateway config, beside the Tasks settings, not in a hidden code list. The [suppression lists](#suppression) name exact fingerprints and source-path prefixes. A match is neither counted nor filed. The prefix list is empty by default; configured prefixes exclude matching log frames. Keeping the list only in code is rejected, because an operator has to see it and extend it. The 14-day mute after a cancel stays. The list drops noise before a task exists. The mute waits after a person cancelled a draft.
 
 A shortened log key does not contain the frame path, so the sample keeps that path as `source_path`. Each filer run checks the current lists against the stored path, including a row counted before the prefix was configured. Filing a shortened row that has no stored path is rejected while a prefix is configured, because the filer cannot recover the path. The row stays in place until an accepted signal records it.
 
@@ -1756,7 +1838,7 @@ The cost is that approved work waits in the workspace. A lost workspace loses it
 
 ### Incoming pull requests become tasks
 
-A pull request from the maintainer's account was not reviewed by Orbit, so Orbit reviews it before it can merge. Making it a task reuses the workspace, the reviewer, the fixups, and the push rules. The local branch stays `task-{id}`, and `pr_branch` names only the branch Orbit fetches and pushes. A second workspace branch name was rejected: provisioning, removal, and the rubric all rely on `task-{id}`.
+A pull request from the maintainer's account was not reviewed by Orbit, so Orbit reviews it before it can merge. Making it a task reuses the workspace, the reviewer, the fixups, and the push rules. The local branch stays `task-{id}`, and `pr_branch` names only the branch Orbit fetches and pushes. A second workspace branch name was rejected: provisioning and the rubric rely on `task-{id}`.
 
 The author list is Gateway configuration, like reviewer trust. A pull request cannot name its own author as trusted. Logins, repository roles, and forks confer nothing, because the account that opened a pull request is the authority Orbit checks. Orbit applies requested changes itself instead of asking the author or a cloud agent, so the head it merges is one it reviewed.
 
@@ -1764,17 +1846,13 @@ The author list is Gateway configuration, like reviewer trust. A pull request ca
 
 The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
 
-Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit. The group execution lock owns admission of workspace head changes. A mechanical merge waits while a subtask is reviewing, a reviewer turn is working, or a handoff check is running. Publication may merge after the current review's approval has settled; it cannot overlap another review. Deferred merges run on a later tick after the review settles, without extra retries or longer waits.
+Orbit merges main locally and records the Project gate on the exact merge commit. Every checkout actor uses the [workspace lease](#workspace-lease), including review verdicts, main merges, publication, and teardown. The group execution lock serializes admission; the durable Instance lease owns the checkout through each remote turn or detached check. Waiters retain FIFO order. Cancelling a subtask removes its queued intents but never discards an active or uncertain holder.
 
-The same execution lock admits workspace checks and reviewer turns. Baseline, candidate, handoff, main-merge gates, and their command deliverables wait for a running reviewer; reviewer starts and continuations, including consults and direction relays, wait for every running workspace check. Orbit takes the review baseline only after those checks finish. A tree change recorded by Orbit's own check starts a fresh review instead of asking the reviewer to restore the tree or requesting assistance. Check fixtures are not excluded from the workspace snapshot.
+Orbit captures the review baseline after reviewer admission and preparation, immediately before dispatch. If HEAD or the working tree changes, automatic delta review requires an exact durable chain of proven Orbit mutations from that baseline. A read-only lease, a changed HEAD alone, or an old check snapshot does not prove ownership. Unexplained edits and reviewer edits still need assistance. A review without a recorded baseline lease cannot inherit attribution from merge or check records from before leases existed.
 
-An unavailable superseded reviewer conversation does not hold workspace changes after its replacement settles. Orbit selects the current reviewer by the group's pointer, or the latest started conversation for that subtask. A legacy shared reviewer is superseded by the group's current reviewer. Any reviewer observed working still holds changes, including an older conversation. If the current reviewer's observation is unavailable, Orbit reports that failure for assistance instead of claiming a review is settling. Restore access to the agent runtime or retry the review to replace the unavailable conversation.
+A reviewer whose completed turn has durable confirmation does not regain ownership when its runtime later becomes unreadable. Working, paused, and unknown uncompleted turns retain the lease, including older conversations. Orbit reconciles authoritative completion before assistance gating and never expires an uncertain holder by elapsed time.
 
-If HEAD changes unexpectedly during a review, Orbit discards that turn's outcome and requests a fresh review of the delta from the previous review tree on the new head. It does not ask for assistance or attribute the head change to the reviewer. A working-tree change without a head change still needs resolution; its reminder and any assistance describe the workspace mismatch rather than claiming that the reviewer edited it.
-
-Reviews already blocked by a workspace-change reminder poll their running workspace checks under the execution lock before the assistance gate. Orbit records finished remote results even when the database still says running. Active checks retain ownership and delay recovery; an unreadable result keeps assistance in place and records a communication failure. Recovery needs an exact current head and tree recorded by Orbit's finished check or main-merge check. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
-
-If Orbit cannot read the workspace during recovery, the assistance reason reports that inspection error instead of the old revert instruction. Recovery remains automatic after access returns, and unrelated assistance stays unchanged.
+Lease reconciliation reads running checks before assistance gating. A finished check updates its durable result and releases its holder only with terminal evidence. A failed read or an unproven process lifetime keeps the holder fenced. If the exact managed check unit has stopped and its cgroup is empty but its result is missing, Orbit records a failed check with uncertain tree attribution. That terminal proof releases ownership without approving the check or its changes. Reconciliation never clears assistance by matching its text; an operator resolves an existing request.
 
 A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
 
@@ -1802,11 +1880,11 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 ### Task agents run on Pi
 
-T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool. Annotations still use the operator's T3 threads.
+T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
 Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
-Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive. Annotation delivery is a separate operation on the operator's existing T3 thread, not a task-agent runtime.
+Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive.
 
 Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
 

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
@@ -26,6 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
@@ -36,7 +36,6 @@ use LogicException;
  * @property-read AgentThread|null $implementerThread
  * @property-read Task|null $parent
  * @property TaskType $type
- * @property string|null $target_thread_id
  * @property string|null $completion_summary
  * @property int $id
  * @property int|null $parent_id
@@ -55,6 +54,7 @@ use LogicException;
  * @property int|null $review_notified_attempt
  * @property string|null $review_notified_turn_id
  * @property string|null $review_workspace_head
+ * @property int|null $review_workspace_lease_id
  * @property string|null $review_workspace_tree
  * @property bool $assistance_requested
  * @property AssistanceKind|null $assistance_kind
@@ -73,6 +73,9 @@ use LogicException;
  * @property string|null $pi_restart_session_revision
  * @property int|null $deliverable_correction_check_id
  * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string}|null $deliverable_correction_resume
+ * @property string|null $pending_resolution_message
+ * @property string|null $pending_resolution_reason
+ * @property int|null $pending_resolution_comment_id
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -95,7 +98,6 @@ use LogicException;
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
  * @property string|null $capacity_wait_reason
- * @property TaskExecutionMode $execution_mode
  * @property string $implementer_agent_driver
  * @property string $reviewer_agent_driver
  * @property Carbon|null $agent_unavailable_since
@@ -145,7 +147,6 @@ final class Task extends Model
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
-        'execution_mode',
         'implementer_agent_driver',
         'reviewer_agent_driver',
         'agent_unavailable_since',
@@ -166,7 +167,6 @@ final class Task extends Model
         'position',
         'implementer_agent_thread_id',
         'type',
-        'target_thread_id',
         'completion_summary',
         'subtask_start_commit',
         'completion_attempt',
@@ -183,6 +183,7 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
+        'review_workspace_lease_id',
         'deliverables',
         'topology',
         'deliverable_correction_check_id',
@@ -190,6 +191,8 @@ final class Task extends Model
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
+        'pending_resolution_message', 'pending_resolution_reason',
+        'pending_resolution_comment_id',
         'resolution_delivered_comment_id',
         'direction_relay_comment_id',
         'consult_comment_id',
@@ -212,7 +215,7 @@ final class Task extends Model
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
-        'type', 'target_thread_id', 'completion_summary',
+        'type', 'completion_summary',
         'parent_id',
         'continuation_of_task_id',
         'position',
@@ -250,7 +253,8 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
-        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
+        'review_workspace_lease_id',
+        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'pending_resolution_message', 'pending_resolution_reason', 'pending_resolution_comment_id', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
         'ended_pr_notice_thread_id', 'ended_pr_notice_key', 'ended_pr_notice_state',
         'provider_retry', 'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
@@ -266,7 +270,6 @@ final class Task extends Model
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
-        'execution_mode',
         'implementer_agent_driver',
         'reviewer_agent_driver',
         'agent_unavailable_since',
@@ -286,6 +289,7 @@ final class Task extends Model
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
+            $task->guardWorkspace();
             $task->guardStatus();
             $task->clearAssistanceWhenEnded();
         });
@@ -387,24 +391,28 @@ final class Task extends Model
         return $this->morphTo();
     }
 
+    /**
+     * The workspace this group owns: the Instance that provisioning created for it. It is the only record of task
+     * workspace ownership. An Instance name or branch never makes an Instance a group's workspace.
+     *
+     * @return HasOne<Instance, $this>
+     */
+    public function workspace(): HasOne
+    {
+        return $this->hasOne(Instance::class, 'task_workspace_owner_id');
+    }
+
     /** @return BelongsTo<AgentThread, $this> */
     public function reviewerThread(): BelongsTo
     {
         return $this->belongsTo(AgentThread::class, 'reviewer_agent_thread_id');
     }
 
-    public function requireManagedExecution(): void
-    {
-        if ($this->execution_mode !== TaskExecutionMode::Managed) {
-            throw new ResourceOperationException('tasks.external_execution', 'This task uses an existing thread. Use its annotation controls instead of the managed lifecycle.', 409);
-        }
-    }
-
     /** ADR 0203: whether this top-level task holds every push until a final review approves it, and merges reviewed heads. */
     public function reviewsBeforePush(): bool
     {
         // An incoming pull request keeps these rules until it ends, so its branch never gets an unreviewed push.
-        return $this->parent_id === null && $this->execution_mode === TaskExecutionMode::Managed
+        return $this->parent_id === null
             && ($this->project->reviewsAndMerges() || $this->reviewsIncomingPullRequest());
     }
 
@@ -508,7 +516,6 @@ final class Task extends Model
             'type' => TaskType::class,
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,
-            'execution_mode' => TaskExecutionMode::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
             'notify_coder' => 'boolean',
@@ -534,6 +541,7 @@ final class Task extends Model
             'completion_handoff_comment_id' => 'integer',
             'completion_reminder_attempt' => 'integer',
             'review_attempt' => 'integer',
+            'review_workspace_lease_id' => 'integer',
             'review_handled_comment_id' => 'integer',
             'review_reminder_attempt' => 'integer',
             'review_notified_attempt' => 'integer',
@@ -546,6 +554,7 @@ final class Task extends Model
             'ended_pr_notice_thread_id' => 'integer',
             'deliverable_correction_check_id' => 'integer',
             'deliverable_correction_resume' => 'array',
+            'pending_resolution_comment_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }
@@ -642,7 +651,6 @@ final class Task extends Model
         if ($this->parentKey() === null) {
             $this->fillIfMissing([
                 'status' => TaskGroupStatus::Backlog->value,
-                'execution_mode' => TaskExecutionMode::Managed->value,
                 'implementer_agent_driver' => 'pi',
                 'reviewer_agent_driver' => 'pi',
                 'preview' => false,
@@ -673,6 +681,22 @@ final class Task extends Model
             if (! array_key_exists($column, $this->attributes) || $this->attributes[$column] === null) {
                 $this->setAttribute($column, $value);
             }
+        }
+    }
+
+    /** A task holds only the workspace it owns: the Instance that provisioning created with this task as its owner. */
+    private function guardWorkspace(): void
+    {
+        if ($this->parentKey() !== null || $this->getAttribute('taskable_id') === null || ! $this->isDirty(['taskable_type', 'taskable_id'])) {
+            return;
+        }
+
+        $owned = $this->exists
+            && $this->getAttribute('taskable_type') === TaskableType::Instance
+            && Instance::query()->whereKey($this->getAttribute('taskable_id'))->where('task_workspace_owner_id', $this->getKey())->exists();
+
+        if (! $owned) {
+            throw new LogicException('A task holds only the workspace it owns.');
         }
     }
 

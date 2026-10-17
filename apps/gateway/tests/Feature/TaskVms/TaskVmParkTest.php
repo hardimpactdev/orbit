@@ -16,7 +16,6 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestHealth;
@@ -76,7 +75,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
 {
     $task = Task::topLevel()->create([
         'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
-        'execution_mode' => TaskExecutionMode::Managed, 'pr_url' => 'https://github.com/acme/dlf/pull/7',
+        'pr_url' => 'https://github.com/acme/dlf/pull/7',
         'settled_at' => now()->subMinutes($minutesAgo + 10), ...$group,
     ]);
     Task::query()->create([
@@ -102,7 +101,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
 function tvm_park_workspace(Task $group, TaskVm $vm): Instance
 {
     $instance = Instance::query()->create([
-        'project_id' => test()->project->id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'project_id' => test()->project->id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-'.$group->id,
         'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public',
         'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);
@@ -418,7 +417,7 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace))
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.parked'));
         expect(Instance::query()->whereKey($workspace->id)->exists())->toBeTrue();
         Queue::assertPushed(ResumeTaskVm::class);
@@ -438,7 +437,7 @@ describe('wake', function (): void {
         {
             public function __construct(private object $test) {}
 
-            public function synchronized(int $groupId, Closure $operation): mixed
+            public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
             {
                 $this->test->locked[] = $groupId;
                 try {
@@ -450,12 +449,13 @@ describe('wake', function (): void {
         };
         app()->instance(TaskExecutionLock::class, $lock);
         [$this->group, $vm] = tvm_park_waiting();
-        tvm_park_workspace($this->group, $vm);
+        $workspace = tvm_park_workspace($this->group, $vm);
 
         app(CompleteTaskGroupAction::class)->execute($this->group);
 
         expect($this->group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
-            ->and($this->lockedDuringRemoval)->toBe([$this->group->id]);
+            ->and($this->lockedDuringRemoval)->toBe([$this->group->id])
+            ->and($this->locked)->toBe([]);
     });
 
     it('lets the ended-group sweep wait for a parked VM without a failure', function (): void {

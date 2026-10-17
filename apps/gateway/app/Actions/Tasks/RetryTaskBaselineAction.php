@@ -12,12 +12,11 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionHold;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskWorkspaceHead;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -65,11 +64,15 @@ final readonly class RetryTaskBaselineAction
      */
     public function recover(Task $task): bool
     {
+        return app(TaskWorkspaceLease::class)->run($task->parent, 'check', 'baseline-retry:'.$task->id, fn () => $this->recoverWithLease($task), taskId: $task->id);
+    }
+
+    private function recoverWithLease(Task $task): bool
+    {
         $group = Task::topLevel()->findOrFail($task->parent_id);
         $fresh = Task::query()->findOrFail($task->id);
         $check = $this->failedBaseline($group, $fresh);
-        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)
-            || app(TaskWorkspaceHead::class)->held($group)) {
+        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)) {
             return false;
         }
 
@@ -89,12 +92,12 @@ final readonly class RetryTaskBaselineAction
             if (! $check instanceof TaskCheck || ! $this->requested($locked, $check)) {
                 return false;
             }
+            TaskAssistance::clearResolvedParent($locked, $group);
             $locked->update([
                 'subtask_start_commit' => $head,
                 ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
             ]);
-            $group->update(TaskAssistance::cleared());
 
             return true;
         });
@@ -108,7 +111,7 @@ final readonly class RetryTaskBaselineAction
     /** A failed baseline is retryable only while the entire group remains untouched and its watched PR has not ended. */
     private function failedBaseline(Task $group, Task $task): ?TaskCheck
     {
-        if ($group->execution_mode !== TaskExecutionMode::Managed || $group->status !== TaskGroupStatus::Running
+        if ($group->status !== TaskGroupStatus::Running
             || TaskExecutionHold::active($group)
             || $task->status !== TaskStatus::Running || ! $task->assistance_requested
             || $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction) {

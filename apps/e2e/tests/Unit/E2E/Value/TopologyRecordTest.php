@@ -32,16 +32,15 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null, ?To
 }
 
 describe('topology record', function () {
-    it('round-trips the declared Nodes, role images, mounts, and mounted source state', function (array $workloads) {
+    it('round-trips the declared Nodes, mounts, and mounted source state', function (array $workloads) {
         $topology = mountedTopologyFixture(recipe: TopologyRecipe::compose($workloads));
         $value = $topology->toArray();
 
         expect($value)->not->toHaveKey('purpose')
+            ->and($value['construction'])->not->toHaveKey('images')
+            ->and($value['construction']['schema'])->toBe(TopologyConstructionInputs::SCHEMA)
             ->and($value['nodes'])->toBe($topology->target->recipe->nodeKeys())
-            ->and(array_keys($value['construction']['images']))->toBe(array_map(
-                static fn ($image): string => $image->value,
-                $topology->target->recipe->images(),
-            ))
+            ->and(array_keys($value['construction']['nodes']))->toBe($topology->target->recipe->nodeKeys())
             ->and(array_keys($value['mounts']))->toBe($topology->target->recipe->checkoutNodeKeys())
             ->and(TopologyRecord::fromArray($value)->toArray())->toBe($value)
             ->and(mountedTopologyFixture(false)->toArray()['mounts'])->toBe([]);
@@ -91,25 +90,30 @@ describe('topology record', function () {
         $value['schema'] = $schema;
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
-        expect(TopologyRecord::SCHEMA)->toBe(6)
+        expect(TopologyRecord::SCHEMA)->toBe(7)
             ->and(fn () => TopologyRecord::fromArray($value))
             ->toThrow(InvalidArgumentException::class, "schema {$version} is not supported; release it with the harness that created it");
-    })->with(['schema 5, with the attempt purpose' => [5], 'string schema' => ['6']]);
+    })->with(['schema 5, with the attempt purpose' => [5], 'schema 6, with role images' => [6], 'string schema' => ['7']]);
 
-    it('refuses a construction record whose images or Nodes do not match its declaration', function () {
+    it('refuses a construction record whose Nodes do not match its declaration, or one of the role image schema', function () {
         $value = mountedTopologyFixture(false)->toArray()['construction'];
-        $missingImage = $value;
-        unset($missingImage['images']['operator']);
-        $badFingerprint = $value;
-        $badFingerprint['images']['gateway'] = 'short';
+        $roleImageSchema = $value;
+        $roleImageSchema['schema'] = 4;
+        $roleImageSchema['images'] = ['gateway' => str_repeat('a', 64)];
+        $nodeImage = $value;
+        $nodeImage['nodes']['gateway']['image'] = 'gateway';
+        $images = $value;
+        $images['images'] = [];
         $foreignNode = $value;
         $foreignNode['nodes']['app-dev']['incus_address'] = '10.232.9.11';
 
         expect(TopologyConstructionInputs::fromArray($value)->toArray())->toBe($value)
-            ->and(fn () => TopologyConstructionInputs::fromArray($missingImage))
-            ->toThrow(InvalidArgumentException::class, 'role images do not match its Nodes')
-            ->and(fn () => TopologyConstructionInputs::fromArray($badFingerprint))
-            ->toThrow(InvalidArgumentException::class, 'fingerprint is invalid')
+            ->and(fn () => TopologyConstructionInputs::fromArray($roleImageSchema))
+            ->toThrow(InvalidArgumentException::class, 'release it with the harness that created it')
+            ->and(fn () => TopologyConstructionInputs::fromArray($images))
+            ->toThrow(InvalidArgumentException::class, 'The topology construction input schema is invalid.')
+            ->and(fn () => TopologyConstructionInputs::fromArray($nodeImage))
+            ->toThrow(InvalidArgumentException::class, 'The topology construction Node inventory is invalid.')
             ->and(fn () => TopologyConstructionInputs::fromArray($foreignNode))
             ->toThrow(InvalidArgumentException::class, 'Topology construction Node [app-dev] is invalid.');
     });

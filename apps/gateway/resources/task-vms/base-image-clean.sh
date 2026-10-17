@@ -17,13 +17,16 @@ fail() {
 main() {
     exec 3>&1 1>&2 </dev/null
 
-    # Stop the services that write per-install IDs, so none writes one again before the VM stops. The E2E
-    # harness runs this script on its role image builders too, and some of those have no Docker.
+    # Stop the services that write per-install IDs, so none writes one again before the VM stops. Incus writes its
+    # server certificate and database on its first start, and its sockets can start it again.
     local unit units=()
-    for unit in caddy.service docker.service docker.socket containerd.service; do
+    for unit in caddy.service docker.service docker.socket containerd.service \
+        incus.socket incus-user.socket incus.service incus-user.service; do
         if [ "$(systemctl show --property=LoadState --value "$unit")" = loaded ]; then units+=("$unit"); fi
     done
     if [ "${#units[@]}" -gt 0 ]; then systemctl stop "${units[@]}"; fi
+    # Every VM and topology Node from the image starts with an empty Incus directory, so each gets its own server.
+    if [ -d /var/lib/incus ]; then find /var/lib/incus -mindepth 1 -delete; fi
     apt-get clean
     # Per-install IDs that a service writes on its first start: Docker's engine ID, containerd's UUID, Caddy's
     # instance UUID, its storage clean record and saved config, and systemd's credential secret. Each VM
@@ -44,7 +47,7 @@ main() {
     find /var/log -type f \( -name '*.gz' -o -name '*.[0-9]' \) -delete
     find /var/log -type f -exec truncate -s 0 {} +
     # Instance state, seed, logs and generated network and SSH configuration; machine-id becomes "uninitialized".
-    # An E2E container builder has no cloud-init, so it only resets the machine ID.
+    # A machine without cloud-init only resets its machine ID.
     if command -v cloud-init >/dev/null; then
         cloud-init clean --logs --seed --machine-id --configs all
     else
@@ -56,6 +59,9 @@ main() {
     if compgen -G '/etc/ssh/ssh_host_*' >/dev/null; then fail 'an SSH host key remains'; fi
     [ "$(cat /etc/machine-id)" = uninitialized ] || fail 'the machine ID remains'
     [ ! -e /var/lib/cloud/instance ] || fail 'the cloud-init instance state remains'
+    if [ -d /var/lib/incus ] && [ -n "$(find /var/lib/incus -mindepth 1 -print -quit)" ]; then
+        fail 'the Incus state in /var/lib/incus remains'
+    fi
     local id
     for id in "${ids[@]}"; do
         [ ! -e "$id" ] || fail "the per-install ID [$id] remains"

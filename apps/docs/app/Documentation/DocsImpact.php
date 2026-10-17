@@ -24,7 +24,7 @@ final readonly class DocsImpact
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'tasks:tick' => 'docs/reference/tasks.md',
-        'annotations:dispatch' => 'docs/reference/agent-annotation.md',
+        'tasks:lease:release' => 'docs/reference/tasks.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
@@ -353,6 +353,10 @@ final readonly class DocsImpact
         }
         if (! $unchangedSnapshot) {
             foreach (array_diff_key($baseByKey, $currentByKey) as $surface) {
+                if ($deleted && ! $this->isApiPath($path) && $surface['owner'] === 'unowned' && ($surface['kind'] === 'error_code' || $surface['kind'] === 'registered_command')) {
+                    continue;
+                }
+
                 $this->addSurface($surfaces, $impacts, $path, $surface['kind'], $surface['owner'], 'Removed from current source: '.$surface['reason']);
             }
         }
@@ -369,7 +373,7 @@ final readonly class DocsImpact
         foreach ($baseErrors as $error) {
             // A deleted file outside the API needs no owner page, so its removed unowned identifiers are not a docs gap.
             // The API generators decide for a deleted API source.
-            if ($deleted && ! $this->isApiPath($path) && str_starts_with($error, 'Unowned error identifier [')) {
+            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command ['))) {
                 continue;
             }
 

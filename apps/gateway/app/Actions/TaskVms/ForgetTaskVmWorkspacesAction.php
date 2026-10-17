@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
@@ -33,7 +32,6 @@ final readonly class ForgetTaskVmWorkspacesAction
 {
     public function __construct(
         private InstanceRemovalProjector $routes,
-        private CancelInstanceAnnotationTasksAction $annotations,
     ) {}
 
     public function execute(TaskVm $vm): void
@@ -80,7 +78,6 @@ final readonly class ForgetTaskVmWorkspacesAction
                 'runtime_published' => $instance->status === InstanceState::Active,
             ]);
             $instance->update(['status' => InstanceState::Removing]);
-            $this->annotations->execute($instance->id);
 
             return $member;
         });

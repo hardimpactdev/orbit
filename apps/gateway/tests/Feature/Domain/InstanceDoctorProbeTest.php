@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Doctor\InstanceDoctorProbe;
-use App\Data\Annotations\AnnotationInput;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorInspectionScope;
@@ -25,7 +23,9 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -485,20 +485,6 @@ it('keeps an ordinary Instance on the active lifecycle when the Project is unrou
         ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
         ->and($report->issues[0]->expected)->toBe('active')
         ->and($instance->fresh()->task_workspace_routed)->toBeNull();
-});
-
-it('keeps an annotated active Orbit Instance healthy after the annotation resolves', function (): void {
-    $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_orbit_app(), $node);
-    $store = app(AnnotationStoreAction::class);
-    $annotation = $store->create($instance, new AnnotationInput(['id' => 'doctor-annotation', 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
-    $store->transition($annotation, 'in_progress', null);
-    $store->transition($annotation, 'resolved', 'Done');
-
-    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
-
-    expect($instance->tasks()->count())->toBe(1)
-        ->and($report->issues)->toBe([]);
 });
 
 it('continues after a typed instance inspection failure', function (): void {
@@ -1085,6 +1071,7 @@ function instance_probe_instance(
     Project $project,
     Node $node,
     InstanceState $status = InstanceState::Active,
+    ?Task $owner = null,
 ): Instance {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppDev],
@@ -1092,10 +1079,14 @@ function instance_probe_instance(
     );
     $suffix = $project->instances()->count() + 1;
 
+    $name = $owner instanceof Task ? TaskWorkspaceName::for($owner) : "development-{$suffix}";
+
     return Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => "development-{$suffix}",
+        'task_workspace_owner_id' => $owner?->id,
+        'branch_override' => $owner instanceof Task ? $name : null,
+        'name' => $name,
         'environment' => 'development',
         'checkout_path' => "/private/instance/{$project->slug}/development-{$suffix}",
         'branch' => "development-{$suffix}",
@@ -1153,15 +1144,8 @@ function instance_probe_mark_removing(Instance $instance): void
 
 function instance_probe_task_workspace_for_removal(): Instance
 {
-    [$node, , $instance] = instance_probe_private_cluster_route();
-    $group = Task::topLevel()->create([
-        'project_id' => $instance->project_id,
-        'title' => 'Task workspace removal',
-        'brief' => 'Build the feature.',
-        'status' => 'running',
-    ]);
-    $name = TaskWorkspaceName::for($group);
-    $instance->update(['name' => $name, 'branch_override' => $name]);
+    [$node, , $instance] = instance_probe_private_cluster_route(taskWorkspace: true);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -1176,12 +1160,10 @@ function instance_probe_task_workspace(Project $project, Node $node, InstanceSta
         'brief' => 'Build the feature.',
         'status' => 'running',
     ]);
-    $instance = instance_probe_instance($project, $node, $status);
-    $attributes = ['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)];
+    $instance = instance_probe_instance($project, $node, $status, $group);
     if (is_bool($routed)) {
-        $attributes['task_workspace_routed'] = $routed;
+        $instance->update(['task_workspace_routed' => $routed]);
     }
-    $instance->update($attributes);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -1260,7 +1242,8 @@ function instance_probe_public_route(): array
 }
 
 /** @return array{Node, Node, Instance, Route} */
-function instance_probe_private_cluster_route(): array
+/** With `$taskWorkspace`, the Instance is a running group's workspace, created as provisioning does. */
+function instance_probe_private_cluster_route(bool $taskWorkspace = false): array
 {
     static $number = 0;
     $number++;
@@ -1279,7 +1262,9 @@ function instance_probe_private_cluster_route(): array
         'status' => LifecycleStatus::Active,
     ]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = instance_probe_instance(instance_probe_app(), $workload);
+    $project = instance_probe_app();
+    $owner = $taskWorkspace ? Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Task workspace removal', 'brief' => 'Build the feature.', 'status' => 'running']) : null;
+    $instance = instance_probe_instance($project, $workload, owner: $owner);
     $instance->update(['source_is_laravel' => true]);
     $route = Route::query()->create([
         'project_id' => $instance->project_id,
@@ -1393,3 +1378,28 @@ final class InstanceProbeApplicationUrlInspector implements RouteApplicationUrlI
         return $this->matches ?? throw new DoctorInspectionException;
     }
 }
+
+it('reports the durable lease holder and queue as information even when its node is unreachable', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_task_workspace(instance_probe_app(), $node, InstanceState::SourceResolved);
+    $group = $instance->tasks()->sole();
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'reviewer', 'reviewer:doctor');
+    expect(fn () => $leases->acquire($group, 'check', 'check:doctor'))->toThrow(TaskWorkspaceWaiting::class);
+    $holder->update(['remote_uncertain' => true]);
+    $context = instance_probe_context($node);
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect($context);
+    $issue = collect($report->issues)->firstWhere('code', 'instance.workspace_lease');
+
+    expect($issue)->not->toBeNull()
+        ->and($issue?->kind->value)->toBe('informational')
+        ->and($issue?->resourceName)->toBe($instance->name)
+        ->and($issue?->summary)->toContain('tasks:lease:release LEASE_ID --reason=...')
+        ->and($issue?->observed)->toContain('reviewer [reviewer:doctor]', 'check [check:doctor]', 'remote mutation result uncertain; lease retained')
+        ->and($holder->fresh()?->status)->toBe('held');
+
+    $unreachable = new DoctorNodeContext($node, new NodeInspectionData(reachable: false, platform: null, architecture: null, wireGuardAddressMatches: null));
+    $offline = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect($unreachable);
+    expect(array_column($offline->issues, 'code'))->toContain('instance.workspace_lease', 'instance.node_unreachable')
+        ->and($holder->fresh()?->status)->toBe('held');
+});

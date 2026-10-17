@@ -139,15 +139,15 @@ final readonly class TaskSettling
     }
 
     /**
-     * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
-     * branch, and of a settling group whose merged pull request cleanup failed. An unattached workspace waits while
-     * a live claim can still own it. The tick does not remove the workspace of a group that is still active.
+     * Removes the workspace that a cancelled or completed group owns, attached or not, and that of a settling group
+     * whose merged pull request cleanup failed. An unattached workspace waits while a live claim can still use it.
+     * The tick does not remove the workspace of a group that is still active.
      *
-     * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
-     * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
-     * it has spent its time budget; the rest wait for the next tick. Success clears removal assistance only.
-     * A cancelled group pushes its stored approval before the checkout is deleted. A user Instance attached to a
-     * non-managed group is never a candidate.
+     * One query selects the candidates through the workspace owner. A failed removal is reported, asks for
+     * assistance, and backs off per Instance, so a workspace that keeps failing never blocks the others. The sweep
+     * stops starting removals once it has spent its time budget; the rest wait for the next tick. Success clears
+     * removal assistance only. A cancelled group pushes its stored approval before the checkout is deleted. An
+     * Instance that no group owns is never a candidate, whatever its name or branch.
      */
     public function removeAbandonedWorkspaces(): int
     {
@@ -166,7 +166,7 @@ final readonly class TaskSettling
             }
 
             $instance = Instance::query()->find($workspace->id);
-            $group = Task::topLevel()->find($workspace->getAttribute('ended_task_group_id'));
+            $group = Task::topLevel()->find($workspace->task_workspace_owner_id);
             if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
                 continue;
             }
@@ -176,12 +176,29 @@ final readonly class TaskSettling
             }
 
             try {
-                $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
-                $this->rememberBackoff($backoffKey, null, 'workspace removal');
-                $this->releaseRemovedWorkspace($group, $instance->id);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
-                $removed++;
+                $didRemove = app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $instance, $backoffKey): bool {
+                    $group->refresh();
+                    if (! $this->shouldRemoveWorkspace($group, $instance)) {
+                        return false;
+                    }
+                    $group->setRelation('taskable', $instance);
+                    $leases = app(TaskWorkspaceLease::class);
+                    $leases->cancelQueued($group, 'cancel-push:'.$group->id);
+                    $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance): void {
+                        $this->pushCancelledApproval($group, $instance);
+                        $this->workspaces->remove($group);
+                    });
+                    $this->rememberBackoff($backoffKey, null, 'workspace removal');
+                    $this->releaseRemovedWorkspace($group, $instance->id);
+                    Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
+
+                    return true;
+                });
+                if ($didRemove) {
+                    $removed++;
+                }
+            } catch (TaskWorkspaceWaiting) {
+                continue;
             } catch (Throwable $exception) {
                 // The push of a cancelled approval from a task VM runs in a queued job. A later sweep removes the workspace.
                 if ($exception instanceof TaskPullRequestException && $exception->pending) {
@@ -202,8 +219,7 @@ final readonly class TaskSettling
     /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
     private function completeMergedGroup(Task $group): void
     {
-        $attached = $group->taskable;
-        $instance = $attached instanceof Instance ? $attached : $this->workspaces->find($group);
+        $instance = $group->workspace()->first();
         $backoffKey = $instance instanceof Instance ? 'tasks.workspace-removal.'.$instance->id : null;
         $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
 
@@ -223,8 +239,10 @@ final readonly class TaskSettling
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
+        } catch (TaskWorkspaceWaiting) {
+            return;
         } catch (Throwable $exception) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(), replaceFailure: true);
+            $this->workspaces->recordFailure($group, $exception, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
             if (is_string($backoffKey)) {
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
@@ -248,21 +266,8 @@ final readonly class TaskSettling
 
     private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
     {
-        if ($instance->project_id !== $group->project_id || $this->attachedToUnmanagedGroup($instance)) {
-            return false;
-        }
-
-        $attached = $group->taskable_id === $instance->id;
-        $named = $group->taskable_id === null
-            && $instance->name === TaskWorkspaceName::for($group)
-            && $instance->branch_override === $instance->name;
-
-        if (! $attached && ! $named) {
-            return false;
-        }
-
         if (in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)) {
-            return $attached
+            return $group->taskable_id === $instance->id
                 || ! $group->reserved_at instanceof Carbon
                 || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
         }
@@ -354,50 +359,15 @@ final readonly class TaskSettling
         }
     }
 
-    /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
-    private function attachedToUnmanagedGroup(Instance $instance): bool
-    {
-        return Task::topLevel()
-            ->where('taskable_type', TaskableType::Instance)
-            ->where('taskable_id', $instance->id)
-            ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
-            ->exists();
-    }
-
     /** @return Collection<int, Instance> */
     private function abandonedWorkspaces(): Collection
     {
-        $workspaceName = match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "CONCAT('task-', tasks.id)",
-            default => "'task-' || tasks.id",
-        };
-
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
         $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
         return Instance::query()
-            ->select('instances.*', 'tasks.id as ended_task_group_id')
-            ->join('tasks', function ($join) use ($workspaceName): void {
-                $join->on('tasks.project_id', '=', 'instances.project_id')
-                    ->whereNull('tasks.parent_id')
-                    ->where(function ($link) use ($workspaceName): void {
-                        $link->whereColumn('tasks.taskable_id', 'instances.id')
-                            ->orWhere(function ($named) use ($workspaceName): void {
-                                $named->whereRaw("instances.name = {$workspaceName}")
-                                    ->whereColumn('instances.branch_override', 'instances.name')
-                                    ->whereNull('tasks.taskable_id');
-                            });
-                    });
-            })
-            ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
-            ->whereNotExists(function ($userGroup): void {
-                $userGroup->selectRaw('1')
-                    ->from('tasks as user_groups')
-                    ->whereNull('user_groups.parent_id')
-                    ->whereColumn('user_groups.taskable_id', 'instances.id')
-                    ->where('user_groups.taskable_type', TaskableType::Instance)
-                    ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
-            })
+            ->select('instances.*')
+            ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
@@ -427,13 +397,12 @@ final readonly class TaskSettling
      */
     public function cancelRunningSubtask(TaskScheduler $scheduler, Task $parent, Task $task, Closure $stop): Task
     {
-        $parent->requireManagedExecution();
         $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
             $group = DB::transaction(function () use ($parent, $task): Task {
                 $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
 
@@ -485,7 +454,7 @@ final readonly class TaskSettling
         $next = null;
         $group = DB::transaction(function () use ($parent, $task, &$next): Task {
             $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
@@ -527,7 +496,11 @@ final readonly class TaskSettling
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->runner->beginRunningTask($scheduler, $next);
+            try {
+                $this->runner->beginRunningTask($scheduler, $next);
+            } catch (TaskWorkspaceWaiting) {
+                // Cancellation succeeded; the next subtask keeps its FIFO admission.
+            }
         }
 
         if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
@@ -542,7 +515,14 @@ final readonly class TaskSettling
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
     ): Task {
-        $group->requireManagedExecution();
+        return app(TaskWorkspaceLease::class)->run($group, 'settle', 'settle:'.$group->id, fn () => $this->settleWithLease($scheduler, $group, $requestMissingPullRequest, $checkReturningPullRequest));
+    }
+
+    private function settleWithLease(TaskScheduler $scheduler,
+        Task $group,
+        bool $requestMissingPullRequest = true,
+        bool $checkReturningPullRequest = true,
+    ): Task {
         $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
@@ -1054,7 +1034,7 @@ final readonly class TaskSettling
     private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha, ?TaskReviewCandidate $candidate = null): ?Task
     {
         return DB::transaction(function () use ($group, $plan, $headSha, $candidate): ?Task {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            $locked = Task::topLevel()
                 ->lockForUpdate()
                 ->findOrFail($group->id);
             if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || $this->otherAssistance($locked)) {
@@ -1183,9 +1163,11 @@ final readonly class TaskSettling
      */
     private function prepareResumedWorkspace(TaskScheduler $scheduler, Task $group, Task $todo): bool
     {
-        if (app(TaskWorkspaceHead::class)->held($group)) {
-            return false;
-        }
+        return app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'resume:'.$todo->id, fn () => $this->prepareResumedWorkspaceWithLease($scheduler, $group, $todo), taskId: $todo->id);
+    }
+
+    private function prepareResumedWorkspaceWithLease(TaskScheduler $scheduler, Task $group, Task $todo): bool
+    {
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
             return false;
@@ -1194,6 +1176,8 @@ final readonly class TaskSettling
             $fresh = $group->fresh(['project', 'taskable']) ?? $group;
             $this->turnFetcher->fetch($fresh);
             $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
+        } catch (TaskWorkspaceWaiting) {
+            return false;
         } catch (Throwable $exception) {
             $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
             $scheduler->recordCommunicationFailure($todo, $group, $exception->getMessage());
@@ -1223,7 +1207,7 @@ final readonly class TaskSettling
         try {
             return DB::transaction(function () use ($todo): ?Task {
                 $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
                 if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {

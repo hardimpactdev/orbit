@@ -8,6 +8,8 @@ final readonly class VpDevPreset
 {
     public const string NAME = 'vp-dev';
 
+    public const string RestartPolicy = 'on-failure';
+
     /** @return list<string> */
     public static function command(): array
     {

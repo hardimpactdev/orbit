@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -18,7 +20,6 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -48,19 +49,20 @@ function turn_fetch_group(string $slug, string $status = TaskGroupStatus::Todo->
         'public_ssh_host' => '10.44.0.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Fetch before the turn',
+        'brief' => 'Fetch origin first.',
+        'status' => $status,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
         'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Fetch before the turn',
-        'brief' => 'Fetch origin first.',
-        'status' => $status,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -117,6 +119,7 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
 function turn_fetch_driver(object $fetcher): FakeAgentDriver
 {
     $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'prior-fetch-turn');
     $driver->beforeTurn = function () use ($fetcher): void {
         $fetcher->order[] = 'turn';
     };
@@ -291,13 +294,6 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
     $fetcher = turn_fetch_fetcher(fail: true);
     app()->instance(TaskBaseBranchFetcher::class, $fetcher);
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
-    {
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            return ['thread' => ['session' => ['status' => 'idle']]];
-        }
-    });
     Http::fake(function (Request $request) use ($fetcher) {
         if (str_ends_with($request->url(), '/messages')) {
             $fetcher->order[] = 'turn';

@@ -6,7 +6,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -15,7 +14,9 @@ use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -223,31 +224,27 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'publication' => RoutePublication::Private,
     ]);
     $ordinaryRoute->targets()->create(['instance_id' => $ordinary->id, 'position' => 0]);
-    $annotation = Task::topLevel()->create([
-        'project_id' => $shop->id,
-        'title' => 'Existing thread',
-        'brief' => 'An ordinary Instance.',
-        'status' => 'running',
-        'execution_mode' => TaskExecutionMode::ExistingThread,
-    ]);
-    $annotation->taskable()->associate($ordinary);
-    $annotation->save();
 
-    $mismatched = Instance::query()->create([
-        'project_id' => $shop->id,
-        'node_id' => $node->id,
-        'name' => 'not-a-workspace',
-        'checkout_path' => '/srv/orbit/apps/shop/not-a-workspace',
-        'status' => 'source_resolved',
-    ]);
     $managed = Task::topLevel()->create([
         'project_id' => $shop->id,
         'title' => 'Mismatched name',
         'brief' => 'Not this Instance.',
         'status' => 'running',
     ]);
+    $mismatched = Instance::query()->create([
+        'task_workspace_owner_id' => $managed->id,
+        'project_id' => $shop->id,
+        'node_id' => $node->id,
+        'name' => 'not-a-workspace',
+        'checkout_path' => '/srv/orbit/apps/shop/not-a-workspace',
+        'status' => 'source_resolved',
+    ]);
     $managed->taskable()->associate($mismatched);
     $managed->save();
+
+    // Replay the routing migration with the task column it read on that release.
+    Schema::table('tasks', fn (Blueprint $table) => $table->string('execution_mode')->nullable());
+    DB::table('tasks')->whereNull('parent_id')->update(['execution_mode' => 'managed']);
 
     $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
     assert($migration instanceof Migration);
@@ -302,19 +299,20 @@ function routing_project_payload(string $slug): array
 
 function routing_task_workspace(Project $project, Node $node, string $status, ?string $root, bool $withRoute, string $domain): Instance
 {
+    $task = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Workspace '.$domain,
+        'brief' => 'Record the provisioned mode.',
+        'status' => 'running',
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $task->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'pending-'.Str::uuid()->toString(),
         'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/'.Str::uuid()->toString(),
         'root' => $root,
         'status' => $withRoute ? 'active' : $status,
-    ]);
-    $task = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Workspace '.$domain,
-        'brief' => 'Record the provisioned mode.',
-        'status' => 'running',
     ]);
     $name = 'task-'.$task->id;
     $attributes = ['name' => $name, 'branch_override' => $name];

@@ -106,6 +106,10 @@ function backlog_order(int $groupId): array
 it('stores a new group in backlog and does not claim it', function (): void {
     $group = backlog_group($this);
 
+    expect($group)->not->toHaveKey('execution_mode');
+    $this->getJson('/api/v1/task-groups/'.$group['id'])->assertOk()->assertJsonMissingPath('data.execution_mode');
+    $this->getJson('/api/v1/task-groups')->assertOk()->assertJsonMissingPath('data.task_groups.0.execution_mode');
+
     expect($group['status'])->toBe('backlog')
         ->and($group['tasks'][0]['status'])->toBe('todo')
         ->and($this->provisioning->calls)->toBe(0);

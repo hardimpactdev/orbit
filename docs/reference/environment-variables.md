@@ -58,7 +58,7 @@ The authors whose pull requests Orbit reviews and merges are Gateway configurati
 
 The logins requested as reviewers on a published task pull request are also Gateway configuration. The operator sets `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` in the Gateway's `.env`. Unset or empty requests no one. See [Tasks configuration](/reference/tasks#configuration).
 
-The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every guest it creates, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`.
+The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every guest it creates, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`. No setting chooses the guests' pool or root disk size: every guest is a copy of the task VM's `node-template` in the pool `topology-seed`.
 
 `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` are web development proxy inputs, not Instance settings. A [topology web session](/reference/web-app#run-against-a-topology) pins the URL and trusted CA to its selected topology. Inherited endpoint overrides, including settings in the caller's environment or web development files, must not redirect Gateway, realtime, or metrics traffic to the live fleet. Missing required topology configuration fails startup instead of reading a live profile or another user's credentials.
 
@@ -182,12 +182,6 @@ When the clone seeds a SQLite snapshot, it registers an owned connection on the 
 Other operations also change stored keys, and never the file itself:
 
 - [`instance:database:add` and `instance:database:remove`](/reference/database-connections#add-a-connection-on-an-instance) write or clear the keys of one database prefix.
-- Creating an `agentation-mcp` Process stores `AGENTATION_URL` as `https://{{instance.domain}}/__orbit/agentation`. See [Agentation](/reference/agentation).
-- Creating an `annotator` Process stores `ANNOTATOR_URL` as `https://{{instance.domain}}/__orbit/annotator/annotations`.
-
-Removing the annotator Process deletes that stored key. Synchronization renders the current Route domain. Without a Route, the domain placeholder returns `env.reference_unavailable`.
-
-The annotator also projects the concrete `ANNOTATOR_URL` and `ORBIT_ANNOTATOR_PORT` into every systemd Process of the Instance. These derived values override a stale `.env` value or a caller-supplied environment map. Process creation and removal rewrite the existing units of sibling Processes without changing their observed runtime state. Sleeping workers are not started, and cold dependencies are not restored. A running sibling reads the new values on its next start or restart. After removal, units unset both keys, even before the next environment synchronization. This runtime projection does not write `.env`; see [Annotator Process](/reference/agentation#annotator-process).
 
 A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default deploys in its checkout, so synchronization writes the files it serves and a deployment does not synchronize.
 

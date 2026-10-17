@@ -75,6 +75,9 @@ def image_install_packages(payload, options):
     for service in ('ssh', 'docker', 'containerd'):
         if run(['systemctl', 'show', '-p', 'LoadState', '--value', service], required=False).stdout.strip() == 'loaded':
             run(['systemctl', 'enable', service])
+    # `orbit` runs a task VM's nested topology with Incus. cloud-init adds groups only to a user it creates.
+    if 'incus' in payload['tools']:
+        run(['usermod', '--append', '--groups', 'incus-admin', 'orbit'])
 
 
 def image_javascript(payload):
@@ -213,6 +216,8 @@ def image_verify(payload):
                       '/usr/local/bin/pnpm', '--version'])
         if result.stdout.strip() != selected['pnpm']['version']:
             raise RecipeFailure()
+    if 'incus' in payload['tools'] and 'incus-admin' not in run(['id', '-nG', 'orbit']).stdout.split():
+        raise RecipeFailure()
     for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
         if name in payload['tools']:
             artifact = payload['tools'][name]['artifacts'][payload['architecture']]

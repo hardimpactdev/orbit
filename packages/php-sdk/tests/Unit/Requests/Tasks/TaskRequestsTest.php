@@ -150,6 +150,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     })->with([
         'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'workspace lease status' => ['tasks-status/workspace-leases', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'review-and-merge status' => ['tasks-status/merges', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'review-and-merge show' => ['tasks-show/review-and-merge', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
         'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
@@ -240,10 +241,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         expect($group)->toBeInstanceOf(TaskGroupResponse::class);
         assert($group instanceof TaskGroupResponse);
 
+        expect($group->toArray())->not->toHaveKey('execution_mode');
+
         expect($group->reference())->toBe('ORB-1')
             ->and($group->status)->toBe('backlog')
             ->and($group->project)->toBe('orbit')
-            ->and($group->executionMode)->toBe('managed')
             ->and($group->assistanceRequested)->toBeFalse()
             ->and($group->assistanceKind)->toBeNull()
             ->and($group->assistanceQuestion)->toBeNull()
@@ -650,3 +652,42 @@ it('rejects malformed topology response types', function (mixed $topology): void
     expect(fn () => SubtaskResponse::fromGatewayData([...$fixture['body']['data'], 'topology' => $topology], task_request_id()))
         ->toThrow(GatewayApiException::class);
 })->with(['scalar' => ['app-dev'], 'non-string' => [[1]], 'object' => [['name' => 'app-dev']]]);
+
+it('preserves the workspace lease holder and queue from the Gateway', function (): void {
+    $response = task_fixture_send('tasks-status/workspace-leases', new ShowTasksStatusRequest);
+    expect($response)->toBeInstanceOf(TasksStatusResponse::class);
+    assert($response instanceof TasksStatusResponse);
+    expect($response->workspaceLeases)->toHaveCount(1)
+        ->and($response->workspaceLeases[0]->reference())->toBe('ORB-1')
+        ->and($response->workspaceLeases[0]->instanceName)->toBe('lease-status')
+        ->and($response->workspaceLeases[0]->holder?->kind)->toBe('reviewer')
+        ->and($response->workspaceLeases[0]->holder?->remoteUncertain)->toBeTrue()
+        ->and($response->workspaceLeases[0]->waiters[0]->remoteUncertain)->toBeFalse()
+        ->and(array_map(static fn ($actor): string => $actor->owner, $response->workspaceLeases[0]->waiters))->toBe(['check:1', 'publication:1'])
+        ->and($response->toArray()['workspace_leases'][0]['waiters'][1]['kind'])->toBe('publication')
+        ->and($response->requestId)->toBe(task_request_id());
+});
+
+it('refuses malformed nested workspace actors with a correlated safe error', function (string $field, mixed $value): void {
+    $fixture = json_decode(file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-status/workspace-leases.json'), true, flags: JSON_THROW_ON_ERROR);
+    $data = $fixture['body']['data'];
+    if ($field === 'waiters' || $field === 'holder') {
+        $data['workspace_leases'][0][$field] = $value;
+    } else {
+        $data['workspace_leases'][0]['holder'][$field] = $value;
+    }
+    try {
+        TasksStatusResponse::fromGatewayData($data, task_request_id());
+        test()->fail('Malformed lease data was accepted.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->requestId())->toBe(task_request_id())
+            ->and($exception->getMessage())->not->toContain('credential-sentinel');
+    }
+})->with([
+    'scalar holder' => ['holder', 'credential-sentinel'],
+    'non-list waiters' => ['waiters', ['owner' => 'credential-sentinel']],
+    'scalar waiter' => ['waiters', ['credential-sentinel']],
+    'invalid thread id' => ['thread_id', -1],
+    'invalid time' => ['acquired_at', 42],
+    'invalid uncertainty' => ['remote_uncertain', 'credential-sentinel'],
+]);

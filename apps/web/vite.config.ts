@@ -1,5 +1,4 @@
 import { annotationServerProxy } from "@nckrtl/annotator/vite";
-import { annotationThread } from "./dev/annotation-thread.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent } from "node:https";
@@ -147,7 +146,6 @@ export default defineConfig({
         orbitGateway(),
         orbitProfile(),
         annotationSpeech(),
-        annotationThread(),
         annotationServer(),
         orbitBuild(rootDir),
     ],

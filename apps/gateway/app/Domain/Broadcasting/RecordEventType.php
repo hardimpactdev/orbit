@@ -12,8 +12,6 @@ namespace App\Domain\Broadcasting;
  */
 enum RecordEventType: string
 {
-    case AnnotationUpdated = 'annotation.updated';
-
     case NodeCreated = 'node.created';
     case NodeUpdated = 'node.updated';
     case NodeDeleted = 'node.deleted';

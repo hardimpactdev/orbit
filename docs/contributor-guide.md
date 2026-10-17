@@ -125,6 +125,8 @@ Each test process copies `apps/gateway` to the host with rsync once and reuses t
 
 Each Gateway test process keeps its fixtures in its own directory under `TMPDIR`, `orbit-gateway-tests-<pid>-<random>`, and removes it when it ends, also on Ctrl-C or `SIGTERM`. A later run removes the directories of killed processes. E2E test processes keep their temporary paths in `orbit-e2e-tests-<random>` and remove it when they end. So a suite run leaves nothing in `TMPDIR`. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
 
+Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root.
+
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
@@ -219,9 +221,9 @@ These reasons explain the process. Check them before you propose a change.
 
 A pull request carries the ADR, the implementation, and the documentation together, and absorbs the ADR when it completes the decision. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
 
-### Review reproduces on a discovery topology
+### Review reproduces on a topology
 
-Orbit's reviewer reproduces the feature on a fresh [discovery topology](/reference/incus-topologies) and records the evidence. Contributors do not have to run Incus before they submit, because they may not have the environment and Orbit owns the machine review. External contributors and internal automation meet the same review and merge standard.
+Orbit's reviewer reproduces the feature on the [topology](/reference/incus-topologies) that the task group declares, nested in its task VM, and records the evidence. Contributors do not have to run Incus before they submit, because they may not have the environment and Orbit owns the machine review. External contributors and internal automation meet the same review and merge standard.
 
 A separate proof run for each candidate is a rejected alternative. That flow kept a proof plan and fixtures beside each branch, captured immutable evidence on a proof topology, kept those machines through review, compared later commits by recorded inputs, and promoted the proof topology into the snapshot at closeout. It doubled the delivery steps and held machines through review. The ownership and cleanup rules of that flow still apply to every topology.
 

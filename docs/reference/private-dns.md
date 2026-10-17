@@ -71,7 +71,7 @@ Removing the `gateway` role removes the drop-in and reverts the `orbit` link. Wh
 
 ## The listener
 
-The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. When `gateway` and `vpn` share a Node, the Gateway writes the files locally. Otherwise it sends the same publication to the `vpn` Node over SSH.
+The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node. This uses the managed account and host key established during bootstrap. Local `sudo` would retain the HTTP worker’s read-only filesystem namespace and could not publish DNS configuration. The worker’s filesystem protection stays enabled.
 
 Gateway bootstrap starts `orbit-private-dns.service` after the dnsmasq backend is bound, so the first managed peer can resolve ordinary names during its role setup.
 

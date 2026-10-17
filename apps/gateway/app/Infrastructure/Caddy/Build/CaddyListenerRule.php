@@ -9,7 +9,7 @@ namespace App\Infrastructure\Caddy\Build;
  */
 enum CaddyListenerRule: string
 {
-    /** Workload and Router sites, custom proxy Routes, tracking hosts, Agentation, and Vite: the WireGuard and LAN addresses. */
+    /** Workload and Router sites, custom proxy Routes, tracking hosts, and Vite: the WireGuard and LAN addresses. */
     case Wildcard = 'wildcard';
 
     /** Public Ingress sites: `0.0.0.0`, reached on the public address, and the WireGuard and LAN addresses. */

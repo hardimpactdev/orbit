@@ -6,7 +6,6 @@ namespace App\Data\Tasks;
 
 use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -52,7 +51,6 @@ final class TaskGroupData extends Data
         public int $questions,
         public int $escalations,
         public array $tasks,
-        public TaskExecutionMode $executionMode,
         public ?string $capacityWaitReason = null,
         public ?VmPower $vmPower = null,
         public bool $preview = false,
@@ -76,11 +74,10 @@ final class TaskGroupData extends Data
         $status = $group->groupStatus();
 
         return new self(
-            executionMode: $group->execution_mode,
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
-            reviewAndMerge: $group->execution_mode === TaskExecutionMode::Managed ? TaskReviewAndMergeData::fromModel($group) : null,
+            reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
 
             id: $group->id,
             projectId: $group->project_id,

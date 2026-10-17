@@ -57,17 +57,15 @@ The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A
 
 When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 
-Stopping Processes before the final checkout copy prevents their writes from being missed. The `annotator` preset also transfers its private store at `/var/lib/orbit/annotator/instance-{id}`. Capture adds the store to the checkout archive under `.orbit/annotator`; destination runtime installation restores it outside the checkout and removes that staging directory. Pausing the source unit does not delete its store. Source cleanup deletes the old store only after cutover, so rollback can restart the source with its annotations. Apart from that managed store and the selected SQLite file, Orbit copies no other database or data path.
+Stopping Processes before the final checkout copy prevents their writes from being missed. Apart from the selected SQLite file, Orbit copies no database or data path.
 
 Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories. A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
 A Docker Process with a null working-directory override keeps null on the destination and uses its image default; null is neither a source path to relocate nor a reason to skip runtime cleanup. An existing explicit override such as `/app` stays explicit unless it points inside the source checkout.
 
-At cutover, every Process that has an environment file gets the destination `.env` in the [application directory](/reference/projects#application-directory). This covers custom systemd Processes as well as presets such as `vp-dev` and `annotator`. Activation then rewrites each destination unit, so its `EnvironmentFile=` names the destination file, never the source Node's path.
+At cutover, every Process that has an environment file gets the destination `.env` in the [application directory](/reference/projects#application-directory). This covers custom systemd Processes and the `vp-dev` preset. Activation then rewrites each destination unit, so its `EnvironmentFile=` names the destination file, never the source Node's path.
 
 Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports) and [SSR port](/reference/assigned-ssr-ports), and Orbit releases the source ports after cleanup.
-
-An assigned annotator port is reassigned under the destination Node lock at cutover. The source assignment stays in `annotation_port_assignments` until source Caddy retirement succeeds, including after a failed destination activation or interrupted cleanup. Another Instance cannot claim that port while the old proxy may still exist. Allocation skips both annotator and Agentation assignments on that Node. The destination units use the new port and Route domain, and the stored `ANNOTATOR_URL` placeholder stays unchanged. See [Annotator Process](/reference/agentation#annotator-process).
 
 ## Route
 

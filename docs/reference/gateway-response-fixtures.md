@@ -28,7 +28,7 @@ Task response fixtures include a `topology` array on each subtask. Default cases
 
 Process response fixtures include `restart_on_deploy`, which defaults to true and preserves an explicit false. They also include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
 
-Instance create, list, and show fixtures include `routes`, every Route of the Instance, and each Route includes `web_root`. Instance create, list, and show fixtures include `annotator_port` and `annotator_url`. Both are null without an assigned annotator port; an Instance with a port but no Route still has a null URL. Re-record these fixtures when either field changes, regenerate the OpenAPI schema, and replay the Instance CLI contracts. Human detail output shows the annotator properties only when a port is assigned, while JSON retains the nullable fields. The web API types must also be regenerated from the same OpenAPI schema.
+Instance create, list, and show fixtures include `routes`, every Route of the Instance, and each Route includes `web_root`.
 
 Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available, a fallback, and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
 
@@ -39,6 +39,8 @@ Gateway release fixtures under `gateway-releases` record one release record at e
 Project Document fixtures record a complete file lifecycle, reads of earlier versions, revision conflicts, and redacted storage status. The SDK and CLI replay the same envelopes, preserving IDs, revisions, checksums, cursors, and request IDs. Human show, list, and version-history expectations live under `apps/cli/tests/Expected/project-documents`; raw read and download tests check exact bytes separately.
 
 Gateway rollback fixtures record a queued code switch with `force: false` and no force member in the rollback phase. The request is bodyless. The crossing-refusal fixture is removed because Laravel owns migration discovery; [Gateway recovery](/reference/gateway-recovery#laravel-owns-migrations) explains the decision.
+
+Tasks status fixtures cover `workspace_leases` with an empty list, a holder, FIFO waiters, and `remote_uncertain`. Keep thread and check identities in the Gateway recording and SDK/CLI replay. These fields describe workspace ownership separately from task status and VM power; the [Tasks contract](/reference/tasks#workspace-lease) owns their meaning.
 
 ## Record a fixture
 

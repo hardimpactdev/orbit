@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
-# Prepares this machine, such as a task VM with nested KVM, to run E2E topologies: Incus on a btrfs loop pool,
-# the default profile the harness expects, the AppArmor rule for wg-quick in containers, the worktree root,
-# and an nftables table that keeps topology guests away from this machine's own WireGuard network.
+# Prepares a task VM to run E2E topologies (ADR 0222): it adopts the VM's clone of the topology seed as the Incus
+# pool `topology-seed`, which holds the stopped VM `node-template`, and installs an nftables table and UFW rules that
+# keep topology guests away from this machine's own WireGuard network. The VM's image carries Incus and QEMU.
 # Idempotent. Run with sudo.
 set -euo pipefail
 
-pool=orbit-e2e
-pool_size=45GiB
+pool=topology-seed
+template=node-template
+seed_device=topology-seed
+# Incus names a VM disk's SCSI serial `incus_<device>` with each `-` doubled, and udev links it by that serial.
+device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_${seed_device//-/--}
 wireguard_interface=orbit
 wireguard_subnet=10.44.0.0/24
-bridge=incusbr0
-bridge_address=10.99.0.1/24
-worktree_root=/fast/worktrees/orbit
 
 usage() {
     cat >&2 <<'USAGE'
-usage: sudo bin/e2e-topology-host-setup [--pool-size=SIZE] [--wireguard-interface=NAME] [--wireguard-subnet=CIDR]
+usage: sudo bin/e2e-topology-host-setup [--wireguard-interface=NAME] [--wireguard-subnet=CIDR]
 
-  --pool-size=SIZE              size of the sparse btrfs loop pool orbit-e2e when it is created (default 45GiB)
   --wireguard-interface=NAME    this machine's own WireGuard interface (default orbit)
   --wireguard-subnet=CIDR       the WireGuard network topology guests must not reach (default 10.44.0.0/24)
 USAGE
@@ -26,88 +25,36 @@ USAGE
 
 for argument in "$@"; do
     case $argument in
-        --pool-size=*) pool_size=${argument#*=} ;;
         --wireguard-interface=*) wireguard_interface=${argument#*=} ;;
         --wireguard-subnet=*) wireguard_subnet=${argument#*=} ;;
         *) usage ;;
     esac
 done
-[[ $pool_size =~ ^[1-9][0-9]*(GiB|TiB)$ ]] || usage
 [[ $wireguard_interface =~ ^[a-zA-Z0-9_.-]{1,15}$ ]] || usage
 [[ $wireguard_subnet =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || usage
 [[ $(id -u) -eq 0 ]] || { echo 'e2e-topology-host-setup: run it with sudo.' >&2; exit 1; }
-
-user=${SUDO_USER:-}
-[[ -n $user && $user != root ]] || { echo 'e2e-topology-host-setup: run it with sudo from the account that runs the harness.' >&2; exit 1; }
 
 step() {
     printf 'e2e-topology-host-setup: %s\n' "$1" >&2
 }
 
-step 'packages'
-case $(dpkg --print-architecture) in
-    amd64) qemu=(qemu-system-x86 ovmf) ;;
-    arm64) qemu=(qemu-system-arm qemu-efi-aarch64) ;;
-    *) echo 'e2e-topology-host-setup: unsupported architecture.' >&2; exit 1 ;;
-esac
-missing=()
-# Incus VMs need the UEFI firmware, the SPICE module, qemu-img, dnsmasq, and virtiofsd, which are only
-# recommended packages, so they are named here.
-for package in incus "${qemu[@]}" qemu-system-modules-spice qemu-utils virtiofsd dnsmasq-base btrfs-progs nftables; do
-    [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true) == 'install ok installed' ]] || missing+=("$package")
-done
-if ((${#missing[@]} > 0)); then
-    DEBIAN_FRONTEND=noninteractive apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install --yes -- "${missing[@]}"
-    systemctl restart incus.service
-fi
+step 'topology seed'
 [[ -e /dev/kvm ]] || { echo 'e2e-topology-host-setup: /dev/kvm is missing; topology VMs need (nested) KVM.' >&2; exit 1; }
-
-step 'idmap'
-# The operator is an unprivileged container. Incus maps it from root's ranges in /etc/subuid and /etc/subgid, and
-# refuses to create containers when those files exist without a root entry, as on a task VM whose user came from
-# useradd. The range starts above every user range that useradd hands out.
-idmap_changed=0
-for file in /etc/subuid /etc/subgid; do
-    if ! grep -q '^root:' "$file" 2>/dev/null; then
-        printf 'root:1000000:1000000000\n' >>"$file"
-        idmap_changed=1
-    fi
-done
-((idmap_changed == 0)) || systemctl restart incus.service
-
-step 'incus'
-# Each piece on its own, so a run that stopped halfway completes on the next run.
-incus storage show "$pool" >/dev/null 2>&1 || incus storage create "$pool" btrfs size="$pool_size"
-driver=$(incus storage list --format csv --columns nD | awk -F, -v pool="$pool" '$1 == pool { print $2 }')
-[[ $driver == btrfs ]] || echo "e2e-topology-host-setup: the existing pool $pool uses $driver, not btrfs; kept as it is." >&2
-incus network show "$bridge" >/dev/null 2>&1 \
-    || incus network create "$bridge" ipv4.address="$bridge_address" ipv4.nat=true ipv6.address=none
-devices=$(incus profile device list default)
-grep -qx root <<<"$devices" || incus profile device add default root disk path=/ pool="$pool"
-# The harness replaces this NIC for each guest; Incus refuses to override a device the profile lacks.
-grep -qx eth0 <<<"$devices" || incus profile device add default eth0 nic network="$bridge" name=eth0
-
-step 'access'
-if ! id -nG "$user" | tr ' ' '\n' | grep -qx incus-admin; then
-    usermod --append --groups incus-admin "$user"
-    printf 'e2e-topology-host-setup: added %s to incus-admin; it applies to new logins.\n' "$user" >&2
+if ! incus storage show "$pool" >/dev/null 2>&1 </dev/null; then
+    [[ -b $device ]] || {
+        echo 'e2e-topology-host-setup: this machine has no topology seed disk; only a task VM of a size that runs a topology boots with one.' >&2
+        exit 1
+    }
+    # `incus admin recover` asks its questions on a terminal. Its API takes the pool directly: validate reports what
+    # recovery would import and what it lacks, and import creates the pool and the instances on it.
+    recovery=$(printf '{"pools":[{"name":"%s","driver":"btrfs","config":{"source":"%s"}}]}' "$pool" "$device")
+    validation=$(incus query --request POST --data "$recovery" /internal/recover/validate </dev/null)
+    errors=$(python3 -c 'import json, sys; print("; ".join(json.load(sys.stdin).get("DependencyErrors") or []))' <<<"$validation")
+    [[ -z $errors ]] || { echo "e2e-topology-host-setup: the topology seed cannot be adopted: $errors" >&2; exit 1; }
+    incus query --request POST --data "$recovery" /internal/recover/import </dev/null >/dev/null
 fi
-
-step 'apparmor'
-# The operator container shares this kernel, whose wg-quick profile must load bash from shifted files.
-if [[ -e /etc/apparmor.d/wg-quick ]]; then
-    install -d -m 0755 /etc/apparmor.d/local
-    touch /etc/apparmor.d/local/wg-quick
-    if ! grep -qx '  file mr /usr/bin/bash,' /etc/apparmor.d/local/wg-quick; then
-        printf '\n  file mr /usr/bin/bash,\n' >>/etc/apparmor.d/local/wg-quick
-    fi
-    apparmor_parser -r /etc/apparmor.d/wg-quick
-fi
-
-step 'worktrees'
-install -d -m 0755 "$(dirname "$worktree_root")"
-install -d -o "$user" -g "$(id -gn "$user")" -m 0755 "$worktree_root"
+[[ $(incus list --format csv --columns ns -- "$template" </dev/null) == "$template,STOPPED" ]] \
+    || { echo "e2e-topology-host-setup: the pool $pool holds no stopped $template." >&2; exit 1; }
 
 step 'isolation'
 install -d -m 0755 /etc/orbit-e2e
@@ -120,12 +67,10 @@ table inet orbit-e2e-isolation {
     chain forward {
         type filter hook forward priority -10; policy accept;
         iifname "oe*" oifname "$wireguard_interface" drop
-        iifname "$bridge" oifname "$wireguard_interface" drop
     }
     chain input {
         type filter hook input priority -10; policy accept;
         iifname "oe*" ip daddr $wireguard_subnet drop
-        iifname "$bridge" ip daddr $wireguard_subnet drop
     }
 }
 NFT
@@ -146,18 +91,16 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable orbit-e2e-isolation.service >/dev/null
-# An enrolled Node, such as a task VM, runs UFW with incoming and routed traffic denied. Topology guests then get no
-# DHCP or DNS from their bridge and cannot route out. Allow exactly that; the table above still drops their traffic to
-# the WireGuard network, because a drop in any table is final.
+# A task VM runs UFW with incoming and routed traffic denied. Topology guests then get no DHCP or DNS from their
+# network and cannot route out. Allow exactly that; the table above still drops their traffic to the WireGuard
+# network, because a drop in any table is final.
 if ufw status 2>/dev/null | grep -qx 'Status: active'; then
-    for interface in "$bridge" 'oe+'; do
-        ufw allow in on "$interface" to any port 67 proto udp comment 'orbit-e2e dhcp' >/dev/null
-        ufw allow in on "$interface" to any port 53 proto udp comment 'orbit-e2e dns' >/dev/null
-        ufw route allow in on "$interface" comment 'orbit-e2e guests' >/dev/null
-    done
+    ufw allow in on 'oe+' to any port 67 proto udp comment 'orbit-e2e dhcp' >/dev/null
+    ufw allow in on 'oe+' to any port 53 proto udp comment 'orbit-e2e dns' >/dev/null
+    ufw route allow in on 'oe+' comment 'orbit-e2e guests' >/dev/null
 fi
 systemctl restart orbit-e2e-isolation.service
 nft list table inet orbit-e2e-isolation >/dev/null
 
 step 'ready'
-printf '{"state":"ready","pool":"%s","bridge":"%s","isolation":"inet orbit-e2e-isolation","user":"%s"}\n' "$pool" "$bridge" "$user"
+printf '{"state":"ready","pool":"%s","template":"%s","isolation":"inet orbit-e2e-isolation"}\n' "$pool" "$template"

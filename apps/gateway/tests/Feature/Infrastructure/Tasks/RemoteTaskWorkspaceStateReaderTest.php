@@ -11,8 +11,8 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -26,8 +26,9 @@ describe('task workspace Git state', function (): void {
         new Process(['git', 'init', '--initial-branch=task-test', $repository])->mustRun();
         new Process(['git', '-C', $repository, '-c', 'user.name=Orbit Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-m', 'fixture'])->mustRun();
         $head = trim(new Process(['git', '-C', $repository, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
-        $instance = new Instance(['root' => $root, 'checkout_path' => $repository, 'source_is_laravel' => true]);
-        $instance->setRelation('node', new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']));
+        $project = Project::query()->create(['name' => 'Site', 'slug' => 'site', 'repository_url' => 'git@example.test:site.git', 'default_branch' => 'main']);
+        $node = Node::query()->create(['name' => 'state-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']);
+        $instance = test_ready_task_workspace($project, $node, ['root' => $root, 'checkout_path' => $repository, 'source_is_laravel' => true]);
         mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
         mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
         mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($repository): CommandResult {

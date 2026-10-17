@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
+use Tests\Support\ReleaseTestOwner;
 use Tests\Support\WebArtifactFixture;
 
 pest()->group('subprocess');
@@ -386,6 +387,7 @@ function adoption(
         $guard,
         new GatewayReleaseRetry,
         GatewayReleasePipeline::newestGreen(),
+        new ReleaseTestOwner,
     );
 
     return new AdoptGatewayReleaseAction(

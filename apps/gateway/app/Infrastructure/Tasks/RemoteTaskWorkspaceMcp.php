@@ -53,7 +53,7 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
                     test "$status" = 1 || exit "$status"
 
                     BASH.TaskWorkspaceMetadata::operation('mcp', ['config' => $config]),
-            ), 'task-workspace-mcp', 'tasks.workspace_mcp_failed');
+            ), 'task-workspace-mcp', 'tasks.workspace_mcp_failed', mutates: true);
         } catch (RuntimeConvergenceException) {
             return false;
         }

@@ -109,6 +109,7 @@ it('finishes a routed workspace that stopped early even after routing is turned 
     $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -136,6 +137,7 @@ it('does not route an unrouted workspace that stopped early after routing is tur
     $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -164,6 +166,7 @@ it('resumes an unrouted workspace after routing is turned on when the Project ro
     $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,

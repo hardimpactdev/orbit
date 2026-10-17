@@ -21,6 +21,12 @@ use Throwable;
 
 final class IncusHost implements GuestTransport
 {
+    /** The pool that a task VM adopts from its clone of the topology seed (ADR 0222). Every guest's root disk is on it. */
+    public const string POOL = 'topology-seed';
+
+    /** The stopped VM on {@see self::POOL} that every guest is a copy of. */
+    public const string TEMPLATE = 'node-template';
+
     private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
 
     /** The Incus configuration keys a guest may set besides limits and ownership metadata. */
@@ -40,14 +46,12 @@ final class IncusHost implements GuestTransport
     public function __construct(
         private readonly string $remote = 'local',
         private readonly string $project = 'default',
-        private readonly string $pool = 'default',
         private readonly array $ownershipMetadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
         private readonly SecretRedactor $redactor = new SecretRedactor,
         private readonly int $guestReadinessTimeoutSeconds = 600,
     ) {
         $this->validateName($remote, 'remote');
         $this->validateName($project, 'project');
-        $this->validateName($pool, 'storage pool');
         if ($guestReadinessTimeoutSeconds < 1) {
             throw new InvalidArgumentException('Guest readiness timeout must be positive.');
         }
@@ -176,48 +180,10 @@ final class IncusHost implements GuestTransport
         return $users;
     }
 
-    public function imageFingerprint(string $alias, string $type = 'virtual-machine'): string
-    {
-        $this->validateImage($alias);
-        [$remote, $selector] = $this->imageSelector($alias);
-        $images = $this->readJson(['image', 'list', $remote, $selector, '--format=json']);
-        $matches = [];
-        foreach ($images as $image) {
-            if (! is_array($image) || ($image['type'] ?? null) !== $type) {
-                continue;
-            }
-            if (($image['fingerprint'] ?? null) === $selector) {
-                $matches[] = $image;
-
-                continue;
-            }
-            $aliases = $image['aliases'] ?? null;
-            if (! is_array($aliases)) {
-                continue;
-            }
-            if (array_any(
-                $aliases,
-                fn ($imageAlias) => is_array($imageAlias) && ($imageAlias['name'] ?? null) === $selector,
-            )) {
-                $matches[] = $image;
-            }
-        }
-        if (count($matches) !== 1) {
-            throw new RuntimeException("Incus image selector [{$alias}] did not identify exactly one {$type} image.");
-        }
-        $fingerprint = $matches[0]['fingerprint'] ?? null;
-
-        if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/', $fingerprint) !== 1) {
-            throw new RuntimeException('Incus returned an invalid image fingerprint.');
-        }
-
-        return $fingerprint;
-    }
-
     /** @return array{remote:string,project:string,pool:string} */
     public function scope(): array
     {
-        return ['remote' => $this->remote, 'project' => $this->project, 'pool' => $this->pool];
+        return ['remote' => $this->remote, 'project' => $this->project, 'pool' => self::POOL];
     }
 
     /** @param array<string, string> $configuration */
@@ -241,30 +207,31 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * Creates guests in one parallel batch. Each one gets its fixed Incus address and MAC on the network, the
-     * harness ownership metadata, and, when given, the worktree mount. A container gets an unprivileged,
-     * nesting-capable container; every other guest is a VM.
+     * Creates guests in parallel batches. Each one is a copy of {@see self::TEMPLATE}, so it has the template's root disk
+     * on {@see self::POOL} and no profile. It gets its CPU and memory, the harness ownership metadata, its NIC with a
+     * fixed Incus address and MAC on the network, and, when given, the worktree mount. A copy can only override the
+     * template's devices, so the NIC and the mount are added after the copy.
      *
-     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,memory:string,metadata:array<string,string>,preserve_image_size?:bool,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
+     * @param  array<string, array{name:string,network:string,node:string,address:int,slot:int,memory:string,metadata:array<string,string>,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
      * @return array<string, IncusInstance>
      */
-    public function initGuests(array $guests): array
+    public function createGuests(array $guests): array
     {
         if ($guests === []) {
-            throw new RuntimeException('Incus guest initialization batch must be non-empty.');
+            throw new RuntimeException('Incus guest creation batch must be non-empty.');
         }
-        $commands = [];
+        $copies = [];
+        $nics = [];
         $mounts = [];
         $instances = [];
         $targets = [];
         foreach ($guests as $label => $guest) {
-            $this->validateName($label, 'guest initialization label');
-            $this->validateImage($guest['image']);
+            $this->validateName($label, 'guest creation label');
             $this->validateName($guest['name'], 'instance');
             $this->validateName($guest['network'], 'network');
             $this->validateName($guest['node'], 'node');
             if (isset($targets[$guest['name']])) {
-                throw new RuntimeException('Incus guest initialization targets must be unique.');
+                throw new RuntimeException('Incus guest creation targets must be unique.');
             }
             $targets[$guest['name']] = true;
             $this->validateStringMap($guest['metadata'], 'creation metadata');
@@ -274,47 +241,15 @@ final class IncusHost implements GuestTransport
                     throw new RuntimeException('Incus creation metadata cannot override ownership metadata.');
                 }
             }
-            [$remote, $selector] = $this->imageSelector($guest['image']);
-            $container = $guest['container'];
             $arguments = [
-                'init',
-                $remote.$selector,
+                'copy',
+                $this->target(self::TEMPLATE),
                 $this->target($guest['name']),
-                ...($container ? ['--config', 'security.privileged=false', '--config', 'security.nesting=true'] : ['--vm']),
-                '--storage',
-                $this->pool,
                 '--config',
                 'limits.cpu='.$this->incusLimit('cpu', '1'),
                 '--config',
                 'limits.memory='.$this->incusLimit('memory', $guest['memory']),
-                '--device',
-                'root,pool='.$this->pool,
-                ...(($guest['preserve_image_size'] ?? false) ? [] : ['--device', 'root,size='.$this->incusLimit('root_size', '16GiB')]),
-                '--device',
-                'eth0,network='.$guest['network'],
-                '--device',
-                'eth0,ipv4.address='.TopologyTarget::ipv4For($guest['slot'], $guest['address']),
-                '--device',
-                'eth0,hwaddr='.$this->deterministicMac($guest['network'], $guest['node']),
             ];
-            $disks = [];
-            $mount = $guest['mount'] ?? null;
-            if ($mount !== null) {
-                $this->validateMount($mount);
-                // `init --device` only overrides profile devices, so the mount is added after creation.
-                $mounts[$label] = [
-                    'config',
-                    'device',
-                    'add',
-                    $this->target($guest['name']),
-                    $mount['device'],
-                    'disk',
-                    "source={$mount['source']}",
-                    "path={$mount['path']}",
-                    ...($container ? ['shift=true'] : []),
-                ];
-                $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
-            }
             foreach ([...$this->ownershipMetadata, ...$guest['metadata']] as $key => $value) {
                 $arguments[] = '--config';
                 $arguments[] = "{$key}={$value}";
@@ -326,142 +261,51 @@ final class IncusHost implements GuestTransport
                 $arguments[] = '--config';
                 $arguments[] = "{$key}={$value}";
             }
-            $commands[$label] = $arguments;
+            $copies[$label] = $arguments;
+            $nics[$label] = [
+                'config',
+                'device',
+                'add',
+                $this->target($guest['name']),
+                'eth0',
+                'nic',
+                'network='.$guest['network'],
+                'ipv4.address='.TopologyTarget::ipv4For($guest['slot'], $guest['address']),
+                'hwaddr='.$this->deterministicMac($guest['network'], $guest['node']),
+            ];
+            $disks = [];
+            $mount = $guest['mount'] ?? null;
+            if ($mount !== null) {
+                $this->validateMount($mount);
+                $mounts[$label] = [
+                    'config',
+                    'device',
+                    'add',
+                    $this->target($guest['name']),
+                    $mount['device'],
+                    'disk',
+                    "source={$mount['source']}",
+                    "path={$mount['path']}",
+                ];
+                $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
+            }
             $instances[$label] = new IncusInstance(
                 $this->remote,
                 $this->project,
                 $guest['name'],
-                $this->pool,
+                self::POOL,
                 [...$this->ownershipMetadata, ...$guest['metadata']],
                 network: $guest['network'],
                 disks: $disks,
             );
         }
-        $this->runParallel($commands, 900, failureMessage: 'Incus guest initialization batch failed');
+        $this->runParallel($copies, 900, failureMessage: 'Incus guest copy batch failed');
+        $this->runParallel($nics, 120, failureMessage: 'Incus guest NIC batch failed');
         if ($mounts !== []) {
             $this->runParallel($mounts, 120, failureMessage: 'Incus worktree mount batch failed');
         }
 
         return $instances;
-    }
-
-    /**
-     * Every image in the project: fingerprint, type, aliases, properties, and creation time.
-     *
-     * @return list<array{fingerprint:string,type:string,aliases:list<string>,properties:array<string,string>,created_at:string}>
-     */
-    public function images(): array
-    {
-        $images = [];
-        foreach ($this->readJson(['image', 'list', "{$this->remote}:", '--format=json']) as $image) {
-            $fingerprint = is_array($image) ? ($image['fingerprint'] ?? null) : null;
-            if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
-                throw new RuntimeException('Incus returned an invalid image inventory.');
-            }
-            $aliases = [];
-            foreach (is_array($image['aliases'] ?? null) ? $image['aliases'] : [] as $alias) {
-                if (is_array($alias) && is_string($alias['name'] ?? null)) {
-                    $aliases[] = $alias['name'];
-                }
-            }
-            $properties = [];
-            foreach (is_array($image['properties'] ?? null) ? $image['properties'] : [] as $key => $value) {
-                if (is_string($key) && is_string($value)) {
-                    $properties[$key] = $value;
-                }
-            }
-            $images[] = [
-                'fingerprint' => $fingerprint,
-                'type' => is_string($image['type'] ?? null) ? $image['type'] : '',
-                'aliases' => $aliases,
-                'properties' => $properties,
-                'created_at' => is_string($image['created_at'] ?? null) ? $image['created_at'] : '',
-            ];
-        }
-
-        return $images;
-    }
-
-    /**
-     * Stops nothing: the guest must already be stopped. Publishes its disk under `$alias` with the given
-     * image properties and returns the new image's fingerprint.
-     *
-     * @param  array<string, string>  $properties
-     */
-    public function publish(string $instance, string $alias, array $properties, string $type): string
-    {
-        $this->validatedOwnedVm($instance);
-        $this->validateName($alias, 'image alias');
-        $arguments = ['publish', $this->target($instance), "{$this->remote}:", '--alias', $alias, '--compression', 'none'];
-        foreach ($properties as $key => $value) {
-            if (preg_match('/\A[a-z][a-z0-9_.-]{0,63}\z/D', $key) !== 1 || preg_match('/\A[\x21-\x7e]{1,255}\z/D', $value) !== 1) {
-                throw new RuntimeException('Invalid Incus image property.');
-            }
-            $arguments[] = "{$key}={$value}";
-        }
-        $this->run($arguments, 1800);
-
-        return $this->imageFingerprint($alias, $type);
-    }
-
-    public function importImage(string $archive): void
-    {
-        if (! str_starts_with($archive, '/') || ! is_file($archive) || is_link($archive)) {
-            throw new RuntimeException('The recipe image archive path is invalid.');
-        }
-        $this->run(['image', 'import', $archive, "{$this->remote}:"], 600);
-    }
-
-    /** Points `$alias` at `$fingerprint` in one request, creating the alias when it is new. */
-    public function pointAlias(string $alias, string $fingerprint): void
-    {
-        $this->validateName($alias, 'image alias');
-        if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
-            throw new RuntimeException('Invalid Incus image fingerprint.');
-        }
-        $exists = array_any($this->images(), static fn (array $image): bool => in_array($alias, $image['aliases'], true));
-        if ($exists) {
-            $this->run([
-                'query',
-                '--request',
-                'PATCH',
-                '--data',
-                json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR),
-                "{$this->remote}:/1.0/images/aliases/{$alias}?project={$this->project}",
-            ]);
-
-            return;
-        }
-        $this->run(['image', 'alias', 'create', "{$this->remote}:{$alias}", $fingerprint]);
-    }
-
-    public function deleteImage(string $fingerprint): void
-    {
-        if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
-            throw new RuntimeException('Invalid Incus image fingerprint.');
-        }
-        $this->run(['image', 'delete', "{$this->remote}:{$fingerprint}"]);
-    }
-
-    /**
-     * The image fingerprint each instance in the project started from.
-     *
-     * @return array<string, string> instance name => fingerprint
-     */
-    public function instanceBaseImages(): array
-    {
-        $images = [];
-        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
-            if (! is_array($resource) || ! is_string($resource['name'] ?? null)) {
-                continue;
-            }
-            $base = $this->configuration($resource)['volatile.base_image'] ?? null;
-            if (is_string($base) && $base !== '') {
-                $images[$resource['name']] = $base;
-            }
-        }
-
-        return $images;
     }
 
     /** Every guest of the target is on its network with its fixed MAC and address, and owned by the harness. */
@@ -486,8 +330,7 @@ final class IncusHost implements GuestTransport
             if ($resource === null) {
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
             }
-            $expectedType = $node->image->instanceType();
-            if (($resource['type'] ?? null) !== $expectedType) {
+            if (($resource['type'] ?? null) !== 'virtual-machine') {
                 throw new RuntimeException("Incus instance {$instance} type does not match topology.");
             }
             $vm = $this->instanceFromResource($resource);
@@ -787,7 +630,6 @@ final class IncusHost implements GuestTransport
             throw new InvalidArgumentException(match ($key) {
                 'cpu' => 'Incus CPU limit must be a positive integer.',
                 'memory' => 'Incus memory limit must use MiB or GiB.',
-                'root_size' => 'Incus root volume size must use MiB or GiB.',
                 default => 'Incus limit must be a string.',
             });
         }
@@ -796,9 +638,6 @@ final class IncusHost implements GuestTransport
         }
         if ($key === 'memory' && ! preg_match('/^[1-9][0-9]*(MiB|GiB)$/', $value)) {
             throw new InvalidArgumentException('Incus memory limit must use MiB or GiB.');
-        }
-        if ($key === 'root_size' && ! preg_match('/^[1-9][0-9]*(MiB|GiB)$/', $value)) {
-            throw new InvalidArgumentException('Incus root volume size must use MiB or GiB.');
         }
 
         return $value;
@@ -1134,7 +973,7 @@ final class IncusHost implements GuestTransport
     private function instanceFromResource(array $resource, ?string $requestedName = null): IncusInstance
     {
         $name = $resource['name'] ?? null;
-        if (! is_string($name) || ! in_array($resource['type'] ?? null, ['virtual-machine', 'container'], true)) {
+        if (! is_string($name) || ($resource['type'] ?? null) !== 'virtual-machine') {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$requestedName} is not a virtual machine.");
             }
@@ -1148,7 +987,7 @@ final class IncusHost implements GuestTransport
             }
             throw new RuntimeException("Incus instance {$name} identity is invalid.");
         }
-        if ($pool !== $this->pool) {
+        if ($pool !== self::POOL) {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$name} storage pool identity does not match.");
             }
@@ -1465,10 +1304,7 @@ final class IncusHost implements GuestTransport
         bool $failOnError = true,
         ?string $stdin = null,
     ): ProcessResult {
-        // `incus query` refuses --project; its URL names the project instead.
-        $command = ($arguments[0] ?? '') === 'query'
-            ? ['incus', ...$arguments]
-            : ['incus', '--project', $this->project, ...$arguments];
+        $command = ['incus', '--project', $this->project, ...$arguments];
 
         try {
             $process = Process::timeout($timeout);
@@ -1510,7 +1346,6 @@ final class IncusHost implements GuestTransport
                 'config',
                 'copy',
                 'delete',
-                'init',
                 'launch',
                 'move',
                 'rebuild',
@@ -1594,31 +1429,6 @@ final class IncusHost implements GuestTransport
     private function target(string $name): string
     {
         return "{$this->remote}:{$name}";
-    }
-
-    /** @return array{string, string} */
-    private function imageSelector(string $image): array
-    {
-        $separator = strpos($image, ':');
-        if ($separator === false) {
-            return ["{$this->remote}:", $image];
-        }
-
-        $remote = substr($image, 0, $separator);
-        $selector = substr($image, $separator + 1);
-        $this->validateName($remote, 'image remote');
-        if ($selector === '' || str_contains($selector, ':')) {
-            throw new RuntimeException('Invalid Incus image identity.');
-        }
-
-        return ["{$remote}:", $selector];
-    }
-
-    private function validateImage(string $image): void
-    {
-        if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.:\/-]{0,254}\z/', $image) !== 1) {
-            throw new RuntimeException('Invalid Incus image identity.');
-        }
     }
 
     private function validateMetadata(string $key, string $value): void

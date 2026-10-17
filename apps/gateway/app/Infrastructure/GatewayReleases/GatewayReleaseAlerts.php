@@ -32,6 +32,7 @@ final readonly class GatewayReleaseAlerts
     public static function kindFor(GatewayRelease $record): ?ReleaseAlertKind
     {
         return match (true) {
+            $record->error_code === 'gateway.release_held' => null,
             $record->outcome === 'paused' => ReleaseAlertKind::ReleasePaused,
             in_array($record->outcome, ['failed', 'switched_back'], true) && ! $record->retryable => ReleaseAlertKind::ReleaseFailed,
             $record->outcome === GatewayRelease::Interrupted && GatewayReleaseRecorder::touchedLiveState($record) => ReleaseAlertKind::ReleasePaused,
