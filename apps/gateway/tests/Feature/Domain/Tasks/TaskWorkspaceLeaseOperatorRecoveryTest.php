@@ -484,3 +484,41 @@ it('proves native quiescence for only the target binding and check run without s
         (new Process(['sudo', '-n', 'systemctl', 'stop', $unit]))->run();
     }
 })->with(['operation' => ['operation'], 'check' => ['check']])->with([false, true])->group('privileged');
+
+it('preserves literal command arguments through native workspace supervision', function (): void {
+    $operation = bin2hex(random_bytes(16));
+    $binding = bin2hex(random_bytes(32));
+    $arguments = ['${HOME}', '$HOME', '$$', '${1-}', 'space and "quotes"', "line\nnext", '%n', ''];
+    $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
+    $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
+        'python3', '-c', 'import json, sys; print(json.dumps(sys.argv[1:]))', ...$arguments],
+        cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
+
+    try {
+        $process->run();
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe($arguments);
+        $receipt = json_decode(file_get_contents($this->receiptHome.'/.local/state/orbit/task-workspace-operations/'.$operation), true, flags: JSON_THROW_ON_ERROR);
+        expect($receipt)->toMatchArray(['state' => 'finished', 'exit_code' => 0]);
+    } finally {
+        $process->stop(0);
+        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-workspace-operation-'.$operation.'.service']))->run();
+    }
+})->group('privileged');
+
+it('reads topology status through native workspace supervision without expanding the shell program', function (): void {
+    $operation = bin2hex(random_bytes(16));
+    $binding = bin2hex(random_bytes(32));
+    $process = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+        'run', $operation, $binding, '0', 'bash', '-c', file_get_contents(resource_path('task-vms/topology.sh')),
+        'topology', 'status', 'abcdef0123456789'], cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
+
+    try {
+        $process->run();
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['state' => 'lost']);
+    } finally {
+        $process->stop(0);
+        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-workspace-operation-'.$operation.'.service']))->run();
+    }
+})->group('privileged');

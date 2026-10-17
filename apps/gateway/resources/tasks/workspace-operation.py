@@ -257,6 +257,9 @@ with open('/proc/self/cmdline', 'rb') as source:
     invocation = source.read().split(b'\0')
 program = invocation[invocation.index(b'-c') + 1].decode()
 payload = ['python3', '-c', program, 'payload', operation, binding, '0', *sys.argv[5:]]
+# systemd expands dollar expressions in ExecStart even though these are literal argv.
+# Its documented $$ escape preserves them on every supported systemd version.
+payload = [argument.replace('$', '$$') for argument in payload]
 child = subprocess.Popen(arguments + ['--'] + payload, stdin=sys.stdin.buffer)
 while True:
     code = contained_completion(data)
