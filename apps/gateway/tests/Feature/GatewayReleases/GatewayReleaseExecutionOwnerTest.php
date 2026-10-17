@@ -176,7 +176,6 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     $this->pipeline->fixture->write('apps/gateway/artisan', <<<'PHP'
         <?php
         $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
-        chmod(dirname($cache), 0750);
         $values = json_decode(file_get_contents(__DIR__.'/.env'), true, flags: JSON_THROW_ON_ERROR);
         file_put_contents($cache, '<?php return '.var_export($values, true).';');
         PHP);
@@ -203,12 +202,15 @@ it('revalidates the refreshed target before snapshot or migration at the public 
             expect(fileperms($this->pipeline->home.'/'.$name) & 0777)->toBe(0600);
         }
         $targetCache = $layout->releaseApplicationPath(substr($target, 0, 12)).'/bootstrap/cache/config.php';
-        expect(fileperms(dirname($targetCache)) & 0777)->toBe(0750);
+        expect(fileperms(dirname($targetCache)) & 0777)->toBe(0700);
         $refreshed = require $targetCache;
         expect($refreshed['database']['connections']['refresh_owner']['database'])->toBe($other);
         $refreshed['database']['connections']['refresh_owner']['database'] = $database;
         file_put_contents($targetCache, '<?php return '.var_export($refreshed, true).';');
         app(GatewayReleaseExecutionOwner::class)->assertAllowed($target);
+        chmod(dirname($targetCache), 0775);
+        expect(fn () => app(GatewayReleaseExecutionOwner::class)->assertAllowed($target))->toThrow(GatewayReleaseException::class);
+        expect(fileperms(dirname($targetCache)) & 0777)->toBe(0775);
         expect($this->pipeline->snapshots)->toBe(0);
     } finally {
         umask($mask);
