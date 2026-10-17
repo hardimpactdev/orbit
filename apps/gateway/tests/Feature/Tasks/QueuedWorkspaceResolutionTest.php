@@ -8,14 +8,19 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\QuestionAsker;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\AgentThread;
 use App\Models\Task;
+use App\Models\TaskQuestion;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\FakeTaskTurnReceipts;
 
 it('replays a queued implementer failure resolution once after the workspace holder releases', function (): void {
     tick_bind_defaults();
@@ -184,3 +189,192 @@ it('withdraws a reserved resolution when the request changes before immediate de
         ->and($task->fresh()->assistance_reason)->toBe('A newer failure.')
         ->and($task->fresh()->resolution_delivered_comment_id)->toBeNull();
 });
+
+it('relays the exact running direction answer once after a workspace wait and service restart', function (bool $busy): void {
+    tick_bind_defaults();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $group = tick_group();
+    $task = $group->tasks()->firstOrFail();
+    $reviewer = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
+    $reviewer->update(['task_id' => $task->id]);
+    $hold = TaskAssistance::attributes(AssistanceKind::Direction, 'Which mirror?', 'Which mirror?');
+    $task->update($hold);
+    $group->update($hold);
+    $question = TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => $task->completion_attempt,
+        'asked_by' => QuestionAsker::Implementer, 'question' => 'Which mirror?',
+        'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+    ]);
+    $attempt = $task->review_attempt;
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $busy ? $leases->acquire($group, 'publication', 'other-publication') : null;
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
+    ]);
+
+    if ($holder !== null) {
+        expect($driver->calls)->toBe([]);
+        expect($task->fresh()->assistance_requested)->toBeTrue();
+        expect($question->fresh()->resolution_comment_id)->toBe($comment->id);
+        app(TaskScheduler::class)->tick();
+        expect($driver->calls)->toBe([]);
+        expect($holder->fresh()->status)->toBe('held');
+        $leases->release($holder);
+    }
+    app()->forgetInstance(TaskWorkspaceLease::class);
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($driver->calls)->toHaveCount(1)
+        ->and($driver->calls[0]['operation'])->toBe('send')
+        ->and($driver->calls[0]['thread'])->toBe($reviewer->external_id)
+        ->and($driver->calls[0]['message'])->toContain($comment->body, '--outcome=answered');
+    expect($task->fresh()->direction_relay_comment_id)->toBe($comment->id)
+        ->and($task->fresh()->resolution_delivered_comment_id)->toBe($comment->id)
+        ->and($task->fresh()->assistance_requested)->toBeFalse()
+        ->and($task->fresh()->review_attempt)->toBe($attempt);
+    expect($question->fresh()->resolution_comment_id)->toBe($comment->id)
+        ->and($question->fresh()->status)->toBe(QuestionStatus::Escalated);
+
+    $driver->observation = null;
+    app()->forgetInstance(TaskWorkspaceLease::class);
+    app(TaskScheduler::class)->tick();
+    expect($driver->calls)->toHaveCount(1);
+    expect(app(TaskWorkspaceLease::class)->status($group)[0]['holder']['thread_id'])->toBe($reviewer->id);
+
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'relay-complete');
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
+    ]));
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($driver->calls)->toHaveCount(2)
+        ->and($driver->calls[1]['thread'])->toBe($task->implementerThread->external_id)
+        ->and($driver->calls[1]['message'])->toContain($comment->body);
+    expect($question->fresh()->status)->toBe(QuestionStatus::Answered)
+        ->and($question->fresh()->answer)->toBe($comment->body);
+    expect($task->fresh()->direction_relay_comment_id)->toBeNull();
+})->with(['busy workspace' => true, 'free workspace control' => false]);
+
+it('preserves another parent request or requesting sibling when a queued child answer is delivered', function (string $other): void {
+    tick_bind_defaults();
+    app(TaskExtensionState::class)->enable();
+    $group = tick_group();
+    $task = $group->tasks()->firstOrFail();
+    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original child failure.');
+    $task->update($hold);
+    $group->update($hold);
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'other-publication');
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Resolve the original child failure.', 'author' => 'operator',
+    ]);
+    expect($task->fresh()->pending_resolution_comment_id)->toBe($comment->id);
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'A newer unrelated parent failure.'));
+    } elseif ($other === 'direction') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
+    } else {
+        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
+    }
+    $before = $group->only(array_keys($hold));
+    $leases->release($holder);
+    app()->forgetInstance(TaskWorkspaceLease::class);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->only(array_keys($before)))->toBe($before);
+    if ($other === 'direction') {
+        expect($driver->calls)->toBe([]);
+        expect($task->fresh()->resolution_delivered_comment_id)->toBeNull();
+    } else {
+        expect($task->fresh()->resolution_delivered_comment_id)->toBe($comment->id);
+        expect($driver->calls)->toHaveCount(1)
+            ->and($driver->calls[0]['message'])->toContain($comment->body);
+    }
+})->with(['failure', 'direction', 'sibling']);
+
+it('preserves parent direction arriving during queued resolution delivery', function (): void {
+    tick_bind_defaults();
+    app(TaskExtensionState::class)->enable();
+    $group = tick_group();
+    $task = $group->tasks()->firstOrFail();
+    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original child failure.');
+    $task->update($hold);
+    $group->update($hold);
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'other-publication');
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Resolve the original child failure.', 'author' => 'operator',
+    ]);
+    $replacement = TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']);
+    $driver->beforeTurn = static function () use ($group, $replacement): void {
+        $group->fresh()->update($replacement);
+    };
+    $leases->release($holder);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()->resolution_delivered_comment_id)->toBe($comment->id);
+    expect($group->fresh()->only(array_keys($replacement)))->toBe($replacement);
+    expect($driver->calls)->toHaveCount(1)
+        ->and($driver->calls[0]['message'])->toContain($comment->body);
+});
+
+it('preserves parent and sibling assistance when a waiting direction relay starts', function (string $other): void {
+    tick_bind_defaults();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $group = tick_group();
+    $task = $group->tasks()->firstOrFail();
+    AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['task_id' => $task->id]);
+    $hold = TaskAssistance::attributes(AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+    $task->update($hold);
+    $group->update($hold);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => $task->completion_attempt,
+        'asked_by' => QuestionAsker::Implementer, 'question' => 'Which mirror?',
+        'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+    ]);
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'other-publication');
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
+    ]);
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+    } elseif ($other === 'direction') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
+    } else {
+        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
+    }
+    $before = $group->only(array_keys($hold));
+    $leases->release($holder);
+    app()->forgetInstance(TaskWorkspaceLease::class);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()->direction_relay_comment_id)->toBe($comment->id)
+        ->and($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->only(array_keys($before)))->toBe($before);
+    expect($driver->calls)->toHaveCount(1)
+        ->and($driver->calls[0]['thread'])->toBe($group->reviewerThread->external_id)
+        ->and($driver->calls[0]['message'])->toContain($comment->body);
+})->with(['failure', 'direction', 'sibling']);

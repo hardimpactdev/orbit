@@ -434,6 +434,7 @@ it('relays a direction resolution to the reviewer of a running subtask', functio
 it('rolls back a direction delivery that fails before the question is linked and accepts a replay', function (TaskStatus $status): void {
     $task = blocked_task($status);
     $task->update(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which mirror?']);
+    $task->parent->update($task->only(['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason']));
     if ($status === TaskStatus::Running) {
         AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     }
@@ -695,3 +696,91 @@ it('preserves unrelated group or sibling assistance when a review resolution wai
     expect($turns->commands)->toBe([]);
     expect($group->fresh()->only(array_keys($before)))->toBe($other === 'matching' ? TaskAssistance::cleared() : $before);
 })->with(['direction', 'failure', 'sibling', 'matching']);
+
+it('resolves only matching parent assistance across reviewer delivery paths', function (string $path, string $other): void {
+    $task = blocked_task($path === 'relay' ? TaskStatus::Running : TaskStatus::Reviewing);
+    $group = $task->parent;
+    $request = TaskAssistance::attributes(
+        $path === 'held failure' ? AssistanceKind::Failure : AssistanceKind::Direction,
+        'Which mirror?',
+        'Choose the mirror.',
+    );
+    $task->update($request);
+    $group->update($request);
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')
+        ->update(['task_id' => str_starts_with($path, 'held') ? null : $task->id]);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 2,
+        'asked_by' => QuestionAsker::Implementer, 'question' => 'Which mirror?',
+        'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+    ]);
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+    } elseif ($other === 'direction') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $request['assistance_reason']));
+    } elseif ($other === 'sibling') {
+        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
+    }
+    $before = $group->only(array_keys($request));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $turns = recording_t3_turns();
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
+    ]);
+
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->only(array_keys($before)))->toBe($other === 'matching' ? TaskAssistance::cleared() : $before);
+    expect($turns->threads)->toBe(str_starts_with($path, 'held') ? [] : ['reviewer-thread']);
+})->with(['relay', 'review', 'held direction', 'held failure'])->with(['failure', 'direction', 'sibling', 'matching']);
+
+it('preserves a replacement request with the same reason when delivery completes', function (string $target): void {
+    $task = blocked_task(TaskStatus::Reviewing);
+    $group = $task->parent;
+    $request = TaskAssistance::attributes(AssistanceKind::Direction, 'Which mirror?', 'Choose a mirror.');
+    $replacement = TaskAssistance::attributes(AssistanceKind::Direction, 'Which region?', $request['assistance_reason']);
+    $task->update($request);
+    $group->update($request);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $turns = recording_t3_turns(function () use ($task, $group, $replacement, $target): void {
+        ($target === 'child' ? $task : $group)->fresh()->update($replacement);
+    });
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
+    ]);
+
+    expect(($target === 'child' ? $task : $group)->fresh()->only(array_keys($replacement)))->toBe($replacement);
+    expect($turns->threads)->toBe(['reviewer-thread']);
+    if ($target === 'child') {
+        expect($task->fresh()->resolution_delivered_comment_id)->toBeNull();
+        expect($group->fresh()->only(array_keys($request)))->toBe($request);
+    } else {
+        expect($task->fresh()->assistance_requested)->toBeFalse();
+    }
+})->with(['child', 'parent']);
+
+it('preserves another parent failure or sibling request when a deliverable correction resumes', function (string $other): void {
+    $task = blocked_task(TaskStatus::Running);
+    $group = $task->parent;
+    $task->update(['deliverable_correction_check_id' => 1]);
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+    } else {
+        $group->tasks()->create([
+            'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
+            ...TaskAssistance::attributes(AssistanceKind::Failure, null, 'Another failure.'),
+        ]);
+    }
+    $before = $group->only(array_keys(TaskAssistance::cleared()));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $turns = recording_t3_turns();
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'The deliverable is corrected.', 'author' => 'operator',
+    ]);
+
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->only(array_keys($before)))->toBe($before);
+    expect($turns->threads)->toBe(['implementer-thread']);
+})->with(['failure', 'sibling']);

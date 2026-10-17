@@ -575,7 +575,7 @@ final readonly class TaskConsultation
         return TaskAssistance::ImplementerBlockedPrefix.$receipt->body."\n\nEarlier answers:\n".implode("\n", $lines);
     }
 
-    /** A direction resolution is waiting to be relayed because the subtask has no reviewer yet. */
+    /** A direction resolution waits for a reviewer or for workspace admission. */
     public function pendingRelayResolution(Task $task): ?TaskComment
     {
         if ($task->assistance_kind !== AssistanceKind::Direction || $task->direction_relay_comment_id !== null) {
@@ -638,21 +638,20 @@ final readonly class TaskConsultation
             return;
         }
 
-        DB::transaction(function () use ($task, $group, $resolution, $threadId): void {
+        DB::transaction(function () use ($task, $resolution, $threadId): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested || $locked->assistance_kind !== AssistanceKind::Direction) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! TaskAssistance::sameRequest($locked, $task) || $locked->assistance_kind !== AssistanceKind::Direction) {
                 return;
             }
+            TaskAssistance::clearResolvedParent($locked, $parent);
             $locked->update([
                 ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $resolution->id,
                 'resolution_delivered_comment_id' => $resolution->id,
             ]);
-            Task::topLevel()->whereKey($group->id)->update([
-                ...TaskAssistance::cleared(),
-                'reviewer_agent_thread_id' => $threadId,
-            ]);
+            $parent->update(['reviewer_agent_thread_id' => $threadId]);
             TaskQuestions::attachResolution($locked, $resolution);
         });
     }

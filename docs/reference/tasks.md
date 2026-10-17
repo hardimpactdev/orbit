@@ -577,13 +577,13 @@ Detached check starts have a durable run ID before dispatch. Their separate reta
 
 A durable mutation marker distinguishes executed Orbit commands from read-only verdicts; a changed snapshot under a read-only lease is not ownership proof.
 
-A deferred review resolution clears group assistance only when it matches the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
+A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open. A running subtask whose direction relay waits for the workspace keeps its assistance request and the answer linked to its question. After a restart, the scheduler sends that answer to the subtask reviewer when the lease permits it, without advancing the formal review attempt.
 
 The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
 
-An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. This also clears workspace-changed or stale-head assistance on the next tick. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
+An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
 
-For a merge created before leases existed, Orbit imports proof only when a durable reviewed BaseMerge record and its passed gate match a clean current merge, both parents, and the exact baseline parent tree. An old check snapshot alone is not enough.
+Existing assistance stays open until an operator resolves it. A review without a recorded baseline lease cannot inherit proof from merge or check records created before leases existed.
 
 ### Why the workspace has one lease
 
@@ -951,7 +951,7 @@ A tree-changing check retains its original result and names the changed paths. L
 
 The scheduler identifies the process by its id and its start time, so a reused process id does not count. The start time is the kernel's count of clock ticks after boot, from `/proc/<pid>/stat`. A wall-clock start time would move while the clock of a freshly booted task VM settles, and a running check would look lost. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
 
-`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
+`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
 For Orbit handoffs, affected tests use the latest passed handoff tree of that subtask, including after requested changes and in a final-review fixup. With no passed handoff, they use its start commit. Failed, changed, cancelled, and lost checks never advance that base. File deliverables and reproduction commands still use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base and checks the full branch.
 

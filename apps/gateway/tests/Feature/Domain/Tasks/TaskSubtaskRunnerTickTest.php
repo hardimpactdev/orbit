@@ -1032,3 +1032,34 @@ it('advances rework tests only to the latest passed handoff tree of the same sub
         ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('1', 40))
         ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
 })->with(['requested changes' => false, 'final-review fixup' => true]);
+
+it('preserves another parent failure or sibling request when a baseline resolution completes', function (string $other): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-parent-assistance', 'composer check', [], '10.51.0.6');
+    tick_running_agents();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]));
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
+    } else {
+        $group->tasks()->create([
+            'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
+            ...TaskAssistance::attributes(AssistanceKind::Failure, null, 'Another failure.'),
+        ]);
+    }
+    $before = $group->fresh()->only(array_keys(TaskAssistance::cleared()));
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once();
+    $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->only(array_keys($before)))->toBe($before);
+})->with(['failure', 'sibling']);

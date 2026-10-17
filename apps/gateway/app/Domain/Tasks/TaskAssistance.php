@@ -46,6 +46,23 @@ final class TaskAssistance
         ];
     }
 
+    /** Compare the complete open request, not just its reason text. */
+    public static function sameRequest(Task $left, Task $right): bool
+    {
+        $fields = ['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason'];
+
+        return $left->assistance_requested && $left->only($fields) === $right->only($fields);
+    }
+
+    /** Call with both rows locked, before clearing the child's resolved request in the same transaction. */
+    public static function clearResolvedParent(Task $task, Task $parent): void
+    {
+        if (self::sameRequest($task, $parent)
+            && ! $parent->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+            $parent->update(self::cleared());
+        }
+    }
+
     /**
      * Records the request against the current database row. Returns false when that row must stay as it is.
      *

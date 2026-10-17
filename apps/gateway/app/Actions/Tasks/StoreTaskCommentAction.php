@@ -91,10 +91,8 @@ final readonly class StoreTaskCommentAction
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
                     // A resolution of a failed topology preparation goes to no agent: the admission forgot the run, so
                     // clearing assistance lets the next prepared turn prepare the topology again.
+                    TaskAssistance::clearResolvedParent($task, $group);
                     $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
-                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
-                        $group->update(TaskAssistance::cleared());
-                    }
                     $this->log($task, $comment, 'resolution queued topology retry');
 
                     return $comment;
@@ -102,10 +100,8 @@ final readonly class StoreTaskCommentAction
                 if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
                     // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
                     // receive this resolution. Clearing assistance lets the next tick run the path gate again.
+                    TaskAssistance::clearResolvedParent($task, $group);
                     $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
-                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
-                        $group->update(TaskAssistance::cleared());
-                    }
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
 
                     return $comment;
@@ -342,7 +338,12 @@ final readonly class StoreTaskCommentAction
                 $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id)));
             });
         } catch (TaskWorkspaceWaiting) {
-            $this->deferReviewResolution($task, $comment);
+            DB::transaction(function () use ($task, $comment): void {
+                $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+                if (TaskAssistance::sameRequest($locked, $task)) {
+                    TaskQuestions::attachResolution($locked, $comment);
+                }
+            });
 
             return;
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
@@ -353,16 +354,17 @@ final readonly class StoreTaskCommentAction
 
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
+            TaskAssistance::clearResolvedParent($locked, $parent);
             $locked->update([
                 ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $comment->id,
                 'resolution_delivered_comment_id' => $comment->id,
             ]);
-            $locked->parent()->update(TaskAssistance::cleared());
             TaskQuestions::attachResolution($locked, $comment);
         });
     }
@@ -376,11 +378,12 @@ final readonly class StoreTaskCommentAction
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $parent = $locked->parent()->lockForUpdate()->firstOrFail();
-            if (! $locked->assistance_requested
+            if (! TaskAssistance::sameRequest($locked, $task)
                 || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
                 || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
+            TaskAssistance::clearResolvedParent($locked, $parent);
             $comment->update(['review_attempt' => $locked->review_attempt]);
             $locked->update([
                 ...TaskAssistance::cleared(),
@@ -388,22 +391,23 @@ final readonly class StoreTaskCommentAction
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
 
     /**
-     * Link the direction question and clear both assistance rows in one comment-keyed transaction.
+     * Link the direction question and resolve matching assistance in one comment-keyed transaction.
      * A retry of the same comment is a no-op once assistance is cleared.
      */
     public function commitHeldDirectionReview(Task $task, TaskComment $comment): void
     {
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
+            TaskAssistance::clearResolvedParent($locked, $parent);
             $comment->update(['review_attempt' => $locked->review_attempt]);
             TaskQuestions::attachResolution($locked, $comment);
             $locked->update([
@@ -412,7 +416,6 @@ final readonly class StoreTaskCommentAction
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
@@ -423,12 +426,10 @@ final readonly class StoreTaskCommentAction
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $parent = $locked->parent()->lockForUpdate()->firstOrFail();
-            $fields = ['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason'];
-            if (! $locked->assistance_requested || $locked->only($fields) !== $task->only($fields)) {
+            if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
-            $clearParent = $parent->only($fields) === $locked->only($fields)
-                && ! $parent->tasks()->whereKeyNot($locked->id)->where('assistance_requested', true)->exists();
+            TaskAssistance::clearResolvedParent($locked, $parent);
             $attempt = $locked->review_attempt + 1;
             $comment->update(['review_attempt' => $attempt]);
             TaskQuestions::attachResolution($locked, $comment);
@@ -436,9 +437,6 @@ final readonly class StoreTaskCommentAction
                 ...TaskAssistance::cleared(), 'review_attempt' => $attempt,
                 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null,
             ]);
-            if ($clearParent) {
-                $parent->update(TaskAssistance::cleared());
-            }
             $this->log($locked, $comment, 'resolution waits for workspace check');
         });
     }
@@ -448,11 +446,12 @@ final readonly class StoreTaskCommentAction
         DB::transaction(function () use ($task, $comment, $reviewing): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $parent = $locked->parent()->lockForUpdate()->firstOrFail();
-            if ($locked->assistance_reason !== $task->assistance_reason || ! $locked->assistance_requested
+            if (! TaskAssistance::sameRequest($locked, $task)
                 || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
                 || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
+            TaskAssistance::clearResolvedParent($locked, $parent);
             // The resolution is the reviewer's next request, so the tick must not send another.
             $attempt = $reviewing
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
@@ -461,7 +460,6 @@ final readonly class StoreTaskCommentAction
                 'pending_resolution_comment_id' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_comment_id,
                 'pending_resolution_reason' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_reason,
                 'pending_resolution_message' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_message]);
-            $parent->update(TaskAssistance::cleared());
             TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });
