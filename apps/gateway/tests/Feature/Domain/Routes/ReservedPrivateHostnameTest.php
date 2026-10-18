@@ -3,25 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\ProxyCli\ProxyCliHostname;
-use App\Domain\Routes\ContributedReservedHostnames;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\ResourceOperationException;
-
-final class ReservedPrivateHostnameTestTakesCore implements ContributedReservedHostnames
-{
-    public function hostnames(): array
-    {
-        return ['reverb.orbit'];
-    }
-}
-
-final class ReservedPrivateHostnameTestTakesCollector implements ContributedReservedHostnames
-{
-    public function hostnames(): array
-    {
-        return [ProxyCliHostname::Value];
-    }
-}
 
 describe(ReservedPrivateHostname::class, function (): void {
     it('reserves the platform private hostnames, then the collector hostname that proxycli contributes', function (): void {
@@ -71,13 +54,4 @@ describe(ReservedPrivateHostname::class, function (): void {
         'retired collector name' => ['collector.proxycli.orbit'],
     ]);
 
-    it('refuses a contributed hostname that core or another contribution already reserves', function (string $contribution, string $hostname): void {
-        app()->tag([$contribution], ContributedReservedHostnames::class);
-
-        expect(fn (): array => ReservedPrivateHostname::names())
-            ->toThrow(LogicException::class, "The contribution [{$contribution}] reserves the hostname [{$hostname}], which is already reserved.");
-    })->with([
-        'a core hostname' => [ReservedPrivateHostnameTestTakesCore::class, 'reverb.orbit'],
-        'another contribution' => [ReservedPrivateHostnameTestTakesCollector::class, 'collector.cli-proxy-api.orbit'],
-    ]);
 });

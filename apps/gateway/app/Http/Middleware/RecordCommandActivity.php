@@ -8,7 +8,6 @@ use App\Data\Instances\InstanceRemovalData;
 use App\Domain\Activity\ActivityInputRedaction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Doctor\DoctorFamily;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Removal\InstanceRemovalException;
@@ -39,6 +38,7 @@ use App\Models\Process;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -65,13 +65,14 @@ final readonly class RecordCommandActivity
 {
     public const int READ_SAMPLE_SECONDS = 60;
 
+    /** @param iterable<ActivityInputRedaction> $redactions */
     public function __construct(
         private CommandDeadline $deadline,
         private CommandActivityInputSanitizer $inputSanitizer,
         private CommandActivityTargetResolver $targetResolver,
         private TopLevelJsonObjectInspector $jsonInspector,
         private RemoveNodeRoleInputParser $removeNodeRoleInputParser,
-        private Contributions $contributions,
+        #[Tag(ActivityInputRedaction::class)] private iterable $redactions,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -558,7 +559,7 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
-        foreach ($this->contributions->of(ActivityInputRedaction::class) as $redaction) {
+        foreach ($this->redactions as $redaction) {
             if (in_array($command, $redaction->commands(), true)) {
                 return $this->inputSanitizer->sanitizeProperties($redaction->input((string) $command, static fn (): array => $request->all()));
             }

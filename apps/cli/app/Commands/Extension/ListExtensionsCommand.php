@@ -23,7 +23,7 @@ final class ListExtensionsCommand extends GatewayCommand
         $rows = [];
         $humanRows = [];
 
-        foreach (GatewayExtensionState::EXTENSIONS as $extension) {
+        foreach ($discovery->enabled === null ? GatewayExtensionState::OFFLINE_EXTENSIONS : array_keys($discovery->enabled) as $extension) {
             $enabled = $discovery->isEnabled($extension);
             $row = ['extension' => $extension, 'enabled' => $enabled];
             $humanRows[] = [

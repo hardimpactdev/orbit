@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Models\Node;
 
@@ -16,7 +19,7 @@ final class CaddySiteCertificateFixtures
         $certificates = new CaddySiteCertificates;
 
         foreach ($nodes as $node) {
-            foreach ([CaddySiteCertificates::Websocket, CaddySiteCertificates::Analytics, ProxyCliCaddySiteSource::CertificateSlug, CaddySiteCertificates::Metrics] as $site) {
+            foreach ([WebSocketCaddySiteSource::CertificateSlug, AnalyticsCaddySiteSource::CertificateSlug, ProxyCliCaddySiteSource::CertificateSlug, MetricsCaddySiteSource::CertificateSlug] as $site) {
                 $certificates->record($node->id, $site);
             }
         }

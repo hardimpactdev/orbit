@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsPublicationSshExecutor;
@@ -48,7 +49,7 @@ it('publishes the certificate and firewall, requests a Gateway build, and publis
         'dns:metrics',
         'projection:leave',
     ])
-        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics))->toBeTrue();
+        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, MetricsCaddySiteSource::CertificateSlug))->toBeTrue();
 });
 
 it('writes no Caddy file on the Gateway itself', function (): void {
@@ -125,7 +126,7 @@ it('removes publication in DNS, build, firewall, certificate order', function ()
 });
 
 it('keeps the certificate when the Metrics role moved and its site still renders', function (): void {
-    new CaddySiteCertificates()->record(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics);
+    new CaddySiteCertificates()->record(metrics_publication_manager_node('gateway', '10.44.0.1')->id, MetricsCaddySiteSource::CertificateSlug);
     $target = metrics_publication_manager_node('metrics-next', '10.44.0.4');
     $target->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $events = [];
@@ -145,19 +146,19 @@ it('keeps the certificate when the Metrics role moved and its site still renders
     );
 
     expect($events)->toBe(['dns:none', 'build:gateway', 'ssh:status', 'ssh:delete', 'ssh:delete', 'ssh:status'])
-        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, CaddySiteCertificates::Metrics))->toBeTrue();
+        ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, MetricsCaddySiteSource::CertificateSlug))->toBeTrue();
 });
 
 it('retracts the Gateway side by building the Gateway before it removes the certificate', function (): void {
     $gateway = metrics_publication_manager_node('gateway', '10.44.0.1');
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    new CaddySiteCertificates()->record($gateway->id, CaddySiteCertificates::Metrics);
+    new CaddySiteCertificates()->record($gateway->id, MetricsCaddySiteSource::CertificateSlug);
     $events = [];
 
     metrics_publication_manager($events, [])->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
 
     expect($events)->toBe(['dns:none', 'build:gateway', 'process:certificate'])
-        ->and(new CaddySiteCertificates()->published($gateway->id, CaddySiteCertificates::Metrics))->toBeFalse();
+        ->and(new CaddySiteCertificates()->published($gateway->id, MetricsCaddySiteSource::CertificateSlug))->toBeFalse();
 });
 
 it('retains projection ownership when DNS publication fails', function (): void {

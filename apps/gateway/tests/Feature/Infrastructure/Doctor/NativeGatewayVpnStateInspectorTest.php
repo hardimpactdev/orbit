@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
@@ -309,7 +310,7 @@ function gateway_vpn_inspector(array $results): array
         new GatewayVpnInspectorKnownHosts,
         new VpnConfigurationRepository($settings, $orbitHome),
         new WireGuardServerConfigRenderer,
-        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
+        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
         new CommandDeadline,
     );
 

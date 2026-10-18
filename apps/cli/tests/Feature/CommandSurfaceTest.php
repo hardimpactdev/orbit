@@ -1164,16 +1164,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ['--instance' => 'app.com', '--key' => 'PRIVATE_VALUE', '--value' => 'validation-secret'],
             ...$profileMissing,
         ],
-        'extension:disable' => [
-            ['extension' => 'validation-secret'],
-            'code' => 'extension.unknown',
-            'message' => 'Unknown Orbit extension.',
-        ],
-        'extension:enable' => [
-            ['extension' => 'validation-secret'],
-            'code' => 'extension.unknown',
-            'message' => 'Unknown Orbit extension.',
-        ],
+        'extension:disable' => [['extension' => 'validation-secret'], ...$profileMissing],
+        'extension:enable' => [['extension' => 'validation-secret'], ...$profileMissing],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],

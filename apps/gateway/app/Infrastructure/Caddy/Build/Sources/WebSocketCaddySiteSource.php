@@ -17,6 +17,8 @@ use App\Models\Node;
 
 final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
 {
+    public const string CertificateSlug = 'websocket';
+
     public function __construct(
         private WebSocketCaddySiteRenderer $renderer = new WebSocketCaddySiteRenderer,
         private int $port = 0,
@@ -28,7 +30,7 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
         // During a move the role row already names the target, but the source keeps its site, and its
         // record, until the move withdraws it there after the target serves and DNS has moved.
         if (
-            ! $this->certificates->published($node->id, CaddySiteCertificates::Websocket)
+            ! $this->certificates->published($node->id, WebSocketCaddySiteSource::CertificateSlug)
             || CaddySiteRoles::serving(RoleName::WebSocket) === []
         ) {
             return [];

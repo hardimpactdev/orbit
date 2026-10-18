@@ -17,6 +17,8 @@ use App\Models\Node;
 
 final readonly class AnalyticsCaddySiteSource implements NodeCaddySiteSource
 {
+    public const string CertificateSlug = 'analytics';
+
     public function __construct(
         private AnalyticsCaddySiteRenderer $renderer = new AnalyticsCaddySiteRenderer,
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
@@ -26,7 +28,7 @@ final readonly class AnalyticsCaddySiteSource implements NodeCaddySiteSource
     {
         if (
             ! CaddySiteRoles::nodeServes($node->id, RoleName::Analytics)
-            || ! $this->certificates->published($node->id, CaddySiteCertificates::Analytics)
+            || ! $this->certificates->published($node->id, AnalyticsCaddySiteSource::CertificateSlug)
         ) {
             return [];
         }

@@ -741,7 +741,7 @@ export interface paths {
         };
         /**
          * List extensions
-         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, `documents`, `vault`, and `conn`.
+         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers.
          */
         get: operations["extension-list"];
         put?: never;
@@ -763,7 +763,7 @@ export interface paths {
         put?: never;
         /**
          * Disable an extension
-         * @description Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.
+         * @description Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. An unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.
          */
         post: operations["extension-disable"];
         delete?: never;
@@ -783,7 +783,7 @@ export interface paths {
         put?: never;
         /**
          * Enable an extension
-         * @description Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
+         * @description Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. An unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
          */
         post: operations["extension-enable"];
         delete?: never;
@@ -7905,11 +7905,11 @@ export interface operations {
                     "application/json": {
                         /** @description Enabled state keyed by extension slug. */
                         data: {
-                            tasks: boolean;
-                            proxycli: boolean;
-                            documents: boolean;
-                            vault: boolean;
                             conn: boolean;
+                            documents: boolean;
+                            proxycli: boolean;
+                            tasks: boolean;
+                            vault: boolean;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -7931,8 +7931,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`. */
-                extension: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
+                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -7947,7 +7947,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
                             /** @constant */
                             enabled: false;
                         };
@@ -7989,8 +7989,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`. */
-                extension: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
+                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -8005,7 +8005,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
                             /** @constant */
                             enabled: true;
                         };

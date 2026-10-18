@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
 use App\Models\Node;
+use LogicException;
 
 final readonly class ProxyCliProcess
 {
@@ -22,6 +23,10 @@ final readonly class ProxyCliProcess
      */
     public static function data(Node $node, array $environment): AddProcessData
     {
+        if (array_key_exists('PROXYCLI_PORT', $environment)) {
+            throw new LogicException('ProxyCliProcess owns PROXYCLI_PORT.');
+        }
+
         return new AddProcessData(
             targetType: ProcessTargetType::Node,
             targetId: $node->id,

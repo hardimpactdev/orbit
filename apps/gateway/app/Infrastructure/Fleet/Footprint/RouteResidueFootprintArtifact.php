@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Infrastructure\Routes\RouteRemovalResidueCleaner;
@@ -27,7 +26,7 @@ final readonly class RouteResidueFootprintArtifact implements NodeFootprintArtif
 
     public function name(): string
     {
-        return ReservedNames::RouteResidueArtifact;
+        return 'route-residue';
     }
 
     public function applies(Node $node): bool

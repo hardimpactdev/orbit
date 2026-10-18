@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -58,7 +59,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
             );
         }
 
-        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Analytics);
+        $this->certificateRecords()->record($node->id, AnalyticsCaddySiteSource::CertificateSlug);
 
         $this->build($node);
         $this->dns->converge($node);
@@ -127,14 +128,14 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
         $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
+        $this->certificateRecords()->forget($node->id, AnalyticsCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
 
     /** The certificate may stay on the Node, so a later convergence publishes it again before its site renders. */
     public function removeUnreachable(Node $node): void
     {
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Analytics);
+        $this->certificateRecords()->forget($node->id, AnalyticsCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
 

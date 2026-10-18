@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\Extensions\Contributions;
-use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -17,6 +15,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Tag;
 
 /** The Node's Caddyfile, published like `orbit:caddy-build`: a graceful reload only when it changed. */
 final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
@@ -25,14 +24,16 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
 
     public const string ValidateRefused = 'caddy_validate_refused';
 
+    /** @param iterable<ContributedCaddySiteSource> $contributions */
     public function __construct(
         private NodeCaddyfileRenderer $renderer,
         private NodeCaddyBuilds $builds,
+        #[Tag(ContributedCaddySiteSource::class)] private iterable $contributions,
     ) {}
 
     public function name(): string
     {
-        return ReservedNames::CaddyArtifact;
+        return 'caddy';
     }
 
     public function applies(Node $node): bool
@@ -47,7 +48,7 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
      */
     public function digest(Node $node): string
     {
-        return SourceDigest::of(self::inputs());
+        return SourceDigest::of($this->inputs());
     }
 
     /**
@@ -56,11 +57,11 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
      *
      * @return list<string>
      */
-    public static function inputs(): array
+    public function inputs(): array
     {
         return SourceClosure::of(['app/Infrastructure/Caddy'], array_map(
             static fn (ContributedCaddySiteSource $source): string => $source::class,
-            app(Contributions::class)->of(ContributedCaddySiteSource::class),
+            array_values([...$this->contributions]),
         ));
     }
 

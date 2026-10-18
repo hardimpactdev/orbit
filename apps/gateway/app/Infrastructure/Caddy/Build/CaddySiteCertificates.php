@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
-use App\Domain\Extensions\ReservedNames;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -21,15 +20,6 @@ use Carbon\CarbonImmutable;
  */
 final readonly class CaddySiteCertificates
 {
-    public const string Websocket = ReservedNames::WebsocketCertificate;
-
-    public const string Analytics = ReservedNames::AnalyticsCertificate;
-
-    public const string Metrics = ReservedNames::MetricsCertificate;
-
-    /** Core's slugs. A contributed site source may not use one, so its removal cannot forget a core record. */
-    public const array CoreSlugs = ReservedNames::CertificateSlugs;
-
     public const string KeyPrefix = 'caddy.certificate.';
 
     public function __construct(

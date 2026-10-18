@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\Extensions\Contributions;
-use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\PrivateDnsListenerRelease;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Container\Attributes\Tag;
 
 /**
  * The private-DNS listener release, its units, the dnsmasq records, and the catalog on the `vpn` Node,
@@ -22,11 +21,14 @@ use App\Models\NodeRole;
  */
 final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifact
 {
-    public function __construct(private PrivateDnsManager $dns) {}
+    /** @param iterable<ContributedPrivateHostnames> $contributions */
+    public function __construct(private PrivateDnsManager $dns,
+        #[Tag(ContributedPrivateHostnames::class)] private iterable $contributions,
+    ) {}
 
     public function name(): string
     {
-        return ReservedNames::PrivateDnsArtifact;
+        return 'private-dns';
     }
 
     public function applies(Node $node): bool
@@ -44,7 +46,7 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
      */
     public function digest(Node $node): string
     {
-        return hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of(self::inputs()));
+        return hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of($this->inputs()));
     }
 
     /**
@@ -53,15 +55,15 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
      *
      * @return list<string> Paths relative to the Gateway's base path.
      */
-    public static function inputs(): array
+    public function inputs(): array
     {
         return [
             'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
             'app/Infrastructure/AppDev/PrivateDnsListenerUnitRenderer.php',
             ...SourceClosure::of([], array_map(
-                static fn (ContributedPrivateDnsRecords $records): string => $records::class,
-                app(Contributions::class)->of(ContributedPrivateDnsRecords::class),
+                static fn (ContributedPrivateHostnames $records): string => $records::class,
+                array_values([...$this->contributions]),
             )),
         ];
     }

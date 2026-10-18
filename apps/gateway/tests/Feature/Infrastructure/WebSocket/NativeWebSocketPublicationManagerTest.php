@@ -11,6 +11,7 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -31,7 +32,7 @@ it('publishes the certificate, requests a Node Caddy build, then converges DNS l
     $manager->converge(websocket_publication_node());
 
     expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'build:websocket', 'dns:converge'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeTrue()
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug))->toBeTrue()
         ->and(websocket_publication_serving())->toBeTrue();
 });
 
@@ -59,7 +60,7 @@ it('stops before the build when the certificate SSH push fails', function (): vo
         ->toThrow(NodeRoleOperationException::class);
 
     expect($events)->toBe(['certificate:issue', 'ssh:certificate'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse();
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse();
 });
 
 it('keeps its error code and names the Node, stage, and Caddy message when the build fails', function (): void {
@@ -81,13 +82,13 @@ it('builds the Node before it removes the certificate, then converges DNS withou
     $events = [];
     $manager = websocket_publication_manager($events);
 
-    new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->record(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug);
     new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
 
     $manager->remove(websocket_publication_node());
 
     expect($events)->toBe(['build:websocket', 'ssh:certificate-remove', 'dns:converge-empty'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse()
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
         ->and(websocket_publication_serving())->toBeTrue();
 
     $manager->retire(websocket_publication_node());
@@ -97,7 +98,7 @@ it('builds the Node before it removes the certificate, then converges DNS withou
 
 it('keeps the Node published to when the build that withdraws its site fails', function (): void {
     $events = [];
-    new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->record(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug);
     new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
     $manager = websocket_publication_manager($events, buildFailure: new NodeCaddyBuildException('websocket', 'gateway-lock', 'Another Caddy build for this Node held the lock for 30 seconds.'));
 
@@ -111,13 +112,13 @@ it('touches only the Gateway-side DNS record when the node is unreachable', func
     $events = [];
     $manager = websocket_publication_manager($events);
 
-    new CaddySiteCertificates()->record(websocket_publication_node()->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->record(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug);
     new WebSocketDnsTarget()->markServing(websocket_publication_node()->id);
 
     $manager->removeUnreachable(websocket_publication_node());
 
     expect($events)->toBe(['dns:converge-empty'])
-        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, CaddySiteCertificates::Websocket))->toBeFalse()
+        ->and(new CaddySiteCertificates()->published(websocket_publication_node()->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
         ->and(websocket_publication_serving())->toBeFalse();
 });
 

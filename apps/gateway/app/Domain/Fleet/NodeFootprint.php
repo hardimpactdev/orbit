@@ -7,7 +7,7 @@ namespace App\Domain\Fleet;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeFootprint as NodeFootprintRecord;
-use LogicException;
+use Illuminate\Container\Attributes\Tag;
 
 /**
  * The Gateway-rendered Orbit footprint of a managed Node (ADR 0202): its Caddyfile, Node agent
@@ -17,28 +17,10 @@ use LogicException;
  */
 final readonly class NodeFootprint
 {
-    /**
-     * Two artifacts with one name are a wiring error: the digests are keyed by name, so one would hide the
-     * other. It throws, so a contributed artifact can take neither a core name nor another contribution's.
-     *
-     * @param  list<NodeFootprintArtifact>  $artifacts  Core's artifacts, then the contributed ones, in apply order.
-     *
-     * @throws LogicException
-     */
-    public function __construct(private array $artifacts)
-    {
-        $names = [];
-
-        foreach ($artifacts as $artifact) {
-            $name = $artifact->name();
-
-            if (array_key_exists($name, $names)) {
-                throw new LogicException('The footprint artifact ['.$artifact::class."] uses the name [{$name}] of [{$names[$name]}].");
-            }
-
-            $names[$name] = $artifact::class;
-        }
-    }
+    /** @param iterable<NodeFootprintArtifact> $artifacts Core's artifacts, then contributions, in apply order. */
+    public function __construct(
+        #[Tag(NodeFootprintArtifact::class)] private iterable $artifacts,
+    ) {}
 
     /** What the Gateway renders for the Node now. It never reads the Node. */
     public function expected(Node $node): NodeFootprintPlan

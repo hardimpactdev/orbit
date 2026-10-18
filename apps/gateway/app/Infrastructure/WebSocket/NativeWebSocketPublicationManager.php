@@ -12,6 +12,7 @@ use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -56,7 +57,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
             );
         }
 
-        $this->certificateRecords()->record($node->id, CaddySiteCertificates::Websocket);
+        $this->certificateRecords()->record($node->id, WebSocketCaddySiteSource::CertificateSlug);
 
         $this->build($node, fn () => $this->builds->build($node));
         // Private DNS names this Node only once its build serves the site; during a move it keeps the old Node.
@@ -83,7 +84,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         // where the role row already names another Node. The build's Caddy reload closes the Node's Reverb
         // connections, and clients reconnect through private DNS that already names the new Node. The
         // serving mark stays until retire(), so a failed withdrawal keeps the Gateway on this Reverb too.
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
+        $this->certificateRecords()->forget($node->id, WebSocketCaddySiteSource::CertificateSlug);
         $this->build($node, fn () => $this->builds->build($node));
 
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
@@ -99,7 +100,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     public function removeUnreachable(Node $node): void
     {
         $this->dnsTarget->forget($node->id);
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::Websocket);
+        $this->certificateRecords()->forget($node->id, WebSocketCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
 

@@ -389,13 +389,13 @@ def sort_windows(windows: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 class Collector:
-    def __init__(self, cache: Valkey | None) -> None:
+    def __init__(self, cache: Valkey) -> None:
         self.cache = cache
         self.holder = str(uuid.uuid4())
         self.previous = {}
 
     def collect(self) -> None:
-        if self.cache is None or not self.cache.acquire(LOCK_KEY, self.holder, 120):
+        if not self.cache.acquire(LOCK_KEY, self.holder, 120):
             return
         try:
             self.previous = {a["id"]: a for a in self.snapshot().get("accounts", [])}
@@ -410,8 +410,6 @@ class Collector:
             self.cache.release(LOCK_KEY, self.holder)
 
     def snapshot(self) -> dict[str, object]:
-        if self.cache is None:
-            return {"accounts": [], "providers": [], "models": [], "collected_at": None}
         raw = self.cache.get(SNAPSHOT_KEY)
         snapshot = json.loads(raw) if raw else {"accounts": [], "providers": [], "collected_at": None}
         for account in snapshot.get("accounts", []):
@@ -440,9 +438,8 @@ class Collector:
             "models": models if isinstance(models, list) else [],
             "collected_at": collected_at,
         }
-        if self.cache is not None:
-            self.cache.set(RAW_KEY, json.dumps({"accounts": accounts, "collected_at": collected_at}))
-            self.cache.set(SNAPSHOT_KEY, json.dumps(compiled))
+        self.cache.set(RAW_KEY, json.dumps({"accounts": accounts, "collected_at": collected_at}))
+        self.cache.set(SNAPSHOT_KEY, json.dumps(compiled))
         match = next((item for item in accounts if item.get("id") == account), {"id": account, "disabled": disabled})
         return match
 
@@ -513,8 +510,6 @@ class Collector:
         return ordered
 
     def _remembered_model_files(self) -> dict[str, list[dict[str, str]]]:
-        if self.cache is None:
-            return {}
         raw = self.cache.get(MODEL_FILES_KEY)
         if not isinstance(raw, str) or raw == "":
             return {}
@@ -541,8 +536,6 @@ class Collector:
         return remembered
 
     def _remember_model_files(self, by_file: dict[str, list[dict[str, str]]]) -> None:
-        if self.cache is None:
-            return
         self.cache.set(MODEL_FILES_KEY, json.dumps(by_file))
 
     def _model_provider(self, value: str) -> str:
@@ -559,7 +552,7 @@ class Collector:
         if not isinstance(account_id, str) or provider is None:
             return None
         now = time.time()
-        cached = self.cache.get(ACCOUNT_PREFIX + account_id) if self.cache else None
+        cached = self.cache.get(ACCOUNT_PREFIX + account_id)
         previous = json.loads(cached) if cached else self.previous.get(account_id, {})
         account = {
             **previous, "id": account_id, "provider": provider,
@@ -577,8 +570,7 @@ class Collector:
             return account
         interval = QUOTA_INTERVALS.get(provider, DEFAULT_QUOTA_INTERVAL)
         # Reserve before network access so an interrupted collection cannot retry immediately.
-        if self.cache:
-            self.cache.set(ACCOUNT_PREFIX + account_id, json.dumps({**account, "windows": [], "status": "error", "error": "Quota check interrupted; retry delayed", "next_check_at": now + 3600}))
+        self.cache.set(ACCOUNT_PREFIX + account_id, json.dumps({**account, "windows": [], "status": "error", "error": "Quota check interrupted; retry delayed", "next_check_at": now + 3600}))
         try:
             claims = file.get("id_token") or {}
             request = {
@@ -607,8 +599,7 @@ class Collector:
             if account["status"] == "backoff":
                 self._backoff(account_id, int(interval))
         account.update(checked_at=now, next_check_at=now + interval)
-        if self.cache:
-            self.cache.set(ACCOUNT_PREFIX + account_id, json.dumps(account))
+        self.cache.set(ACCOUNT_PREFIX + account_id, json.dumps(account))
         return account
 
     def _windows(self, provider: str, body: object) -> list[dict[str, object]]:
@@ -729,14 +720,10 @@ class Collector:
         return payload if isinstance(payload, dict) else {}
 
     def _backed_off(self, account_id: str) -> bool:
-        if self.cache is None:
-            return False
         until = self.cache.get(f"{BACKOFF_PREFIX}{account_id}")
         return until is not None and until.isdigit() and int(until) > int(time.time())
 
     def _backoff(self, account_id: str, seconds: int) -> None:
-        if self.cache is None:
-            return
         delay = max(1, seconds)
         self.cache.set(f"{BACKOFF_PREFIX}{account_id}", str(int(time.time()) + delay), delay)
 
@@ -877,8 +864,7 @@ def loop(collector: Collector) -> None:
 
 def main() -> None:
     port = int(os.environ["PROXYCLI_PORT"])
-    host = env("PROXYCLI_CACHE_HOST")
-    cache = Valkey(host, int(env("PROXYCLI_CACHE_PORT", "6379")), env("PROXYCLI_CACHE_USERNAME"), env("PROXYCLI_CACHE_PASSWORD")) if host else None
+    cache = Valkey(os.environ["PROXYCLI_CACHE_HOST"], int(os.environ["PROXYCLI_CACHE_PORT"]), env("PROXYCLI_CACHE_USERNAME"), env("PROXYCLI_CACHE_PASSWORD"))
     collector = Collector(cache)
     Handler.collector = collector
     threading.Thread(target=loop, args=(collector,), daemon=True).start()

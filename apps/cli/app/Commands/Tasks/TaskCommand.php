@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Tasks;
 
 use App\Commands\GatewayCommand;
-use App\Services\Extensions\GatewayExtensionState;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
-use App\Support\ExtensionCommandVisibility;
 use App\Support\GatedExtensionCommand;
 use DateTimeImmutable;
 use JsonException;
@@ -39,12 +37,6 @@ use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
  */
 abstract class TaskCommand extends GatewayCommand implements GatedExtensionCommand
 {
-    public function isHidden(): bool
-    {
-        return ExtensionCommandVisibility::listing()
-            && app(GatewayExtensionState::class)->isEnabled('tasks') !== true;
-    }
-
     public function extensionSlug(): ?string
     {
         return 'tasks';

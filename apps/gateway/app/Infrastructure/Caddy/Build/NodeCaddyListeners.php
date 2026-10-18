@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build;
 
 use App\Domain\Extensions\ConfigValue;
-use App\Domain\Extensions\ReservedNames;
 use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 
@@ -22,12 +21,6 @@ final readonly class NodeCaddyListeners
 
     /** The site sources a task VM needs: the Gateway API on `gateway.orbit` and Reverb on `reverb.orbit`. */
     private const array TaskVmSources = ['gateway', 'websocket'];
-
-    /**
-     * Every site source name core uses. A contributed site may not use one: the task VM guard admits two of them, and
-     * the Caddyfile and Doctor name each site by its source.
-     */
-    public const array CoreSources = ReservedNames::CaddySources;
 
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.

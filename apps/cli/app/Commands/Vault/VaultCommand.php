@@ -5,21 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\Vault;
 
 use App\Commands\GatewayCommand;
-use App\Services\Extensions\GatewayExtensionState;
 use App\Support\Console\ConsoleWriter;
-use App\Support\ExtensionCommandVisibility;
 use App\Support\GatedExtensionCommand;
 use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 
 /** The `vault:*` commands belong to the vault extension and follow its Gateway switch. */
 abstract class VaultCommand extends GatewayCommand implements GatedExtensionCommand
 {
-    public function isHidden(): bool
-    {
-        return ExtensionCommandVisibility::listing()
-            && app(GatewayExtensionState::class)->isEnabled('vault') !== true;
-    }
-
     public function extensionSlug(): ?string
     {
         return 'vault';
