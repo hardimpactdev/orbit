@@ -16,7 +16,7 @@ covers:
 
 Every task group runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
-Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
+Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start.
 
 ## Machine software recipe
 
@@ -430,7 +430,7 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 ### Place task VMs
 
-Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `AllocateTaskVmAction` selects the active host with the most free slots. Hosts with equal capacity use stable Node order.
+Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `AllocateTaskVmAction` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
 
 Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no Incus host has room, eligible groups can use the [UpCloud overflow](#upcloud-overflow). Otherwise the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
 
@@ -681,7 +681,7 @@ An old resume payload uses its original enqueue time for a fixed deadline, which
 
 ### Incus provider
 
-`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the image alias `orbit-task-base` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
+`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
 A [medium VM](#size-by-declared-topology) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
 
@@ -740,7 +740,7 @@ Images live in each host's configured Incus project. The base is a VM image. Its
 
 #### The topology seed
 
-The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)). A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
+The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it. A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
 
 The Gateway runs the [remote program](/reference/remote-programs) `task-vms.build-topology-seed` as root on the host. Its input names the host's project and pool, the smoke VM, the disk device `topology-seed`, the volume, its size, and the base fingerprint. The volume must end in `-new`. It runs these steps:
 
@@ -758,8 +758,6 @@ Every command of the program reads no standard input. Then the phase deletes the
 The program creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
 
 The template's root disk keeps the size of the base image's disk. Each Node copies it, and a copy is a btrfs snapshot that uses only what the Node writes.
-
-On beast, the program took 37 seconds for the 4.3 GB base: 0.2 seconds for the volume, 14 seconds to export and push the archive, and 23 seconds for the pool, the import, and the template. The seed used 3.3 GB of its 45 GiB. Deleting the smoke VM took 1.6 seconds, and the rename 0.03 seconds.
 
 Only a built and smoke-tested base with its topology seed can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the current-recipe claim gate.
 
@@ -857,7 +855,7 @@ While task VMs are configured and the range is invalid, every Node Caddy build r
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
+A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`.
 
 ### Configure task VMs
 
@@ -939,7 +937,9 @@ The hub filter fails open to keep the fleet VPN up. If a later `nftables.service
 
 ### Why task VMs work this way
 
-[ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records why the VM edge is the boundary, why egress is open, why task VMs use a prepared base, and the alternatives it rejected. Host output is validated once, and Gateway records are trusted after that, so six states and no marker timestamps describe the whole lifecycle. `claimed_at` times the claim. Parking reads the settle times the group already records.
+The VM edge is the security boundary. Agents have root inside it, so an in-VM check is fast feedback, not proof against tampering. [CI on the pull request](/reference/tasks#review-and-merge) is the merge gate. Public egress is open on every port; the bridge ACL and hub filter limit private traffic.
+
+Host output is validated once, and Gateway records are trusted after that, so six states and no marker timestamps describe the whole lifecycle. `claimed_at` times the claim. Parking reads the settle times the group already records.
 
 The agent in a task VM has root through sudo, so a token anywhere in the VM, even in another user's process, is the agent's token. The Gateway already holds the tokens and already reaches every task VM over SSH. So Git that talks to GitHub runs on the Gateway, and only objects cross the VM edge.
 
@@ -1062,7 +1062,7 @@ The Project list lives in the Gateway environment next to the switch, so no Proj
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
+A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
 
 Configure the Project like this:
 
@@ -1106,7 +1106,7 @@ A medium or large VM [boots with a clone](#incus-provider) of its base image's t
 
 The base image already put `orbit` in the `incus-admin` group, so agents can run `bin/e2e-topology`. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
-A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the adopted pool stays. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the adopted pool stays. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again.
 
 A VM can also restart on its own. So before each of the turns above in a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
 
@@ -1144,6 +1144,6 @@ Task group responses report `vm_power` separately from task status. For a [task 
 
 ## Request a preview
 
-Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. Shared groups store the intent without changing shared-host power. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
+Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
 
 Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
