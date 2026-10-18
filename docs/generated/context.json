@@ -1152,7 +1152,8 @@
                 "apps/cli",
                 "apps/docs",
                 "apps/e2e",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Deliverable",
