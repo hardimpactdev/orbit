@@ -10,16 +10,20 @@ use Orbit\Extensions\AiRouter\Data\EnableAiRouterData;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostnameRoute;
+use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 use SensitiveParameter;
 
 final readonly class EnableAiRouterAction
 {
     public function __construct(
+        private AiRouterLifecycleLock $lifecycle,
+        private AiRouterRenameCutover $cutover,
         private AiRouterPlacement $placement,
         private AiRouterState $state,
         private AiRouterRuntimeLifecycle $runtime,
@@ -31,6 +35,12 @@ final readonly class EnableAiRouterAction
 
     public function execute(#[SensitiveParameter] EnableAiRouterData $data): AiRouterStatusData
     {
+        return $this->lifecycle->run(fn (): AiRouterStatusData => $this->setup($data));
+    }
+
+    private function setup(#[SensitiveParameter] EnableAiRouterData $data): AiRouterStatusData
+    {
+        $this->cutover->assertComplete();
         if (config('task_vms.enabled') === true) {
             $origin = config('task_vms.model_proxy_origin');
             if (! is_string($origin) || rtrim($data->cliproxyUrl, '/') !== rtrim($origin, '/')) {

@@ -223,11 +223,11 @@ One rule governs every step: **no task VM that holds a key loses the ability to 
 | `task_vms.model_proxy_origin` config | Removed in step 5 of [Build order](#build-order). Adoption has already checked that the derived origin equals it. |
 | Process source columns listed in the rename table | Copied to `ai_router_process_sources`, then dropped. |
 | Retired Caddy certificate receipts | Removed in step 3. Setup issues a new leaf for the new hostname before publishing the site. |
-| Valkey keys | Renamed with Valkey `RENAME` while no collector runs, so each key keeps its TTL. The lock is deleted. See below the table. |
-| Collector Process 163 | Stopped before the key rename, then replaced by `ai-router-collector` under the new hostname. Reads keep the renamed snapshot. Tasks does not use the collector. |
+| Valkey keys | Deleted after the old collector stops. The new collector rebuilds its snapshot on its first successful poll. |
+| Collector Process 163 | Automatically reconverged after activation, preserving ID and desired state. Quota is unavailable until its first successful poll. Tasks does not use the collector. |
 | Router Process 103 on `services` | Adopted. See below. |
 
-The key rename covers `raw`, `snapshot`, `model-files`, every `backoff:*`, and every `account:*`. Backoff deadlines and account schedules survive, so no failing account is polled before its `Retry-After`.
+The automatic cutover deletes the retired cache namespace, including its lock, after stopping the old collector. It publishes the new hostname and certificate, withdraws the old Route, and converges the new collector script and environment. Pending intent survives a failed attempt. The quota gap includes the scheduler handoff, up to one minute to dispatch, queue wait, publication, startup, and the first successful full upstream poll. Queue delays and upstream failures can extend it. Task model keys, router origin values, and the router Process stay unchanged throughout this step.
 
 Adoption of Process 103:
 

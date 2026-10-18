@@ -237,6 +237,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `ai_router.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
 | `extension.required` | 409 | Teardown runs while the `tasks` extension is enabled. Teardown changes nothing. |
 | `ai_router.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key. Teardown changes nothing. |
+| `ai_router.cutover_pending` | 409 | The release cutover is pending. The next extension tick retries it before teardown can remove its recorded intent. |
 | `ai_router.keys_busy` | 409 | A model key operation holds the lock for more than 60 seconds. Teardown changes nothing. Run it again. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
@@ -269,62 +270,42 @@ A window the provider did not return is unknown. Showing it as zero use would te
 
 ## Deploy the rename
 
-The move changes the collector, its hostname, and its cache key prefix. It does not adopt, restart, or rename the router Process. Use a maintenance drain for this release: the previous Gateway cannot read the renamed settings or origin column. Keep automatic release activation paused until the cutover below is complete. Take the Gateway recovery backup and a Valkey backup before changing either store. Rollback needs both stores and the previous collector unit; a code rollback alone cannot undo the rename.
+Deployment performs the cutover automatically. The migration preserves the collector's Process ID and desired state, renames its stored specification and settings, and records pending work. It keeps encrypted setting bytes, tokens, anchor hashes, task model keys, and stored origin URLs unchanged. The router Process and its operator-owned management Route stay unchanged in this step.
 
-The migration refuses a configured collector whose desired state is running. It changes only the collector on the stored setup Node, keeps its Process ID and source record, and leaves it stopped. Conflicting setting keys, collector names, or environment keys abort the transaction. Secret setting values and anchor hashes keep their exact bytes. The task VM origin column becomes `ai_router_origin`; each stored URL and held model key stays unchanged. The `task_vms.model_proxy_origin` config and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` stay until build step 5.
+After activation, the new scheduler runs `orbit:ai-router-converge` every minute through the existing Gateway scheduled-command path. It also repairs a changed collector specification or source revision. Ordinary repair runs when the extension is enabled and configured. Recorded cutover work also finishes with the switch off. No operator setup command or new management key is needed.
 
-Prepare the cutover through the previous release before migrating:
+For a pending rename, the tick performs these steps:
 
-1. Stop the configured collector with `process:stop` before blocking the API. Record its Process ID and numeric Node ID. Verify its exact systemd unit is inactive.
-2. Drain Gateway consumers through the [release maintenance procedure](/reference/gateway-recovery). Disable and remove the stopped collector unit, keeping a protected recovery copy. Leave the router Process running.
-3. Check the collector cache user's ACL. It must permit `orbit:ai-router:*` and the collector commands.
-4. With the collector stopped, list its old cache keys. Verify every corresponding new key is absent before changing any key.
-5. Rename the data keys with Valkey `RENAME`. This preserves values and expiry times. Delete the old lock.
-6. Stage the Gateway release and run its migration. Keep automatic consumers held.
+1. Stop and remove the old collector's exact systemd unit, checking its Process ownership.
+2. Delete the old collector cache namespace, including its lock. Keep unrelated and new keys.
+3. Issue the new certificate and publish `collector.ai-router.orbit`, withdrawing the old site and DNS name.
+4. Converge the same Process with the new script path and environment names.
+5. Remove the old source and certificate files, then clear the pending work.
 
-Keep passwords and tokens out of command arguments and logs. Rename only raw, snapshot, model-files, backoff, and account keys. Leave unrelated keys alone.
+The pending record survives failure or interruption. The next tick repeats the unfinished cutover. Each step is safe to repeat. The old hostname has no alias. A Route on the old collector name is removed only if it belongs to this Node and proxies to the collector's loopback port. The management Route is preserved.
 
-Keep Horizon, the scheduler, and other consumers stopped. Staging has already switched the source. Restore only FPM under the health-only Caddy gate from the recovery procedure, and confirm the exact target version.
+### Quota availability window
 
-For cutover requests, temporarily extend that gate for one operator's exact WireGuard source address. Match the method and path together. Keep the normal peer and Node authorization middleware. Keep every other source and API write blocked. Do not enable a whole API prefix.
+Quota reads have a gap from release activation until the new collector writes its first successful snapshot. The window includes the scheduler handoff, zero to 60 seconds until its next tick, any queue wait, publication and Process startup, and the first upstream poll. The collector polls immediately on startup, then every 60 seconds. Queue delays and upstream failures can extend the window; it has no fixed upper bound. Missing quota is unknown, not zero.
 
-| Method | Path allowed for that operator |
+The new collector rebuilds the snapshot under `orbit:ai-router:*`; deployment does not copy or rename snapshot keys. A retry removes only the old namespace. It never clears a new snapshot.
+
+Task model requests keep using the same router at the same origin with the same keys throughout this window. Collector retirement does not stop or reconfigure the router. The migration renames the task VM column to `ai_router_origin` without changing any URL or held key. The `task_vms.model_proxy_origin` config and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` stay until build step 5.
+
+### CodexBar
+
+CodexBar is the one external client to update at deployment. In `~/.codexbar/config.json`, change `providers[].pluginSettings.BASE_URL` from `https://collector.cli-proxy-api.orbit` to `https://collector.ai-router.orbit` for the entries whose IDs are `proxy-codex`, `proxy-antigravity`, `proxy-xai`, `proxy-kimi`, and `proxy-claude`. Keep their tokens and other settings unchanged. Orbit does not edit this file.
+
+The old URL stops serving when the new site is published. Updating CodexBar earlier can show an unavailable endpoint until publication and the first snapshot complete. Updating it later keeps that client unavailable until its URL changes.
+
+The following old names are removal inputs only, never runtime aliases.
+
+| Old name | Automatic action |
 | --- | --- |
-| `GET` | `/api/v1/gateway/status`, `/api/v1/extensions`, `/api/v1/processes` |
-| `POST` | `/api/v1/ai-router` |
-| `POST` | `/api/v1/processes/<preserved-collector-id>/start` |
-| `GET` | `/api/v1/ai-router`, `/api/v1/ai-router/providers`, `/api/v1/ai-router/models` |
-| `GET` | `/api/v1/ai-router/providers/<reviewed-provider>` |
-| `POST` | `/api/v1/ai-router/accounts/<reviewed-account>/enable` and `/api/v1/ai-router/accounts/<reviewed-account>/disable` |
-
-Replace each placeholder with the recorded ID or one exact provider/account before loading Caddy. Restrict the allowance to the Gateway host. Keep its reviewed configuration and a copy of the health-only gate for restoration. Verify another peer cannot use these API paths. Account verification must restore the account's original state.
-
-1. Confirm the new CLI reaches the new API through that operator peer.
-2. Run `ai-router:setup --node=<recorded-numeric-node-id>` with the same cache connection, router URL, and original management key file.
-3. Run `orbit process:start <preserved-collector-id>`. Confirm that exact collector unit runs.
-4. Verify the new snapshot, provider and model reads, account controls, certificate, and private DNS record.
-5. Change CodexBar's URL to `https://collector.ai-router.orbit`, with its unchanged read token.
-6. Remove the old collector source and certificate files after the new endpoint works.
-7. Restore the health-only ingress gate and verify that the temporary allowances are gone.
-8. Run `gateway:release:finalize <full-SHA> <staged-record-id>` as the Gateway account, following the recovery procedure.
-
-Never generate a new management key for this cutover. Setup reuses the stored read and control tokens. It publishes the new certificate and site, writes the new collector source, and converges the same stopped collector record under its new name. The explicit start makes it run. The migration only changes the database; it does no remote work.
-
-Use the numeric Node ID so setup needs no Node discovery request.
-
-Finalization starts the held consumers and clears the release hold. After it succeeds, restore normal authenticated ingress and run the ADR acceptance checks. Keep automatic releases disabled until those checks pass. Do not unmask consumers by hand. On failure, re-establish the full maintenance drain before recovery.
-
-Keep deployment blocked if a cache key conflicts, the original protected management key file is unavailable, or any maintenance prerequisite fails. Restore both store backups and the previous collector unit if recovery is needed.
-
-The following old names are cutover inputs only. There are no runtime aliases.
-
-| Old name | Cutover action |
-| --- | --- |
-| `cli-proxy-api-collector` | Stop and remove its old unit before migration. The same record becomes `ai-router-collector`. |
-| `/var/lib/orbit/proxycli/server.py` and `PROXYCLI_*` | The stopped record moves to `/var/lib/orbit/ai-router/collector.py` and `AI_ROUTER_*`, preserving environment values. |
-| `orbit:proxycli:*` | Rename each data key to `orbit:ai-router:*` with its TTL; remove the lock. |
-| `collector.cli-proxy-api.orbit` | Replace the publication with `collector.ai-router.orbit` and update CodexBar. No hostname alias stays. |
-| `caddy.certificate.proxycli` | Remove the old receipt; issue a new hostname certificate. |
-| `/etc/caddy/orbit-proxycli-cert-current` | Remove after the new collector endpoint is verified. |
-| `cli-proxy-api.orbit` | Existing operator-owned management Route stays unchanged in step 3. New setups suggest `ai-router.orbit`. |
-| `cli-proxy-api` | Operator-owned router Process stays unchanged until role adoption in step 4. |
+| `cli-proxy-api-collector` | Remove the owned unit; the same Process ID becomes `ai-router-collector`. |
+| `/var/lib/orbit/proxycli/server.py` and `PROXYCLI_*` | Publish `/var/lib/orbit/ai-router/collector.py` and `AI_ROUTER_*`; remove the old directory after convergence. |
+| `orbit:proxycli:*` | Delete the old snapshot, account data, and lock after stopping the old collector. |
+| `collector.cli-proxy-api.orbit` | Withdraw it when publishing `collector.ai-router.orbit`. |
+| `caddy.certificate.proxycli` | Remove the old receipt; issue the new hostname's certificate. |
+| `/etc/caddy/orbit-proxycli-cert-current` | Remove after publishing the new collector site. |
+| `cli-proxy-api.orbit` and `cli-proxy-api` | Keep the operator-owned management Route and router Process until step 4. |

@@ -21,6 +21,26 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
         return is_string($reply) ? $reply : null;
     }
 
+    public function forgetPrefix(string $prefix): void
+    {
+        // The old collector has stopped. A single script finishes deletion before the new one can start.
+        $script = <<<'LUA'
+            local cursor = '0'
+            local removed = 0
+            repeat
+                local page = redis.call('SCAN', cursor, 'MATCH', ARGV[1] .. '*', 'COUNT', 100)
+                cursor = page[1]
+                for _, key in ipairs(page[2]) do
+                    removed = removed + redis.call('DEL', key)
+                end
+            until cursor == '0'
+            return removed
+            LUA;
+        if (! is_int($this->command(['EVAL', $script, '0', $prefix]))) {
+            throw new RuntimeException('Could not clear the obsolete collector cache.');
+        }
+    }
+
     public function put(string $key, string $value, ?int $seconds = null): void
     {
         $seconds === null

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -14,6 +15,12 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (! Schema::hasTable('ai_router_cutovers')) {
+            Schema::create('ai_router_cutovers', function (Blueprint $table): void {
+                $table->foreignId('process_id')->primary()->constrained('processes')->cascadeOnDelete();
+                $table->string('previous_name');
+            });
+        }
         DB::transaction(function (): void {
             $retiredTable = self::RetiredSlug.'_process_sources';
             if (Schema::hasTable($retiredTable)) {
@@ -28,9 +35,6 @@ return new class extends Migration
                 $config = json_decode($collector->runtime_config, true, flags: JSON_THROW_ON_ERROR);
                 if (! is_array($config) || $collector->runtime !== 'systemd' || ($config['command'] ?? null) !== ['/usr/bin/python3', '/var/lib/orbit/'.self::RetiredSlug.'/server.py']) {
                     throw new RuntimeException('The stored collector does not match the managed collector specification.');
-                }
-                if ($collector->desired_state !== 'stopped') {
-                    throw new RuntimeException("Stop collector Process [{$collector->id}] and remove its stopped systemd unit before the AI router rename.");
                 }
                 if (DB::table('processes')->where('owner_type', $collector->owner_type)->where('owner_id', $collector->owner_id)->where('name', 'ai-router-collector')->exists()) {
                     throw new RuntimeException('The AI router collector name is already in use.');
@@ -78,6 +82,7 @@ return new class extends Migration
                     }
                     $environment[$renamed] = $value;
                 }
+                DB::table('ai_router_cutovers')->insert(['process_id' => $collector->id, 'previous_name' => $collector->name]);
                 $config['environment'] = $environment;
                 $config['command'] = ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'];
                 DB::table('processes')->where('id', $collector->id)->update([

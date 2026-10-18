@@ -13,9 +13,11 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Orbit\Extensions\AiRouter\Data\AiRouterStatusData;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
+use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 
 /**
  * Tears down the collector and deletes the management key. It refuses while Tasks needs CLIProxyAPI or a task VM holds a
@@ -25,6 +27,8 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 final readonly class DisableAiRouterAction
 {
     public function __construct(
+        private AiRouterLifecycleLock $lifecycle,
+        private AiRouterRenameCutover $cutover,
         private AiRouterState $state,
         private AiRouterRuntimeLifecycle $runtime,
         private AiRouterPublicationManager $publication,
@@ -46,7 +50,7 @@ final readonly class DisableAiRouterAction
         }
 
         try {
-            return $this->teardown();
+            return $this->lifecycle->run(fn (): AiRouterStatusData => $this->teardown());
         } finally {
             $lock->release();
         }
@@ -65,6 +69,8 @@ final readonly class DisableAiRouterAction
                 details: ['task_vms' => $held],
             );
         }
+
+        $this->cutover->assertComplete();
 
         $nodeId = $this->state->nodeId();
         $node = $nodeId === null ? null : Node::query()->find($nodeId);

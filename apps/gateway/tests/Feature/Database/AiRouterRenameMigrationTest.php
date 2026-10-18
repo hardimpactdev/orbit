@@ -52,17 +52,16 @@ it('refuses conflicting settings and rolls back earlier renames', function (): v
         ->and(DB::table('settings')->orderBy('id')->get()->toJson())->toBe($before);
 });
 
-it('refuses a running collector before renaming any stored state', function (): void {
+it('records an automatic cutover for a running collector without stopping it in the migration', function (): void {
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
     app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), AI_ROUTER_RETIRED_SLUG.'.node_id', (string) $node->id);
-    DB::table('processes')->insert([
+    $id = DB::table('processes')->insertGetId([
         'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'cli-proxy-api-collector',
-        'runtime' => 'systemd', 'runtime_config' => json_encode(['command' => ['/usr/bin/python3', '/var/lib/orbit/'.AI_ROUTER_RETIRED_SLUG.'/server.py']], JSON_THROW_ON_ERROR), 'desired_state' => 'running', 'status' => 'active',
+        'runtime' => 'systemd', 'runtime_config' => json_encode(['command' => ['/usr/bin/python3', '/var/lib/orbit/'.AI_ROUTER_RETIRED_SLUG.'/server.py'], 'environment' => []], JSON_THROW_ON_ERROR), 'desired_state' => 'running', 'status' => 'active',
     ]);
-    $before = DB::table('processes')->get()->toJson();
-
-    expect(fn () => ai_router_rename_migration()->up())->toThrow(RuntimeException::class, 'Stop collector Process')
-        ->and(DB::table('processes')->get()->toJson())->toBe($before);
+    ai_router_rename_migration()->up();
+    expect(DB::table('processes')->where('id', $id)->value('desired_state'))->toBe('running')
+        ->and(DB::table('ai_router_cutovers')->where('process_id', $id)->value('previous_name'))->toBe('cli-proxy-api-collector');
 });
 
 it('renames only the stopped configured collector and preserves every environment value and source row', function (): void {

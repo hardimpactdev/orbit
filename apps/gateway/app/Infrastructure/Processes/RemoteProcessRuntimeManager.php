@@ -161,7 +161,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         // An explicit runtime override removes a retired footprint during an in-place runtime switch.
         // The lease still refreshes the owner and placement before any mutation.
         $retiredRuntime = $process->isDirty('runtime') ? $process->runtime : null;
-        $this->lease->run($process, function (Process $fresh) use ($retiredRuntime): void {
+        $retiredName = $process->isDirty('name') ? $process->name : null;
+        $this->lease->run($process, function (Process $fresh) use ($retiredRuntime, $retiredName): void {
+            if ($retiredName !== null) {
+                $fresh->name = $retiredName;
+            }
             if ($retiredRuntime !== null) {
                 $fresh->runtime = $retiredRuntime;
             }

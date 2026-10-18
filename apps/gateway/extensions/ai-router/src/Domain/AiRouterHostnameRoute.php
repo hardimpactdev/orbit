@@ -18,11 +18,11 @@ use Throwable;
  */
 final readonly class AiRouterHostnameRoute
 {
-    public function takeoverCandidate(Node $node): ?Route
+    public function takeoverCandidate(Node $node, string $hostname = AiRouterHostname::Value): ?Route
     {
         $route = Route::query()
             ->with(['customProxy', 'targets'])
-            ->where('domain', AiRouterHostname::Value)
+            ->where('domain', $hostname)
             ->first();
 
         if (! $route instanceof Route) {

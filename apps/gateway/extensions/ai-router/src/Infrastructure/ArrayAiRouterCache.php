@@ -28,6 +28,15 @@ final class ArrayAiRouterCache implements AiRouterCache
         return $item['value'];
     }
 
+    public function forgetPrefix(string $prefix): void
+    {
+        foreach (array_keys($this->items) as $key) {
+            if (str_starts_with($key, $prefix)) {
+                unset($this->items[$key]);
+            }
+        }
+    }
+
     public function put(string $key, string $value, ?int $seconds = null): void
     {
         $this->items[$key] = [

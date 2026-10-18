@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter;
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
@@ -13,7 +15,10 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Models\DatabaseConnection;
 use App\Providers\ExtensionServiceProvider;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\AiRouter\Actions\ReconvergeAiRouterConnectionAction;
+use Orbit\Extensions\AiRouter\Console\ConvergeAiRouterCommand;
 use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 use Orbit\Extensions\AiRouter\Domain\AiRouterConnectionOwnership;
@@ -92,6 +97,11 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
 
     public function boot(): void
     {
+        $this->commands([ConvergeAiRouterCommand::class]);
+        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
+            GatewaySchedule::command($schedule, 'orbit:ai-router-converge', uniqueFor: 600, overlapMinutes: 10)->everyMinute()
+                ->when(static fn (): bool => app(ExtensionStore::class)->enabled('ai-router') || DB::table('ai_router_cutovers')->exists());
+        });
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
