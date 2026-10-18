@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -498,6 +499,31 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         );
 
         return $this->decodeJsonString($result, 'candidate-version');
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        $this->guardNode($node);
+        $scope = $node->platform === 'macos' ? self::MAC_SCOPE_SCRIPT : self::LINUX_SCOPE_SCRIPT;
+        $script = "resolve_scope() {\n".$scope."\n}\n".'binary=$(resolve_scope "$@")'."\n".<<<'BASH'
+            scope=${binary%/bin/vp}
+            exec env "VP_HOME=$scope" "$binary" list -g --json
+            BASH;
+        $result = $this->commands->execute($node, ['/bin/bash', '-seu', '--', $node->user], $script, maxOutputBytes: 1_048_576);
+        $this->guardSuccessfulResult($result, 'installed-version', 'The VP installed inventory probe failed.');
+        $decoded = json_decode($result->stdout);
+        if (! is_array($decoded)) {
+            throw new ToolManagerException('installed-version', 'The VP installed inventory was malformed.', $result);
+        }
+        $versions = [];
+        foreach ($decoded as $entry) {
+            if (! is_object($entry) || ! is_string($entry->name ?? null) || ! is_string($entry->version ?? null) || ! $this->validatePackage($entry->name) || ! $this->isSafeString($entry->version)) {
+                throw new ToolManagerException('installed-version', 'The VP installed inventory was malformed.', $result);
+            }
+            $versions[$entry->name][] = $entry->version;
+        }
+
+        return new InstalledToolInventory($versions, $result);
     }
 
     public function installedVersion(Node $node, string $package): ?string

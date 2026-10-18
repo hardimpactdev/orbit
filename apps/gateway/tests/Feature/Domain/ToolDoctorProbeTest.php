@@ -230,7 +230,7 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
     $ssh = new ToolManagerFakeSshExecutor([
         new CommandResult(
             exitCode: 0,
-            stdout: "install ok installed\n{$rawVersion}\n",
+            stdout: "{$package}\tinstall ok installed\t{$rawVersion}\n",
             stderr: '',
             durationMs: 10,
             truncated: false,
@@ -274,7 +274,7 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
         ->and($report->issues)
         ->toBeEmpty();
     expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', $package],
+        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
     ]);
 })->with([
     'postgresql-client' => ['postgresql-client', '16+257build1.1'],
@@ -540,7 +540,7 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
         ),
         new CommandResult(
             exitCode: 0,
-            stdout: "install ok installed\n1:2.4.3-1ubuntu2\n",
+            stdout: "jq\tinstall ok installed\t1:2.4.3-1ubuntu2\n",
             stderr: '',
             durationMs: 10,
             truncated: false,
@@ -563,7 +563,7 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
     expect(json_encode($report))->not->toContain('secret');
     expect($ssh->arguments())->toBe([
         tool_probe_composer_show_arguments(),
-        ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
+        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
     ]);
     expect($jq->package)->toBe('jq');
 });
@@ -1279,4 +1279,23 @@ it('retains registered manager context in the separate inventory job', function 
         ->and($report->issues)->toHaveCount(1)
         ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
         ->and($report->issues[0]->resourceName)->toBe('brew');
+});
+
+it('groups registered Tools by manager regardless of row count', function (): void {
+    $node = tool_probe_linux_node();
+    $apt = ToolManagerRecord::create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
+    $composer = ToolManagerRecord::create(['node_id' => $node->id, 'name' => 'composer', 'status' => 'active']);
+    $ids = [];
+    for ($index = 0; $index < 25; $index++) {
+        $ids[] = Tool::create(['node_id' => $node->id, 'tool_manager_id' => $apt->id, 'package' => 'package-'.$index, 'status' => 'installed'])->id;
+    }
+    $other = Tool::create(['node_id' => $node->id, 'tool_manager_id' => $composer->id, 'package' => 'vendor/package', 'status' => 'installed']);
+
+    $resources = tool_doctor_probe(tool_doctor_installed_inspector())->resources($node);
+
+    expect($resources)->toHaveCount(3)
+        ->and($resources[0]->kind)->toBe(DoctorResourceKind::Rows)
+        ->and($resources[0]->ids)->toBe($ids)
+        ->and($resources[1]->ids)->toBe([$other->id])
+        ->and($resources[2]->kind)->toBe(DoctorResourceKind::Inventory);
 });

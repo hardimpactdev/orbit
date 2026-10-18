@@ -939,3 +939,31 @@ function adopt_formula_json(
         'casks' => [],
     ], JSON_THROW_ON_ERROR);
 }
+
+it('reads one fresh formula inventory per Node with scope verification in the same call', function (string $platform): void {
+    [$manager, $ssh] = homebrew_tool_manager([
+        homebrew_result("jq 1.7.1\ngh 2.88.1\nambiguous 1.0 2.0\n"),
+        homebrew_result("jq 1.8.0\n"),
+    ]);
+    $node = homebrew_tool_node($platform, architecture: 'arm64');
+    $first = $manager->installedInventory($node);
+    expect($first->versionFor('jq'))->toBe('1.7.1')
+        ->and($first->versionFor('gh'))->toBe('2.88.1')
+        ->and($first->versionFor('absent'))->toBeNull();
+    expect(fn () => $first->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
+    expect($manager->installedInventory($node)->versionFor('jq'))->toBe('1.8.0');
+    expect($ssh->commands)->toHaveCount(2);
+    if ($platform === 'macos') {
+        expect($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch', 'HOMEBREW_NO_AUTO_UPDATE=1', "'list' '--versions' '--formula'");
+    }
+})->with(['linux', 'macos']);
+
+it('refuses an unverifiable formula inventory instead of reporting absent Tools', function (CommandResult $result): void {
+    [$manager] = homebrew_tool_manager([$result]);
+
+    expect(fn () => $manager->installedInventory(homebrew_tool_node()))->toThrow(ToolManagerException::class);
+})->with([
+    'failed command' => [new CommandResult(1, '', '', 10, false)],
+    'truncated list' => [new CommandResult(0, "jq 1.7.1\n", '', 10, true)],
+    'malformed record' => [new CommandResult(0, "jq\n", '', 10, false)],
+]);

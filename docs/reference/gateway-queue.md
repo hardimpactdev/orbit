@@ -75,7 +75,13 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 Each probe group shares one 12-second command deadline. The worker timeout is 13 seconds, a backstop derived from the same budget. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside the probe deadline rather than be replaced by worker failures.
 
-Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline. Tool environment checks keep one batch read per Node; inventory is separate. Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
+Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline.
+
+Each Tool rows job owns one manager on one Node. It reads that manager’s installed inventory once, then compares every selected Tool locally. The read also resolves the enrolled macOS account’s existing manager scope in the same SSH call. Tool environment checks keep one batch read per Node; discovery inventory is separate.
+
+Three read-only Mini measurements of the collection jobs took 0.84–2.50 seconds for five Brew Tools, 0.86–0.88 seconds for one cask, and 0.60–0.61 seconds for one Vite+ Tool. Each manager job made one SSH call. The separate discovery job took 4.69–5.43 seconds. Grouping by manager bounds the remote work independently of the number of registered Tools.
+
+Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
 
 Laravel batches keep all Node observations available to related-node checks. Observations survive release switches in shared cache. Resource groups commit separately, so a release waits only for the running group, never the full fleet scan. Collection needs the queue; without it, dispatch fails with an error.
 

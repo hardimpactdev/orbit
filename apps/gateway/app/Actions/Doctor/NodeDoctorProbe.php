@@ -27,6 +27,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
 use App\Models\RouteRemovalResidue;
+use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
@@ -53,6 +54,9 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $node = $context->node;
+        if ($context->select(new Collection([$node]))->isEmpty()) {
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 0, []);
+        }
         $inspection = $context->inspection;
         $issues = [];
         if ($node->status !== LifecycleStatus::Active) {

@@ -11,7 +11,6 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\ProjectStateInspector;
@@ -48,14 +47,13 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
         return Project::query()
             ->whereIn('id', Instance::query()->whereIn('id', $eligibleInstanceIds)->select('project_id'))
             ->orderBy('id')
-
             ->get();
     }
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $rows = $this->rows($context->node);
-        $rows = $context->resources === null ? $rows : $rows->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $rows = $context->select($rows);
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, 0, []);
         }

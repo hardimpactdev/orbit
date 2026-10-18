@@ -36,6 +36,7 @@ use App\Models\Route;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\TestOrbitHome;
@@ -244,4 +245,16 @@ it('records an unverifiable Node when its observation job did not complete', fun
 it('removes the retired Doctor resume cursor without removing signal collector state', function (): void {
     expect(Schema::hasColumn('problem_collector_state', 'doctor_resume_key'))->toBeFalse();
     expect(Schema::hasColumns('problem_collector_state', ['activity_cursor', 'log_path', 'log_inode', 'log_offset']))->toBeTrue();
+});
+
+it('returns after one lookup when the observed Node was deleted', function (): void {
+    config(['cache.default' => 'array']);
+    $job = new CollectDoctorResource('deleted-node', [999999], 999999, DoctorFamily::Tool, new DoctorResources(DoctorResourceKind::Rows, [1]));
+    DB::enableQueryLog();
+
+    app()->call([$job, 'handle']);
+
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+    expect(collect($queries)->filter(static fn (array $query): bool => str_contains($query['query'], '"nodes"'))->count())->toBe(1);
 });

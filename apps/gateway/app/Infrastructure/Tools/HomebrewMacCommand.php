@@ -139,6 +139,17 @@ final readonly class HomebrewMacCommand
 
     public function __construct(private RemoteToolCommandRunner $commands) {}
 
+    public function installedInventory(Node $node, bool $casks): CommandResult
+    {
+        $arguments = $casks ? ['info', '--json=v2', '--cask', '--installed'] : ['list', '--versions', '--formula'];
+        $command = $this->command('__ORBIT_PREFIX__', false, $arguments);
+        $shell = implode(' ', array_map(escapeshellarg(...), $command));
+        $shell = str_replace('__ORBIT_PREFIX__', '\'"$prefix"\'', $shell);
+        $script = "resolve_scope() {\n".self::PREFIX_SCRIPT."\n}\n".'scope=$(resolve_scope "$@")'."\n".'prefix=${scope%%$\'\\n\'*}'."\nexec ".$shell;
+
+        return $this->commands->execute($node, ['/bin/bash', '-seu', '--', $node->user], $script, maxOutputBytes: 1_048_576);
+    }
+
     public function resolvePrefix(Node $node): string
     {
         return $this->resolveScope($node)->prefix;

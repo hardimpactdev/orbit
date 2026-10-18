@@ -25,7 +25,7 @@ use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 {
@@ -48,23 +48,17 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         ]))));
     }
 
-    /** @return \Illuminate\Database\Eloquent\Collection<int, RouteCustomProxy> */
-    private function proxies(Node $node): \Illuminate\Database\Eloquent\Collection
+    /** @return Collection<int, RouteCustomProxy> */
+    private function proxies(Node $node): Collection
     {
         return RouteCustomProxy::query()->with('route')->where('node_id', $node->id)->orderBy('route_id')->get();
     }
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $routes = $this->servedRoutes($context->node);
-        if ($context->resources !== null) {
-            $routes = $routes->whereIn('id', $context->resources->ids)->values();
-        }
+        $routes = $context->select($this->servedRoutes($context->node));
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
-        $proxies = $this->proxies($context->node);
-        if ($context->resources !== null) {
-            $proxies = $proxies->whereIn('route_id', $context->resources->ids)->values();
-        }
+        $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 
         if ($proxies->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);

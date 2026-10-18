@@ -15,7 +15,6 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\ResourceOperationException;
@@ -53,7 +52,7 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $servers = $this->rows($context->node);
-        $servers = $context->resources === null ? $servers : $servers->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $servers = $context->select($servers);
         $issues = [];
 
         foreach ($servers as $server) {

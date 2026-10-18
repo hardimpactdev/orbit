@@ -7,6 +7,7 @@ namespace App\Infrastructure\Tools;
 use App\Domain\Tools\HomebrewCaskAssessment;
 use App\Domain\Tools\HomebrewCaskDiscovery;
 use App\Domain\Tools\HomebrewPackageName;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -171,6 +172,36 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         }
 
         return $assessment->version;
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        $this->guardSupportedNode($node);
+        $result = $this->mac->installedInventory($node, true);
+        $this->guardSuccessfulResult($result, 'installed-version', 'The Homebrew cask installed inventory probe failed.');
+        $decoded = $this->decode($result, 'installed-version', 'The Homebrew cask installed inventory was malformed.', self::MAX_INVENTORY_LENGTH);
+        if (! is_array($decoded->casks ?? null)) {
+            throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed inventory was malformed.');
+        }
+        $versions = [];
+        $unverifiable = [];
+        foreach ($decoded->casks as $cask) {
+            if (! $cask instanceof stdClass || ! is_string($cask->token ?? null) || ! $this->validatePackage($cask->token)) {
+                throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed inventory was malformed.');
+            }
+            if (($cask->tap ?? null) !== 'homebrew/cask') {
+                continue;
+            }
+            $version = $this->readableInstalledVersion($cask);
+            if ($version === null) {
+                $unverifiable[] = $cask->token;
+
+                continue;
+            }
+            $versions[$cask->token][] = $version;
+        }
+
+        return new InstalledToolInventory($versions, $result, $unverifiable);
     }
 
     public function installedVersion(Node $node, string $package): ?string

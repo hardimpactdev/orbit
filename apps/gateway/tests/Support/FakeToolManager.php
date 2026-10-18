@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -43,10 +44,13 @@ final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoptio
 
     public ToolRemovalPlan $removalPlan;
 
+    public InstalledToolInventory $inventory;
+
     public function __construct(
         public ToolManagerName $managerName = ToolManagerName::Apt,
     ) {
         $this->removalPlan = new ToolRemovalPlan([]);
+        $this->inventory = new InstalledToolInventory([]);
     }
 
     public function roleOwns(string $package): bool
@@ -94,6 +98,13 @@ final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoptio
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
     {
         return $this->next($this->candidateVersions, 'candidateVersion');
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        $this->failOrCall('installedInventory');
+
+        return $this->inventory;
     }
 
     public function installedVersion(Node $node, string $package): ?string

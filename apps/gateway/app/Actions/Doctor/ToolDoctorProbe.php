@@ -52,7 +52,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
     public function resources(Node $node): array
     {
         return [
-            ...DoctorResources::groups($this->tools($node)->modelKeys()),
+            ...$this->tools($node)->groupBy('tool_manager_id')->map(static fn (Collection $tools): DoctorResources => new DoctorResources(DoctorResourceKind::Rows, array_values($tools->modelKeys())))->values()->all(),
             ...($this->environments($node)->isEmpty() ? [] : [new DoctorResources(DoctorResourceKind::Environments)]),
             new DoctorResources(DoctorResourceKind::Inventory),
         ];
@@ -72,14 +72,8 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $tools = $this->tools($context->node);
-        $environments = $this->environments($context->node);
-        if ($context->resources !== null) {
-            $tools = $tools->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
-            if ($context->resources->kind !== DoctorResourceKind::Environments) {
-                $environments = new Collection;
-            }
-        }
+        $tools = $context->select($this->tools($context->node));
+        $environments = $context->select($this->environments($context->node), DoctorResourceKind::Environments);
         $count = $tools->count() + $environments->count();
 
         if (! $context->inspection->reachable) {

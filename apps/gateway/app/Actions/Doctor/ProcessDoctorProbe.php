@@ -11,7 +11,6 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
@@ -70,14 +69,13 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                     });
             })
             ->orderBy('id')
-
             ->get();
     }
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $processes = $this->rows($context->node);
-        $processes = $context->resources === null ? $processes : $processes->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $processes = $context->select($processes);
 
         if ($processes->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, 0, []);

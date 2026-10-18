@@ -53,7 +53,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $rules = $this->rows($context->node);
-        $rules = $context->resources === null ? $rules : $rules->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $rules = $context->select($rules);
         $expectations = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory ? $this->expectations->for($context->node) : [];
 
         if ($rules->isEmpty() && $expectations === []) {

@@ -71,12 +71,13 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $roles = $this->roles($context->node);
-        if ($roles->isEmpty()) {
+        $selected = $context->select($roles);
+        if ($selected->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, 0, []);
         }
 
         $issues = [];
-        foreach ($roles as $role) {
+        foreach ($selected as $role) {
             if ($role->status === LifecycleStatus::Active) {
                 continue;
             }
@@ -116,13 +117,10 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             );
 
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, $roles->count(), $ordered);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, $selected->count(), $ordered);
         }
 
-        foreach ($roles as $role) {
-            if ($context->resources !== null && ! $context->resources->contains($role->id)) {
-                continue;
-            }
+        foreach ($selected as $role) {
             if ($role->status !== LifecycleStatus::Active) {
                 continue;
             }
@@ -152,7 +150,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Role,
-            $roles->count(),
+            $selected->count(),
             $this->ordered($issues),
         );
     }
@@ -170,7 +168,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => in_array($role->role, self::CaddySiteRoles, strict: true))
             ?? $active->first();
 
-        if (! $role instanceof NodeRole || ($context->resources !== null && ! $context->resources->contains($role->id))) {
+        if (! $role instanceof NodeRole || $context->select(new Collection([$role]))->isEmpty()) {
             return;
         }
 
@@ -233,7 +231,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev)
             ?? $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd);
 
-        if (! $role instanceof NodeRole || ($context->resources !== null && ! $context->resources->contains($role->id))) {
+        if (! $role instanceof NodeRole || $context->select(new Collection([$role]))->isEmpty()) {
             return;
         }
 

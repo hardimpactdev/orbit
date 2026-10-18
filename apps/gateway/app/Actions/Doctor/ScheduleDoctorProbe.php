@@ -48,7 +48,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $schedules = $this->rows($context->node);
-        $schedules = $context->resources === null ? $schedules : $schedules->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $schedules = $context->select($schedules);
 
         if (! $context->inspection->reachable && $schedules->isNotEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), [

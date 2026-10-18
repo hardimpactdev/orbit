@@ -1049,3 +1049,26 @@ function vp_tool_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
+
+it('reads all global packages and verifies their scope in one SSH call', function (string $platform): void {
+    [$manager, $ssh] = vp_tool_manager([
+        vp_result('[{"name":"@openai/codex","version":"0.156.1"},{"name":"pnpm","version":"10.0.0"},{"name":"dup","version":"1.0.0"},{"name":"dup","version":"2.0.0"}]'),
+    ]);
+    $inventory = $manager->installedInventory(vp_tool_node($platform));
+    expect($inventory->versionFor('@openai/codex'))->toBe('0.156.1')
+        ->and($inventory->versionFor('pnpm'))->toBe('10.0.0')
+        ->and($inventory->versionFor('absent'))->toBeNull();
+    expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
+    expect($ssh->commands)->toHaveCount(1)
+        ->and($ssh->commands[0]->input)->toContain('Orbit Vite Plus account mismatch', '"$binary" list -g --json');
+})->with(['linux', 'macos']);
+
+it('refuses an unverifiable global inventory instead of reporting absent Tools', function (CommandResult $result): void {
+    [$manager] = vp_tool_manager([$result]);
+
+    expect(fn () => $manager->installedInventory(vp_tool_node()))->toThrow(ToolManagerException::class);
+})->with([
+    'failed command' => [new CommandResult(1, '', '', 10, false)],
+    'truncated list' => [new CommandResult(0, '[]', '', 10, true)],
+    'malformed entry' => [new CommandResult(0, '[{}]', '', 10, false)],
+]);

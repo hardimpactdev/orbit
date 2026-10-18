@@ -22,11 +22,6 @@ final readonly class DoctorResources
         return array_map(static fn (array $group): self => new self($kind, $group), array_chunk($ids, $size));
     }
 
-    public function contains(int|string $id): bool
-    {
-        return in_array($id, $this->ids, true);
-    }
-
     /** @return list<DoctorIssueData> */
     public function failures(DoctorFamily $family, int $nodeId): array
     {

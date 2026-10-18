@@ -46,10 +46,8 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
     {
         $attachments = $this->attachmentsOn($context->node);
         $unattached = $this->unattachedNodeConnections($context->node, $attachments);
-        if ($context->resources !== null) {
-            $attachments = $attachments->whereIn('id', $context->resources->kind === DoctorResourceKind::Attachments ? $context->resources->ids : [])->values();
-            $unattached = $unattached->whereIn('id', $context->resources->kind === DoctorResourceKind::Connections ? $context->resources->ids : [])->values();
-        }
+        $attachments = $context->select($attachments, DoctorResourceKind::Attachments);
+        $unattached = $context->select($unattached, DoctorResourceKind::Connections);
         $checked = $attachments->count() + $unattached->count();
 
         if ($checked === 0) {

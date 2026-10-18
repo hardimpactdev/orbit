@@ -66,7 +66,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
     {
         $peers = $this->rows($context->node);
 
-        $rows = $context->resources === null ? $peers : $peers->whereIn('id', $context->resources->ids)->values();
+        $rows = $context->select($peers);
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }

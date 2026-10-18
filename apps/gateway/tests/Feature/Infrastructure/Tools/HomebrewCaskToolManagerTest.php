@@ -1097,3 +1097,30 @@ function cask_operation_exception(callable $callback): ToolOperationException
 
     throw new RuntimeException('The Homebrew cask tool operation succeeded.');
 }
+
+it('reads the installed cask index once and isolates unreadable package versions', function (): void {
+    [$manager, $ssh] = cask_manager([
+        cask_result(json_encode(['casks' => [
+            ['token' => '1password-cli', 'tap' => 'homebrew/cask', 'installed' => '2.33.0'],
+            ['token' => 'unreadable', 'tap' => 'homebrew/cask', 'installed' => 'latest'],
+            ['token' => 'foreign', 'tap' => 'other/cask', 'installed' => '1.0'],
+        ]], JSON_THROW_ON_ERROR)),
+    ]);
+    $inventory = $manager->installedInventory(cask_node());
+    expect($inventory->versionFor('1password-cli'))->toBe('2.33.0')
+        ->and($inventory->versionFor('absent'))->toBeNull()
+        ->and($inventory->versionFor('foreign'))->toBeNull();
+    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+    expect($ssh->commands)->toHaveCount(1)
+        ->and($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch', "'info' '--json=v2' '--cask' '--installed'");
+});
+
+it('refuses an unverifiable cask inventory instead of reporting absent Tools', function (CommandResult $result): void {
+    [$manager] = cask_manager([$result]);
+
+    expect(fn () => $manager->installedInventory(cask_node()))->toThrow(ToolManagerException::class);
+})->with([
+    'failed command' => [new CommandResult(1, '', '', 10, false)],
+    'truncated index' => [new CommandResult(0, '{"casks":[]}', '', 10, true)],
+    'missing index' => [new CommandResult(0, '{}', '', 10, false)],
+]);

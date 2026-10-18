@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\HomebrewPackageName;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -337,6 +338,29 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         }
 
         return $this->parseCandidate($result, $package, $bottleTag);
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        $this->guardSupportedNode($node);
+        $result = $node->platform === 'macos'
+            ? $this->mac->installedInventory($node, false)
+            : $this->commands->execute($node, [...self::LINUX_PREFIX, 'list', '--versions', '--formula'], maxOutputBytes: 1_048_576);
+        $this->guardSuccessfulResult($result, 'installed-version', 'The Homebrew installed inventory probe failed.');
+        $versions = [];
+        foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $fields = explode(' ', $line);
+            $package = array_shift($fields);
+            if (! $this->validatePackage($package) || $fields === [] || ! array_all($fields, $this->isSafeVersion(...))) {
+                throw new ToolManagerException('installed-version', 'The Homebrew installed inventory was malformed.', $result);
+            }
+            $versions[$package] = [...($versions[$package] ?? []), ...$fields];
+        }
+
+        return new InstalledToolInventory($versions, $result);
     }
 
     public function installedVersion(Node $node, string $package): ?string

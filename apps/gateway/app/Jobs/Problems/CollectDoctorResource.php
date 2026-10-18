@@ -47,12 +47,7 @@ final class CollectDoctorResource extends ProblemCollectionJob
         }
         $context = $contexts[$this->nodeId] ?? null;
         if (! $context instanceof DoctorNodeContext) {
-            $node = Node::query()->find($this->nodeId);
-            if (! $node instanceof Node) {
-
-                return;
-            }
-            $context = new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null), inspectionFailed: true);
+            return;
         }
         $context = new DoctorNodeContext($context->node, $context->inspection, $context->inspectionFailed, new DoctorInspectionScope($contexts), $this->resources);
         $report = $deadline->within(self::ProbeSeconds, fn () => $doctor->inspectFamily($context, $this->family));

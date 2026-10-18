@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Tools\DebianVersionNormalizer;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -169,6 +170,35 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         }
 
         return $version;
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        $result = $this->commands->execute($node, ['dpkg-query', '--show', '--showformat=${Package}\\t${Status}\\t${Version}\\n'], maxOutputBytes: 1_048_576);
+        $this->guardSuccessfulResult($result, 'installed-version', 'The APT installed inventory probe failed.');
+        $versions = [];
+        $unverifiable = [];
+        foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $fields = explode("\t", $line);
+            if (count($fields) !== 3 || ! $this->validatePackage($fields[0])) {
+                throw new ToolManagerException('installed-version', 'The APT installed inventory was malformed.', $result);
+            }
+            [$package, $status, $version] = $fields;
+            if (in_array($status, [...self::REMOVED_STATUSES, 'unknown ok not-installed'], true)) {
+                continue;
+            }
+            if ($status !== 'install ok installed' || ! $this->isSafeVersion($version)) {
+                $unverifiable[] = $package;
+
+                continue;
+            }
+            $versions[$package][] = $version;
+        }
+
+        return new InstalledToolInventory($versions, $result, $unverifiable);
     }
 
     public function installedVersion(Node $node, string $package): ?string
