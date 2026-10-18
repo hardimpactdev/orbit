@@ -183,34 +183,34 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         $this->connected($server, true, function (Client $client) use ($server): void {
             $default = $this->users($server, $client)['default'] ?? throw $this->failed($server);
             if (! $default->hasOnlyPassword($server->root_password)) {
-            $ownId = $this->command($server, $client, ['CLIENT', 'ID']);
-            if (! is_int($ownId) && ! is_string($ownId)) {
-                throw $this->failed($server);
-            }
-            $ownId = (string) $ownId;
-            $listing = $this->command($server, $client, ['CLIENT', 'LIST', 'USER', 'default']);
-            if (! is_string($listing)) {
-                throw $this->failed($server);
-            }
-            $addresses = [];
-            foreach (explode("\n", trim($listing)) as $line) {
-                $fields = [];
-                foreach (explode(' ', $line) as $field) {
-                    $pair = explode('=', $field, 2);
-                    if (count($pair) === 2) {
-                        $fields[$pair[0]] = $pair[1];
+                $ownId = $this->command($server, $client, ['CLIENT', 'ID']);
+                if (! is_int($ownId) && ! is_string($ownId)) {
+                    throw $this->failed($server);
+                }
+                $ownId = (string) $ownId;
+                $listing = $this->command($server, $client, ['CLIENT', 'LIST', 'USER', 'default']);
+                if (! is_string($listing)) {
+                    throw $this->failed($server);
+                }
+                $addresses = [];
+                foreach (explode("\n", trim($listing)) as $line) {
+                    $fields = [];
+                    foreach (explode(' ', $line) as $field) {
+                        $pair = explode('=', $field, 2);
+                        if (count($pair) === 2) {
+                            $fields[$pair[0]] = $pair[1];
+                        }
+                    }
+                    if (($fields['id'] ?? $ownId) !== $ownId) {
+                        $address = $fields['addr'] ?? 'unknown';
+                        $addresses[] = preg_match('/\A[0-9a-fA-F:.\[\]]+\z/', $address) === 1 ? $address : 'unknown';
                     }
                 }
-                if (($fields['id'] ?? $ownId) !== $ownId) {
-                    $address = $fields['addr'] ?? 'unknown';
-                    $addresses[] = preg_match('/\A[0-9a-fA-F:.\[\]]+\z/', $address) === 1 ? $address : 'unknown';
+                if ($addresses !== []) {
+                    throw new ResourceOperationException('database.server_in_use', count($addresses).' clients still use default: '.implode(', ', $addresses).'.', 409);
                 }
-            }
-            if ($addresses !== []) {
-                throw new ResourceOperationException('database.server_in_use', count($addresses).' clients still use default: '.implode(', ', $addresses).'.', 409);
-            }
 
-            $this->command($server, $client, ['ACL', 'SETUSER', 'default', 'resetpass', '#'.ValkeyAclUser::passwordHash($server->root_password)]);
+                $this->command($server, $client, ['ACL', 'SETUSER', 'default', 'resetpass', '#'.ValkeyAclUser::passwordHash($server->root_password)]);
             }
             try {
                 $this->command($server, $client, ['ACL', 'SAVE']);

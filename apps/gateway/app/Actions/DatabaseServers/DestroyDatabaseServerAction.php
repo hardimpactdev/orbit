@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseServers;
 
 use App\Actions\Processes\DestroyProcessAction;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\ValkeyAclLock;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
 use App\Models\Process;
 

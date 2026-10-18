@@ -33,6 +33,7 @@ use App\Models\Process;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Predis\Client;
+use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
 
 /**
@@ -364,7 +365,7 @@ describe('a Valkey Database server in Docker', function (): void {
         try {
             $reply = $anonymous->executeRaw(['ACL', 'LIST']);
             expect((string) $reply)->toStartWith('NOAUTH');
-        } catch (\Predis\Connection\ConnectionException) {
+        } catch (ConnectionException) {
             $anonymous->disconnect();
             expect((string) $anonymous->executeRaw(['ACL', 'LIST']))->toStartWith('NOAUTH');
         }
