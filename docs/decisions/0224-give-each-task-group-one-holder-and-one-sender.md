@@ -14,7 +14,7 @@ In progress.
 
 Principle: [Lean](/mission#principles). Seven of the eleven guards of a task checkout go, and one holder per group replaces them. It also serves [One way, one name](/mission#principles): one sender, one turn record, and one holder. No principle exception.
 
-Nick approved this decision on 2026-10-18. It is built after the steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land, and before Tasks moves into its own extension.
+Nick approved this decision on 2026-10-18. It is built after the steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land and [#1340](https://github.com/nckrtl/orbit/pull/1340) merges, and before Tasks moves into its own extension.
 
 ## Context
 
@@ -173,7 +173,9 @@ The scheduler state gates, the IMMEDIATE transactions, and `TaskVmWorkspaceGuard
 
 ### The tick stays fast
 
-The tick only decides and sends. It reads and writes the database, reads Pi threads, sends turns, and dispatches jobs. It makes no SSH call, runs no Git command, calls no GitHub API, and calls no model.
+The tick only decides and sends. It reads and writes the database, reads Pi threads, sends turns, and dispatches jobs. It makes no SSH call and runs no Git command. Its only outbound HTTP calls are its Pi calls, which the pass budget below bounds. So it calls no GitHub API, no model, and no webhook.
+
+- [#1340](https://github.com/nckrtl/orbit/pull/1340) deletes the Coder settle notifier, whose webhook posts the tick makes today (`TaskConsultation.php:858`, `TaskSettling.php:568`). It is a prerequisite of this build. No step here moves those calls.
 
 - **Bound.** A tick pass finishes in under 5 s at the p99, and no pass takes 30 s.
 - `TaskTickClock` records the duration of each pass. `tasks:status` reports the p99 and the maximum of the last hour.
@@ -263,7 +265,7 @@ The tick stays on the `tasks` queue. The new jobs and `PublishTaskVmCommit`, whi
 - The dispatcher is a separate class, `TaskTurnDispatcher`. It is the only caller of an agent driver's `send`, `create`, and `respond` in Tasks code. Only the tick calls it.
 - `AgentDriverRegistry::get` returns the plain driver. `LeasedAgentDriver` goes.
 - An architecture test fails on a call of an agent driver's `send`, `create`, or `respond` in Tasks code outside the dispatcher. It also fails on a caller of the dispatcher outside the tick.
-- A second architecture test fails on an SSH call, a Git command, a GitHub call, or a model call in the tick.
+- A second architecture test fails on an SSH call or a Git command in the tick. It also fails on any HTTP client in the tick other than the Pi client, which covers GitHub, model, and webhook calls.
 
 ### One turn-request record
 
@@ -340,15 +342,21 @@ When another race occurs, it gets its own decision with its data.
 
 ### Build order
 
-The build starts after the steps of ADR 0223 land, so the main-merge actor is already gone. It ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
+The build starts after two prerequisites:
+
+- The steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land, so the main-merge actor is already gone.
+- [#1340](https://github.com/nckrtl/orbit/pull/1340) merges, so the tick sends no webhook.
+
+ It ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
 
 1. **Wake and measure the tick.** Add `RunTaskTick`, the wake marker, and the release-then-read rule, with the interleaving test. `TaskTickClock` records each pass. `tasks:status` reports the p99 and the maximum. Doctor fails when the p99 is 5 s or more, or when a pass took 30 s.
 2. **One dispatcher.** Add `TaskTurnDispatcher`, `task_turn_requests`, and the first architecture test. The test starts with an allowlist of today's send sites. Move the tick's own sends to the dispatcher. The key columns stay, because the actions of step 3 still write them.
-   - Delete `LeasedAgentDriver`. `AgentDriverRegistry::get` returns the plain driver.
+   - `LeasedAgentDriver` stays in this step. The direct sends of step 3 still need its dispatch bookkeeping, and the dispatcher calls drivers through it.
    - Delete the pending-send replays in `TaskSubtaskRunner` (`:78`), `TaskReviewOutcome` (`:77-80`), and `TaskSessionActor` (`:105`), and `TaskWorkspaceLease::pendingSend`.
    - Delete the opening-turn bypass in `TaskAgentSpawner`.
 3. **Requests record intent and wake the tick.** Move every send of `StoreTaskCommentAction` and `ResumeDeliverableCorrectionAction` to turn requests. Each request wakes the tick. A baseline retry becomes a recorded request. Empty the allowlist. Then no code writes the key columns, so this step drops them.
    - Delete the `completion_reminder_*`, `review_reminder_*`, and `review_notified_*` key columns, with their writes in `StoreTaskCommentAction` (`:457-459`) and `ResumeDeliverableCorrectionAction` (`:114-119`).
+   - Delete `LeasedAgentDriver`, because this step moves its last callers. The turn requests now hold its dispatch bookkeeping, and `AgentDriverRegistry::get` returns the plain driver.
    - Delete `pending_resolution_*` and `retryPendingResolution`.
    - Delete the `direction_answer_*`, `ended_pr_notice_*`, and `deliverable_correction_resume` columns.
    - Delete the `resolution_delivered_comment_id` trigger of the baseline retry in `TaskSubtaskRunner`.
@@ -428,7 +436,7 @@ The build starts after the steps of ADR 0223 land, so the main-merge actor is al
 - Detail: [Tasks](/reference/tasks): Scheduler, Workspace lease, Task workspace, Session routing, Retry a transient provider error, Recover a Pi server restart, Review a subtask, "The reviewer does not edit", Cancel a stuck task, and Complete and cleanup. [Gateway queue](/reference/gateway-queue). [Doctor](/cli/doctor) and [`tasks:status`](/cli/tasks#orbit-tasksstatus)
 - Verify: the tests and live reads below.
   - In apps/gateway, the architecture test that forbids an agent `send`, `create`, or `respond` outside the dispatcher.
-  - In apps/gateway, the architecture test that forbids an SSH call, a Git command, a GitHub call, or a model call in the tick.
+  - In apps/gateway, the architecture test that forbids an SSH call, a Git command, and any HTTP client other than the Pi client in the tick.
   - In apps/gateway, `php artisan test --compact --filter='TaskScheduler|TaskSubtaskRunner|TaskReviewOutcome|TaskPublication|TaskConsultation|StoreTaskComment|RetryTaskBaseline|CancelTaskGroup'`.
   - In apps/gateway, a test that a reviewer edit after `changes_requested` is gone before the implementer resumes.
   - On the live Gateway, after the build, the tick's p99 stays under 5 s, and no pass takes 30 s.
