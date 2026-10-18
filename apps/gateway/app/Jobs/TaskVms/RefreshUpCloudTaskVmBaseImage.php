@@ -33,7 +33,7 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null)
     {
-        $this->onTaskVmQueue(GatewayQueue::Builds);
+        $this->onTaskVmQueue(GatewayQueue::OptionalBuilds);
     }
 
     public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder, RecipeImageBuilds $builds): void

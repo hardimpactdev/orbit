@@ -96,7 +96,7 @@ def image_javascript(payload):
         safe_directory(directory, account.pw_uid, account.pw_gid)
     with tempfile.TemporaryDirectory(prefix='orbit-image-js-') as directory:
         work = Path(directory)
-        downloads = {name: download(tools[name], payload['architecture'], work / (name + '.archive')) for name in names if name in tools}
+        downloads = {name: download(tools[name], payload['architecture'], work / (name + '.archive')) for name in names if name != 'vp' and name in tools}
         install_javascript(tools, downloads, work, account, payload.get('vp_lock'))
 
 
@@ -233,7 +233,9 @@ def image_main():
          'agent': image_agent, 'verify': image_verify}[phase](payload)
         print('{"ok":true}')
         return 0
-    except Exception:
+    except Exception as error:
+        if isinstance(error, RecipeFailure) and error.detail:
+            print(failure_output(error.detail), file=IMAGE_LOG if IMAGE_LOG is not None else sys.stderr, flush=True)
         if IMAGE_LOG is not None:
             traceback.print_exc(file=IMAGE_LOG)
             IMAGE_LOG.flush()

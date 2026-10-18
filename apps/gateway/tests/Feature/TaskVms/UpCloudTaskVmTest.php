@@ -955,7 +955,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
         expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
             ->and($this->upcloud->servers)->toBe([])
-            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds']);
+            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds-optional']);
     });
 
     it('handles a serialized refresh job queued before the recipe fence', function (): void {
@@ -1027,13 +1027,16 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'succeeded']);
     });
 
-    it('queues required Incus chains before the optional UpCloud build', function (): void {
+    it('queues UpCloud below waiting Incus chain steps in the same supervisor', function (): void {
         Queue::fake();
         TaskVmImageBuild::query()->delete();
 
         app(RecipeImageBuilds::class)->reconcile();
 
-        expect(array_keys(Queue::pushedJobs()))->toBe([BuildRecipeImageStep::class, RefreshUpCloudTaskVmBaseImage::class]);
+        Queue::assertPushedOn('builds', BuildRecipeImageStep::class);
+        Queue::assertPushedOn('builds-optional', RefreshUpCloudTaskVmBaseImage::class);
+        expect(config('horizon.defaults.builds.queue'))->toBe(['builds', 'builds-optional'])
+            ->and(config('horizon.defaults.builds.balance'))->toBeFalse();
         expect($this->upcloud->created)->toBe([]);
     });
 

@@ -72,7 +72,7 @@ return [
         ],
         'builds' => [
             'connection' => 'gateway',
-            'queue' => ['builds'],
+            'queue' => ['builds', 'builds-optional'],
             'balance' => false,
             'minProcesses' => 2,
             'maxProcesses' => 2,

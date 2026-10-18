@@ -590,14 +590,22 @@ class RecipeVersionsTest(unittest.TestCase):
         source.write_bytes(LEGACY_SOURCE)
         backup = self.apt / 'ubuntu.sources.orbit-snapshot-backup'
         backup.write_text('earlier backup')
-        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
             recipe.repair_ubuntu_sources('amd64')
+        self.assertIn(str(backup), failed.exception.detail)
+        self.assertIn('differs from the source', failed.exception.detail)
         self.assertEqual(backup.read_text(), 'earlier backup')
         backup.unlink()
         backup.symlink_to(source)
-        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
             recipe.repair_ubuntu_sources('amd64')
+        self.assertIn('is a symlink', failed.exception.detail)
         self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+        backup.unlink()
+        backup.mkdir()
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
+            recipe.repair_ubuntu_sources('amd64')
+        self.assertIn('is not a regular file', failed.exception.detail)
 
     def test_repair_can_retry_after_a_successful_backup_and_failed_source_publication(self):
         source = self.apt / 'sources.list.d/ubuntu.sources'
@@ -853,6 +861,43 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertEqual(failure['stage'], 'recipe-stage:apt-source')
         self.assertEqual(failure['command'], ['apt-get', 'update'])
         self.assertEqual(failure['stderr'], 'repository signature failed')
+
+    def test_apt_validation_reason_survives_apply_and_the_node_entrypoint(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_bytes(LEGACY_SOURCE)
+        backup = self.apt / 'ubuntu.sources.orbit-snapshot-backup'
+        backup.write_text('earlier backup')
+        payload = {'architecture': 'amd64', 'tools': {}}
+        with patch.object(recipe, 'platform_check'), \
+             patch.object(recipe, 'POLICY', self.apt / 'policy'), \
+             patch.object(recipe, 'packages', return_value={}), \
+             patch.object(sys, 'argv', ['program', 'apply', json.dumps(payload)]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(recipe.main(), 1)
+        failure = json.loads(output.getvalue())['failure']
+        self.assertEqual(failure['stage'], 'recipe-stage:apt-source')
+        self.assertIn(str(backup), failure['reason'])
+        self.assertIn('differs from the source', failure['reason'])
+        self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+
+    def test_validation_reason_is_sanitized_through_the_node_and_image_entrypoints(self):
+        error = recipe.RecipeFailure('apt-source', detail='Provider source https://user:password@example.test/ API_TOKEN=private-token')
+        with patch.object(recipe, 'platform_check', side_effect=error), \
+             patch.object(sys, 'argv', ['program', 'apply', '{"architecture":"amd64"}']), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(recipe.main(), 1)
+        reason = json.loads(output.getvalue())['failure']['reason']
+        self.assertIn('[REDACTED]', reason)
+        self.assertNotIn('user:password', reason)
+        self.assertNotIn('private-token', reason)
+        # Before the image phase log opens, the diagnostic still reaches stderr.
+        error = image.RecipeFailure('apt-source', detail=error.detail)
+        with patch.object(image, 'Path', side_effect=error), \
+             patch.object(sys, 'argv', ['program', 'packages', '{"profile":"base","architecture":"amd64"}']), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(image.image_main(), 1)
+        self.assertIn('[REDACTED]', output.getvalue())
+        self.assertNotIn('private-token', output.getvalue())
 
     def test_large_unicode_and_control_output_stays_within_the_ssh_response_limit(self):
         result = recipe.failure_output(('☃\n\t\x1b' * 15000))

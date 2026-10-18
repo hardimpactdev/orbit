@@ -431,6 +431,23 @@ it('retains redacted package command output in the failed convergence result', f
     expect($node->refresh()->settings)->toBe([]);
 })->with(['packages', 'apt-source', 'tools', 'restart:nginx', 'health:php8.5-fpm']);
 
+it('retains a source validation reason without requiring command output', function (): void {
+    $node = FleetFixtures::node('recipe-source-validation');
+    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+        'stage' => 'recipe-stage:apt-source',
+        'reason' => 'Backup [/etc/apt/ubuntu.sources.orbit-snapshot-backup] differs from the source. API_TOKEN=private-token',
+    ]], JSON_THROW_ON_ERROR)));
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(1)
+        ->and($result['message'])->toContain('recipe-stage:apt-source', '/etc/apt/ubuntu.sources.orbit-snapshot-backup', 'differs from the source', '[REDACTED]')
+        ->and($result['automatic_rollback'])->toBeFalse();
+    expect($result['message'])->not->toContain('private-token');
+    expect($node->refresh()->settings)->toBe([]);
+});
+
 it('shows a source repair and an unsupported newer Ubuntu build as planned actions without applying them', function (?string $reason): void {
     $node = FleetFixtures::node('recipe-refused');
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);

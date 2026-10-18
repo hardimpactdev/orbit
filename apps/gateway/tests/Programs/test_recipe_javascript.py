@@ -30,12 +30,7 @@ class RecipeJavascriptTest(unittest.TestCase):
                 store = scope / 'global'
                 store.mkdir()
                 (store / 'keep').write_text('managed globals')
-                archive = home / 'vp.archive'
-                archive.write_bytes(b'verified-download-fixture')
-                unpacked = home / 'unpacked'
-                (unpacked / 'package').mkdir(parents=True)
                 manifest = {'version': '1.2.0', 'dependencies': {'vite': 'npm:@voidzero-dev/vite-plus-core@1.2.0'}}
-                (unpacked / 'package/package.json').write_text(json.dumps(manifest))
                 lock = json.dumps({'name': 'orbit-recipe-vite-plus', 'version': '1.2.0', 'packages': {'': {'dependencies': {'vite-plus': '1.2.0'}}}})
                 tools = {'vp': {'source': 'artifact', 'version': '1.2.0', 'lock_sha256': hashlib.sha256(lock.encode()).hexdigest()},
                          'node': {'source': 'artifact', 'version': '24.22.0'}}
@@ -59,13 +54,15 @@ class RecipeJavascriptTest(unittest.TestCase):
 
                 with patch.dict(os.environ), \
                      patch.object(module, 'safe_directory', side_effect=directory), \
-                     patch.object(module, 'extract', return_value=unpacked), \
+                     patch.object(module, 'extract') as extract, \
                      patch.object(module, 'publish', side_effect=write), \
                      patch.object(module, 'run', side_effect=command), \
                      patch.object(module.pwd, 'getpwnam', return_value=account), \
                      patch.object(module, 'inspect', return_value={'vp': '1.0.0', 'node': '24.22.0'}), \
-                     patch.object(module, 'download', side_effect=lambda pin, arch, path, archive=archive: archive):
-                    module.install_javascript(tools, {'vp': archive}, home, account, lock)
+                     patch.object(module, 'download') as download:
+                    module.install_javascript(tools, {}, home, account, lock)
+                    extract.assert_not_called()
+                    download.assert_not_called()
 
                 self.assertEqual(json.loads((scope / 'recipe/vp-current/package.json').read_text()), manifest)
                 self.assertEqual(active.resolve(), (scope / ('recipe/vp-runtime-' + tools['vp']['lock_sha256']) / 'node_modules/vite-plus'))
@@ -73,6 +70,24 @@ class RecipeJavascriptTest(unittest.TestCase):
                 self.assertEqual((store / 'keep').read_text(), 'managed globals')
                 install = next(command for command in commands if 'ci' in command)
                 self.assertIn('--ignore-scripts', install)
+
+    def test_image_fetches_only_the_standalone_dispatcher_and_not_the_npm_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            account = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=directory)
+            tools = {'vp': {'version': '1.2.0', 'artifacts': {'amd64': {'url': 'https://example.test/vite-plus.tgz'}}},
+                     'vp-cli': {'version': '1.2.0', 'artifacts': {'amd64': {'url': 'https://example.test/vp-cli.tgz'}}}}
+            archive = Path(directory) / 'dispatcher.archive'
+            with patch.dict(os.environ), \
+                 patch.object(image, 'inspect', return_value={'vp': '1.0.0', 'vp-cli': '1.0.0'}), \
+                 patch.object(image.pwd, 'getpwnam', return_value=account), \
+                 patch.object(image, 'safe_directory'), \
+                 patch.object(image, 'download', return_value=archive) as download, \
+                 patch.object(image, 'install_javascript') as install:
+                image.image_javascript({'tools': tools, 'architecture': 'amd64', 'vp_lock': 'locked runtime'})
+            self.assertEqual(download.call_count, 1)
+            self.assertEqual(download.call_args.args[0], tools['vp-cli'])
+            self.assertEqual(install.call_args.args[1], {'vp-cli': archive})
+            self.assertEqual(install.call_args.args[-1], 'locked runtime')
 
     def test_same_version_with_an_old_lock_is_not_current(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -125,7 +140,7 @@ class RealRecipeJavascriptTest(unittest.TestCase):
             (store / 'keep').write_text('managed globals')
             pins = json.loads((Path(__file__).resolve().parents[2] / 'resources/machine-software/recipe.json').read_text())['tools']
             tools = {name: pins[name] for name in ('node', 'vp-cli', 'vp', 'pnpm')}
-            downloads = {name: recipe.download(pin, 'amd64', home / (name + '.archive')) for name, pin in tools.items()}
+            downloads = {name: recipe.download(pin, 'amd64', home / (name + '.archive')) for name, pin in tools.items() if name != 'vp'}
             account = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name=pwd.getpwuid(os.getuid()).pw_name)
             safe, publish, run = recipe.safe_directory, recipe.publish, recipe.run
 
