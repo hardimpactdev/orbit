@@ -85,6 +85,40 @@ class ComposerCacheTest(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b'archive')
             self.assertEqual(next((root / 'quarantine').iterdir()).read_bytes(), b'corrupt')
 
+    def test_each_project_installs_its_locked_archive_version_without_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts, archives = [], {}
+            for version, reference in [('1.0.0', 'a'), ('2.0.0', 'b')]:
+                stream = io.BytesIO()
+                with zipfile.ZipFile(stream, 'w') as package:
+                    package.writestr('demo/composer.json', json.dumps({'name': 'acme/demo', 'version': version}))
+                    package.writestr('demo/proof.txt', version)
+                data = stream.getvalue()
+                url = 'https://api.github.com/repos/acme/demo/zipball/' + reference * 40
+                artifact = dict(manager='composer', package='acme/demo', version=version, url=url,
+                                integrity='sha1-' + hashlib.sha1(data).hexdigest(),
+                                key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
+                artifacts.append(artifact)
+                archives[url] = data
+            shared = root / 'shared'
+            hashes = cache['fill'](shared, artifacts, 100000, lambda url: io.BytesIO(archives[url]))
+            self.assertEqual(set(hashes), {artifact['key'] for artifact in artifacts})
+            for artifact in artifacts:
+                checkout = root / artifact['version']
+                checkout.mkdir()
+                home = checkout / 'home'
+                seed(shared, home, [artifact])
+                files = list((home / '.cache/composer/files/acme/demo').glob('*.zip'))
+                self.assertEqual(len(files), 1)
+                (checkout / 'composer.json').write_text(json.dumps({'require': {'acme/demo': artifact['version']}}))
+                (checkout / 'composer.lock').write_text(json.dumps({'content-hash': 'fixture', 'packages': [dict(name='acme/demo', version=artifact['version'], type='library', dist=dict(type='zip', url=artifact['url'], shasum=artifact['integrity'][5:]))], 'packages-dev': []}))
+                env = {**__import__('os').environ, 'COMPOSER_CACHE_DIR': str(home / '.cache/composer'), 'COMPOSER_HOME': str(home / '.composer'), 'COMPOSER_ALLOW_SUPERUSER': '1', 'COMPOSER_DISABLE_NETWORK': '1'}
+                result = subprocess.run(['composer', 'install', '--no-interaction', '--no-plugins', '--no-scripts', '--no-progress'], cwd=checkout, env=env, capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertNotIn(b'Downloading', result.stderr)
+                self.assertEqual((checkout / 'vendor/acme/demo/proof.txt').read_text(), artifact['version'])
+
     def test_rejects_bad_integrity_limit_and_unsafe_url(self):
         for change, limit in [({}, 1), ({'integrity': 'sha1-' + '0' * 40}, 100000),
                               ({'url': 'http://127.0.0.1/secret'}, 100000),

@@ -52,6 +52,7 @@ it('tracks changed JavaScript locks below packages and clears usage on default-b
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Web', 'slug' => 'web', 'default_branch' => 'main']);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
     Queue::fake([FillTaskVmPackageCache::class]);
+    file_put_contents($root.'/packages/web/package.json', '{}');
     file_put_contents($root.'/packages/web/package-lock.json', '{"lockfileVersion":3,"packages":{"node_modules/demo":{"version":"1.2.3","resolved":"https://registry.npmjs.org/demo/-/demo-1.2.3.tgz","integrity":"sha512-ZGVtbw=="}}}');
     (new Process(['git', '-C', $root, 'add', '.']))->mustRun();
     (new Process(['git', '-C', $root, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '--quiet', '-m', 'lock']))->mustRun();

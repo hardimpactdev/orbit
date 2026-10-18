@@ -25,15 +25,24 @@ final readonly class ObservePackageCacheAction
     public function execute(Project $project, string $mirror, ?string $commit): void
     {
         $snapshot = PackageCacheSnapshot::query()->find($project->id);
-        if ($snapshot instanceof PackageCacheSnapshot && $snapshot->commit === $commit && ! $snapshot->fill_pending) {
-            return;
-        }
-        $blobs = [];
+        $files = [];
         if ($commit !== null) {
             foreach (explode("\0", $this->git($mirror, ['ls-tree', '-r', '-z', $commit])) as $entry) {
-                if (preg_match('~\A100[0-7]{3} blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)\t((?:(?:apps|packages)/[^\x00]+/)?(?:composer\.lock|package-lock\.json|bun\.lock|pnpm-lock\.yaml))\z~D', $entry, $match) === 1) {
-                    $blobs[$match[2]] = $match[1];
+                if (preg_match('~\A100[0-7]{3} blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)\t((?:(?:apps|packages)/[^\x00]+/)?(?:composer\.json|package\.json|composer\.lock|package-lock\.json|bun\.lock|pnpm-lock\.yaml))\z~D', $entry, $match) === 1) {
+                    $files[$match[2]] = $match[1];
                 }
+            }
+        }
+        $blobs = [];
+        foreach ($files as $path => $blob) {
+            $filename = basename($path);
+            if (in_array($filename, ['composer.json', 'package.json'], true)) {
+                continue;
+            }
+            $directory = dirname($path) === '.' ? '' : dirname($path).'/';
+            $manifest = $filename === 'composer.lock' ? 'composer.json' : 'package.json';
+            if (isset($files[$directory.$manifest])) {
+                $blobs[$path] = $blob;
             }
         }
         ksort($blobs);

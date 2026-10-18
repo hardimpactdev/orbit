@@ -14,6 +14,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\NpmPackageCache;
 use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
 use App\Models\Node;
@@ -55,8 +56,10 @@ it('queues only changed default-branch lock blobs and includes monorepo locks an
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31), TaskVmSettingsBuilder::host(32)]]);
     Queue::fake([FillTaskVmPackageCache::class]);
     $observe = app(ObservePackageCacheAction::class);
+    file_put_contents($root.'/composer.json', '{}');
     file_put_contents($root.'/composer.lock', '{"packages":[]}');
     mkdir($root.'/apps/api', 0700, true);
+    file_put_contents($root.'/apps/api/composer.json', '{}');
     file_put_contents($root.'/apps/api/composer.lock', '{"packages":[]}');
     $first = package_cache_commit($root);
 
@@ -73,6 +76,38 @@ it('queues only changed default-branch lock blobs and includes monorepo locks an
 
     Queue::assertPushed(FillTaskVmPackageCache::class, 2);
     expect(array_keys(PackageCacheSnapshot::query()->findOrFail($project->id)->blobs))->toBe(['composer.lock']);
+});
+
+it('reconciles lock selection at the same commit and excludes standalone fixture locks', function (): void {
+    $root = TestOrbitHome::scratch('package-cache-manifests');
+    mkdir($root.'/packages/php-sdk', 0700, true);
+    mkdir($root.'/apps/api/tests/Fixtures', 0700, true);
+    package_cache_git($root, ['init', '-b', 'main']);
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
+    Queue::fake([FillTaskVmPackageCache::class]);
+    $lock = json_encode(['packages' => [['name' => 'symfony/finder', 'version' => 'v8.1.7', 'dist' => ['type' => 'zip', 'url' => 'https://api.github.com/repos/symfony/finder/zipball/'.str_repeat('a', 40)]]]], JSON_THROW_ON_ERROR);
+    file_put_contents($root.'/packages/php-sdk/composer.json', '{}');
+    file_put_contents($root.'/packages/php-sdk/composer.lock', $lock);
+    copy(base_path('tests/Fixtures/Dependencies/Pnpm/pnpm-lock.yaml'), $root.'/apps/api/tests/Fixtures/pnpm-lock.yaml');
+    $commit = package_cache_commit($root);
+    $snapshot = PackageCacheSnapshot::query()->create([
+        'project_id' => $project->id, 'commit' => $commit, 'fill_pending' => false,
+        'blobs' => ['apps/api/tests/Fixtures/pnpm-lock.yaml' => package_cache_git($root, ['rev-parse', 'HEAD:apps/api/tests/Fixtures/pnpm-lock.yaml'])],
+        'artifacts' => app(NpmPackageCache::class)->read('pnpm-lock.yaml', file_get_contents($root.'/apps/api/tests/Fixtures/pnpm-lock.yaml')),
+    ]);
+
+    app(ObservePackageCacheAction::class)->execute($project, $root.'/.git', $commit);
+
+    expect(array_keys($snapshot->fresh()->blobs))->toBe(['packages/php-sdk/composer.lock']);
+    expect($snapshot->fresh()->artifacts)->toBe((new ComposerPackageCache)->read($lock));
+    Queue::assertPushed(FillTaskVmPackageCache::class, 1);
+
+    unlink($root.'/packages/php-sdk/composer.json');
+    app(ObservePackageCacheAction::class)->execute($project, $root.'/.git', package_cache_commit($root));
+
+    expect($snapshot->fresh()->artifacts)->toBe([]);
+    expect($snapshot->fresh()->blobs)->toBe([]);
 });
 
 it('coalesces pending fills by host and permits a successor once processing starts', function (): void {
@@ -169,7 +204,7 @@ it('attaches a host-enforced read-only directory and refuses a writable existing
     expect(fn () => $cache->prepare($vm, $project))->toThrow(TaskVmException::class, 'not the expected read-only');
 });
 
-it('publishes verified Project usage only after a successful fill and skips a superseded snapshot', function (): void {
+it('publishes every Projects archive version only after a successful fill and skips a superseded snapshot', function (): void {
     Http::preventStrayRequests();
     GitHubTestSupport::storeApp();
     Http::fake([
@@ -184,6 +219,8 @@ it('publishes verified Project usage only after a successful fill and skips a su
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Shop', 'slug' => 'shop']);
     $artifact = (new ComposerPackageCache)->read('{"packages":[{"name":"acme/demo","version":"1.0.0","dist":{"type":"zip","url":"https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40).'"}}]}')[0];
     $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'commit' => str_repeat('a', 40), 'blobs' => ['composer.lock' => str_repeat('a', 40)], 'artifacts' => [$artifact]]);
+    $otherArtifact = (new ComposerPackageCache)->read('{"packages":[{"name":"acme/demo","version":"2.0.0","dist":{"type":"zip","url":"https://api.github.com/repos/acme/demo/zipball/'.str_repeat('c', 40).'"}}]}')[0];
+    PackageCacheSnapshot::query()->whereKey($uncovered->id)->update(['artifacts' => [$otherArtifact]]);
     $ssh = new class implements SshExecutor
     {
         public bool $fail = false;
@@ -212,17 +249,19 @@ it('publishes verified Project usage only after a successful fill and skips a su
 
     $fill->execute($node->id);
 
-    expect(PackageCacheEntry::query()->sole()->integrity)->toBe('sha256-'.str_repeat('b', 64));
+    expect(PackageCacheEntry::query()->orderBy('version')->pluck('version')->all())->toBe(['1.0.0', '2.0.0']);
+    expect(PackageCacheEntry::query()->pluck('key')->all())->toEqualCanonicalizing([$artifact['key'], $otherArtifact['key']]);
+    expect(PackageCacheEntry::query()->distinct()->pluck('integrity')->all())->toBe(['sha256-'.str_repeat('b', 64)]);
     $ssh->fail = true;
     expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class);
-    expect(PackageCacheEntry::query()->count())->toBe(1);
+    expect(PackageCacheEntry::query()->count())->toBe(2);
     $ssh->fail = false;
     $ssh->duringFill = fn () => $snapshot->update(['blobs' => [], 'artifacts' => []]);
     $fill->execute($node->id);
-    expect(PackageCacheEntry::query()->count())->toBe(1);
+    expect(PackageCacheEntry::query()->count())->toBe(2);
     $ssh->duringFill = null;
     $fill->execute($node->id);
-    expect(PackageCacheEntry::query()->count())->toBe(0);
+    expect(PackageCacheEntry::query()->count())->toBe(1);
 });
 
 it('publishes available cache artifacts without App coverage and rejects invalid returned hashes', function (): void {
