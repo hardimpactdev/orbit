@@ -185,7 +185,10 @@ def contained_completion(data):
         main_code = int(state['ExecMainCode'])
     except (KeyError, ValueError):
         return None
-    return code if main_code == 1 else 128 + code
+    # A loaded unit can be inactive while its start job is queued. Zero is not an exit status.
+    if main_code not in (os.CLD_EXITED, os.CLD_KILLED, os.CLD_DUMPED):
+        return None
+    return code if main_code == os.CLD_EXITED else 128 + code
 
 
 def retire_unit():
