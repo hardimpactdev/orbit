@@ -7,7 +7,6 @@ namespace App\Infrastructure\ProxyCli;
 use App\Actions\Routes\DestroyRouteAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\ProxyCli\ProxyCliHostnameRoute;
-use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\Routes\RouteStatus;
 use App\Models\Node;
 use App\Models\Route;
@@ -35,11 +34,11 @@ final readonly class ProxyCliRouteTakeover
      *
      * @param  Closure(): void  $publish
      */
-    public function publish(Route $route, Node $node, Closure $publish, int $port = ProxyCliProcess::PORT): void
+    public function publish(Route $route, Node $node, Closure $publish): void
     {
-        $this->projection->run(function () use ($route, $node, $publish, $port): void {
+        $this->projection->run(function () use ($route, $node, $publish): void {
             // Another operation may have changed the Route since enable checked it.
-            if ($this->routes->takeoverCandidate($node, $port)?->id !== $route->id) {
+            if ($this->routes->takeoverCandidate($node)?->id !== $route->id) {
                 $publish();
 
                 return;

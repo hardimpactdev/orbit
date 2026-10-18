@@ -70,6 +70,36 @@ describe('firewall:live:list', function (): void {
             ->toMatchArray(['name' => 'orbit:gateway-https', 'match' => 'missing']);
     });
 
+    it('agrees with the managed catalog on exact Router DNS and HTTPS and rejects stale or different live rules', function (): void {
+        [$router, $member] = router_lan_topology();
+        $this->node->accessibleNodes()->attach($router);
+        $lines = ['Status: active', '[ 1] 10.44.0.10 on orbit ALLOW IN Anywhere # orbit:wireguard-members'];
+        $expected = [];
+        foreach ([['https', 'tcp', '443'], ['dns-udp', 'udp', '53'], ['dns-tcp', 'tcp', '53']] as $index => [$family, $protocol, $port]) {
+            $comment = 'orbit:router-lan-'.$family.':'.$member->id;
+            $lines[] = '[ '.($index + 2)."] 10.20.0.10 {$port}/{$protocol} ALLOW IN 10.20.0.11 # {$comment}";
+            $expected[] = [
+                'name' => $comment, 'role' => 'router', 'action' => 'allow',
+                'source' => '10.20.0.11', 'destination' => '10.20.0.10',
+                'port' => $port, 'protocol' => $protocol, 'interface' => null,
+            ];
+        }
+        live_firewall_ssh(implode("\n", $lines)."\n");
+
+        $managed = $this->getJson("/api/v1/nodes/{$router->id}/managed-firewall-rules")->assertOk()->json('data');
+        expect(array_slice($managed, 1))->toBe($expected);
+        $url = "/api/v1/nodes/{$router->id}/live-firewall-rules";
+        $data = $this->getJson($url)->assertOk()->json('data');
+        expect(array_column($data['live'], 'match'))->toBe(['exact', 'exact', 'exact', 'exact']);
+        expect($data['missing'])->toBe([]);
+
+        $lines[3] = str_replace('53/udp', '54/tcp', $lines[3]);
+        $lines[] = '[ 9] 10.20.0.10 53/tcp ALLOW IN 10.20.0.99 # orbit:router-lan-dns-tcp:999';
+        live_firewall_ssh(implode("\n", $lines)."\n");
+        $data = $this->getJson($url)->assertOk()->json('data');
+        expect(array_column($data['live'], 'match'))->toBe(['exact', 'exact', 'drift', 'exact', 'unmanaged']);
+    });
+
     it('returns no live or missing rows when UFW cannot be read', function (): void {
         live_firewall_ssh(throws: true);
 

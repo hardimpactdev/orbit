@@ -51,7 +51,7 @@ describe('DatabaseConnection record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new UpdateDatabaseConnectionAction()->execute($connection, new UpdateDatabaseConnectionData(
+        app(UpdateDatabaseConnectionAction::class)->execute($connection, new UpdateDatabaseConnectionData(
             driverProvided: false,
             driver: null,
             nodeIdProvided: false,

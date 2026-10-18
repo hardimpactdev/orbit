@@ -17,6 +17,12 @@ final readonly class RouterLanIngressPolicy
 {
     public const string CommentPrefix = 'orbit:router-lan-https';
 
+    public const array Families = [
+        self::CommentPrefix => ['protocol' => 'tcp', 'port' => '443'],
+        'orbit:router-lan-dns-udp' => ['protocol' => 'udp', 'port' => '53'],
+        'orbit:router-lan-dns-tcp' => ['protocol' => 'tcp', 'port' => '53'],
+    ];
+
     /**
      * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
      * @param  array<int, array{state?: ClusterState}>  $clusterOverrides
@@ -132,15 +138,17 @@ final readonly class RouterLanIngressPolicy
             ->values();
     }
 
-    public function commentFor(int $sourceNodeId): string
+    public function commentFor(int $sourceNodeId, string $prefix = self::CommentPrefix): string
     {
-        return self::CommentPrefix.':'.$sourceNodeId;
+        return $prefix.':'.$sourceNodeId;
     }
 
     public function ownsComment(string $comment): bool
     {
-        return $comment === self::CommentPrefix
-            || str_starts_with($comment, self::CommentPrefix.':');
+        return array_any(
+            array_keys(self::Families),
+            static fn (string $prefix): bool => $comment === $prefix || str_starts_with($comment, $prefix.':'),
+        );
     }
 
     /**

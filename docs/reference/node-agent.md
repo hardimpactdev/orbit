@@ -3,13 +3,13 @@ title: "Node agent"
 description: "What orbit-agent observes on a managed Node, how it connects and authenticates, how the Gateway installs it and keeps a view of its reports, and how Doctor checks it."
 covers:
   - apps/agent/**
-  - apps/gateway/app/Infrastructure/AgentView/**
-  - apps/gateway/app/Domain/AgentView/**
+  - apps/gateway/app/{Infrastructure,Domain}/AgentView/**
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
   - apps/gateway/database/migrations/2026_09_30_090000_drop_agent_secret_exempt_from_nodes.php
   - .github/workflows/orbit-agent-release.yml
+  - tools/{check_agent_release,test_check_agent_release}.py
 ---
 
 # Node agent
@@ -374,7 +374,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
+A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
 
 ```bash
 gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
@@ -387,6 +387,14 @@ gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={com
 | `SHA256SUMS` | The checksums of both binaries |
 
 The job refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
+
+Before merging an agent version bump, wait for its Rust tests and both static builds to pass, have the agent changes reviewed, and create the tag at that reviewed commit. Wait for the release workflow to publish all three assets. Then update `tools.orbit-agent` in `apps/gateway/resources/machine-software/recipe.json`: the version, both architecture URLs, and both SHA-256 digests from `SHA256SUMS`.
+
+Update `NodeAgentFootprint::Version` and replace its single release manifest with the current digests; remove the old manifests. Provisioning and the desired fleet state read that pin, and the Gateway recipe tests check that both pins agree. Download both binaries and verify their digests, then run `php artisan orbit:machine-recipe --validate` from `apps/gateway`. Validation needs the Ubuntu archive keyring and the internal `pi` artifact in `ORBIT_HOME/sandbox-artifacts` (or the directory passed with `--artifact-directory`). Include the pin updates in the version bump pull request and have its final diff reviewed before merging. If review changes the published agent code, release a new version; never move a published tag.
+
+Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
+
+Every CI run checks that the Cargo version matches the recipe pin and a published stable release with both binaries and `SHA256SUMS`. It checks both recipe URLs and compares their SHA-256 pins with the published checksum file. Run `python3 tools/check_agent_release.py` from the repository root with Python 3.11 or newer and an authenticated GitHub CLI to check this delivery step locally. A version bump stays red until its release and recipe pin are complete.
 
 ## Limits
 

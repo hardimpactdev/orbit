@@ -1079,7 +1079,7 @@ final readonly class TaskSubtaskRunner
             if ($task->status === TaskStatus::Running && $task->assistance_requested && $scheduler->queueBaselineRetryOnGreenTip($group, $task)) {
                 $task->refresh();
             }
-            if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
+            if ($this->retryBaseline->pending($task)) {
                 try {
                     if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
                         $task->refresh();
