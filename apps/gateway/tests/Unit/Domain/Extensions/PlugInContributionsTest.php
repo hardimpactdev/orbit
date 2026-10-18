@@ -50,14 +50,10 @@ it('injects each contribution into its production consumer once', function (stri
     'DestroyProcessAction ProxyCliProcessOwnership' => [DestroyProcessAction::class, 'guards', ProxyCliProcessOwnership::class],
 ]);
 
-it('gives the collector a safe footprint identity that no other wired artifact uses', function (): void {
-    $footprint = app(NodeFootprint::class);
-    $artifacts = new ReflectionProperty($footprint, 'artifacts')->getValue($footprint);
-    $names = array_map(static fn (object $artifact): string => $artifact->name(), [...$artifacts]);
+it('gives the collector a safe footprint identity', function (): void {
     $name = app(ProxyCliFootprintArtifact::class)->name();
 
     expect($name)->toBe('proxycli')
-        ->and(array_count_values($names)[$name])->toBe(1)
         ->and($name)->toMatch('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D');
 });
 

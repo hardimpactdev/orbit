@@ -112,7 +112,9 @@ The Node footprint applies core's artifacts first, then each contributed `NodeFo
 
 `ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. ProxyCli publishes the collector Node's stored `wireguard_ip`.
 
-`WireGuardAddressAllocator::forProvisioning()` validates requested Node addresses as usable IPv4 hosts in the configured VPN subnet before provisioning stores them. The contribution does not validate that address again. Its test checks that the hostname is unique, lowercase, under `.orbit`, and free of commas and whitespace, and that publication follows the Node's stored address. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contribution and the classes it uses.
+`Ipv4Subnet::containsUsableAddress()` defines usable IPv4 hosts in the configured VPN subnet, excluding network and broadcast addresses. `WireGuardAddressAllocator::forProvisioning()` applies this rule during Node provisioning and macOS enrollment; `GatewayBootstrapIdentityValidator` applies it during Gateway bootstrap, before either path stores the address. The contribution does not validate that address again. Its test checks that the hostname is unique, lowercase, under `.orbit`, and free of commas and whitespace, and that publication follows the Node's stored address.
+
+The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contribution and the classes it uses.
 
 The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. ProxyCli reserves `collector.cli-proxy-api.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 

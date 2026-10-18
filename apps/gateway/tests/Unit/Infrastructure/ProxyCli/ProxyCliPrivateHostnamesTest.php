@@ -19,9 +19,7 @@ it('reserves one safe collector hostname and publishes its VPN address only whil
 
     expect($contribution->hostnames())->toBe(['collector.cli-proxy-api.orbit' => null])
         ->and(array_count_values($names)[ProxyCliHostname::Value])->toBe(1)
-        ->and(ProxyCliHostname::Value)->toMatch('/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+orbit\z/D')
-        ->and(ProxyCliHostname::Value)->toBe(strtolower(ProxyCliHostname::Value))
-        ->toEndWith('.orbit')->not->toMatch('/[,\s]/');
+        ->and(ProxyCliHostname::Value)->toMatch('/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+orbit\z/D');
 
     $node = Node::query()->create([
         'name' => 'collector',
