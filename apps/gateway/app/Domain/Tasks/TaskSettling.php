@@ -722,7 +722,6 @@ final readonly class TaskSettling
     {
         if ($this->reviewFeedback->change($group, [$source => $reason])) {
             $this->broadcasts->groupChanged($group->id);
-
         }
     }
 
@@ -911,7 +910,7 @@ final readonly class TaskSettling
     {
         return $group->assistance_requested
             && ! self::isReviewFeedbackReason($group->assistance_reason)
-            && ! ($group->assistance_kind === AssistanceKind::Failure && $group->assistance_reason === TaskSubtaskRunner::ObservationUnavailableReason);
+            && $group->assistance_kind !== AssistanceKind::Observation;
     }
 
     /**
@@ -1322,7 +1321,6 @@ final readonly class TaskSettling
             'status' => TaskStatus::Cancelled,
             'settled_at' => now(),
             'completion_summary' => 'Cancelled by operator.',
-
         ]);
 
         return $assistanceReason;

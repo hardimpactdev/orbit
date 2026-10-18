@@ -231,12 +231,14 @@ it('cancels an unreachable Node without pushing and the sweep retries removal', 
 
     expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->taskable_id)->toBe($instanceId)
-        ->and($cancelled->assistance_requested)->toBeFalse()
+        ->and($cancelled->assistance_requested)->toBeTrue()
         ->and($cancelled->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
         ->and($publisher->pushes)->toBe([])
         ->and($remover->calls)->toBe([])
         ->and($running->fresh()?->status)->toBe(TaskStatus::Cancelled)
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
+
+    expect(\App\Models\Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())->toBe(['assistance requested']);
 
     $again = app(CancelTaskGroupAction::class)->execute($cancelled);
 
@@ -735,7 +737,7 @@ it('preserves the removal error after a claim attaches during cancellation', fun
         'id' => $group->id,
         'status' => 'cancelled',
         'taskable_id' => $deleted ? null : $workspace->id,
-        'assistance_requested' => false,
+        'assistance_requested' => true,
         'assistance_kind' => 'failure',
         'assistance_reason' => 'Workspace removal failed: Original removal failure.',
     ]);

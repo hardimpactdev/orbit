@@ -109,10 +109,10 @@ final readonly class ResumeDeliverableCorrectionAction
                 }
                 $direction = self::directionPending($locked, $parent);
                 if (! $direction) {
-                    TaskAssistance::clearResolvedParent($locked, $parent);
+                    TaskAssistance::clearResolvedParent($locked, $parent, $comment);
                 }
                 if (! $direction) {
-                    TaskAssistance::apply($locked);
+                    TaskAssistance::apply($locked, source: $comment);
                 }
                 $locked->update(['communication_failures' => 0,
                     'completion_attempt' => $locked->completion_attempt + 1,

@@ -125,8 +125,13 @@ it('persists a Task morph to a Project instance and ordered subtasks', function 
 });
 
 it('drops the retired task notification column without deleting tasks', function (): void {
+    $migration = require database_path('migrations/2026_10_18_160435_drop_task_notification_columns.php');
+    $migration->down();
     $project = Project::query()->create(['name' => 'Notification removal', 'slug' => 'notification-removal', 'repository_url' => 'https://github.com/acme/project.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Keep this task', 'brief' => 'Preserve the task.']);
+
+    expect(Schema::hasColumn('tasks', 'notify_coder'))->toBeTrue();
+    $migration->up();
 
     expect(Schema::hasColumn('tasks', 'notify_coder'))->toBeFalse()
         ->and(Task::topLevel()->find($group->id)?->title)->toBe('Keep this task');

@@ -155,7 +155,7 @@ it('allows a concurrent SQLite writer during a blocked remote correction fetch a
     config(['database.connections.correction_probe' => [...config('database.connections.sqlite'), 'database' => $database], 'database.default' => 'correction_probe']);
     try {
         [$group, $task] = revalidation_fixture([['id' => 'paths', 'type' => 'file', 'path' => 'tests/MissingTest.php']]);
-        $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'completion_attempt' => 2, 'subtask_start_commit' => str_repeat('b', 40)]);
+        test_update_task($task, ['status' => TaskStatus::Running, 'assistance_requested' => true, 'completion_attempt' => 2, 'subtask_start_commit' => str_repeat('b', 40)]);
         $receipt = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'author' => 'implementer', 'body' => 'Ready.', 'posted_at' => now(), 'completion_attempt' => 2]);
         $task->update(['completion_handoff_comment_id' => $receipt->id]);
         TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $receipt->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed, 'failed_step' => 'invalid_deliverable', 'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('b', 40), 'tree_before' => str_repeat('d', 40), 'started_at' => now(), 'finished_at' => now()]);
@@ -524,7 +524,7 @@ it('keeps an ordinary running subtask deliverables locked when the path gate did
         ['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php'],
     ]);
     $repository->trees[str_repeat('b', 40)] = ['app/Present.php'];
-    $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'The implementer is blocked: something else.']);
+    test_update_task($task, ['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'The implementer is blocked: something else.']);
 
     expect(fn () => app(UpdateTaskAction::class)->execute($group->fresh(), $task->fresh(), new UpdateTaskData(null, null, null, [['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']])))
         ->toThrow(ResourceOperationException::class);
@@ -534,7 +534,7 @@ it('records a correction resume without its implementer thread once and keeps it
     [$group, $task] = revalidation_fixture([['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']]);
     $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::Resolution, 'author' => 'operator', 'body' => 'Resume.', 'posted_at' => now()]);
     $resume = ['comment_id' => $comment->id, 'thread_id' => 999_999, 'key' => 'correction-key', 'message' => 'Resume.', 'state' => 'pending'];
-    $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.', 'deliverable_correction_resume' => $resume]);
+    test_update_task($task, ['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.', 'deliverable_correction_resume' => $resume]);
 
     app(ResumeDeliverableCorrectionAction::class)->execute($task);
     app(ResumeDeliverableCorrectionAction::class)->execute($task);

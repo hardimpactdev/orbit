@@ -27,8 +27,6 @@ use Throwable;
 
 final readonly class TaskSubtaskRunner
 {
-    public const string ObservationUnavailableReason = 'Agent observation unavailable beyond the grace period.';
-
     private const int BASELINE_UNSTARTED_PID = 0;
 
     private const string INVALID_DELIVERABLE_STEP = 'invalid_deliverable';
@@ -51,6 +49,7 @@ final readonly class TaskSubtaskRunner
         private TaskSessionActor $actor,
         private RetryTaskBaselineAction $retryBaseline,
         private ResumeDeliverableCorrectionAction $correctionResume,
+        private TaskObservationAvailability $availability,
     ) {}
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -854,7 +853,6 @@ final readonly class TaskSubtaskRunner
                 'status' => TaskStatus::Cancelled,
                 'settled_at' => now(),
                 'completion_summary' => $reason,
-
             ]);
             $lockedGroup->update(['status' => TaskGroupStatus::Settling]);
 
@@ -1168,7 +1166,6 @@ final readonly class TaskSubtaskRunner
 
             if ($decision->action === TaskSessionNextAction::RequestAssistance) {
                 if (! $observation->available) {
-                    $this->actor->execute($group, $observation, $decision);
                     $decisions[] = $decision;
 
                     continue;
@@ -1207,34 +1204,12 @@ final readonly class TaskSubtaskRunner
 
     public function clearUnavailable(Task $group): void
     {
-        DB::transaction(function () use ($group): void {
-            $current = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
-            if ($current->assistance_kind === AssistanceKind::Failure && $current->assistance_reason === self::ObservationUnavailableReason) {
-                TaskAssistance::apply($current);
-            }
-            if ($current->agent_unavailable_since !== null) {
-                $current->update(['agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null]);
-            }
-            $group->refresh();
-        });
+        $this->availability->clear($group);
     }
 
     public function unavailableDecision(Task $group): TaskSessionDecision
     {
-        Task::topLevel()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
-        $group->refresh();
-        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
-        if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
-            $claimed = Task::topLevel()->whereKey($group->id)
-                ->where('agent_unavailable_since', $group->agent_unavailable_since)
-                ->whereNull('agent_unavailable_notified_at')
-                ->update(['agent_unavailable_notified_at' => now()]);
-            if ($claimed === 1) {
-                return TaskSessionDecision::escalate(self::ObservationUnavailableReason);
-            }
-        }
-
-        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
+        return $this->availability->unavailableDecision($group);
     }
 
     private function advance(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void

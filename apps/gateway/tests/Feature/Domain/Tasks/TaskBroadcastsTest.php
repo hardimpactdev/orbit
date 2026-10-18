@@ -86,7 +86,7 @@ describe('task broadcasts', function (): void {
 
         $group->update(['status' => TaskGroupStatus::Reviewing]);
         $group->tasks[0]->update(['status' => TaskStatus::Reviewing]);
-        $group->tasks[1]->update(['assistance_requested' => true, 'assistance_reason' => 'Private reason']);
+        test_update_task($group->tasks[1], ['assistance_requested' => true, 'assistance_reason' => 'Private reason']);
         app(TaskBroadcasts::class)->flush();
 
         $events = live_broadcasts();
@@ -245,7 +245,7 @@ describe('task broadcasts', function (): void {
         $group = live_group();
         app(TaskBroadcasts::class)->flush();
         Event::fake([RecordBroadcast::class]);
-        $group->update(['assistance_requested' => true, 'assistance_reason' => 'Waiting']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Waiting']);
 
         $this->artisan('tasks:tick')->assertSuccessful();
 

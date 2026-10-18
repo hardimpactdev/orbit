@@ -95,8 +95,8 @@ describe('closing a question', function (): void {
         $subtask = question_close_subtask($group);
         $resolution = question_close_resolution($subtask);
         $question = question_close_question($subtask, QuestionStatus::Escalated, $resolution->id);
-        $group->update(['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
-        $subtask->update(['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
+        test_update_task($group, ['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
+        test_update_task($subtask, ['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
 
         $closed = app(CloseTaskQuestionAction::class)->execute($question, $status, '  Answered in resolution 2803.  ');
 

@@ -269,7 +269,6 @@ final readonly class TaskClaimAdmission
             $group->save();
             if ($failures >= Config::integer('orbit.tasks.provisioning_failure_threshold', 3)) {
                 TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-
             }
         });
     }

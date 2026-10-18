@@ -59,6 +59,7 @@ final readonly class StoreTaskCommentAction
         $comment = DB::transaction(function () use ($task, $payload, $actor, $requestId, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued, &$deliverCorrection): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
+                'request_id' => $requestId,
                 'task_group_id' => $task->parent_id,
                 'task_id' => $task->id,
                 'completion_attempt' => $task->completion_attempt,
@@ -88,8 +89,8 @@ final readonly class StoreTaskCommentAction
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
                     // A resolution of a failed topology preparation goes to no agent: the admission forgot the run, so
                     // clearing assistance lets the next prepared turn prepare the topology again.
-                    TaskAssistance::clearResolvedParent($task, $group);
-                    TaskAssistance::apply($task);
+                    TaskAssistance::clearResolvedParent($task, $group, $comment);
+                    TaskAssistance::apply($task, source: $comment);
                     $task->update(['communication_failures' => 0]);
                     $this->log($task, $comment, 'resolution queued topology retry');
 
@@ -98,8 +99,8 @@ final readonly class StoreTaskCommentAction
                 if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
                     // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
                     // receive this resolution. Clearing assistance lets the next tick run the path gate again.
-                    TaskAssistance::clearResolvedParent($task, $group);
-                    TaskAssistance::apply($task);
+                    TaskAssistance::clearResolvedParent($task, $group, $comment);
+                    TaskAssistance::apply($task, source: $comment);
                     $task->update(['communication_failures' => 0]);
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
 
@@ -352,10 +353,9 @@ final readonly class StoreTaskCommentAction
             if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
-            TaskAssistance::apply($locked);
+            TaskAssistance::clearResolvedParent($locked, $parent, $comment);
+            TaskAssistance::apply($locked, source: $comment);
             $locked->update([
-
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $comment->id,
                 'resolution_delivered_comment_id' => $comment->id,
@@ -378,11 +378,10 @@ final readonly class StoreTaskCommentAction
                 || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $comment);
             $comment->update(['review_attempt' => $locked->review_attempt]);
-            TaskAssistance::apply($locked);
+            TaskAssistance::apply($locked, source: $comment);
             $locked->update([
-
                 'communication_failures' => 0,
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
@@ -403,12 +402,11 @@ final readonly class StoreTaskCommentAction
             if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $comment);
             $comment->update(['review_attempt' => $locked->review_attempt]);
             TaskQuestions::attachResolution($locked, $comment);
-            TaskAssistance::apply($locked);
+            TaskAssistance::apply($locked, source: $comment);
             $locked->update([
-
                 'communication_failures' => 0,
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
@@ -426,11 +424,11 @@ final readonly class StoreTaskCommentAction
             if (! TaskAssistance::sameRequest($locked, $task)) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $comment);
             $attempt = $locked->review_attempt + 1;
             $comment->update(['review_attempt' => $attempt]);
             TaskQuestions::attachResolution($locked, $comment);
-            TaskAssistance::apply($locked);
+            TaskAssistance::apply($locked, source: $comment);
             $locked->update([
                 'review_attempt' => $attempt,
                 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null,
@@ -449,13 +447,13 @@ final readonly class StoreTaskCommentAction
                 || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $comment);
             // The resolution is the reviewer's next request, so the tick must not send another.
             $attempt = $reviewing
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
-            TaskAssistance::apply($locked);
-            $locked->update([...$attempt,  'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id,
+            TaskAssistance::apply($locked, source: $comment);
+            $locked->update([...$attempt, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id,
                 'pending_resolution_comment_id' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_comment_id,
                 'pending_resolution_reason' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_reason,
                 'pending_resolution_message' => $locked->pending_resolution_comment_id === $comment->id ? null : $locked->pending_resolution_message]);

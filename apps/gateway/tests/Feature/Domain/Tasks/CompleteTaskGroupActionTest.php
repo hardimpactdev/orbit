@@ -181,7 +181,7 @@ it('marks the group completed and reports the removal failure when the workspace
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($completed->taskable_id)->toBe($instanceId)
-        ->and($completed->assistance_requested)->toBeFalse()
+        ->and($completed->assistance_requested)->toBeTrue()
         ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 
@@ -233,13 +233,13 @@ it('complete ended cancels open subtasks through the API and removes the workspa
     app(TaskExtensionState::class)->enable();
     complete_ended_read($state);
     $group = complete_group($status);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544', 'watched_pr_state' => 'open', 'assistance_requested' => true, 'assistance_reason' => 'Watched pull request ended: prior notice.']);
+    test_update_task($group, ['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544', 'watched_pr_state' => 'open', 'assistance_requested' => true, 'assistance_reason' => 'Watched pull request ended: prior notice.']);
     $instance = $group->taskable;
     $instanceId = $instance->id;
     $this->markAsGateway($instance->node);
     $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
     $tasks = collect([TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
-        ->map(fn (TaskStatus $status, int $position): Task => Task::query()->create([
+        ->map(fn (TaskStatus $status, int $position): Task => test_create_task(Task::query(), [
             'parent_id' => $group->id, 'position' => $position + 1, 'title' => $status->value, 'brief' => 'Keep terminal work.',
             'status' => $status, 'assistance_requested' => true, 'assistance_reason' => 'Previous reason.',
         ]));

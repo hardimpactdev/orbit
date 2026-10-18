@@ -217,7 +217,7 @@ describe('once-only GitHub review consumption', function (): void {
             ->and((new TaskGitHubReviewObservations)->report($group)['records'])->toHaveCount(1)
             ->and($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
             ->and(DB::table('task_github_review_consumptions')->exists())->toBeFalse();
-        $group->update(['assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_reason' => 'Unrelated operator assistance.']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_reason' => 'Unrelated operator assistance.']);
         app(TaskScheduler::class)->tick();
         expect($group->fresh()->assistance_reason)->toBe('Unrelated operator assistance.');
     });
@@ -273,12 +273,12 @@ describe('once-only GitHub review consumption', function (): void {
         app(TaskScheduler::class)->tick();
         $group->tasks()->whereNotNull('fixup_problem')->sole()->delete();
         $source->observation = Fixtures::observation([]);
-        $group->update(['assistance_requested' => true, 'assistance_kind' => 'direction', 'assistance_reason' => 'An unrelated operator question.', 'assistance_question' => 'Which scope?']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_kind' => 'direction', 'assistance_reason' => 'An unrelated operator question.', 'assistance_question' => 'Which scope?']);
         app(TaskScheduler::class)->tick();
         expect($group->fresh()->assistance_reason)->toBe('An unrelated operator question.')
             ->and($group->fresh()->assistance_question)->toBe('Which scope?')
             ->and(array_values(app(TaskGitHubReviewFeedback::class)->causes($group))[0])->toContain('review #101 is missing');
-        $group->update(['assistance_requested' => false, 'assistance_reason' => null, 'assistance_question' => null, 'assistance_kind' => null]);
+        test_update_task($group, ['assistance_requested' => false, 'assistance_reason' => null, 'assistance_question' => null, 'assistance_kind' => null]);
         app(TaskScheduler::class)->tick();
         expect($group->fresh()->assistance_reason)->toContain('review #101 is missing')
             ->and(DB::table('task_github_review_consumptions')->count())->toBe(1);
@@ -317,7 +317,7 @@ describe('once-only GitHub review consumption', function (): void {
     it('repairs CI despite persistent review-read assistance and retains unrelated assistance on recovery', function (): void {
         $this->freezeTime();
         [$group, $source] = consumption_group(health: new TaskPullRequestHealth('open', ['Failure'], failedChecks: [new TaskPullRequestCheck('Gateway', null)], headSha: 'abc123'));
-        $group->update(['assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_reason' => 'GitHub review feedback: The trusted review source remains unreadable. Restore review-read access.']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_reason' => 'GitHub review feedback: The trusted review source remains unreadable. Restore review-read access.']);
         $source->observation = Fixtures::observation(read: TaskReviewReadStatus::Unreadable);
         app(TaskScheduler::class)->tick();
         expect($group->tasks()->where('fixup_problem', 'check:Gateway')->count())->toBe(1)

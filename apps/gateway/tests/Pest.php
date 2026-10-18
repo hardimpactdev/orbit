@@ -429,3 +429,38 @@ function test_assistance_attributes(AssistanceKind $kind, ?string $question, str
     return ['assistance_requested' => true, 'assistance_kind' => $kind,
         'assistance_question' => $kind === AssistanceKind::Direction ? $question : null, 'assistance_reason' => $reason];
 }
+
+/** Seed current task assistance through the same writer as production. */
+function test_update_task(\App\Models\Task|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\Relation $task, array $attributes): bool
+{
+    if (! $task instanceof \App\Models\Task) {
+        foreach ($task->get() as $record) {
+            test_update_task($record, $attributes);
+        }
+
+        return true;
+    }
+    $assistance = array_intersect_key($attributes, array_flip(\App\Domain\Tasks\TaskAssistance::Fields));
+    $task->update(array_diff_key($attributes, $assistance));
+    if ($assistance !== []) {
+        $requested = $assistance['assistance_requested'] ?? $task->assistance_requested;
+        $kind = $requested ? ($assistance['assistance_kind'] ?? $task->assistance_kind ?? AssistanceKind::Failure) : null;
+        $kind = is_string($kind) ? AssistanceKind::from($kind) : $kind;
+        \App\Domain\Tasks\TaskAssistance::apply($task, $kind,
+            $assistance['assistance_question'] ?? $task->assistance_question,
+            $assistance['assistance_reason'] ?? $task->assistance_reason,
+            replaceFailure: true, replaceDirection: true);
+    }
+
+    return true;
+}
+
+/** Create first, then request assistance against the stored task. */
+function test_create_task(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\Relation $query, array $attributes): \App\Models\Task
+{
+    $assistance = array_intersect_key($attributes, array_flip(\App\Domain\Tasks\TaskAssistance::Fields));
+    $task = $query->create(array_diff_key($attributes, $assistance));
+    test_update_task($task, $assistance);
+
+    return $task;
+}

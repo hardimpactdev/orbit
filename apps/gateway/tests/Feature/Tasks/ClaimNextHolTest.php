@@ -144,7 +144,7 @@ it('leaves every waiting group in todo, tries each once, and clears a provisioni
     claim_hol_enable();
     $project = claim_hol_app();
     $groups = [claim_hol_group($project, 'First'), claim_hol_group($project, 'Second'), claim_hol_group($project, 'Third')];
-    $groups[1]->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($groups[1], ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $provisioning = new class implements InstanceProvisioning
     {
         public int $calls = 0;
@@ -172,7 +172,7 @@ it('passes a group that waits for its task VM without a failure reason', functio
     claim_hol_enable();
     $project = claim_hol_app();
     $waiting = claim_hol_group($project, 'Waiting');
-    $waiting->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($waiting, ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $next = claim_hol_group($project, 'Next');
     $instance = claim_hol_instance($project, 'claim-hol-next', $next);
     app()->instance(InstanceProvisioning::class, new class($waiting->id, $instance) implements InstanceProvisioning
@@ -269,7 +269,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
 it('clears the provisioning failure reason when a group moves to backlog', function (): void {
     $gateway = claim_hol_enable();
     $group = claim_hol_group(claim_hol_app(), 'Moved');
-    $group->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($group, ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
     $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'backlog'])->assertOk();
@@ -479,7 +479,8 @@ describe('the stale reservation sweep', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect($stranded->fresh()?->status)->toBe(TaskGroupStatus::Running)
-            ->and($stranded->fresh()?->assistance_reason)->toBeNull();
+            ->and($stranded->fresh()?->assistance_reason)->toBeNull()
+            ->and(\App\Models\Activity::query()->where('subject_id', $stranded->id)->whereIn('description', ['assistance requested', 'assistance changed', 'assistance cleared'])->count())->toBe(0);
     });
 
     it('preserves operator direction while releasing an expired reservation', function (): void {

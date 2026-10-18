@@ -622,7 +622,7 @@ describe('final review before every push', function (): void {
         $models = $group->tasks->firstWhere('title', 'Models');
         $models->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$models->id, $models)->id]);
         TaskComment::query()->create(['task_id' => $models->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
-        $group->update(['assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure, 'assistance_reason' => TaskFinalReview::FixupCapPrefix.'Read the findings.']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure, 'assistance_reason' => TaskFinalReview::FixupCapPrefix.'Read the findings.']);
         $operator = Task::query()->create([
             'parent_id' => $group->id, 'position' => 3, 'title' => 'Rework the scope', 'brief' => 'Do it the other way.', 'status' => TaskStatus::Todo,
             'deliverables' => [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']],
@@ -888,7 +888,7 @@ describe('merge on green', function (): void {
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
         Task::query()->whereKey($operator->id)->update(['status' => TaskStatus::Cancelled->value]);
-        $group->refresh()->update(['status' => TaskGroupStatus::Settling, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
+        test_update_task($group->refresh(), ['status' => TaskGroupStatus::Settling, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
             'assistance_reason' => TaskFinalReview::UnreviewedHeadPrefix.'someone pushed.']);
         rm_watch(rm_open(RM_HEAD));
 

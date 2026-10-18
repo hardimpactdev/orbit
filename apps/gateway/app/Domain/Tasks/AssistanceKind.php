@@ -8,4 +8,5 @@ enum AssistanceKind: string
 {
     case Direction = 'direction';
     case Failure = 'failure';
+    case Observation = 'observation';
 }

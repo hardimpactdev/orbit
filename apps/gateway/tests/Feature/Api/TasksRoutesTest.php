@@ -689,13 +689,13 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $blocked = 'The implementer is blocked.';
     $question = 'Which database should this use?';
 
-    Task::topLevel()->whereKey($flagged['id'])->update([
+    test_update_task(Task::topLevel()->whereKey($flagged['id']), [
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
         'assistance_reason' => $blocked,
     ]);
-    Task::query()->whereKey($flagged['tasks'][0]['id'])->update([
+    test_update_task(Task::query()->whereKey($flagged['tasks'][0]['id']), [
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
@@ -776,25 +776,25 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     $subtaskOnly = $create('Subtask only');
     $question = 'Which database should this use?';
 
-    Task::topLevel()->whereKey($first)->update([
+    test_update_task(Task::topLevel()->whereKey($first), [
         'status' => 'running',
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
         'assistance_reason' => 'The implementer is blocked.',
     ]);
-    Task::topLevel()->whereKey($clear)->update([
+    test_update_task(Task::topLevel()->whereKey($clear), [
         'assistance_requested' => false,
         'assistance_reason' => 'An old reason.',
     ]);
-    Task::topLevel()->whereKey($second)->update([
+    test_update_task(Task::topLevel()->whereKey($second), [
         'status' => 'settling',
         'assistance_requested' => true,
         'assistance_kind' => 'failure',
         'assistance_question' => null,
         'assistance_reason' => null,
     ]);
-    Task::query()->where('parent_id', $subtaskOnly)->update([
+    test_update_task(Task::query()->where('parent_id', $subtaskOnly), [
         'assistance_requested' => true,
         'assistance_reason' => $question,
     ]);
@@ -1108,8 +1108,8 @@ function deliverable_correction_task(?string $failedStep = 'invalid_deliverable'
     enable_tasks();
     deliverable_path_repository();
     $project = tasks_app('correction');
-    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
-    $task = Task::query()->create([
+    $group = test_create_task(Task::query(), ['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Started', 'brief' => 'Keep this brief.',
         'status' => TaskStatus::Running, 'subtask_start_commit' => str_repeat('b', 40),
         'deliverables' => [deliverable_path_file('tests/MissingTest.php')],
@@ -1192,7 +1192,7 @@ it('keeps deliverable correction locked outside the failed handoff assistance wi
     $task = deliverable_correction_task();
     $before = $task->deliverables;
     if ($case === 'not-assisted') {
-        $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        test_update_task($task, ['assistance_requested' => false, 'assistance_reason' => null]);
     } elseif ($case === 'new-attempt') {
         $task->update(['completion_attempt' => 3]);
     } elseif ($case === 'reviewing') {

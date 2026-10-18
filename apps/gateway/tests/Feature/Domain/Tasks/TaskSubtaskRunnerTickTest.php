@@ -217,7 +217,6 @@ describe('a thread that works outside the task phase', function (): void {
             {
 
                 return null;
-
             }
 
             public function spawnReviewer(Task $task): ?int
@@ -608,7 +607,6 @@ it('project baseline setup only', function (): void {
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1044,9 +1042,9 @@ it('preserves another parent failure or sibling request when a baseline resoluti
     app(TaskScheduler::class)->tick();
     $task = $group->tasks()->sole();
     if ($other === 'failure') {
-        $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
     } else {
-        $group->tasks()->create([
+        test_create_task($group->tasks(), [
             'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
             ...test_assistance_attributes(AssistanceKind::Failure, null, 'Another failure.'),
         ]);

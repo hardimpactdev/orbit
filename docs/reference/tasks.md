@@ -42,7 +42,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `status` | both | Lifecycle state |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
 | `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. A completed or cancelled task or subtask never asks for assistance and keeps its last reason |
-| `assistance_kind`, `assistance_question` | both | `direction` when the record needs the operator's direction, with its one question. `failure` for every other cause, with no question. See [Direction requests](#direction-requests) |
+| `assistance_kind`, `assistance_question` | both | `direction` when the record needs the operator's direction, with its one question. `observation` for a driver outage, and `failure` for other failures, both with no question. See [Direction requests](#direction-requests) |
 | `position` | subtask | Order under the parent, gapless from 1 |
 | `deliverables` | subtask | The typed items the subtask must deliver |
 | `check` | subtask | The latest [task check](#project-check) run |
@@ -118,7 +118,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -770,7 +770,7 @@ An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A 
 
 A failed read, send, commit, push, or script install is a communication failure. The tick retries it and moves on to other subtasks. The fifth consecutive failure asks for assistance with the last error.
 
-When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it requests assistance once for that outage and records it in Activity. Orbit keeps observing the thread. A successful observation clears that request and resets the wait. A thread state from before the outage never advances a subtask.
+When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it requests `observation` assistance on the group once for that outage and records it in Activity. This rule also applies during a consult. The request does not block observation or flag the subtask. Orbit keeps observing the thread. A successful observation clears that request and resets the wait. A thread state from before the outage never advances a subtask.
 
 Each observation also reports whether the workspace has commits since its starting commit. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
 
@@ -838,18 +838,19 @@ Closing a question never delivers a resolution, never sets or clears assistance,
 
 A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task.
 
-Every change to assistance goes through `TaskAssistance::apply`. It writes one Activity entry with the task id, kind, question, and reason in the same transaction as the change. Repeating the same request writes no new entry. Clearing assistance writes one `assistance cleared` entry; the earlier request remains in Activity. `tasks:status` lists every task that still asks for assistance. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
+Every change to assistance goes through `TaskAssistance::apply`; direct model writes are refused. It writes one Activity entry in the same transaction: `assistance requested` for a new request, `assistance changed` for a changed open request, or `assistance cleared` for a resolved request. Filter `activity:list` by these descriptions and the `tasks:assistance` command, or `tasks:comment` for a comment-driven change. Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity. Ending a task clears its current request; a later cleanup failure can request assistance again, including on a completed or cancelled group. `tasks:status` lists every task that still asks for assistance. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
 
 #### Direction requests
 
-Every assistance request has a kind, `direction` or `failure`. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
+Every assistance request has a kind, `direction`, `failure`, or `observation`. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
 
 | Kind | Cause | Question |
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
-| `failure` | Every other cause, such as a failed push, check, or thread | Null |
+| `failure` | A failed push, check, thread, or other failure | Null |
+| `observation` | A driver outage beyond the grace period, including during a consult; group-only and self-clearing | Null |
 
-The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table.
+The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. An observation outage replaces no open request; direction or failure can replace an observation request. `tasks:status` lists direction requests first in its table.
 
 #### Migrate open requests
 
@@ -1715,7 +1716,9 @@ The operator's answer goes through the reviewer, so the reviewer translates it i
 
 Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
 
-Each assistance change has an Activity entry, so an operator can trace the kind, question, and reason without an external notification service. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
+### Assistance is recorded in Activity
+
+Each assistance change has an Activity entry, so an operator can trace the kind, question, and reason without an external notification service. Waiting on another task or pull request is not an assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
 
 ### Questions are records, not parsed comments
 

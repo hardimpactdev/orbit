@@ -451,8 +451,8 @@ it('cancels the unfinished subtasks with their group and keeps finished ones', f
 
 it('shows a requested assistance and its reason on the group and the subtask', function (): void {
     $group = backlog_group($this, ['One']);
-    Task::topLevel()->whereKey($group['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
-    Task::query()->whereKey($group['tasks'][0]['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::topLevel()->whereKey($group['id']), ['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::query()->whereKey($group['tasks'][0]['id']), ['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
 
     $this->getJson("/api/v1/task-groups/{$group['id']}")
         ->assertOk()
@@ -466,8 +466,8 @@ it('shows a requested assistance and its reason on the group and the subtask', f
 
 it('clears a requested assistance when the group is cancelled', function (): void {
     $group = backlog_group($this, ['One']);
-    Task::topLevel()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
-    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::topLevel()->whereKey($group['id']), ['status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::query()->whereKey($group['tasks'][0]['id']), ['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
 
     $this->postJson("/api/v1/task-groups/{$group['id']}/cancel")
         ->assertOk()

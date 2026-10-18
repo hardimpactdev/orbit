@@ -266,7 +266,7 @@ it('does not replace an open direction request when the implementer thread fails
     $task = tick_pi_implementer();
     $question = 'May the Node user run sudo?';
     $reason = "The implementer is blocked: sudo was denied.\n\nQuestion: {$question}";
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -975,7 +975,6 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int

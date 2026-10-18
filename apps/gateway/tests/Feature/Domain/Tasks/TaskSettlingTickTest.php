@@ -165,7 +165,7 @@ it('resumes a settling group without a pull request and opens the pull request w
     $group = tick_group();
     $task = $group->tasks->sole();
     $reason = TaskScheduler::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
-    $group->update([
+    test_update_task($group, [
         'status' => TaskGroupStatus::Settling,
         'pr_url' => null,
         'assistance_requested' => true,
@@ -182,7 +182,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         ->and($group->fresh()?->pr_url)->toBeNull()
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->assistance_reason)->toBeNull()
-        ->and(tick_assistance_reasons())->toBe([])
+        ->and(tick_assistance_reasons())->toBe(['The settling group has no reviewed pull request URL. Cancel the group to push its approved commits to task-1 and remove its workspace.'])
         ->and($agents->spawned)->toBe([$task->id])
         ->and($agents->missingRefOk)->toBeTrue()
         ->and($agents->fastForwards)->toBe(1);
@@ -236,7 +236,7 @@ it('resumes a settling group without a pull request and opens the pull request w
 
 it('does not resume a settling group without a pull request while another assistance cause is set', function (): void {
     $group = tick_group();
-    $group->update([
+    test_update_task($group, [
         'status' => TaskGroupStatus::Settling,
         'assistance_requested' => true,
         'assistance_reason' => 'Workspace removal failed: disk full',
@@ -475,7 +475,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
 
 it('leaves another cause of assistance on a settling group alone while its pull request conflicts or recovers', function (): void {
     $group = tick_settling_group();
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
 
     Http::preventStrayRequests();
     Http::fake([
@@ -490,14 +490,14 @@ it('leaves another cause of assistance on a settling group alone while its pull 
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
-    expect(tick_assistance_reasons())->toBe([]);
+    expect(tick_assistance_reasons())->toBe(['Merged pull request cleanup failed: disk full']);
 });
 
 it('does not replace an open direction request when the pull request needs attention', function (): void {
     $group = tick_settling_group();
     $question = 'Which base should the conflict follow?';
     $reason = "The reviewer is blocked: The pull request conflicts.\n\nQuestion: {$question}";
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -519,12 +519,12 @@ it('does not replace an open direction request when the pull request needs atten
     expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
         ->and($group->fresh()?->assistance_question)->toBe($question)
         ->and($group->fresh()?->assistance_reason)->toBe($reason)
-        ->and(tick_assistance_reasons())->toBe([]);
+        ->and(tick_assistance_reasons())->toBe([$reason]);
 });
 
 it('withdraws its pull request assistance request when the pull request merges', function (): void {
     $group = tick_settling_group();
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -540,7 +540,7 @@ it('withdraws its pull request assistance request when the pull request merges',
 
 it('keeps another assistance reason without asking when the pull request merges', function (): void {
     $group = tick_settling_group();
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -646,8 +646,8 @@ it('uses backoff for publication and removal retries and retries a failed manual
     expect($publisher->pushes)->toBe([$group->id])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 
-    $task->update(['assistance_requested' => true, 'assistance_reason' => $hold]);
-    $group->update(['assistance_requested' => true, 'assistance_reason' => $hold]);
+    test_update_task($task, ['assistance_requested' => true, 'assistance_reason' => $hold]);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => $hold]);
     $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
     app(TaskScheduler::class)->tick();
 
@@ -745,7 +745,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
 
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
     tick_vm_destroy_fails(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
@@ -763,7 +763,7 @@ it('does not replace an open direction request when merged pull request cleanup 
     $group = tick_settling_group();
     $question = 'Should the merged branch be kept?';
     $reason = "The reviewer is blocked: The merge removed a migration.\n\nQuestion: {$question}";
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -788,7 +788,7 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
     $group = tick_settling_group();
     $waiting = tick_appended_subtask($group);
     $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
-    $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => $reason]);
 
     Http::preventStrayRequests();
     Http::fake([
@@ -801,7 +801,7 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
     $this->assertDatabaseHas('tasks', ['id' => $waiting->id, 'status' => 'todo']);
-    expect(tick_assistance_reasons())->toBe([]);
+    expect(tick_assistance_reasons())->toBe([$reason]);
 });
 
 it('appends one conflict fixup and reuses its turn fetch before fast-forwarding and starting', function (): void {
@@ -1118,7 +1118,7 @@ it('creates no fixup for a green mergeable pull request', function (): void {
 
 it('starts an appended subtask on an open settling pull request without adding a fixup', function (): void {
     $group = tick_settling_group();
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.',
     ]);
@@ -1140,7 +1140,7 @@ it('starts an appended subtask on an open settling pull request without adding a
 
 it('does not start an appended subtask while another assistance cause is set', function (): void {
     $group = tick_settling_group();
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull(['mergeable' => false])], ['abc123' => []]);
@@ -1158,7 +1158,7 @@ it('does not replace an open direction request when the pull request closes', fu
     $group = tick_settling_group();
     $question = 'Which database should this use?';
     $reason = "The implementer is blocked: Need a database.\n\nQuestion: {$question}";
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -1835,7 +1835,7 @@ it('reports a throwing brief coverage labeler and continues the tick', function 
 it('keeps a merged group settling when an approved commit missed the merge', function (): void {
     $group = tick_settling_group();
     $reason = TaskScheduler::OrphanedCommitPrefix.'Commit '.str_repeat('d', 40).' reached task-'.$group->id.' after the merge.';
-    $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => $reason]);
     tick_watch_pulls([['merged' => true, 'state' => 'closed', 'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main']]]);
 
     app(TaskScheduler::class)->tick();
@@ -1938,7 +1938,6 @@ it('advances the current subtask when Jev marks it done', function (): void {
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -2014,7 +2013,7 @@ it('skips assistance and communication failures when cancellation lands during o
         ->andReturnUsing(function () use ($group): bool {
             // Commit the cancellation while observe() is in flight, leaving its loaded models stale.
             Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Cancelled]);
-            $group->tasks()->update(['status' => TaskStatus::Cancelled, 'settled_at' => now(), 'assistance_requested' => false]);
+            test_update_task($group->tasks(), ['status' => TaskStatus::Cancelled, 'settled_at' => now(), 'assistance_requested' => false]);
 
             return false;
         });
@@ -2528,7 +2527,7 @@ it('resumes a consult reviewer after a server restart', function (): void {
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
 });
 
-it('uses observation grace for an unavailable consult reviewer, then asks for a failure', function (): void {
+it('uses group-only observation assistance for a consult outage and clears it on recovery', function (): void {
     [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
         FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
     ]);
@@ -2545,12 +2544,22 @@ it('uses observation grace for an unavailable consult reviewer, then asks for a 
     $this->travel(121)->seconds();
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
-        ->and($task->fresh()?->assistance_question)->toBeNull()
-        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
-        ->and($task->fresh()?->assistance_reason)->toBe('Agent observation unavailable beyond the grace period.')
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Observation)
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+
+    $state->unavailable = false;
+    $state->reviewer = 'running';
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->agent_unavailable_since)->toBeNull()
+        ->and($group->fresh()?->agent_unavailable_notified_at)->toBeNull();
+    expect(\App\Models\Activity::query()->where('subject_id', $group->id)->whereIn('description', ['assistance requested', 'assistance cleared'])->pluck('description')->all())
+        ->toBe(['assistance requested', 'assistance cleared']);
 });
 
 it('answers a consult in the same attempt and records the reviewer cause', function (): void {
@@ -2738,7 +2747,7 @@ it('flags the parent when a subtask already asks and the parent does not', funct
     });
     $question = 'Which database should this subtask use?';
     $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,

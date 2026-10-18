@@ -428,10 +428,7 @@ final readonly class TaskConsultation
     {
         $observation = $this->observer->observe($group, $task);
         if (! $observation->available) {
-            $decision = $scheduler->unavailableDecision($group);
-            if ($decision->action === TaskSessionNextAction::RequestAssistance) {
-                $this->requestAssistance($task, $group, $decision->reason, $observation, AssistanceKind::Failure);
-            }
+            $scheduler->unavailableDecision($group);
 
             return;
         }
@@ -643,10 +640,9 @@ final readonly class TaskConsultation
             if (! TaskAssistance::sameRequest($locked, $task) || $locked->assistance_kind !== AssistanceKind::Direction) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
-            TaskAssistance::apply($locked);
+            TaskAssistance::clearResolvedParent($locked, $parent, $resolution);
+            TaskAssistance::apply($locked, source: $resolution);
             $locked->update([
-
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $resolution->id,
                 'resolution_delivered_comment_id' => $resolution->id,
@@ -848,7 +844,6 @@ final readonly class TaskConsultation
                 }
             }
         });
-
     }
 
     /**

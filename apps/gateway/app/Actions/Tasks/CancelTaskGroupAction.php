@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
@@ -71,16 +72,18 @@ final readonly class CancelTaskGroupAction
             $current = $locked->taskable_id !== null ? $locked->workspace()->first() : null;
             $keepOffline = $current instanceof Instance && $current->id === $offlineId;
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
+            // End and apply the final assistance state under this lock. A model status save would
+            // clear the existing request before the cleanup failure replaces it.
+            Task::topLevel()->whereKey($locked->id)->update(['status' => TaskGroupStatus::Cancelled]);
+            $locked->refresh();
             if ($keepOffline) {
-                if (! ($locked->assistance_requested && $locked->assistance_kind === AssistanceKind::Direction)) {
-                    TaskAssistance::apply($locked, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.', replaceFailure: true, replaceDirection: true);
-                }
+                TaskAssistance::apply($locked, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.', replaceFailure: true);
             } else {
                 $locked->taskable()->dissociate();
                 TaskAssistance::apply($locked, reason: $locked->assistance_reason);
             }
-            $locked->status = TaskGroupStatus::Cancelled;
             $locked->save();
+            TaskQuestions::settle($locked, 'Task cancelled.');
 
             return $attached;
         });

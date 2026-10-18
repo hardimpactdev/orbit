@@ -409,7 +409,6 @@ final readonly class TaskReviewOutcome
             TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
         });
         TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => null, 'reason' => $reason]);
-
     }
 
     /**

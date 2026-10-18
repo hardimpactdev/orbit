@@ -749,7 +749,7 @@
     },
     {
       "source": "/decisions/0199-post-direction-requests-to-opsbot-immediately",
-      "destination": "/reference/tasks#assistance-and-resolution"
+      "destination": "/reference/tasks#assistance-is-recorded-in-activity"
     },
     {
       "source": "/decisions/0197-native-project-documents-with-private-s3-storage",

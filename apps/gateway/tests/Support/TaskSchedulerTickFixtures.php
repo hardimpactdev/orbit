@@ -283,11 +283,11 @@ function tick_held_relay(): array
         'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
         'body' => 'Use the public mirror.', 'author' => 'operator', 'posted_at' => now(),
     ]);
-    $task->update([
+    test_update_task($task, [
         'direction_relay_comment_id' => $resolution->id,
         'assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null,
     ]);
-    $group->update(['assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null]);
+    test_update_task($group, ['assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null]);
     $question = TaskQuestion::query()->create([
         'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Reviewer,
         'question' => 'Which mirror?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
@@ -573,7 +573,6 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -678,7 +677,7 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
 /** @return list<string> */
 function tick_assistance_reasons(): array
 {
-    return Activity::query()->where('log_name', 'tasks')->where('description', 'assistance requested')
+    return Activity::query()->where('log_name', 'tasks')->whereIn('description', ['assistance requested', 'assistance changed'])
         ->whereIn('subject_id', Task::topLevel()->select('id'))
         ->orderBy('id')->get()->map(static fn (Activity $activity): mixed => $activity->properties?->get('reason'))->all();
 }

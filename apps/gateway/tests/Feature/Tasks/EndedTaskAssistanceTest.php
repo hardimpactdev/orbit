@@ -32,7 +32,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
         'default_branch' => 'main',
     ]);
     $reason = 'The operator asked to hold this task.';
-    $open = Task::topLevel()->create([
+    $open = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Still blocked',
         'brief' => 'This one still asks.',
@@ -40,7 +40,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
         'assistance_requested' => true,
         'assistance_reason' => 'Still blocked.',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Ending task',
         'brief' => 'This one ends.',
@@ -50,7 +50,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
     ]);
     $subject = $group;
     if ($level === 'subtask') {
-        $subject = Task::query()->create([
+        $subject = test_create_task(Task::query(), [
             'parent_id' => $group->id,
             'position' => 1,
             'title' => 'Ending subtask',
@@ -71,22 +71,11 @@ it('stops asking for assistance when a flagged task is saved as completed or can
 
     TaskAssistance::apply($subject, AssistanceKind::Failure, null, $reason);
 
-    expect($subject->fresh()?->assistance_requested)->toBeFalse()
+    expect($subject->fresh()?->assistance_requested)->toBeTrue()
         ->and($subject->fresh()?->assistance_reason)->toBe($reason);
 
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.assistance', [[
-            'id' => $open->id,
-            'project_id' => $project->id,
-            'project' => $project->slug,
-            'project_code' => $project->code,
-            'title' => 'Still blocked',
-            'status' => 'running',
-            'assistance_kind' => null,
-            'assistance_question' => null,
-            'assistance_reason' => 'Still blocked.',
-        ]]);
+    $response = $this->getJson('/api/v1/tasks/status')->assertOk();
+    expect(array_column($response->json('data.assistance'), 'id'))->toBe($level === 'group' ? [$open->id, $group->id] : [$open->id]);
 })->with([
     'completed group' => ['group', 'completed'],
     'cancelled group' => ['group', 'cancelled'],
@@ -102,7 +91,7 @@ it('audits assistance clears when cancelling the remaining subtasks', function (
         'repository_url' => 'git@example.test:cancel-remaining.git',
         'default_branch' => 'main',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Cancel the rest',
         'brief' => 'End the open subtasks.',
@@ -110,7 +99,7 @@ it('audits assistance clears when cancelling the remaining subtasks', function (
         'assistance_requested' => true,
         'assistance_reason' => 'The group is blocked.',
     ]);
-    $open = Task::query()->create([
+    $open = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Still open',
@@ -130,7 +119,7 @@ it('audits assistance clears when cancelling the remaining subtasks', function (
         ->and($open->fresh()?->assistance_reason)->toBe('Still waiting.');
 });
 
-it('keeps an assistance comment from putting an ended group back on tasks status', function (string $status): void {
+it('shows a new assistance comment on an ended group in tasks status', function (string $status): void {
     $gateway = Node::query()->create([
         'name' => 'ended-comment-gateway-'.$status,
         'status' => LifecycleStatus::Active,
@@ -146,7 +135,7 @@ it('keeps an assistance comment from putting an ended group back on tasks status
         'repository_url' => 'git@example.test:ended-comment.git',
         'default_branch' => 'main',
     ]);
-    $open = Task::topLevel()->create([
+    $open = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Still blocked',
         'brief' => 'This one still asks.',
@@ -154,7 +143,7 @@ it('keeps an assistance comment from putting an ended group back on tasks status
         'assistance_requested' => true,
         'assistance_reason' => 'Still blocked.',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Ended group',
         'brief' => 'Already finished.',
@@ -181,25 +170,13 @@ it('keeps an assistance comment from putting an ended group back on tasks status
     $task->refresh();
     expect($comment->body)->toBe($reason)
         ->and($group->status->value)->toBe($status)
-        ->and($group->assistance_requested)->toBeFalse()
+        ->and($group->assistance_requested)->toBeTrue()
         ->and($group->assistance_reason)->toBe($reason)
         ->and($task->status)->toBe(TaskStatus::Running)
         ->and($task->assistance_requested)->toBeTrue()
         ->and($task->assistance_reason)->toBe($reason);
 
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.assistance', [[
-            'id' => $open->id,
-            'project_id' => $project->id,
-            'project' => $project->slug,
-            'project_code' => $project->code,
-            'title' => 'Still blocked',
-            'status' => 'running',
-            'assistance_kind' => null,
-            'assistance_question' => null,
-            'assistance_reason' => 'Still blocked.',
-        ]]);
+    $this->getJson('/api/v1/tasks/status')->assertOk()->assertJsonPath('data.assistance.1.id', $group->id);
 })->with(['completed', 'cancelled']);
 
 it('keeps a stale save from leaving an ended task asking for assistance', function (string $level, string $status, string $interleaving): void {
@@ -209,7 +186,7 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
         'repository_url' => 'git@example.test:stale-assistance.git',
         'default_branch' => 'main',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Stale group',
         'brief' => 'Two copies of one row.',
@@ -218,7 +195,7 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
     ]);
     $subject = $group;
     if ($level === 'subtask') {
-        $subject = Task::query()->create([
+        $subject = test_create_task(Task::query(), [
             'parent_id' => $group->id,
             'position' => 1,
             'title' => 'Stale subtask',
@@ -235,7 +212,7 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
     $endedStatus = $level === 'group' ? TaskGroupStatus::from($status) : TaskStatus::from($status);
 
     if ($interleaving === 'end') {
-        $other->update([
+        test_update_task($other, [
             'assistance_requested' => true,
             'assistance_reason' => 'Flagged while it was open.',
         ]);
@@ -248,14 +225,14 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
             ->and($stale->fresh()?->assistance_reason)->toBe('Flagged while it was open.');
     } else {
         $other->status = $endedStatus;
-        $other->assistance_reason = 'Ended by the other writer.';
+        TaskAssistance::apply($other, reason: 'Ended by the other writer.');
         $other->save();
         TaskAssistance::apply($stale, AssistanceKind::Failure, null, 'Asked too late.');
 
-        expect($stale->assistance_requested)->toBeFalse()
+        expect($stale->assistance_requested)->toBeTrue()
             ->and($stale->status->value)->toBe($status)
             ->and($stale->fresh()?->status->value)->toBe($status)
-            ->and($stale->fresh()?->assistance_requested)->toBeFalse()
+            ->and($stale->fresh()?->assistance_requested)->toBeTrue()
             ->and($stale->fresh()?->assistance_reason)->toBe('Asked too late.');
     }
 })->with([

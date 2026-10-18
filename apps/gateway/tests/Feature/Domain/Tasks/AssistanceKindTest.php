@@ -62,8 +62,8 @@ it('stores an operator assistance comment as a direction request', function (): 
 it('replaces an open failure with the operator direction request', function (): void {
     $group = assistance_kind_group();
     $task = $group->tasks->sole();
-    $task->update(test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
-    $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
+    test_update_task($task, test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
+    test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
     $question = 'May I add the missing credential?';
 
     app(StoreTaskCommentAction::class)->execute($task, [
@@ -83,8 +83,8 @@ it('does not let a failure replace an open direction request', function (): void
     $task = $group->tasks->sole();
     $question = 'Which database should this subtask use?';
     $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
-    $task->update(test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
-    $group->update(test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
+    test_update_task($task, test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
+    test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
 
     expect(TaskAssistance::apply($task, AssistanceKind::Failure, null, 'The implementer thread failed.'))->toBeFalse()
         ->and(TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Workspace removal failed: disk full', replaceFailure: true))->toBeFalse();
@@ -103,12 +103,7 @@ it('does not let a stale failure writer replace a direction request or keep its 
     $stale = clone $group;
     $question = 'Which database should this subtask use?';
     $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
-    DB::table('tasks')->where('id', $group->id)->update([
-        'assistance_requested' => true,
-        'assistance_kind' => AssistanceKind::Direction->value,
-        'assistance_question' => $question,
-        'assistance_reason' => $reason,
-    ]);
+    TaskAssistance::apply($group, AssistanceKind::Direction, $question, $reason);
 
     expect(TaskAssistance::apply($stale, AssistanceKind::Failure, null, 'Workspace removal failed: disk full', replaceFailure: true))->toBeFalse();
     app(RemoveTaskWorkspaceAction::class)->recordFailure($stale, new RuntimeException('disk full'));
@@ -120,7 +115,7 @@ it('does not let a stale failure writer replace a direction request or keep its 
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
-it('keeps the reason without asking when a stale assistance writer targets an ended task', function (string $level, string $status, AssistanceKind $kind): void {
+it('requests assistance for a new failure even when the task has ended', function (string $level, string $status, AssistanceKind $kind): void {
     $group = assistance_kind_group();
     $record = $level === 'group' ? $group : $group->tasks->sole();
     $stale = clone $record;
@@ -131,7 +126,7 @@ it('keeps the reason without asking when a stale assistance writer targets an en
 
     expect($applied)->toBeTrue()
         ->and($stale->status->value)->toBe($status)
-        ->and($stale->assistance_requested)->toBeFalse()
+        ->and($stale->assistance_requested)->toBeTrue()
         ->and($stale->assistance_reason)->toBe($reason);
 })->with(['group', 'subtask'])->with(['completed', 'cancelled'])->with([AssistanceKind::Direction, AssistanceKind::Failure]);
 
@@ -222,4 +217,62 @@ it('does not clear a reopened request when an ended model saves unrelated fields
     expect($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->assistance_reason)->toBe('Choose the mirror.')
         ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(0);
+});
+
+
+it('does not invent a clear event for reason-only reservation notes', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, reason: 'The group stayed reserved too long.');
+    TaskAssistance::apply($group);
+    TaskAssistance::apply($group);
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->count())->toBe(0);
+});
+
+it('names a replacement as changed and ignores a repeated replacement', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'The check failed.');
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.', replaceDirection: true);
+
+    expect(Activity::query()->where('subject_id', $group->id)->orderBy('id')->pluck('description')->all())
+        ->toBe(['assistance requested', 'assistance changed']);
+});
+
+it('refuses direct model changes to assistance', function (array $attributes): void {
+    $group = assistance_kind_group();
+    expect(fn () => $group->forceFill($attributes)->save())->toThrow(LogicException::class, 'TaskAssistance::apply');
+    expect($group->fresh()?->assistance_requested)->toBeFalse();
+})->with([
+    'flag' => [['assistance_requested' => true]],
+    'kind' => [['assistance_kind' => AssistanceKind::Failure]],
+    'question' => [['assistance_question' => 'Which mirror?']],
+    'reason' => [['assistance_reason' => 'The check failed.']],
+]);
+
+
+it('links resolution clears to their comment author and HTTP request', function (): void {
+    $group = assistance_kind_group();
+    $task = $group->tasks->sole();
+    $reason = (new \App\Domain\Tasks\TaskTopologyFailedException('Preparation failed.'))->getMessage();
+    TaskAssistance::apply($task, AssistanceKind::Failure, reason: $reason);
+    TaskAssistance::apply($group, AssistanceKind::Failure, reason: $reason);
+    $gateway = \App\Models\Node::query()->create(['name' => 'assistance-http', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.81', 'public_ssh_host' => '192.0.2.81']);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(\App\Domain\Tasks\TaskExtensionState::class)->enable();
+    $requestId = 'bb94949e-6a5f-419c-872a-14fa89f5cc61';
+
+    $response = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Try again.', 'author' => 'operator'])->assertCreated();
+
+    $comment = \App\Models\TaskComment::query()->findOrFail($response->json('data.id'));
+    $entries = Activity::query()->where('description', 'assistance cleared')->whereIn('subject_id', [$group->id, $task->id])->get();
+    expect($entries)->toHaveCount(2);
+    foreach ($entries as $entry) {
+        expect($entry->properties?->get('comment_id'))->toBe($comment->id)
+            ->and($entry->properties?->get('actor'))->toBe($comment->author)
+            ->and($entry->request_id)->toBe($requestId)
+            ->and($entry->command)->toBe('tasks:comment');
+    }
 });

@@ -72,7 +72,6 @@ final readonly class TaskGitHubReviewFeedback
             }
 
             return TaskAssistance::apply($locked, $reason === null ? null : AssistanceKind::Failure, null, $reason, replaceFailure: true);
-
         });
         $group->refresh();
 

@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskQuestions;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -61,10 +62,13 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {
-            $group->refresh();
-            $group->status = TaskGroupStatus::Completed;
-            $group->settled_at ??= now();
-            $group->save();
+            // The work is complete but cleanup is still stuck. Preserve its assistance through
+            // this terminal transition instead of clearing it with the ordinary model status hook.
+            DB::transaction(static function () use ($group): void {
+                Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
+                $group->refresh();
+                TaskQuestions::settle($group, 'Task completed.');
+            });
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }

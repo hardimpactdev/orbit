@@ -200,7 +200,6 @@ function scheduler_recording_spawner(): AgentSpawner
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -372,7 +371,6 @@ it('fails a group and its first task when the turn command cannot be installed',
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -642,12 +640,12 @@ it('preserves a direction hold without replacing it at the threshold when releas
     $group = queued_group(scheduler_app('notify-direction'), 'Direction hold');
     $direction = test_assistance_attributes(AssistanceKind::Direction, 'Which branch?', 'Choose a branch.');
     if (! $newDirection) {
-        $group->update($direction);
+        test_update_task($group, $direction);
     }
     $group->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
     $reserved = $group->fresh();
     if ($newDirection) {
-        $group->update($direction);
+        test_update_task($group, $direction);
     }
 
     DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'releaseProvisioningFailure'))
@@ -715,7 +713,7 @@ it('provisioning failures raise assistance only while the original reservation i
     {
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            $intent->group->update(['status' => TaskGroupStatus::Backlog, 'assistance_reason' => 'Operator moved it.']);
+            test_update_task($intent->group, ['status' => TaskGroupStatus::Backlog, 'assistance_reason' => 'Operator moved it.']);
 
             return null;
         }
@@ -966,7 +964,6 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1212,7 +1209,7 @@ it('reviews the first subtask with a missing start commit from the workspace sta
 
 it('defers a missing start commit while assistance blocks admission', function (): void {
     $project = scheduler_app('retry-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Retry start',
@@ -1224,7 +1221,7 @@ it('defers a missing start commit while assistance blocks admission', function (
     $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1256,7 +1253,7 @@ it('defers a missing start commit while assistance blocks admission', function (
 
 it('defers a migrated continuation boundary until admission', function (): void {
     $project = scheduler_app('continuation-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Continuation start',
@@ -1277,7 +1274,7 @@ it('defers a migrated continuation boundary until admission', function (): void 
         'status' => TaskStatus::Completed,
         'subtask_start_commit' => $start,
     ]);
-    $continuation = Task::query()->create([
+    $continuation = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Original task (continued 1)',
@@ -1311,7 +1308,7 @@ it('defers a migrated continuation boundary until admission', function (): void 
 
 it('does not record a later head after the implementer starts and commits', function (): void {
     $project = scheduler_app('late-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Late start',
@@ -1323,7 +1320,7 @@ it('does not record a later head after the implementer starts and commits', func
     $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1365,7 +1362,7 @@ it('does not record a later head after the implementer starts and commits', func
 
 it('does not sample the workspace for a reserved implementer while assistance blocks admission', function (): void {
     $project = scheduler_app('reserved-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Reserved start',
@@ -1377,7 +1374,7 @@ it('does not sample the workspace for a reserved implementer while assistance bl
     $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1429,7 +1426,6 @@ it('records a review-request failure and still reviews the other group', functio
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1480,7 +1476,7 @@ it('does not replace an open direction request when a review request keeps faili
     [, $first] = scheduler_review([], notified: false);
     $question = 'Which reviewer should take this subtask?';
     $reason = "The reviewer is blocked: No reviewer is available.\n\nQuestion: {$question}";
-    $first->update([
+    test_update_task($first, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -1501,7 +1497,6 @@ it('does not replace an open direction request when a review request keeps faili
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -2517,14 +2512,14 @@ it('does not replace an open direction request when publication fails', function
     }
     $question = 'Which remote should receive the branch?';
     $reason = "The implementer is blocked: The remote rejected the push.\n\nQuestion: {$question}";
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
         'assistance_reason' => $reason,
         'communication_failures' => 4,
     ]);
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -2789,8 +2784,8 @@ it('does not infer mutation provenance from an overlapping legacy check', functi
 it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
     [$group, $task, $receipts, , , $dispatcher] = scheduler_review([]);
     $hold = test_assistance_attributes($kind, 'Which contract?', 'Choose the contract.');
-    $task->update($hold);
-    $group->update($hold);
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
     app()->instance(TaskCheckRunner::class, $checks);
     $task->checks()->create([
@@ -2817,8 +2812,8 @@ it('queues a reviewer resolution behind a running workspace check', function (As
 it('keeps assistance when a legacy check only observed the changed tree', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks->tree = str_repeat('d', 40);
     $task->checks()->create([
         'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed, 'pid' => 1234,
@@ -2841,11 +2836,11 @@ it('reconciles remote finished checks under the lease while preserving assistanc
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
     $this->travelTo('2026-10-16 07:44:32');
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update([
+    test_update_task($task, [
         ...$failure, 'review_attempt' => $attempt, 'review_notified_attempt' => $attempt,
         'review_reminder_attempt' => $attempt,
     ]);
-    $group->update($failure);
+    test_update_task($group, $failure);
     $finishedAt = now()->subHours(3)->getTimestamp();
     $result = TaskCheckReading::finished(0, $head, $tree, [], 'checks passed', finishedAt: $finishedAt);
     $checks = new FakeTaskCheckRunner([$result, $result]);
@@ -2899,8 +2894,8 @@ it('reconciles remote finished checks under the lease while preserving assistanc
 it('preserves assistance and check ownership while a remote check is active or unstarted', function (int $pid): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     $checks->failSnapshot = true;
     app()->instance(TaskCheckRunner::class, $checks);
@@ -2928,8 +2923,8 @@ it('preserves assistance and check ownership while a remote check is active or u
 it('keeps stale review assistance when the remote check result cannot be read', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks->failRead = true;
     $check = $task->checks()->create([
         'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
@@ -2953,8 +2948,8 @@ it('keeps stale review assistance when the remote check result cannot be read', 
 it('records failed or lost remote checks without excusing a later workspace mutation', function (bool $lost): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $reading = $lost ? TaskCheckReading::lost('check disappeared')
         : TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], 'gate failed');
     $checks = new FakeTaskCheckRunner([$reading]);
@@ -3093,11 +3088,11 @@ it('preserves existing review assistance regardless of its text and historical m
         'task_group_id' => $group->id, 'posted_at' => now(),
     ]);
     $failure = test_assistance_attributes(AssistanceKind::Failure, null, $reason);
-    $task->update([
+    test_update_task($task, [
         ...$failure, 'review_handled_comment_id' => $receipt->id,
         'review_reminder_attempt' => $task->review_attempt, 'review_reminder_input_id' => 'old-reminder',
     ]);
-    $group->update($groupReason === null ? $failure : test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $groupReason));
+    test_update_task($group, $groupReason === null ? $failure : test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $groupReason));
     $checks->head = str_repeat('d', 40);
     $checks->tree = str_repeat('e', 40);
     $checks->commitTree = $checks->tree;

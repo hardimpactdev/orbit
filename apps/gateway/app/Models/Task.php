@@ -559,6 +559,10 @@ final class Task extends Model
     #[\Override]
     public function save(array $options = []): bool
     {
+        if ($this->isDirty(TaskAssistance::Fields)) {
+            throw new LogicException('Assistance can only be changed through TaskAssistance::apply.');
+        }
+
         return $this->getConnection()->transaction(fn (): bool => parent::save($options));
     }
 

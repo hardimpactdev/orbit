@@ -58,7 +58,7 @@ function blocked_task(TaskStatus $status): Task
         'name' => 'blocked-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.190', 'wireguard_ip' => '10.44.0.190',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
@@ -71,7 +71,7 @@ function blocked_task(TaskStatus $status): Task
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Only', 'brief' => 'One',
         'status' => $status, 'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
         'completion_attempt' => 2, 'review_attempt' => 3, 'review_notified_attempt' => 3,
@@ -405,12 +405,18 @@ it('retains the authenticated correction resolution caller and request through s
     expect($audit->caller_ip)->toBe($actor->wireguard_ip);
     expect($audit->request_id)->toBe($requestId);
     expect($audit->properties?->get('comment_id'))->toBe($resume['comment_id']);
+    $clears = Activity::query()->where('description', 'assistance cleared')->where('properties->comment_id', $resume['comment_id'])->get();
+    expect($clears)->toHaveCount(2);
+    foreach ($clears as $clear) {
+        expect($clear->request_id)->toBe($requestId)
+            ->and($clear->properties?->get('actor'))->toBe(TaskComment::query()->findOrFail($resume['comment_id'])->author);
+    }
     expect($turns->threads)->toBe(['implementer-thread']);
 });
 
 it('relays a direction resolution to the reviewer of a running subtask', function (): void {
     $task = blocked_task(TaskStatus::Running);
-    $task->update(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which mirror?']);
+    test_update_task($task, ['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which mirror?']);
     AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     TaskQuestion::query()->create([
         'task_id' => $task->parent_id, 'subtask_id' => $task->id, 'attempt' => 2, 'asked_by' => QuestionAsker::Implementer,
@@ -433,8 +439,8 @@ it('relays a direction resolution to the reviewer of a running subtask', functio
 
 it('rolls back a direction delivery that fails before the question is linked and accepts a replay', function (TaskStatus $status): void {
     $task = blocked_task($status);
-    $task->update(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which mirror?']);
-    $task->parent->update($task->only(['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason']));
+    test_update_task($task, ['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which mirror?']);
+    test_update_task($task->parent, $task->only(['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason']));
     if ($status === TaskStatus::Running) {
         AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     }
@@ -494,8 +500,8 @@ it('rolls back a direction delivery that fails before the question is linked and
 
 it('records an operator direction request as a question', function (): void {
     $task = blocked_task(TaskStatus::Running);
-    $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
-    $task->parent->update(['assistance_requested' => false, 'assistance_reason' => null]);
+    test_update_task($task, ['assistance_requested' => false, 'assistance_reason' => null]);
+    test_update_task($task->parent, ['assistance_requested' => false, 'assistance_reason' => null]);
 
     $comment = app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
         'type' => 'assistance_requested', 'body' => 'Which database should this use?', 'author' => 'operator',
@@ -538,7 +544,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'name' => 'resolution-target-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.191', 'wireguard_ip' => '10.44.0.191',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
@@ -555,7 +561,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Names', 'brief' => 'Name the records.',
         'status' => TaskStatus::Completed,
     ]);
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Route the resolution.',
         'status' => TaskStatus::Reviewing, 'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
         'review_attempt' => 3, 'review_notified_attempt' => null, 'communication_failures' => 5, 'completion_attempt' => 2,
@@ -653,7 +659,7 @@ it('captures a fresh formal review baseline before an operator resolution is sen
     $task = blocked_task(TaskStatus::Reviewing);
     $task->update(['review_workspace_head' => str_repeat('a', 40), 'review_workspace_tree' => str_repeat('b', 40)]);
     if ($direction) {
-        $task->update(['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which source?']);
+        test_update_task($task, ['assistance_kind' => AssistanceKind::Direction, 'assistance_question' => 'Which source?']);
     }
     $checks = new FakeTaskCheckRunner;
     $checks->head = str_repeat('c', 40);
@@ -673,14 +679,14 @@ it('preserves unrelated group or sibling assistance when a review resolution wai
     $task = blocked_task(TaskStatus::Reviewing);
     $group = $task->parent;
     $request = test_assistance_attributes(AssistanceKind::Failure, null, 'Review needs a decision.');
-    $task->update($request);
-    $group->update($request);
+    test_update_task($task, $request);
+    test_update_task($group, $request);
     if ($other === 'direction') {
-        $group->update(test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', 'Choose an environment.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', 'Choose an environment.'));
     } elseif ($other === 'failure') {
-        $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
     } elseif ($other === 'sibling') {
-        $group->tasks()->create(['title' => 'Other request', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
+        test_create_task($group->tasks(), ['title' => 'Other request', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
     }
     $before = $group->only(['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason']);
     $turns = recording_t3_turns();
@@ -705,8 +711,8 @@ it('resolves only matching parent assistance across reviewer delivery paths', fu
         'Which mirror?',
         'Choose the mirror.',
     );
-    $task->update($request);
-    $group->update($request);
+    test_update_task($task, $request);
+    test_update_task($group, $request);
     AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')
         ->update(['task_id' => str_starts_with($path, 'held') ? null : $task->id]);
     TaskQuestion::query()->create([
@@ -715,11 +721,11 @@ it('resolves only matching parent assistance across reviewer delivery paths', fu
         'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
     ]);
     if ($other === 'failure') {
-        $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
     } elseif ($other === 'direction') {
-        $group->update(test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $request['assistance_reason']));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $request['assistance_reason']));
     } elseif ($other === 'sibling') {
-        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
+        test_create_task($group->tasks(), ['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$request]);
     }
     $before = $group->only(array_keys($request));
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
@@ -739,11 +745,11 @@ it('preserves a replacement request with the same reason when delivery completes
     $group = $task->parent;
     $request = test_assistance_attributes(AssistanceKind::Direction, 'Which mirror?', 'Choose a mirror.');
     $replacement = test_assistance_attributes(AssistanceKind::Direction, 'Which region?', $request['assistance_reason']);
-    $task->update($request);
-    $group->update($request);
+    test_update_task($task, $request);
+    test_update_task($group, $request);
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
     $turns = recording_t3_turns(function () use ($task, $group, $replacement, $target): void {
-        ($target === 'child' ? $task : $group)->fresh()->update($replacement);
+        test_update_task(($target === 'child' ? $task : $group)->fresh(), $replacement);
     });
 
     app(StoreTaskCommentAction::class)->execute($task, [
@@ -765,9 +771,9 @@ it('preserves another parent failure or sibling request when a deliverable corre
     $group = $task->parent;
     $task->update(['deliverable_correction_check_id' => 1]);
     if ($other === 'failure') {
-        $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
     } else {
-        $group->tasks()->create([
+        test_create_task($group->tasks(), [
             'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
             ...test_assistance_attributes(AssistanceKind::Failure, null, 'Another failure.'),
         ]);

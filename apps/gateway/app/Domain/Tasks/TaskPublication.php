@@ -464,10 +464,10 @@ final readonly class TaskPublication
         $resolution->update(['review_attempt' => $task->review_attempt]);
         TaskQuestions::attachResolution($task, $resolution);
         $reason = $task->assistance_reason;
-        TaskAssistance::apply($task);
+        TaskAssistance::apply($task, source: $resolution);
         $task->update(['communication_failures' => 0, 'resolution_delivered_comment_id' => $resolution->id]);
         if ($group->assistance_reason === $reason && ! $group->tasks()->where('assistance_requested', true)->exists()) {
-            TaskAssistance::apply($group);
+            TaskAssistance::apply($group, source: $resolution);
         }
         Cache::forget($this->publicationBackoffKey($task));
 
