@@ -657,7 +657,6 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0196-derive-application-directory-from-web-root",
-              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
               "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
@@ -669,7 +668,6 @@
               "decisions/0218-take-long-commands-off-the-request-path",
               "decisions/0219-answer-cluster-names-from-a-dns-on-the-router",
               "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users",
-              "decisions/0222-give-task-vms-a-cloned-topology-seed",
               "decisions/0223-run-one-gate-from-handoff-to-merge",
               "decisions/0224-give-each-task-group-one-holder-and-one-sender"
             ]
@@ -1589,6 +1587,14 @@
     {
       "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
       "destination": "/reference/tasks#workspace-lease"
+    },
+    {
+      "source": "/decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
+      "destination": "/reference/compute-drivers#task-vms"
+    },
+    {
+      "source": "/decisions/0222-give-task-vms-a-cloned-topology-seed",
+      "destination": "/reference/compute-drivers#the-topology-seed"
     }
   ]
 }
