@@ -43,6 +43,9 @@ class RecipeVersionsTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.apt = Path(directory.name)
         (self.apt / 'sources.list.d').mkdir()
+        image_apt = patch.object(image, 'IMAGE_APT', self.apt / 'image-apt')
+        image_apt.start()
+        self.addCleanup(image_apt.stop)
         for module in (recipe, image):
             source_patch = patch.object(module, 'APT_ETC', self.apt)
             source_patch.start()
@@ -776,6 +779,7 @@ class RecipeVersionsTest(unittest.TestCase):
                         self.assertEqual(result['changed_packages'], ['caddy'])
                         self.assertEqual(result['changed_tools'], ['caddy'])
                     else:
+                        module.image_apt_source(payload)
                         module.image_packages(payload)
                 self.assertEqual(observed, {'curl': NEWER, 'caddy': '2.0'})
                 self.assertEqual(sum(c[:2] == ['apt-get', 'install'] for c in commands), 2)
@@ -812,9 +816,12 @@ class RecipeVersionsTest(unittest.TestCase):
                  patch.object(image, 'packages', return_value={'curl': NEWER}), \
                  patch.object(image, 'run', side_effect=self.command), \
                  patch.object(image, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)):
+                image.image_apt_source(payload)
                 image.image_packages(payload)
             self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
             self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
+            # Each of the two assessments checks origin once under APT_CONFIG, without duplicate argv options.
+            self.assertEqual(self.commands.count(['apt-cache', 'policy', 'curl:amd64']), 2)
             original_read = Path.read_text
             def read_text(path, *args, **kwargs):
                 if path == Path('/etc/orbit-machine-recipe.json'):

@@ -169,7 +169,7 @@ Four guards stay:
 - remote supervision for detached checks and topologies;
 - the workspace owner foreign key.
 
-The scheduler state gates, the IMMEDIATE transactions, and `TaskVmWorkspaceGuard` stay as they are. The other guards go. Each group has its own task VM ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)), so destroying the VM ends every actor in it. No recovery needs remote proof that a process stopped.
+The scheduler state gates, the IMMEDIATE transactions, and `TaskVmWorkspaceGuard` stay as they are. The other guards go. Each group has its own [task VM](/reference/compute-drivers#task-vms), so destroying the VM ends every actor in it. No recovery needs remote proof that a process stopped.
 
 ### The tick stays fast
 

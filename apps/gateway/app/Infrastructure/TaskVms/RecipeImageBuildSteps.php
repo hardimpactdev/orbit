@@ -72,6 +72,11 @@ final readonly class RecipeImageBuildSteps
             return true;
         }
         try {
+            if (in_array($phase, RecipeImagePrograms::Phases, true)) {
+                $this->programs->apply($shell, $recipe, $profile, $phase);
+
+                return true;
+            }
             switch ($phase) {
                 case 'reset':
                     $this->image->delete($host, $node, $name);
@@ -90,13 +95,6 @@ final readonly class RecipeImageBuildSteps
                     break;
                 case 'boot':
                     $this->image->awaitCloudInit($host, $node, $name);
-                    break;
-                case 'packages':
-                case 'javascript':
-                case 'rust':
-                case 'agent':
-                case 'pi':
-                    $this->programs->apply($shell, $recipe, $profile, $phase);
                     break;
                 case 'prepare':
                     $this->builder->singleBoot($host, $node, $shell);
