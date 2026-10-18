@@ -10,6 +10,8 @@ use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Instances\InstanceState;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -28,10 +30,24 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::DatabaseConnection;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        $attachments = $this->attachmentsOn($node);
+        $connections = $this->unattachedNodeConnections($node, $attachments);
+
+        return [
+            ...DoctorResources::groups($attachments->modelKeys(), kind: DoctorResourceKind::Attachments),
+            ...DoctorResources::groups($connections->modelKeys(), kind: DoctorResourceKind::Connections),
+        ];
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $attachments = $this->attachmentsOn($context->node);
         $unattached = $this->unattachedNodeConnections($context->node, $attachments);
+        $attachments = $context->select($attachments, DoctorResourceKind::Attachments);
+        $unattached = $context->select($unattached, DoctorResourceKind::Connections);
         $checked = $attachments->count() + $unattached->count();
 
         if ($checked === 0) {

@@ -778,7 +778,7 @@ describe('image build', function (): void {
         expect($payload)->toMatchArray(['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'profile' => 'base', 'architecture' => 'amd64'])
             ->and(array_keys($payload['tools']))->toBe($recipe->profile('base', 'amd64'))
             ->and($packages[2])->toContain('def image_main():')
-            ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and($this->upcloud->storages[$template]['labels'])->toBe([['key' => 'orbit.recipe', 'value' => app(RecipeImageBuilds::class)->currentRecipe()->identity]])
             ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
             ->and($this->upcloud->storages)->not->toHaveKey($old)
@@ -892,6 +892,7 @@ describe('image build', function (): void {
             ->and($this->upcloud->servers)->toBe([])
             ->and(array_keys($this->upcloud->storages))->toBe([$previous]);
     })->with([
+        'snapshot setup fails' => ['apt-source', false],
         'installer fails' => ['packages', false],
         'verification fails' => ['verify', false],
         'verification is truncated' => ['verify', true],

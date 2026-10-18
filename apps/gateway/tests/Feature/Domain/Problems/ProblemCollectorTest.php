@@ -3,12 +3,18 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
+use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\ProcessInspectionData;
+use App\Domain\Doctor\ProcessInspectionStatus;
+use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemEvidence;
 use App\Domain\Problems\ProblemSource;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tools\ToolInventoryPackage;
@@ -20,14 +26,69 @@ use App\Models\Activity;
 use App\Models\Node;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Support\TestOrbitHome;
+
+it('observes only Horizon without a fleet scan or queue worker', function (string $desired, string $observed, ?string $code): void {
+    problem_collector_sandbox();
+    $gateway = $this->markAsGateway(problem_collector_node('gateway'));
+    $gateway->update(['status' => LifecycleStatus::Active]);
+    problem_collector_node('unreachable-fleet-node');
+    $process = Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $gateway->id, 'name' => 'horizon',
+        'runtime' => ProcessRuntime::Systemd,
+        'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon']],
+        'desired_state' => $desired, 'status' => LifecycleStatus::Active,
+    ]);
+    Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $gateway->id, 'name' => 'unrelated',
+        'runtime' => ProcessRuntime::Systemd,
+        'runtime_config' => ['command' => ['unrelated']],
+        'desired_state' => 'running', 'status' => LifecycleStatus::Active,
+    ]);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            throw new RuntimeException('A Horizon observation must not scan Nodes.');
+        }
+    });
+    $inspector = new class($process->id, $observed) implements ProcessStateInspector
+    {
+        public int $calls = 0;
+
+        public function __construct(private int $expectedId, private string $observed) {}
+
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            expect($process->id)->toBe($this->expectedId);
+            $this->calls++;
+            if ($this->observed === 'unknown') {
+                throw new DoctorInspectionException;
+            }
+
+            return new ProcessInspectionData(true, ProcessInspectionStatus::from($this->observed));
+        }
+    };
+    app()->instance(ProcessStateInspector::class, $inspector);
+    app(ProblemCollector::class)->collectHorizon();
+
+    expect($inspector->calls)->toBe(1);
+    expect(ProblemFingerprint::query()->pluck('fingerprint')->all())->toBe(
+        $code === null ? [] : ['doctor|'.$code.'|process|'.$process->id],
+    );
+})->with([
+    'stopped worker' => ['running', 'inactive', 'process.state_mismatch'],
+    'healthy worker' => ['running', 'active', null],
+    'intentional stop' => ['stopped', 'inactive', null],
+    'inspection failure' => ['running', 'unknown', 'process.inspection_failed'],
+]);
 
 it('collects fingerprints for the same doctor issue across two runs', function (): void {
     problem_collector_sandbox();
@@ -41,9 +102,9 @@ it('collects fingerprints for the same doctor issue across two runs', function (
         }
     });
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $this->travel(5)->minutes();
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()
         ->where('fingerprint', 'doctor|node.lifecycle_not_active|node|'.$node->id)
@@ -77,14 +138,13 @@ it('records nothing from an interrupted doctor pass and records every issue once
     });
 
     try {
-        expect(Artisan::call('problems:collect'))->toBe(1)
-            ->and(ProblemFingerprint::query()->count())->toBe(0)
-            ->and(ProblemCollectorState::query()->sole()->doctor_resume_key)->toBeNull();
+        expect(problem_collector_run())->toBe(1)
+            ->and(ProblemFingerprint::query()->count())->toBe(0);
     } finally {
         ProblemFingerprint::flushEventListeners();
     }
 
-    expect(Artisan::call('problems:collect'))->toBe(0)
+    expect(problem_collector_run())->toBe(0)
         ->and(ProblemFingerprint::query()->orderBy('fingerprint')->pluck('occurrences', 'fingerprint')->all())->toBe([
             'doctor|node.lifecycle_not_active|node|'.$nodes[0]->id => 1,
             'doctor|node.lifecycle_not_active|node|'.$nodes[1]->id => 1,
@@ -134,7 +194,7 @@ it('collects no fingerprint for an informational doctor issue', function (): voi
         ->values()
         ->all();
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect($kinds)->toBe([DoctorIssueKind::Informational])
         ->and(ProblemFingerprint::query()->where('fingerprint', 'like', 'doctor|tool.package_unregistered|%')->exists())->toBeFalse();
@@ -143,7 +203,7 @@ it('collects no fingerprint for an informational doctor issue', function (): voi
 it('collects fingerprints for neither a sub-500 refusal nor a log entry without an app frame', function (): void {
     problem_collector_sandbox();
     problem_log('');
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     problem_activity('instance:show', 'http.422', null);
     problem_activity('instance:update', 'validation.failed', 0);
@@ -169,14 +229,14 @@ it('collects fingerprints for neither a sub-500 refusal nor a log entry without 
         'No app frame',
     ));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect(ProblemFingerprint::query()->count())->toBe(0);
 });
 
 it('collects fingerprints for a burst of identical activity failures and keeps their request ids', function (): void {
     problem_collector_sandbox();
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $this->travelTo(Carbon::parse('2026-10-02 15:00:00', 'UTC'));
     $requestIds = [
         (string) Str::uuid(),
@@ -189,7 +249,7 @@ it('collects fingerprints for a burst of identical activity failures and keeps t
         problem_activity_at('instance:clone', 'instance.clone_failed', 1, $occurredAt, $requestId);
     }
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -208,14 +268,14 @@ it('collects fingerprints for a burst of identical activity failures and keeps t
 
 it('collects activity occurrences from created_at across separate windows', function (): void {
     problem_collector_sandbox();
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $this->travelTo(Carbon::parse('2026-10-02 15:00:00', 'UTC'));
 
     problem_activity_at('instance:clone', 'instance.clone_failed', 1, Carbon::parse('2026-10-01 00:01:06', 'UTC'));
     problem_activity_at('instance:clone', 'instance.clone_failed', 1, Carbon::parse('2026-10-01 00:04:06', 'UTC'));
     problem_activity_at('instance:clone', 'instance.clone_failed', 1, Carbon::parse('2026-10-01 00:06:06', 'UTC'));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -232,7 +292,7 @@ it('collects activity occurrences from created_at across separate windows', func
 it('collects one occurrence at the log time for a burst of log records in one window', function (): void {
     problem_collector_sandbox();
     problem_log('');
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $this->travelTo(Carbon::parse('2026-10-02 15:00:00', 'UTC'));
 
     $frame = base_path().'/app/Domain/Tasks/TaskScheduler.php';
@@ -248,7 +308,7 @@ it('collects one occurrence at the log time for a burst of log records in one wi
     $records = 129;
     problem_log(str_repeat($record, $records));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -265,7 +325,7 @@ it('collects one occurrence at the log time for a burst of log records in one wi
 
 it('does not count a signal again when its window has left the occurrence sample', function (): void {
     problem_collector_sandbox();
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $start = Carbon::parse('2026-10-01 00:00:00', 'UTC');
 
     for ($index = 0; $index < 21; $index++) {
@@ -277,7 +337,7 @@ it('does not count a signal again when its window has left the occurrence sample
         );
     }
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -287,7 +347,7 @@ it('does not count a signal again when its window has left the occurrence sample
         ->and($fingerprint->evidence['counted_blocks'])->toHaveCount(21);
 
     problem_activity_at('instance:clone', 'instance.clone_failed', 1, $start->copy());
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect($fingerprint->refresh()->occurrences)->toBe(21)
         ->and($fingerprint->evidence['observation_times'])->toHaveCount(20)
@@ -297,7 +357,7 @@ it('does not count a signal again when its window has left the occurrence sample
 
 it('records the next activity occurrence at created_at after dropping legacy history', function (): void {
     problem_collector_sandbox();
-    Artisan::call('problems:collect');
+    problem_collector_run();
     ProblemFingerprint::query()->create([
         'fingerprint' => 'activity|instance:clone|instance.clone_failed',
         'source' => ProblemSource::Activity,
@@ -320,7 +380,7 @@ it('records the next activity occurrence at created_at after dropping legacy his
         Carbon::parse('2026-10-01 00:01:06', 'UTC'),
     );
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -339,7 +399,7 @@ it('collects fingerprints once so the cursor and log offset prevent double count
     problem_activity('instance:clone', 'instance.clone_failed', 1);
     problem_log(problem_log_record('RuntimeException', $frame, $call, (string) Str::uuid(), 'Already on disk'));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect(ProblemFingerprint::query()->count())->toBe(0);
 
@@ -347,7 +407,7 @@ it('collects fingerprints once so the cursor and log offset prevent double count
     $activity = problem_activity('node:provision', 'gateway.unhandled', 1, $requestId);
     problem_log(problem_log_record('RuntimeException', $frame, $call, $requestId, 'Provision failed'));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $activityFingerprint = ProblemFingerprint::query()->where('source', ProblemSource::Activity)->sole();
     $logFingerprint = ProblemFingerprint::query()->where('source', ProblemSource::Log)->sole();
@@ -364,7 +424,7 @@ it('collects fingerprints once so the cursor and log offset prevent double count
         ->and($state->activity_cursor)->toBe($activity->id)
         ->and($state->log_offset)->toBe(filesize(storage_path('logs/laravel.log')));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect($activityFingerprint->refresh()->occurrences)->toBe(1)
         ->and($logFingerprint->refresh()->occurrences)->toBe(1)
@@ -375,7 +435,7 @@ it('collects fingerprints once so the cursor and log offset prevent double count
 it('collects fingerprints for a closure frame without line numbers', function (): void {
     problem_collector_sandbox();
     problem_log('');
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $call = 'Illuminate\\Pipeline\\Pipeline->{closure:{closure:Illuminate\\Pipeline\\Pipeline::carry():194}:195}()';
     problem_log(problem_log_record(
@@ -386,7 +446,7 @@ it('collects fingerprints for a closure frame without line numbers', function ()
         'Pipeline closure',
     ));
 
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole()->fingerprint;
 
@@ -426,8 +486,8 @@ it('collects fingerprints for one open assistance reason until that request clea
         'assistance_reason' => 'Restart node 123e4567-e89b-12d3-a456-426614174000 after 3 failures',
     ]);
 
-    Artisan::call('problems:collect');
-    Artisan::call('problems:collect');
+    problem_collector_run();
+    problem_collector_run();
 
     $fingerprint = ProblemFingerprint::query()->sole();
 
@@ -437,13 +497,13 @@ it('collects fingerprints for one open assistance reason until that request clea
         ->and($fingerprint->evidence['assistance_task_ids'])->toBe([$task->id]);
 
     test_update_task($task, ['assistance_requested' => false, 'assistance_reason' => null]);
-    Artisan::call('problems:collect');
+    problem_collector_run();
     $this->travel(5)->minutes();
     test_update_task($task, [
         'assistance_requested' => true,
         'assistance_reason' => 'Restart node 123e4567-e89b-12d3-a456-426614174000 after 9 failures',
     ]);
-    Artisan::call('problems:collect');
+    problem_collector_run();
 
     expect($fingerprint->refresh()->occurrences)->toBe(2)
         ->and($fingerprint->evidence['assistance_task_ids'])->toBe([$task->id]);
@@ -530,4 +590,17 @@ function problem_log_record(
 #2 {main}
 ","request_id":"'.$requestId.'"} 
 ';
+}
+
+function problem_collector_run(): int
+{
+    $collector = app(ProblemCollector::class);
+    $failures = $collector->collect();
+    try {
+        $collector->recordDoctor(app(RunDoctorAction::class)->executeForFleet());
+    } catch (Throwable) {
+        return 1;
+    }
+
+    return $failures === [] ? 0 : 1;
 }

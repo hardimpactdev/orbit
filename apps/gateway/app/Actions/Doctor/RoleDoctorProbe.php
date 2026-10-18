@@ -13,6 +13,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\PhpPoolDirectoryInspector;
@@ -24,6 +25,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
+use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -54,15 +56,28 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Role;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return DoctorResources::groups($this->roles($node)->modelKeys());
+    }
+
+    /** @return Collection<int, NodeRole> */
+    private function roles(Node $node): Collection
+    {
+        return NodeRole::query()->where('node_id', $node->id)->orderBy('id')->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $roles = NodeRole::query()->where('node_id', $context->node->id)->orderBy('id')->get();
-        if ($roles->isEmpty()) {
+        $roles = $this->roles($context->node);
+        $selected = $context->select($roles);
+        if ($selected->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, 0, []);
         }
 
         $issues = [];
-        foreach ($roles as $role) {
+        foreach ($selected as $role) {
             if ($role->status === LifecycleStatus::Active) {
                 continue;
             }
@@ -102,10 +117,10 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             );
 
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, $roles->count(), $ordered);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Role, $selected->count(), $ordered);
         }
 
-        foreach ($roles as $role) {
+        foreach ($selected as $role) {
             if ($role->status !== LifecycleStatus::Active) {
                 continue;
             }
@@ -135,7 +150,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Role,
-            $roles->count(),
+            $selected->count(),
             $this->ordered($issues),
         );
     }
@@ -153,7 +168,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => in_array($role->role, self::CaddySiteRoles, strict: true))
             ?? $active->first();
 
-        if (! $role instanceof NodeRole) {
+        if (! $role instanceof NodeRole || $context->select(new Collection([$role]))->isEmpty()) {
             return;
         }
 
@@ -216,7 +231,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev)
             ?? $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd);
 
-        if (! $role instanceof NodeRole) {
+        if (! $role instanceof NodeRole || $context->select(new Collection([$role]))->isEmpty()) {
             return;
         }
 

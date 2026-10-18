@@ -18,6 +18,8 @@ use RuntimeException;
 /** Runs only code-owned installers; the persisted recipe supplies package names and integrity pins. */
 final readonly class RecipeImagePrograms
 {
+    public const array Phases = ['apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi'];
+
     public function apply(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
     {
         $payload = $this->payload($shell, $recipe, $profile);

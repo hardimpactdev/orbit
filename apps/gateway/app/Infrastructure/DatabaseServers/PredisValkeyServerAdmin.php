@@ -7,6 +7,7 @@ namespace App\Infrastructure\DatabaseServers;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\DatabaseServer;
 use Closure;
 use Illuminate\Support\Sleep;
@@ -27,6 +28,8 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
     private const float READ_WRITE_TIMEOUT_SECONDS = 10.0;
 
     private const int READY_POLL_SECONDS = 2;
+
+    public function __construct(private CommandDeadline $deadline) {}
 
     public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
     {
@@ -353,6 +356,8 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
             'protocol' => 2,
             'client_info' => false,
             ...($authenticated ? ['username' => 'default', 'password' => $server->root_password] : []),
+        ], [
+            'connections' => new DeadlineValkeyConnectionFactory($this->deadline),
         ]);
     }
 

@@ -10,11 +10,15 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\ScheduleDoctorIssueCode;
 use App\Domain\Doctor\ScheduleInspectionData;
 use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Schedules\ScheduleTargetResolver;
+use App\Models\Node;
 use App\Models\Schedule;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
 {
@@ -28,9 +32,23 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Schedule;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return [...DoctorResources::groups($this->rows($node)->modelKeys()), new DoctorResources(DoctorResourceKind::Inventory)];
+    }
+
+    /** @return Collection<int, Schedule> */
+    private function rows(Node $node): Collection
+    {
+        return Schedule::query()->where('host_node_id', $node->id)->orderBy('id')
+            ->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $schedules = Schedule::query()->where('host_node_id', $context->node->id)->orderBy('id')->get();
+        $schedules = $this->rows($context->node);
+        $schedules = $context->select($schedules);
 
         if (! $context->inspection->reachable && $schedules->isNotEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), [
@@ -70,13 +88,16 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        if (! $this->scansForOrphans($context, $schedules->isNotEmpty())) {
+        $knownIds = $context->resources?->kind === DoctorResourceKind::Inventory
+            ? Schedule::query()->where('host_node_id', $context->node->id)->pluck('id')->all()
+            : $schedules->pluck('id')->all();
+        if (! $context->inspection->reachable || ($context->resources !== null && $context->resources->kind !== DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
         }
 
         try {
             foreach ($this->inspector->orphanIds($context->node, array_values(array_filter(
-                $schedules->pluck('id')->all(),
+                $knownIds,
                 is_string(...),
             ))) as $id) {
                 $issues[] = new DoctorIssueData(

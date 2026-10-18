@@ -67,11 +67,7 @@ final readonly class GatewayHorizon
             return 'none';
         }
 
-        $process = Process::query()->whereMorphedTo('owner', $gateway)
-            ->where('runtime_config->command[1]', 'artisan')
-            ->where('runtime_config->command[2]', 'horizon')
-            ->orderBy('id')
-            ->first();
+        $process = self::find($gateway);
 
         if (! $process instanceof Process) {
             $this->create($gateway, $scheduler());
@@ -88,6 +84,15 @@ final readonly class GatewayHorizon
         $this->start($process);
 
         return 'started';
+    }
+
+    public static function find(Node $gateway): ?Process
+    {
+        return Process::query()->whereMorphedTo('owner', $gateway)
+            ->where('runtime_config->command[1]', 'artisan')
+            ->where('runtime_config->command[2]', 'horizon')
+            ->orderBy('id')
+            ->first();
     }
 
     private function create(Node $gateway, Process $scheduler): void
