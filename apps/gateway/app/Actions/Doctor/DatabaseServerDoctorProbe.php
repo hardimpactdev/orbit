@@ -15,9 +15,13 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
+use App\Models\Node;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 {
@@ -28,15 +32,28 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::DatabaseServer;
     }
 
-    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
     {
-        $servers = DatabaseServer::query()
-            ->where('node_id', $context->node->id)
+        return DoctorResources::groups($this->rows($node)->modelKeys(), 1);
+    }
+
+    /** @return Collection<int, DatabaseServer> */
+    private function rows(Node $node): Collection
+    {
+        return DatabaseServer::query()
+            ->where('node_id', $node->id)
             ->where('driver', DatabaseDriver::Redis)
             ->whereHas('process', static fn ($query) => $query->where('desired_state', DesiredProcessState::Running))
             ->with(['node', 'databaseConnections.users'])
             ->orderBy('id')
             ->get();
+    }
+
+    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    {
+        $servers = $this->rows($context->node);
+        $servers = $context->resources === null ? $servers : $servers->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
         $issues = [];
 
         foreach ($servers as $server) {

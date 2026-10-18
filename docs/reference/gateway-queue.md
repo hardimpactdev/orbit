@@ -75,7 +75,7 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 Each probe group shares one 12-second command deadline. The worker timeout is 13 seconds, a backstop derived from the same budget. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside the probe deadline rather than be replaced by worker failures.
 
-Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database checks took under 0.5 seconds each, so at most 20 share a job. Tool environment checks keep one batch read per Node; inventory is separate. Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
+Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline. Tool environment checks keep one batch read per Node; inventory is separate. Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
 
 Laravel batches keep all Node observations available to related-node checks. Observations survive release switches in shared cache. Resource groups commit separately, so a release waits only for the running group, never the full fleet scan. Collection needs the queue; without it, dispatch fails with an error.
 
@@ -230,7 +230,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
