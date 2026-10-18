@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
@@ -16,7 +17,6 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\ComposerDryRunVersionParser;
-use App\Infrastructure\Tools\ComposerInstalledInventory;
 use App\Infrastructure\Tools\ComposerInstalledInventoryParser;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
@@ -137,7 +137,7 @@ describe(ComposerToolManager::class, function (): void {
             ),
         ],
         'installed inventory' => [
-            static fn (ComposerToolManager $manager, Node $node): ComposerInstalledInventory => $manager->installedInventory(
+            static fn (ComposerToolManager $manager, Node $node): InstalledToolInventory => $manager->installedInventory(
                 $node,
             ),
         ],

@@ -14,15 +14,16 @@ Every Linux Node uses the recipe's Ubuntu `docker.io`. Recipe convergence refuse
 
 ## Beast and Shark window
 
-Nick runs this procedure. This task does not change either Node. Beast has CUDA containers using the nvidia runtime and non-Orbit containers, including diction-whisper, ofide, mailpit, ohdear and dngdmt. Shark has prometheus, grafana, pantry-sync-redis and agent-evals. Confirm the inventory on the day: these names are not a manifest.
+Nick runs this procedure. Beast has non-Orbit containers, including ofide, mailpit, ohdear and dngdmt. No GPU container runs on Beast. Shark has prometheus, grafana, pantry-sync-redis and agent-evals. Confirm the inventory on the day: these names are not a manifest.
 
-1. Schedule downtime for every container. Verify independent backups of databases, named volumes and bind mounts. Pause deployments and scheduled fleet maintenance.
+1. Schedule downtime for every container. Verify independent backups of databases, named volumes and bind mounts. Keep a protected byte-for-byte copy of `/etc/docker/daemon.json`. Pause deployments and scheduled fleet maintenance.
 2. On the Gateway checkout for the migration, run `php artisan node:migrate-docker Beast --dry-run`. Repeat for Shark. Review container names, package changes, source backups, fallback paths and `space`.
 3. Resolve any refusal before the window. Dry-run reads the Node and checks registry access but writes no files, stops nothing and does not run apt update.
 4. Run `php artisan node:migrate-docker Beast --yes`. Migrate only one Node at a time. Run the Shark command after Beast passes its checks.
 5. Check every container's final state in the JSON report. Verify application traffic, database contents, monitoring and DNS.
-6. On Beast, verify a real CUDA request and the nvidia runtime. On Shark, verify Grafana dashboards and Prometheus ingestion.
-7. Run `php artisan node:converge-recipe Beast --dry-run`, then convergence and Doctor. Repeat for Shark. Restore scheduled maintenance after both Nodes pass.
+6. On Beast, confirm `nvidia` appears in `docker info` and compare `/etc/docker/daemon.json` byte for byte with its saved copy.
+7. On Shark, verify Grafana dashboards and Prometheus ingestion.
+8. Run `php artisan node:converge-recipe Beast --dry-run`, then convergence and Doctor. Repeat for Shark. Restore scheduled maintenance after both Nodes pass.
 
 ## Safety and recovery
 
@@ -38,9 +39,15 @@ The journal records each stage, including `swapping` before apt removes anything
 
 The transaction replaces `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin` and any `docker-ce-rootless-extras` with `docker.io`, `containerd`, `docker-buildx` and `docker-compose-v2`. It pins Docker and containerd to the recipe, using authenticated recipe snapshot indexes. It also removes `docker-model-plugin` when installed and refuses unrelated package removals or downgrades. An apt simulation refuses removal of unrelated packages. Orbit removes Docker repository entries after writing byte-for-byte backups directly in `/etc/apt`, using the same helper as recipe source retirement. Mixed or unrecognized Docker source entries refuse. `/etc/docker/daemon.json` stays byte-for-byte unchanged, including the nvidia runtime.
 
-Before the swap, the journal records the storage driver and copies Docker container, image, volume and network metadata and containerd metadata databases while both daemons are stopped. After the swap, bounded daemon startup retries precede checks of every image, container and volume. The command mounts each container layer with the changes API and starts and stops one recorded container with its restart policy disabled. All restart policies remain disabled until verification passes.
+Before the swap, the journal records the storage driver and effective storage roots. Docker's `/info` `DockerRootDir` is authoritative, including a custom `data-root` such as `/fast/docker`. The system containerd root comes from `containerd config dump`; its persistent data is normally in `/var/lib/containerd`, separate from its ephemeral `/run/containerd` state.
 
-Engine startup failure or unreadable state refuses until the operator repeats the command with `--fallback`. This explicit choice selects a fresh Docker data root under the journal directory and a systemd drop-in. The original Docker and containerd directories are not renamed or deleted. The fresh daemon manages its own containerd rather than reading the newer system containerd state.
+The offline copy reads Docker container, image, volume and network metadata from the recorded Docker root and containerd metadata databases from the recorded containerd root while both daemons are stopped. `metadata_roots` in `inventory.json` maps the stable `metadata/docker` and `metadata/containerd` backup directories to their original restore destinations.
+
+After the swap, bounded daemon startup retries precede checks of the recorded Docker root and every image, container and volume. The command mounts each container layer with the changes API and starts and stops one recorded container with its restart policy disabled. All restart policies remain disabled until verification passes.
+
+Engine startup failure or unreadable state refuses until the operator repeats the command with `--fallback`. This explicit choice selects a fresh Docker data root under the journal directory and a systemd drop-in. The journal stays at `/var/lib/orbit/docker-migration` so recovery can find it without a working engine. The drop-in uses `--data-root=<journal>/engine` and a private config copy in the journal with only `data-root` removed, avoiding a duplicate flag/config setting. The original daemon.json, Docker root and containerd directories are not renamed or deleted.
+
+Fallback stops and persistently masks `containerd.service` so the fresh daemon manages its own containerd. Stopping alone is insufficient: the vendor Docker unit wants that service, and a drop-in cannot clear this dependency. The mask prevents startup through that dependency or after reboot. Keep it while the fallback engine is in use. Removing the fallback drop-in and unmasking containerd belong together, including during manual CE restore after metadata restoration.
 
 Named volumes in the fresh engine use local bind-backed volumes pointing to their original mountpoints; bind mounts keep their original source. No volume data is deleted or copied. Keep the journal and original data directories for as long as these volumes are used.
 
@@ -60,7 +67,9 @@ Inventory uses the CE engine's latest API. Nondefault settings outside the Ubunt
 
 Orbit containers need matching stored Process specs. Every data mount must appear in those specs, including image-declared anonymous volumes. Give those volumes explicit names in the specs before migration. A changed spec or runtime refuses before the package swap.
 
-Custom Docker data roots or daemon host/containerd settings require a separate reviewed migration. This command does not rewrite those settings. Resolve a refusal rather than bypassing it.
+A custom Docker `data-root` in daemon.json is supported in place: Ubuntu docker.io reads the same file, and the command verifies that its effective root stays the same. Daemon `hosts` and `containerd` overrides, foreign Docker or containerd systemd drop-ins, and service unit overrides outside the vendor directories refuse with `docker-migration:custom-daemon`. An invalid or mismatched data root refuses with `docker-migration:storage-root`; an unreadable containerd root refuses with `docker-migration:containerd-root`. Resolve a refusal rather than bypassing it.
+
+The NVIDIA runtime registration, container `Runtime` and `DeviceRequests`, and toolkit configuration stay unchanged. NVIDIA's runtime wraps an OCI runtime, so the provider swap does not require a new NVIDIA configuration. The package guard refuses removal of the toolkit or other unrelated packages. The fallback config preserves the NVIDIA registration as well as logging and storage settings. Check the runtime listing and unchanged daemon configuration as described in the window procedure.
 
 ## Why it works this way
 
@@ -68,12 +77,30 @@ Docker 29.7/29.8 and containerd 2.3 are newer than the recipe's Docker 29.1 and 
 
 ## Rollback and no-engine recovery
 
-There is no automatic engine rollback. Before the window, retain the installed CE package versions and obtain their deb files and dependencies independently. Keep the apt source backups, the metadata backup under the journal, and independent data backups. A metadata copy is not a backup of volume contents.
+There is no automatic engine rollback. Before the window, retain the installed CE package versions and obtain their deb files and dependencies independently, including each installed CE plugin and `docker-model-plugin` if present. Keep these debs in a dedicated restore directory with no unrelated packages. Keep the apt source backups, the metadata backup under the journal, and independent data backups. A metadata copy is not a backup of volume contents.
 
 If apt fails after removing CE, leave containers stopped and rerun the same recipe command with `--yes`. The `swapping` stage runs `dpkg --configure -a` and a simulated, guarded `apt-get -f install` before retrying the pinned install. This path does not need a working Docker socket. Do not remove the journal or restart services by hand during verification.
 
 If the downgraded engine cannot mount the recorded layers, review the failure states and run `php artisan node:migrate-docker Beast --yes --fallback` (or Shark). This starts a fresh engine and loads saved local images and committed layers. It never deletes original metadata or volume data.
 
-If recovery cannot proceed, keep Docker and containerd stopped. Restore the retained CE packages and original daemon configuration and remove only the migration-owned systemd drop-in after checking its contents. Restore Docker repository entries from their `/etc/apt/*.orbit-docker-backup` files only if CE repository access is needed. If the old engine has modified metadata, restore the offline metadata copy before starting CE; preserve the original directories and get a reviewed recovery plan rather than overwriting uncertain state. Verify every container and application before ending the window.
+If recovery cannot proceed, stop docker.service, docker.socket and containerd.service. Before reinstalling CE, block package scripts from starting services: preserve any existing `/usr/sbin/policy-rc.d` and temporarily put an executable script there containing `#!/bin/sh` followed by `exit 101`. Keep this policy in place throughout package and metadata restoration.
 
-The journal contains credentials, image archives and volume backings. Never delete it while fallback volumes use paths beneath it. To clean up after a native-engine success, stop migration activity, archive the root-only journal to protected backup storage, check that no Docker data root, systemd drop-in or volume device references it, then remove the journal. After fallback, first migrate bind-backed volumes and the fresh engine to separately reviewed permanent storage; only then perform that cleanup.
+From the directory containing the retained CE debs, restore them and remove the conflicting Ubuntu plugins in the same transaction:
+
+```bash
+apt-get install --allow-downgrades ./*.deb docker-compose-v2- docker-buildx-
+```
+
+The trailing `-` requests removal of each Ubuntu plugin. CE's package conflicts remove `docker.io` and `containerd`. Do not install CE plugins over the Ubuntu plugins in separate transactions. Restore the original daemon configuration; it selects the original custom root again, so never substitute `/var/lib/docker`. Restore Docker repository entries from their `/etc/apt/*.orbit-docker-backup` files only if CE repository access is needed.
+
+When `inventory.json` records `swapped: true`, restore the offline metadata copy before starting CE. First preserve the current metadata directories in protected backup storage. Then overlay the selected files under `metadata/docker` and `metadata/containerd` onto their destinations in the journal's `metadata_roots`, keeping the relative paths. The copy contains selected files only: do not replace or delete the destination directories or volume data. Keep both daemons stopped throughout this step.
+
+If fallback was used, check the migration-owned drop-in contents, confirm that the journal records fallback and `/etc/systemd/system/containerd.service` is the mask symlink to `/dev/null`, then remove only that drop-in and run `systemctl unmask containerd.service` together. Run `systemctl daemon-reload`, restore the previous startup policy (or remove only the temporary script if none existed), then start CE.
+
+Every manual CE restore must end with policy recovery, whether or not it used the metadata copy: migration disabled policies in the live root before that copy. After CE starts on the original root, run `php artisan node:migrate-docker Beast --yes --restore-policies` from the same Gateway checkout (or name the restored Node). This recovery step requires CE, the original root and unchanged daemon configuration, no fallback drop-in, and every original container.
+
+Recovery restores each journaled restart policy. It starts non-Orbit containers that were running, even those whose original policy was `no`, and keeps the others stopped. The Gateway then reconciles Orbit Processes from their stored specs and reports every final state. The step is safe to repeat after an interruption; it never swaps packages or re-enters migration.
+
+Verify every container and application before ending the window. A completed policy recovery refuses another migration using the same journal; archive and clean up that journal before a new migration.
+
+The journal contains credentials, image archives and volume backings. Never delete it while fallback volumes use paths beneath it. To clean up after a native-engine success, stop migration activity, archive the root-only journal to protected backup storage, check that no Docker data root, systemd drop-in or volume device references it, then remove the journal. After fallback, first migrate bind-backed volumes and the fresh engine to separately reviewed permanent storage. Remove the fallback drop-in and unmask containerd together when returning to the vendor unit, then perform that cleanup.

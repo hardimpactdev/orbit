@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -263,7 +264,7 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         );
     }
 
-    public function installedInventory(Node $node): ComposerInstalledInventory
+    public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardSupportedNode($node);
 

@@ -4,31 +4,42 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Doctor\DatabaseConnectionDoctorProbe;
+use App\Actions\Doctor\RunDoctorAction;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemCollection;
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\CommandDeadline;
+use App\Jobs\Problems\CollectDoctorResource;
+use App\Jobs\Problems\CollectProblemSignals;
+use App\Jobs\Problems\DispatchProblemBatch;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 const DATABASE_CONNECTION_DOCTOR_SECRET = 'db-doctor-secret-3f91';
@@ -418,3 +429,59 @@ function database_connection_doctor_stored(Instance $instance): array
         ->mapWithKeys(static fn (InstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
         ->all();
 }
+
+it('queues database attachments by attachment identity and retains their findings', function (): void {
+    config(['orbit.gateway_queue.connection' => 'services-valkey']);
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'queued');
+    $attachment = DatabaseConnectionTarget::query()->forceCreate([
+        'id' => 501,
+        'database_connection_id' => $connection->id,
+        'instance_id' => $instance->id,
+        'prefix' => 'DB',
+    ]);
+    expect($attachment->id)->not->toBe($connection->id);
+    Bus::fake();
+    app(ProblemCollection::class)->dispatch();
+    $checks = null;
+    Bus::assertChained([
+        DispatchProblemBatch::class,
+        function (DispatchProblemBatch $batch) use (&$checks): bool {
+            $checks = $batch->jobs;
+
+            return true;
+        },
+        CollectProblemSignals::class,
+    ]);
+    $job = $checks->sole(fn ($job): bool => $job instanceof CollectDoctorResource && $job->family === DoctorFamily::DatabaseConnection);
+    expect($job->resources->kind)->toBe(DoctorResourceKind::Attachments);
+    expect($job->resources->ids)->toBe([$attachment->id]);
+    $context = database_connection_doctor_context($node);
+    Cache::put(ProblemCollection::contextKey($job->collection, $node->id), ['inspection' => $context->inspection->toArray(), 'failed' => false]);
+    $job->handle(app(RunDoctorAction::class), app(ProblemCollector::class), app(CommandDeadline::class));
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|database_connection.env_mismatch|database_connection|'.$attachment->id)->exists())->toBeTrue();
+});
+
+it('still queues a Node connection when its only attachment is on a removing Instance', function (): void {
+    config(['orbit.gateway_queue.connection' => 'services-valkey']);
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'removing-queue');
+    $connection->update(['host' => null]);
+    DatabaseConnectionTarget::query()->create(['database_connection_id' => $connection->id, 'instance_id' => $instance->id, 'prefix' => 'DB']);
+    database_connection_doctor_mark_removing($instance);
+    Bus::fake();
+
+    app(ProblemCollection::class)->dispatch();
+
+    Bus::assertChained([
+        DispatchProblemBatch::class,
+        function (DispatchProblemBatch $batch) use ($connection): bool {
+            $job = $batch->jobs->sole(fn ($job): bool => $job instanceof CollectDoctorResource && $job->family === DoctorFamily::DatabaseConnection);
+
+            return $job->resources->kind === DoctorResourceKind::Connections && $job->resources->ids === [$connection->id];
+        },
+        CollectProblemSignals::class,
+    ]);
+});

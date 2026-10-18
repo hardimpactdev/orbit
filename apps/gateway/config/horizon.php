@@ -17,6 +17,7 @@ return [
     'middleware' => ['web'],
     'waits' => [
         'gateway:tasks' => 60,
+        'gateway:problems' => 600,
         'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
         'gateway:builds-optional' => 3600,
@@ -45,7 +46,7 @@ return [
     'defaults' => [
         'tasks' => [
             'connection' => 'gateway',
-            'queue' => ['tasks'],
+            'queue' => ['tasks', 'problems'],
             'balance' => false,
             'minProcesses' => 3,
             'maxProcesses' => 3,

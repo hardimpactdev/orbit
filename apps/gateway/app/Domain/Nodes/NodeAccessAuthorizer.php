@@ -100,7 +100,7 @@ final readonly class NodeAccessAuthorizer
         return $this->servingHost ?? app(GatewayServingHost::class);
     }
 
-    private function activeGatewayId(): ?int
+    public function activeGatewayId(): ?int
     {
 
         $id = Node::query()
