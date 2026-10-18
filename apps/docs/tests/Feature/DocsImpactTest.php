@@ -947,3 +947,17 @@ it('docs impact clears removed API diagnostics when generators pass but retains 
         ->and($failed['errors'])->toContain('Removed from current source: Unable to map API source ['.$path.'] to an OpenAPI operation or schema owner.')
         ->and($failed['errors'])->toContain('Removed from current source: Unowned error identifier [example.api_failure] in '.$path.':1.');
 });
+
+it('routes guarded workspace lease recovery to its maintained command contract', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Console/Commands/ReleaseTaskWorkspaceLeaseCommand.php';
+    if (! is_dir(dirname($root.'/'.$path))) {
+        mkdir(dirname($root.'/'.$path), 0o777, true);
+    }
+    file_put_contents($root.'/'.$path, "<?php class ReleaseTaskWorkspaceLeaseCommand { protected \$signature = 'tasks:lease:release {lease-id} {--reason=}'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBeEmpty()
+        ->and(collect($report['surfaces'])->where('owner', 'docs/reference/tasks.md')->count())->toBeGreaterThan(0);
+});

@@ -16,7 +16,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskWorkspaceHead;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -37,7 +37,7 @@ final readonly class RetryTaskBaselineAction
             return false;
         }
         // Keep the first pending request when two resolutions arrive before recovery finishes.
-        if ($locked->resolution_delivered_comment_id === null || $check->task_comment_id === $locked->resolution_delivered_comment_id) {
+        if (! $this->requested($locked, $check)) {
             $locked->update(['resolution_delivered_comment_id' => $comment->id]);
         }
 
@@ -57,6 +57,15 @@ final readonly class RetryTaskBaselineAction
         return $check instanceof TaskCheck && ! $this->requested($fresh, $check) ? $check : null;
     }
 
+    /** Whether the current failed baseline has a committed retry request. No workspace access is needed. */
+    public function pending(Task $task): bool
+    {
+        $group = Task::topLevel()->find($task->parent_id);
+        $fresh = Task::query()->find($task->id);
+
+        return $group instanceof Task && $fresh instanceof Task && $this->retryRequested($group, $fresh);
+    }
+
     /**
      * Reconcile a committed request after a lost reset reply, rollback, or Gateway restart. The caller holds
      * the task execution lock. No database transaction is open during the fetch and reset; the bookkeeping
@@ -64,11 +73,18 @@ final readonly class RetryTaskBaselineAction
      */
     public function recover(Task $task): bool
     {
+        if (! $this->pending($task)) {
+            return false;
+        }
+
+        return app(TaskWorkspaceLease::class)->run($task->parent, 'check', 'baseline-retry:'.$task->id, fn () => $this->recoverWithLease($task), taskId: $task->id);
+    }
+
+    private function recoverWithLease(Task $task): bool
+    {
         $group = Task::topLevel()->findOrFail($task->parent_id);
         $fresh = Task::query()->findOrFail($task->id);
-        $check = $this->failedBaseline($group, $fresh);
-        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)
-            || app(TaskWorkspaceHead::class)->held($group)) {
+        if (! $this->retryRequested($group, $fresh)) {
             return false;
         }
 
@@ -84,19 +100,25 @@ final readonly class RetryTaskBaselineAction
         return DB::transaction(function () use ($task, $head): bool {
             $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $check = $this->failedBaseline($group, $locked);
-            if (! $check instanceof TaskCheck || ! $this->requested($locked, $check)) {
+            if (! $this->retryRequested($group, $locked)) {
                 return false;
             }
+            TaskAssistance::clearResolvedParent($locked, $group);
             $locked->update([
                 'subtask_start_commit' => $head,
                 ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
             ]);
-            $group->update(TaskAssistance::cleared());
 
             return true;
         });
+    }
+
+    private function retryRequested(Task $group, Task $task): bool
+    {
+        $check = $this->failedBaseline($group, $task);
+
+        return $check instanceof TaskCheck && $this->requested($task, $check);
     }
 
     private function requested(Task $task, TaskCheck $check): bool

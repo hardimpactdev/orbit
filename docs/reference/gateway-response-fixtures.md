@@ -42,6 +42,8 @@ Gateway rollback fixtures record a queued code switch with `force: false` and no
 
 Database server fixtures include the `driver` in create, list, and show responses. Valkey fixtures cover server creation, ACL-user creation, and closing an adopted server, including refusal while a client still uses `default`. The CLI replays those responses in human and JSON modes. Keep the MySQL cases when adding Valkey cases, so both drivers retain their contracts.
 
+Tasks status fixtures cover `workspace_leases` with an empty list, a holder, FIFO waiters, and `remote_uncertain`. Keep thread and check identities in the Gateway recording and SDK/CLI replay. These fields describe workspace ownership separately from task status and VM power; the [Tasks contract](/reference/tasks#workspace-lease) owns their meaning.
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.

@@ -305,6 +305,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'instance.route_association_mismatch',
             'instance.related_node_unverifiable',
             'instance.inspection_failed',
+            'instance.workspace_lease',
             'instance.node_unreachable',
         ],
         'schedule' => [

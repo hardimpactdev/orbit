@@ -13,7 +13,6 @@ final readonly class TopologyNode
      */
     public function __construct(
         public string $key,
-        public RoleImage $image,
         public TopologyNodePurpose $purpose,
         public int $address,
         public bool $checkout,
@@ -39,11 +38,6 @@ final readonly class TopologyNode
     public function wireGuardAddress(): string
     {
         return '10.44.0.'.($this->address - 9);
-    }
-
-    public function isContainer(): bool
-    {
-        return $this->image->isContainer();
     }
 
     /** @param array<array-key, string> $roles */

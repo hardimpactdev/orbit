@@ -136,7 +136,10 @@ it('selects each service role prerequisite without development-only software', f
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
     $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
-    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
+    $baseline = new NodeBootstrapPackageCatalog()->forRole($node, $role);
+    // Recipe convergence pins the container runtime too; enrollment only asks apt for Docker.
+    $runtime = in_array('docker.io', $baseline, true) ? ['containerd'] : [];
+    $expected = array_unique([...$recipe->profile('operator'), ...$baseline, ...$runtime, ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
 })->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
@@ -246,6 +249,21 @@ it('converges a roleless CI runner with the ci-runner profile and records the pr
         ->and(array_keys($later['plan']->tools))->toBe(array_keys($result['plan']->tools))
         ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');
 });
+
+it('keeps the ci-runner profile but no success marker when a run fails', function (array $settings, ?string $requested): void {
+    $node = FleetFixtures::node('recipe-sabre-fail');
+    $node->update(['settings' => $settings]);
+    recipeSsh(ScriptedSshExecutor::fail(stdout: 'recipe-stage:packages'));
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $requested))
+        ->toThrow(ResourceOperationException::class, 'stopped at recipe-stage:packages');
+    expect($node->refresh()->settings)->toBe(['machine_recipe' => ['profile' => 'ci-runner']])
+        ->and(NodeRecipeProgram::recordedProfile($node))->toBe('ci-runner');
+})->with([
+    'a recorded profile' => [['machine_recipe' => ['version' => 'previous', 'profile' => 'ci-runner']], null],
+    'a first run that names the profile' => [[], 'ci-runner'],
+]);
 
 it('refuses the ci-runner profile on a Node with roles and any other profile name before SSH', function (array $roles, string $profile): void {
     $node = FleetFixtures::node('recipe-profile-'.count($roles).$profile, $roles);
@@ -379,7 +397,7 @@ it('lists mixed recipe identities from the registry without SSH', function (): v
 });
 
 it('runs the remote program regression tests without host mutations or network access', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/converge_node_test.py'), resource_path('machine-software/converge-node.py')]);
+    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/converge_node_test.py'), resource_path('remote/lib/recipe.py')]);
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());

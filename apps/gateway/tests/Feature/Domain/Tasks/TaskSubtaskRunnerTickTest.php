@@ -22,6 +22,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -30,6 +31,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -71,43 +73,60 @@ it('waits while the check process runs and starts the reviewer only after it pas
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
-it('starts the check again when the tree changed during the run, then names the changed paths the second time', function (): void {
-    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['storage/check.cache'], "ok\n");
-    [$group, $task, $checks] = tick_checking([$changed, $changed]);
+it('requires implementer correction instead of accepting check leftovers as a new baseline', function (): void {
+    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], "ok\n");
+    [$group, $task, $checks] = tick_checking([$changed, FakeTaskCheckRunner::passed()]);
 
+    $signer = Mockery::mock(TaskWorkspaceSigner::class);
+    $signer->shouldNotReceive('commit');
+    app()->instance(TaskWorkspaceSigner::class, $signer);
+
+    app(TaskScheduler::class)->tick();
+    $checks->tree = str_repeat('c', 40);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Changed, TaskCheckStatus::Running])
-        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
-
-    app(TaskScheduler::class)->tick();
-
-    expect($checks->starts)->toBe(2)
-        ->and(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran, twice. Changed paths: storage/check.cache.')
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+    expect($checks->starts)->toBe(1);
+    expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Changed);
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran. Changed paths: orbit_tia_fixture/test.php.');
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect($task->fresh()->review_workspace_head)->toBeNull();
 });
 
-it('starts a lost check again once, then asks for assistance', function (): void {
-    [$group, $task, $checks, $notifier] = tick_checking([TaskCheckReading::lost(''), TaskCheckReading::lost('')]);
+it('holds a tree-changing baseline for assistance without restarting on its leftovers', function (): void {
+    $group = tick_baseline_group('changed-baseline', 'composer check', [], '10.51.0.19');
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], 'check changed tree')]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    app(TaskExtensionState::class)->enable();
 
+    app(TaskScheduler::class)->tick();
+    $checks->tree = str_repeat('c', 40);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($checks->starts)->toBe(1);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+    expect($group->tasks()->sole()->assistance_reason)->toContain('The workspace changed while the baseline check ran.');
+    expect($group->tasks()->sole()->implementer_agent_thread_id)->toBeNull();
+    expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Changed);
+});
+
+it('retains a lost check lease because its child command may still run', function (): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::lost('The supervisor disappeared.'), TaskCheckReading::lost('The supervisor disappeared.')]);
 
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
-    expect($checks->starts)->toBe(2)
-        ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toBe("Orbit's composer check stopped twice without a result.")
-        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Lost, TaskCheckStatus::Lost]);
+    expect($checks->starts)->toBe(1)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Lost)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->pid)->toBe(4001)
+        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
 });
 
 it('reminds the implementer after an operator cancels the check', function (): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::finished(143, str_repeat('a', 40), str_repeat('b', 40), [], 'Cancelled.')]);
     app(TaskScheduler::class)->tick();
 
     $cancelled = app(CancelTaskCheckAction::class)->execute($group, $task);
@@ -132,7 +151,7 @@ it('keeps a check running when the workspace cannot be read and counts a communi
 });
 
 describe('a thread that works outside the task phase', function (): void {
-    it('collects a blocked implementer receipt and starts a consult while the shared reviewer works', function (): void {
+    it('queues a consult until the shared reviewer releases the workspace', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
         app(TaskExtensionState::class)->enable();
@@ -141,14 +160,24 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(AgentSnapshotReader::class, tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']));
         $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
         $dispatcher = tick_dispatcher();
-        tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done', 'reviewer' => 'running']);
+        $state = (object) ['implementer' => 'done', 'reviewer' => 'running', 'sharedReviewer' => 'running'];
+        tick_relay_runtime($receipts, $dispatcher, $state);
 
+        app(TaskScheduler::class)->tick();
+
+        expect($task->comments()->count())->toBe(0)
+            ->and($receipts->cleared)->toBe([])
+            ->and($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and(TaskQuestion::query()->exists())->toBeFalse()
+            ->and($dispatcher->commands)->toBe([]);
+
+        $state->reviewer = 'done';
+        $state->sharedReviewer = 'done';
         app(TaskScheduler::class)->tick();
 
         expect($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
             ->and($receipts->cleared)->toHaveCount(1)
-            ->and($task->fresh()?->assistance_requested)->toBeFalse()
-            ->and($group->fresh()?->assistance_requested)->toBeFalse()
             ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
             ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
             ->and(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
@@ -183,6 +212,13 @@ describe('a thread that works outside the task phase', function (): void {
         $spawner = new class implements AgentSpawner
         {
             public int $reviews = 0;
+
+            public function reserveReviewer(Task $task): ?int
+            {
+
+                return null;
+
+            }
 
             public function spawnReviewer(Task $task): ?int
             {
@@ -239,7 +275,7 @@ describe('a thread that works outside the task phase', function (): void {
 
         app(TaskScheduler::class)->tick();
 
-        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('changes_requested')
+        expect($task->comments()->count())->toBe(0)
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
             ->and($task->fresh()?->communication_failures)->toBe(0)
             ->and($dispatcher->commands)->toBe([]);
@@ -258,6 +294,11 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(AgentSnapshotReader::class, $reader);
         app()->instance(AgentSpawner::class, new class implements AgentSpawner
         {
+            public function reserveReviewer(Task $task): ?int
+            {
+                return null;
+            }
+
             public function spawnReviewer(Task $task): ?int
             {
                 return null;
@@ -274,7 +315,7 @@ describe('a thread that works outside the task phase', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($signer->messages)->toBe([])
-            ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+            ->and($task->comments()->count())->toBe(0)
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 
         $reader->states['implementer-thread'] = 'idle';
@@ -563,6 +604,13 @@ it('project baseline setup only', function (): void {
         /** @var list<string> */
         public array $events = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->events[] = 'reviewer';
@@ -722,6 +770,94 @@ it('retries a failed baseline on resolution at the current default branch tip wi
 
     expect($agents->spawned)->toBe([$task->id]);
     expect($task->fresh()?->subtask_start_commit)->toBe($tip);
+});
+
+it('takes no baseline retry lease for an earlier resolution during a later assistance hold', function (bool $tick): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('resolved-baseline', 'composer check', [], '10.51.0.20');
+    $agents = tick_running_agents();
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once();
+    $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+    app(TaskScheduler::class)->tick();
+    app()->instance(TaskBaseBranchFetcher::class, $agents);
+    app(TaskScheduler::class)->tick();
+    TaskAssistance::apply($task, AssistanceKind::Failure, null, 'Operator hold after the implementer started.');
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Operator hold after the implementer started.');
+    $leases = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count();
+
+    if ($tick) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+    } else {
+        // Direct callers must also reject the resolved request before workspace admission.
+        expect(app(RetryTaskBaselineAction::class)->recover($task))->toBeFalse();
+    }
+
+    expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count())->toBe($leases);
+    expect($runner->starts)->toBe(2);
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+})->with(['scheduler tick' => true, 'direct recovery' => false]);
+
+it('waits for a new resolution after a failed retry and starts a third baseline', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('consumed-baseline-resolution', 'composer check', [], '10.51.0.21');
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "first failure\n"),
+        TaskCheckReading::finished(1, str_repeat('c', 40), str_repeat('b', 40), [], "retry failure\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->twice();
+    $fetcher->shouldReceive('resetToDefault')->twice()->andReturn(str_repeat('c', 40), str_repeat('d', 40));
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+    $runner->head = str_repeat('c', 40);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $failed = $task->checks()->latest('id')->first();
+    expect($failed->status)->toBe(TaskCheckStatus::Failed);
+    expect($failed->task_comment_id)->toBe($resolution->id);
+    $leases = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count();
+
+    app(TaskScheduler::class)->tick();
+    expect(app(RetryTaskBaselineAction::class)->recover($task))->toBeFalse();
+
+    expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count())->toBe($leases);
+    expect($runner->starts)->toBe(2);
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+
+    $secondResolution = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'The remaining failure is fixed. Retry again.', 'author' => 'operator',
+    ]);
+    expect($task->fresh()->subtask_start_commit)->toBe(str_repeat('d', 40));
+    expect($task->fresh()->resolution_delivered_comment_id)->toBe($secondResolution->id);
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    $runner->head = str_repeat('d', 40);
+
+    app(TaskScheduler::class)->tick();
+
+    $third = $task->checks()->where('kind', TaskCheckKind::Baseline)->latest('id')->first();
+    expect($runner->starts)->toBe(3);
+    expect($third->status)->toBe(TaskCheckStatus::Running);
+    expect($third->head_before)->toBe(str_repeat('d', 40));
+    expect($third->task_comment_id)->toBe($secondResolution->id);
+    expect($task->checks()->where('kind', TaskCheckKind::Baseline)->count())->toBe(3);
 });
 
 it('keeps baseline assistance and evidence when retry preparation fails', function (string $step): void {
@@ -961,12 +1097,18 @@ it('advances rework tests only to the latest passed handoff tree of the same sub
     $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
         'fixup_problem' => $fixup ? 'final-review' : null]);
     foreach ([TaskCheckStatus::Passed, TaskCheckStatus::Failed, TaskCheckStatus::Changed, TaskCheckStatus::Lost, TaskCheckStatus::Cancelled] as $index => $status) {
-        TaskCheck::query()->create([
+        $historical = TaskCheck::query()->create([
             'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => $status,
             'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40),
             'tree_before' => str_repeat('b', 40), 'tree_after' => str_repeat((string) ($index + 1), 40),
             'started_at' => now(),
         ]);
+        if ($status === TaskCheckStatus::Lost) {
+            // This historical process was confirmed stopped before the current rework attempt.
+            TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+                'kind' => 'check', 'owner' => 'historical:'.$historical->id, 'check_id' => $historical->id,
+                'status' => 'released', 'released_at' => now()]);
+        }
     }
     $other = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Other', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
     TaskCheck::query()->create(['task_id' => $other->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
@@ -978,3 +1120,34 @@ it('advances rework tests only to the latest passed handoff tree of the same sub
         ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('1', 40))
         ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
 })->with(['requested changes' => false, 'final-review fixup' => true]);
+
+it('preserves another parent failure or sibling request when a baseline resolution completes', function (string $other): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-parent-assistance', 'composer check', [], '10.51.0.6');
+    tick_running_agents();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]));
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    if ($other === 'failure') {
+        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
+    } else {
+        $group->tasks()->create([
+            'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
+            ...TaskAssistance::attributes(AssistanceKind::Failure, null, 'Another failure.'),
+        ]);
+    }
+    $before = $group->fresh()->only(array_keys(TaskAssistance::cleared()));
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once();
+    $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+    expect($group->fresh()->only(array_keys($before)))->toBe($before);
+})->with(['failure', 'sibling']);

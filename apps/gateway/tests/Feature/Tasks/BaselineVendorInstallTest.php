@@ -36,18 +36,19 @@ it('runs configured Project setup before the baseline check without an inferred 
         'public_ssh_host' => '10.44.0.191',
         'wireguard_ip' => '10.44.0.191',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'baseline-vendor',
-        'checkout_path' => '/tmp/tasks-baseline-vendor-install',
-        'status' => 'reserved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline vendor install',
         'brief' => 'Install missing dependencies before check.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'baseline-vendor',
+        'checkout_path' => '/tmp/tasks-baseline-vendor-install',
+        'status' => 'reserved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -96,18 +97,19 @@ it('asks for assistance when baseline setup or the check fails without classifyi
         'public_ssh_host' => '10.44.0.192',
         'wireguard_ip' => '10.44.0.192',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'baseline-failure',
-        'checkout_path' => '/tmp/tasks-baseline-install-failure',
-        'status' => 'reserved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline install failure',
         'brief' => 'Report dependency installation failure.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'baseline-failure',
+        'checkout_path' => '/tmp/tasks-baseline-install-failure',
+        'status' => 'reserved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -166,18 +168,19 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         'public_ssh_host' => '10.44.0.193',
         'wireguard_ip' => '10.44.0.193',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'baseline-changed-error',
-        'checkout_path' => '/tmp/tasks-baseline-changed-error',
-        'status' => 'reserved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline changed error',
         'brief' => 'Report a check error even when the tree changes.',
         'status' => TaskGroupStatus::Running,
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'baseline-changed-error',
+        'checkout_path' => '/tmp/tasks-baseline-changed-error',
+        'status' => 'reserved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -220,6 +223,13 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
             return test_agent_thread($task->parent, 'implementer', $task)->id;
         }
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;
@@ -229,8 +239,8 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
     });
     $project = Project::query()->create(['name' => 'rate limits', 'slug' => 'rate-limits', 'repository_url' => 'https://github.com/acme/shop.git', 'task_check' => 'composer check']);
     $node = Node::query()->create(['name' => 'rate-limit-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.192', 'wireguard_ip' => '10.44.0.192']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'baseline-rate-limit', 'checkout_path' => '/tmp/baseline-rate-limit', 'starting_commit' => str_repeat('a', 40), 'status' => 'reserved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Rate limits', 'brief' => 'Retry setup', 'status' => TaskGroupStatus::Running]);
+    $instance = Instance::query()->create(['task_workspace_owner_id' => $group->id, 'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'baseline-rate-limit', 'checkout_path' => '/tmp/baseline-rate-limit', 'starting_commit' => str_repeat('a', 40), 'status' => 'reserved']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First task', 'brief' => 'Retry setup', 'status' => TaskStatus::Running]);

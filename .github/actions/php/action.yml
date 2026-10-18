@@ -35,10 +35,10 @@ runs:
       env:
         COVERAGE: ${{ inputs.coverage }}
       run: |
-        sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"
+        sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"
         sudo chown -R "$(id -u):$(id -g)" /var/cache/orbit/php-packages
 
     - name: Verify the recipe PHP build
       shell: bash
       working-directory: ${{ github.workspace }}
-      run: python3 bin/php-build verify
+      run: python3 bin/php-build verify --profile=ci-runner

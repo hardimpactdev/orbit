@@ -106,13 +106,13 @@ Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers
 On a GitHub-hosted runner the action runs these steps:
 
 1. It restores `/var/cache/orbit/php-packages` from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.
-2. `sudo bin/php-build install --ci --purge-extras` runs [`php.install-build`](/reference/compute-drivers#install-the-php-build), the installer that Nodes and images run too.
+2. `sudo bin/php-build install --profile=ci-runner --ci --purge-extras` runs [`php.install-build`](/reference/compute-drivers#install-the-php-build), the installer that Nodes and images run too.
 3. A hosted runner image ships other PHP packages and the `ondrej/php` source. `--purge-extras` removes them, and only CI machines use it.
 4. `--ci` sets `zend.exception_ignore_args=0` for the CLI. The action installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
 5. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
-6. `bin/php-build verify` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
+6. `bin/php-build verify --profile=ci-runner` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
 
-A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
+A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify --profile=ci-runner`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
 - Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build and purges PHP packages outside the recipe. No other profile purges.
 - The first run records the profile. Then nightly recipe maintenance converges Sabre, and a manual run needs only `php artisan node:converge-recipe sabre`.
@@ -122,12 +122,12 @@ A self-hosted runner never installs packages in a job. The action only runs `bin
 
 A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. With the maintainer's approval, an operator runs from the pull request branch:
 
-1. On Sabre: `sudo bin/php-build install --ci --purge-extras`.
+1. On Sabre: `sudo bin/php-build install --profile=ci-runner --ci --purge-extras`.
 2. On Beast and Shark: `tools/ci-runners/setup.sh container NAME` for each shard container.
 
 Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
 
-[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
@@ -259,7 +259,7 @@ Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nestin
 
 The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast, and reserved IPv4 ranges, and all IPv6. Its default for egress and ingress is reject. So a job reaches the public internet, but not the host's LAN, WireGuard, the Gateway, docker and task bridges, the other container, or the bridge gateway. A container's `127.0.0.1` is its own loopback, so the host's loopback services, such as the Caddy admin API, are out of reach.
 
-Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build` and the recipe into the container and runs that install, so a later run updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
+Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install --profile=ci-runner`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build`, the recipe, and the remote program tree that `bin/php-build` reads into the container, and runs that install. A later run replaces the copy and updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
 
 The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 
@@ -346,6 +346,18 @@ Every Orbit task handoff selects affected tests from the subtask's latest passed
 
 CI ignores that base when `CI` or `GITHUB_ACTIONS` is set and selects the full branch. The gate accepts a stored tree or an ancestor commit, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the test base. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
 
+A handoff tree is not Pest's recorded commit. Pest accepts a baseline SHA only when that SHA is a commit and an ancestor of `HEAD`. The gate must not store the tree object in that field. Pest would report the recorded commit as unreachable and rebuild the project graph, which reruns the whole suite.
+
+The gate keeps the cached dependency edges, sets the recorded SHA to `HEAD`, and stores a snapshot of the comparison tree in Pest's working-tree baseline. Those snapshot values are Pest's own content hashes of the blobs in that tree. A path the tree does not contain is an empty string, which is Pest's mark for an absent file. The gate clears cached results. A pass or failure from another tree is not evidence for this one.
+
+The snapshot is what narrows the suite. A file that still matches the comparison tree is not selected, including uncommitted work already checked at that tree. A file that differs from the tree stays selected. That includes a later edit on top of uncommitted work and a file restored to the `HEAD` commit.
+
+An absent path must stay in the snapshot. Omitting it hides a later restore: the restored bytes can match `HEAD`, so Pest's commit diff never lists the file. The empty mark puts that file back into the affected set. A deletion that is still absent does not by itself select tests the graph does not already connect to that path. Setting the SHA to `HEAD` and leaving the whole snapshot empty does not do this. Every dirty file would look changed, and a revert to `HEAD` would disappear.
+
+When the copied graph is missing, cannot be read, has no dependency edges, or the snapshot cannot be hashed, the gate deletes that run copy and says why. Pest then records a new graph by running the full suite. The reason is part of the gate output. A structural fingerprint change, such as a different `composer.lock`, still makes Pest discard the graph itself. `CI` and `GITHUB_ACTIONS` never apply this retarget. They still select every change on the branch.
+
+A warm docs-only change against that tree baseline should not rebuild the graph or run tests for unchanged code. On one worker it should finish within two minutes. A later change that breaks an affected test should still fail the gate.
+
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
@@ -361,7 +373,7 @@ When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Program
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
 
-Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
+Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline, so a local branch baseline cannot hide changes. Without a handoff base, the gate selects tests for every change since `main`. With a handoff base, it retargets that `main` entry to the handoff commit, or to `HEAD` plus the comparison-tree snapshot described above. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
 
 When the candidate changes the project, the gate runs that project’s architecture tests from CI, including the CLI binary contract. CLI documentation, binary scripts, and workflows also trigger the CLI contracts. The SDK’s existing architecture checks include its request inventory in `RepositoryGuidanceTest`.
 
@@ -471,7 +483,7 @@ It refuses a path that exists but is not a registered worktree. Then it runs `bi
 
 `bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
 
-`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh, releases the worktree's discovery topology, and removes the worktree. Then it deletes the merged branch. A discovery topology holds no review evidence, so removal never waits on it.
+`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh and removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Main caches
 
@@ -621,7 +633,17 @@ A green gate must mean that every selected check ran. Skipping a check when its 
 
 ### The gate selects against main
 
-A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests. The gate keeps only the `main` baseline in its run copy, so it selects tests for every change since `main`. Local runs are unchanged and still write the project's own graph.
+A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests.
+
+The gate keeps only the `main` baseline in its run copy. Without a handoff base, that baseline stays `main`, so the gate selects every change since `main`. With a handoff base, the same entry is retargeted as [The candidate gate](#the-candidate-gate) describes. Local runs are unchanged and still write the project's own graph.
+
+### A handoff tree is not a Pest commit
+
+Pest rebuilds its graph when the recorded SHA is not an ancestor commit. Writing the handoff tree into that field is a rejected alternative, because every later handoff would run the whole suite. Using `HEAD` with an empty snapshot is also rejected. Uncommitted files that the comparison tree already checked would be tested again, and a file restored to `HEAD` would be skipped.
+
+Omitting a path the comparison tree does not contain is rejected as well. Pest stores that absence as an empty string. Without the mark, a later restore that matches `HEAD` never enters the affected set, even when another file in the project is selected.
+
+Keeping the previous run's pass results is rejected too. Those results belong to another tree. Deleting the edges and inventing a new cache is rejected as well. The existing edges stay, and an unusable graph falls back to Pest's own full recording with an explicit reason.
 
 Passing on a warning is a rejected alternative when a change selects no tests. The gate runs the project's full suite with `--no-tia` instead. Changed source files with no selected tests take this path.
 

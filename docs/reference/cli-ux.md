@@ -201,6 +201,8 @@ The Tasks JSON rendering preserves the distinction between a watched branch pull
 
 Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
 
+`tasks:status` includes workspace lease holders and queued actors in its human detail tree. JSON preserves the typed `workspace_leases` array. A busy checkout is a wait, so its queued actors do not appear as command failures. Doctor reports unresolved ownership without clearing it. See the [workspace lease contract](/reference/tasks#workspace-lease).
+
 ## Command reference
 
 Every visible product command has its own section in `docs/cli`, headed `## orbit <command>`. Two closely related commands can share one heading, such as `orbit gateway:release:auto:enable and disable`, when the section shows a usage line for each. The section names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.

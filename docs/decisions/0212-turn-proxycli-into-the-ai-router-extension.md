@@ -72,7 +72,7 @@ Every `proxycli` name moves at once. No alias, redirect command, or old error co
 | Setting `extension.proxycli.enabled` | `extension.ai-router.enabled` |
 | Settings `proxycli.enabled`, `proxycli.node_id`, `proxycli.cliproxy_url` | Removed. The role and the driver decide them |
 | Setting `proxycli.cache_connection` | The `ai-router` role's cache connection |
-| Settings `proxycli.cliproxy_management_key`, `proxycli.read_token`, `proxycli.control_token`, `proxycli.process_port` | `ai_router.management_key`, `ai_router.read_token`, `ai_router.control_token`, `ai_router.collector_port` |
+| Settings `proxycli.cliproxy_management_key`, `proxycli.read_token`, `proxycli.control_token` | `ai_router.management_key`, `ai_router.read_token`, `ai_router.control_token` |
 | Setting `compute.model_proxy.anchor.<sha256(origin)>` | `ai_router.anchor.<sha256(origin)>`, same hash input and value |
 | None | Gateway variable `ORBIT_AI_ROUTER_VERSION`, the driver version that a new router installs |
 | Config `task_vms.model_proxy_origin`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | Removed. The origin comes from the role |
@@ -211,9 +211,10 @@ One rule governs every step: **no task VM that holds a key loses the ability to 
 | Live state | Migration |
 | --- | --- |
 | `extension.proxycli.enabled` | Renamed to `extension.ai-router.enabled`. |
-| `proxycli.cliproxy_management_key`, `read_token`, `control_token`, `process_port` | Renamed to the `ai_router.*` keys, values unchanged and still secret. |
+| `proxycli.cliproxy_management_key`, `read_token`, `control_token` | Renamed to the `ai_router.*` keys, values unchanged and still secret. |
 | `compute.model_proxy.anchor.<hash>` | Renamed to `ai_router.anchor.<hash>`. The origin string keeps its normalization, so the hash and the value stay the same. |
 | `proxycli.cliproxy_url` | Kept as the transitional router URL until the role is assigned, then deleted. |
+| `proxycli.process_port` | Removed in step 2d. The collector port is fixed at 8787 and has no setting. |
 | `proxycli.cache_connection`, `proxycli.node_id`, `proxycli.enabled` | Read once by the role assignment, then deleted. |
 | `task_vms.model_proxy_origin` column | Renamed to `ai_router_origin`, values unchanged. |
 | `task_vms.model_proxy_origin` config | Removed in step 5 of [Build order](#build-order). Adoption has already checked that the derived origin equals it. |
@@ -241,7 +242,7 @@ Each step is one pull request, except step 2, which is four. Each keeps Tasks wo
    - 2a: the Caddy site source. The ProxyCli bindings move from `ApplicationServiceProvider` into the ProxyCli provider.
    - 2b: the footprint artifact, private DNS records, and reserved hostnames.
    - 2c: the Process removal guard and the Process source record.
-   - 2d: the database connection update hook and removal guard.
+   - 2d: the database connection update hook and removal guard. Core calls tagged `DatabaseConnectionUpdateHook` contributions to validate the proposal before writing and reconverge after the outer transaction commits. Tagged `DatabaseConnectionRemovalGuard` contributions refuse before any drop or deletion; ProxyCli returns `database_connection.required_by_ai_router` while setup uses the connection, including while its extension switch is off. Setup and reconvergence share one collector environment builder. `ProxyCliProcess::data()` adds both the listener environment value and the Process port mapping from `ProxyCliProcess::PORT` (8787), with no override parameter. These points use trusted tagged interfaces without a runtime contribution registry.
 3. **Move and rename.** Move ProxyCli into `extensions/ai-router` and rename every surface, setting, Valkey key, environment variable, hostname, certificate slug, footprint artifact, and page. `proxycli:setup` and `proxycli:teardown` become `ai-router:setup` and `ai-router:teardown` until step 4 removes them. `/reference/proxycli` and `/cli/proxycli` get no redirect. The redirects of retired ADRs 0104, 0109, 0145, and 0150, and of `/solutions/cutover-proxycli`, point at the matching sections of the new pages. The router Process is untouched. The collector restarts once under its new name and hostname. The Caddy digest walk, `SourceClosure`, learns the extension namespaces and their imports, so the moved collector site source and every class it uses stay in the Caddy footprint digest.
 4. **Role, driver, and managed router.** Add the `ai-router` role, the driver contract, the `cliproxyapi` driver, adoption with `--process`, and the `enable()` and `disable()` hooks. `disable()` withdraws the collector's Caddy site, its certificate, and its private DNS record. Until this step, `extension:disable` leaves them published. Hostname reservations remain active even when the extension is off or not set up. The footprint artifact remains eligible on the collector Node while ProxyCli setup state is enabled; the extension switch does not control it. Add the two plug-in points that step 2 leaves out: the role firewall rules, and the role baseline and assignment check. Add [amendments A1 and A3](#required-amendments-to-adr-0210) to ADR 0210 and to the code. Remove `ai-router:setup` and `ai-router:teardown`. The origin comes from the role when one is assigned, otherwise from the transitional router URL. `task-vms:prepare-hub` reads it through `ModelKeyIssuer`. Adopt Process 103 on this fleet.
 5. **Cleanup.** Remove the `--process` option of `node:role:add`. Remove the transitional router URL, `task_vms.model_proxy_origin`, and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`. Absorb this record into the AI router reference page and retire it.

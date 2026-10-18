@@ -8,8 +8,8 @@ namespace App\Domain\TaskVms;
  * What a task VM of one size takes: its slots of the host's `max_vms`, and its CPU,
  * memory and disk. A null CPU, memory or disk is the host's own value. `qemuConfig` is raw QEMU configuration that
  * Incus can set only before the VM first starts. `testNodes` is how many declared test nodes its nested topology may
- * have, beside the test Gateway and the operator, and `topologyPool` the size of the inner btrfs pool they use, below
- * the root disk; null on a size that runs none.
+ * have, beside the test Gateway and the operator. A size with test Nodes boots with a clone of the host's topology
+ * seed, which is the pool its nested topology uses.
  */
 final readonly class TaskVmResources
 {
@@ -20,7 +20,6 @@ final readonly class TaskVmResources
         public ?string $disk = null,
         public ?string $qemuConfig = null,
         public int $testNodes = 0,
-        public ?string $topologyPool = null,
     ) {}
 
     public function cpusOn(TaskVmHost $host): int

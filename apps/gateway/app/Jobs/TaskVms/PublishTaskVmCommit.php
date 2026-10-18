@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
@@ -23,7 +24,10 @@ final class PublishTaskVmCommit implements ShouldQueue
 {
     use TaskVmJob;
 
-    public int $tries = 1;
+    /** Lease contention retries without consuming an operational failure. */
+    public int $tries = 0;
+
+    public int $maxExceptions = 1;
 
     /** Below the queue's `retry_after` of 1800 seconds. */
     public int $timeout = 1700;
@@ -42,7 +46,11 @@ final class PublishTaskVmCommit implements ShouldQueue
     {
         $vm = TaskVm::query()->find($this->taskVmId);
         if ($vm instanceof TaskVm) {
-            $publisher->publishQueued($vm, $this->commit, $this->branch, microtime(true) + self::BudgetSeconds);
+            try {
+                $publisher->publishQueued($vm, $this->commit, $this->branch, microtime(true) + self::BudgetSeconds);
+            } catch (TaskWorkspaceWaiting) {
+                $this->release(5);
+            }
         }
     }
 

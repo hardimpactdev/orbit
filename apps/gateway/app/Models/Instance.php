@@ -84,6 +84,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
  * @property bool $development_projection_pending
+ * @property int|null $task_workspace_owner_id
  * @property bool|null $task_workspace_routed
  * @property bool $auto_deploy
  * @property int $auto_deploy_resumed_after
@@ -119,12 +120,13 @@ final class Instance extends Model
     ];
 
     /**
-     * A task VM Node serves only its group's workspace, whichever path places the Instance there.
+     * A task VM Node serves only its group's workspace, whichever path places the Instance there. The database keeps
+     * a task workspace's owner from changing once it is set.
      */
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
-            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
+            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'task_workspace_owner_id'])) {
                 TaskVmWorkspaceGuard::assertInstance($instance);
             }
         });
@@ -193,6 +195,7 @@ final class Instance extends Model
         'status',
         'error_code',
         'task_workspace_routed',
+        'task_workspace_owner_id',
         'development_release_layout',
         'development_projection_pending',
         'auto_deploy',
@@ -459,6 +462,7 @@ final class Instance extends Model
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'task_workspace_routed' => 'boolean',
+            'task_workspace_owner_id' => 'integer',
             'development_release_layout' => 'boolean',
             'development_projection_pending' => 'boolean',
             'auto_deploy' => 'boolean',

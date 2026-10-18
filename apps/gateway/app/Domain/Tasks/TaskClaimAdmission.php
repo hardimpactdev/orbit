@@ -80,13 +80,13 @@ final readonly class TaskClaimAdmission
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
                 $this->releaseReservation($reserved, $exception->getMessage());
-                $this->endClaim($reserved, null);
+                $this->endClaim($reserved);
                 $skipped[] = $reserved->id;
 
                 continue;
             } catch (TaskVmFailedException $exception) {
                 $this->releaseFailedTaskVm($reserved, $exception->vm);
-                $this->endClaim($reserved, null);
+                $this->endClaim($reserved);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -97,7 +97,7 @@ final readonly class TaskClaimAdmission
 
             if (! $instance instanceof Instance) {
                 $this->releaseProvisioningFailure($scheduler, $reserved, $instance);
-                $this->endClaim($reserved, null);
+                $this->endClaim($reserved);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -109,7 +109,7 @@ final readonly class TaskClaimAdmission
                 // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
                 report($exception);
                 $this->releaseFailedStart($reserved, $instance);
-                $this->endClaim($reserved, $instance);
+                $this->endClaim($reserved);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -119,7 +119,7 @@ final readonly class TaskClaimAdmission
         }
 
         if (! $started instanceof Task) {
-            $this->endClaim($reserved, $instance);
+            $this->endClaim($reserved);
 
             return null;
         }
@@ -321,9 +321,9 @@ final readonly class TaskClaimAdmission
      * Ends a claim that did not start its group. It removes the workspace of a group that ended meanwhile, then
      * clears the group's `reserved_at`, so sweeps stop waiting for this claim. A newer claim's reservation stays.
      */
-    private function endClaim(Task $reserved, ?Instance $instance): void
+    private function endClaim(Task $reserved): void
     {
-        $this->removeEndedWorkspace($reserved, $instance);
+        $this->removeEndedWorkspace($reserved);
 
         Task::topLevel()->whereKey($reserved->id)
             ->where('status', '!=', TaskGroupStatus::Reserved)
@@ -333,25 +333,20 @@ final readonly class TaskClaimAdmission
 
     /**
      * A group cancelled or completed while its claim ran holds no workspace, because the cancel left the
-     * workspace to the claim. The claim removes the Instance it provisioned, or the group's unattached
-     * `task-{group id}` workspace when provisioning failed part way.
+     * workspace to the claim. The claim removes the workspace the group owns, which provisioning created whether or
+     * not it finished.
      */
-    private function removeEndedWorkspace(Task $reserved, ?Instance $instance): void
+    private function removeEndedWorkspace(Task $reserved): void
     {
-        $group = Task::topLevel()->with('taskable')->find($reserved->id);
+        $group = Task::topLevel()->find($reserved->id);
         if (! $group instanceof Task || ! self::hasEnded($group) || $group->taskable_id !== null) {
             return;
         }
 
         try {
-            $leftover = $instance instanceof Instance ? Instance::query()->find($instance->id) : $this->workspaces->find($group);
-            if ($leftover instanceof Instance) {
-                $this->workspaces->remove($leftover);
-            } else {
-                $this->workspaces->execute($group);
-            }
+            $this->workspaces->remove($group);
         } catch (Throwable $exception) {
-            // The workspace stays findable by name, so a repeated cancel removes it.
+            // The workspace keeps its owner, so a repeated cancel removes it.
             report($exception);
             $this->workspaces->recordFailure($group, $exception);
         }

@@ -7,34 +7,23 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 
 /**
- * What one composition created: the declared Nodes, the network slot, the role image fingerprint each
- * guest started from, and every guest's names and addresses.
+ * What one composition created: the declared Nodes, the network slot, and every guest's names and addresses. Every
+ * guest is a copy of the task VM's `node-template`.
  */
 final readonly class TopologyConstructionInputs
 {
-    public const int SCHEMA = 4;
+    public const int SCHEMA = 5;
 
     /**
-     * @param  array<string, string>  $images  role image value => fingerprint
-     * @param  array<string, array{image:string,instance:string,incus_address:string,wireguard_address:string}>  $nodes
+     * @param  array<string, array{instance:string,incus_address:string,wireguard_address:string}>  $nodes
      */
     private function __construct(
         public TopologyTarget $target,
         public int $slot,
-        public array $images,
         public array $nodes,
     ) {
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology construction slot is invalid.');
-        }
-        $expectedImages = array_map(static fn (RoleImage $image): string => $image->value, $target->recipe->images());
-        if (array_keys($images) !== $expectedImages) {
-            throw new InvalidArgumentException('The topology construction role images do not match its Nodes.');
-        }
-        foreach ($images as $fingerprint) {
-            if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
-                throw new InvalidArgumentException('A topology construction role image fingerprint is invalid.');
-            }
         }
         if (array_keys($nodes) !== $target->recipe->nodeKeys()) {
             throw new InvalidArgumentException('The topology construction Node inventory is incomplete.');
@@ -47,20 +36,14 @@ final readonly class TopologyConstructionInputs
         }
     }
 
-    /** @param array<string, string> $images role image value => fingerprint */
-    public static function create(TopologyTarget $target, int $slot, array $images): self
+    public static function create(TopologyTarget $target, int $slot): self
     {
         $nodes = [];
         foreach ($target->recipe->nodes as $node) {
             $nodes[$node->key] = self::node($target, $slot, $node);
         }
-        $ordered = [];
-        foreach ($target->recipe->images() as $image) {
-            $ordered[$image->value] = $images[$image->value]
-                ?? throw new InvalidArgumentException("The role image [{$image->value}] has no fingerprint.");
-        }
 
-        return new self($target, $slot, $ordered, $nodes);
+        return new self($target, $slot, $nodes);
     }
 
     /** @return array<string, mixed> */
@@ -72,7 +55,6 @@ final readonly class TopologyConstructionInputs
             'attempt_id' => $this->target->attempt->value,
             'recipe' => $this->target->recipe->toArray(),
             'slot' => $this->slot,
-            'images' => $this->images,
             'nodes' => $this->nodes,
         ];
     }
@@ -86,12 +68,11 @@ final readonly class TopologyConstructionInputs
             );
         }
         if (
-            array_keys($value) !== ['schema', 'issue', 'attempt_id', 'recipe', 'slot', 'images', 'nodes']
+            array_keys($value) !== ['schema', 'issue', 'attempt_id', 'recipe', 'slot', 'nodes']
             || ! is_string($value['issue'])
             || ! is_string($value['attempt_id'])
             || ! is_array($value['recipe'])
             || ! is_int($value['slot'])
-            || ! is_array($value['images'])
             || ! is_array($value['nodes'])
         ) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
@@ -105,16 +86,14 @@ final readonly class TopologyConstructionInputs
         return new self(
             $target,
             $value['slot'],
-            SerializedArrays::stringMap($value['images']),
             self::decodeNodes($value['nodes']),
         );
     }
 
-    /** @return array{image:string,instance:string,incus_address:string,wireguard_address:string} */
+    /** @return array{instance:string,incus_address:string,wireguard_address:string} */
     private static function node(TopologyTarget $target, int $slot, TopologyNode $node): array
     {
         return [
-            'image' => $node->image->value,
             'instance' => $target->instance($node->key),
             'incus_address' => TopologyTarget::ipv4For($slot, $node->address),
             'wireguard_address' => $node->wireGuardAddress(),
@@ -123,7 +102,7 @@ final readonly class TopologyConstructionInputs
 
     /**
      * @param  array<array-key, mixed>  $nodes
-     * @return array<string, array{image:string,instance:string,incus_address:string,wireguard_address:string}>
+     * @return array<string, array{instance:string,incus_address:string,wireguard_address:string}>
      */
     private static function decodeNodes(array $nodes): array
     {
@@ -131,8 +110,7 @@ final readonly class TopologyConstructionInputs
         foreach (SerializedArrays::stringKeyed($nodes) as $key => $node) {
             if (
                 ! is_array($node)
-                || array_keys($node) !== ['image', 'instance', 'incus_address', 'wireguard_address']
-                || ! is_string($node['image'])
+                || array_keys($node) !== ['instance', 'incus_address', 'wireguard_address']
                 || ! is_string($node['instance'])
                 || ! is_string($node['incus_address'])
                 || ! is_string($node['wireguard_address'])
@@ -140,7 +118,6 @@ final readonly class TopologyConstructionInputs
                 throw new InvalidArgumentException('The topology construction Node inventory is invalid.');
             }
             $decoded[$key] = [
-                'image' => $node['image'],
                 'instance' => $node['instance'],
                 'incus_address' => $node['incus_address'],
                 'wireguard_address' => $node['wireguard_address'],

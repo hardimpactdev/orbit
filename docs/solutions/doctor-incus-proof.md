@@ -13,6 +13,8 @@ covers:
 
 A proof of the verify-only Doctor runs on a leased `gateway_app-dev_app-prod` topology. It needs a healthy baseline on all three Nodes, exactly one declared drift, exactly one declared unverifiable condition, and evidence that Doctor writes nothing. Each fixture must produce one finding and leave every other inspection untouched.
 
+For Router LAN firewall coverage, use the [member-rule contract](/cli/firewall#router-lan-member-rules). In a task-owned Router fixture, exercise ineligible-source residue separately in HTTPS, DNS UDP, and DNS TCP, including an empty eligible-source set. Require `role.firewall_projection_mismatch`, agreement between managed and live reads, and unchanged rules after Doctor. Keep these verify-only receipts separate from the [DNS transport and narrow-overlap rollout](/cli/firewall#safe-dns-firewall-rollout): Doctor detects managed drift but does not prove unauthorized LAN denial, preserve bridge access on its own, or authorize fleet changes. A disposable rehearsal is not live acceptance.
+
 Informational tool discoveries may appear in a healthy baseline. They do not change health or exit status. Drift and unverifiable findings still fail the report. Incus proves Linux behavior. [macOS enrollment](/reference/node-provisioning#macos-nodes), native platform and home-volume observation, and tool operations need a separate task-owned fixture on a real Mac.
 
 ## Cause
@@ -46,7 +48,7 @@ bin/e2e-topology exec ISSUE gateway --argv='["orbit","instance:list","--json"]' 
 
 ### Baseline
 
-A leased topology is composed from [one recipe base image](/reference/incus-topologies#one-recipe-base-image) and enrolled by its own Gateway from the mounted worktree, and `acquire` verified its readiness. Record one Doctor request for all registered Nodes as the healthy baseline.
+A leased topology is composed from copies of [one template Node](/reference/incus-topologies#one-template-node) and enrolled by its own Gateway from the mounted worktree, and `acquire` verified its readiness. Record one Doctor request for all registered Nodes as the healthy baseline.
 
 ```bash
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--json"]' --record="doctor baseline"

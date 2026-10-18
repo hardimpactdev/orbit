@@ -17,5 +17,7 @@ final readonly class TaskWorkspaceSnapshot
         public string $tree,
         public ?string $parent = null,
         public ?string $commitTree = null,
+        public ?string $parentTree = null,
+        public ?string $secondParent = null,
     ) {}
 }

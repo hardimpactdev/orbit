@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
-  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/machine-software/converge-node.py}
+  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/remote/lib/recipe.py}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/*_{create_nodes_table,add_ssh_jump_node_id_to_nodes}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
@@ -37,9 +37,18 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
+Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations and keeps uncertain workspace ownership fenced. See [Workspace lease](/reference/tasks#workspace-lease) for completion receipts and recovery.
+
+
 After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
+
+Router LAN reconciliation expands and prunes HTTPS and both DNS transport families together, using the same proposed member eligibility. A failure before membership or Cluster state commits leaves the previous state authoritative. If pruning fails after the commit, the committed state remains authoritative and the command reports cleanup failure; stale rules may remain. Restoring a preceding firewall snapshot does not roll back database state.
+
+After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <current-router-node-id>` for the active Router already in that Cluster. This accepts unchanged membership and reconciles Router LAN rules even when the Router hosts Instances or the Cluster is inactive; it does not remove workloads or change Cluster state. Then verify managed/live rules and role Doctor against current authoritative state.
+
+`node:add` with unchanged configuration is an alternative only when its provisioning guards permit it: a Node with Instances is refused with `node.has_instances`. Do not remove workloads or change configuration to bypass that guard. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) defines eligibility, cleanup recovery, snapshot-restore failures, and rollout rollback. These rules alone do not install Cluster DNS or change a member's resolver.
 
 ### Bootstrap identity
 
@@ -88,7 +97,9 @@ On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<d
 
 The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
 
-A roleless Node that runs CI jobs, such as Sabre, uses the recipe's `ci-runner` profile instead of `operator`, to get the [recipe's PHP build](/reference/compute-drivers#php-build). Name it once with `--profile=ci-runner`. The Node records the profile in `settings.machine_recipe.profile`, and later runs use it without the option. A Node with roles refuses the option with `node.recipe_profile_invalid`, and so does any other profile name. After that first run, [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) visits the Node in its overnight service tier.
+Docker CE refuses both a dry run and application with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
+
+A roleless Node that runs CI jobs, such as Sabre, uses the recipe's `ci-runner` profile instead of `operator`, to get the [recipe's PHP build](/reference/compute-drivers#php-build). Name it once with `--profile=ci-runner`. The Node records the profile in `settings.machine_recipe.profile` when an applying run starts, and later runs use it without the option. A failed run keeps it. A Node with roles refuses the option with `node.recipe_profile_invalid`, and so does any other profile name. After that first run, [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) visits the Node in its overnight service tier.
 
 `--dry-run` reads installed versions and managed Tool intent, then prints JSON with the snapshot, recipe identity, selected tools, recipe versions, observed versions, satisfaction status, and planned changes. An `unsupported_newer` tool includes `refusal: origin:<tool>` and plans no downgrade. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
 
@@ -116,7 +127,9 @@ The command then checks service health, existing managed Tool intent, and the No
 
 A packages-stage failure reports the attempted packages, failing command, exit code, and bounded, redacted installer output in the convergence error. No automatic retry or rollback runs.
 
-After all checks pass, `settings.machine_recipe` stores the complete recipe identity, snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker. A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
+After all checks pass, `settings.machine_recipe` stores the complete recipe identity, snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker.
+
+A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. It keeps only a recorded profile. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
 
 This synchronous operation also runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
 

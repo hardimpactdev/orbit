@@ -28,6 +28,8 @@ def pin(name, version, arch_url=None):
 
 def recipe():
     return {
+        'roles': {'gateway': ['php:8.5'], 'ci-runner': ['php:8.5'], 'operator': []},
+        'base': ['php:8.5'],
         'artifact_mirror': 'https://mirror.example/php',
         'ubuntu': {'release': '26.04'},
         'architectures': ['amd64'],
@@ -39,7 +41,7 @@ def recipe():
             'php8.5-pcov': pin('php8.5-pcov', '1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479'),
             'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
-        'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev'],
+        'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev', 'base', 'ci-runner'], 'opentelemetry': ['app-dev'],
                 'purge_extras': ['ci-runner'], 'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
@@ -54,22 +56,22 @@ def stanza(name, version, arch='amd64'):
 
 class BuildTest(unittest.TestCase):
     def test_build_takes_the_ci_version_with_the_shared_pins_for_one_architecture(self):
-        selected = build.build(recipe(), architecture='amd64')
+        selected = build.build(recipe(), architecture='amd64', profile='ci-runner')
         self.assertEqual(selected['version'], '8.5')
         self.assertEqual(selected['php_version'], '8.5.11')
         self.assertEqual(selected['packages'], ['libgd3', 'php-common', 'php8.5-cli', 'php8.5-common', 'php8.5-pcov'])
         self.assertEqual(selected['pins']['php8.5-cli']['version'], CORE)
         with self.assertRaisesRegex(build.BuildError, 'no PHP 8.4 build'):
-            build.build(recipe(), '8.4')
+            build.build(recipe(), '8.4', profile='ci-runner')
         with self.assertRaisesRegex(build.BuildError, 'no arm64 package for libgd3'):
-            build.build(recipe(), architecture='arm64')
+            build.build(recipe(), architecture='arm64', profile='ci-runner')
 
     def test_modules_match_the_recipe_list_format(self):
         output = '[PHP Modules]\nCore\npcov\nZend OPcache\n\n[Zend Modules]\nZend OPcache\n\n'
         self.assertEqual(build.modules(output), ['core', 'pcov', 'zend opcache'])
 
     def test_compare_reports_every_difference_and_nothing_for_the_recipe_build(self):
-        expected = build.build(recipe(), architecture='amd64')
+        expected = build.build(recipe(), architecture='amd64', profile='ci-runner')
         installed = {name: pin['version'] for name, pin in expected['pins'].items()}
         self.assertEqual(build.compare(expected, '8.5.11', ['core', 'pcov', 'zend opcache'], installed), [])
         installed['php8.5-cli'] = '8.5.10-1'
@@ -85,19 +87,19 @@ class BuildTest(unittest.TestCase):
         self.assertIn('PHP_VERSION is missing', build.compare(expected, '', [], installed)[0])
 
     def test_verify_fails_with_the_fix_and_passes_on_the_recipe_build(self):
-        expected = build.build(recipe(), architecture='amd64')
+        expected = build.build(recipe(), architecture='amd64', profile='ci-runner')
         installed = {name: pin['version'] for name, pin in expected['pins'].items()}
         with patch.object(build, 'architecture', return_value='amd64'), \
              patch.object(build, 'installed_versions', return_value=installed), \
              patch.object(build, 'host_build', return_value=('8.5.11', ['core', 'pcov', 'zend opcache'])), \
              redirect_stdout(io.StringIO()) as out:
-            build.verify(recipe(), None)
+            build.verify(recipe(), None, 'ci-runner')
         self.assertIn('PHP 8.5.11 matches the recipe build: 5 packages, 3 extensions.', out.getvalue())
         with patch.object(build, 'architecture', return_value='amd64'), \
              patch.object(build, 'installed_versions', return_value=installed), \
              patch.object(build, 'host_build', return_value=('8.5.11', ['apcu', 'core', 'pcov', 'zend opcache'])):
             with self.assertRaises(build.BuildError) as raised:
-                build.verify(recipe(), None)
+                build.verify(recipe(), None, 'ci-runner')
         self.assertIn('Extra extensions: apcu.', str(raised.exception))
         self.assertIn('node:converge-recipe sabre --profile=ci-runner', str(raised.exception))
 
@@ -107,13 +109,13 @@ class BuildTest(unittest.TestCase):
             path.write_text(json.dumps(recipe()))
             with patch.object(build, 'verify', side_effect=build.BuildError('different build')), \
                  redirect_stderr(io.StringIO()) as error:
-                self.assertEqual(build.main(['verify', '--recipe', str(path)]), 1)
+                self.assertEqual(build.main(['verify', '--profile=ci-runner', '--recipe', str(path)]), 1)
         self.assertEqual(error.getvalue(), 'php-build: different build\n')
 
     def test_install_refuses_without_root(self):
         with patch.object(build.os, 'geteuid', return_value=1000):
             with self.assertRaisesRegex(build.BuildError, 'needs root'):
-                build.install(recipe(), None, False, 'pcov', True, False)
+                build.install(recipe(), None, False, 'pcov', True, False, 'ci-runner')
 
     def test_install_runs_the_one_installer_and_purges_only_when_asked(self):
         calls = []
@@ -127,20 +129,59 @@ class BuildTest(unittest.TestCase):
                  patch.object(build, 'verify'), patch.object(build, 'run'), \
                  patch.object(build.Path, 'write_text'), patch.object(build.Path, 'unlink'), \
                  redirect_stdout(io.StringIO()):
-                build.install(recipe(), None, False, 'pcov', False, purge)
+                build.install(recipe(), None, False, 'pcov', False, purge, 'ci-runner')
             self.assertEqual(calls[-1]['extras'], extras)
         self.assertEqual(calls[-1]['fpm'], 'shared')
         self.assertTrue(calls[-1]['pcov'])
         self.assertEqual(calls[-1]['repack'], {'package': 'dpkg-repack', 'version': '1.54build1'})
 
+    def test_install_and_verify_use_the_selected_profiles_pcov_policy(self):
+        for profile, pcov in (('gateway', False), ('ci-runner', True)):
+            for coverage in ('none', 'pcov'):
+                with self.subTest(profile=profile, coverage=coverage), \
+                     patch.object(build.os, 'geteuid', return_value=0), \
+                     patch.object(build, 'run_installer', return_value=('current', {}, '')) as installer, \
+                     patch.object(build, 'architecture', return_value='amd64'), \
+                     patch.object(build, 'installed_versions', return_value={
+                         name: pin['version'] for name, pin in recipe()['tools'].items()}), \
+                     patch.object(build, 'host_build', return_value=(
+                         '8.5.11', ['core', 'zend opcache'] + (['pcov'] if pcov else []))), \
+                     patch.object(build, 'run'), patch.object(build.Path, 'write_text'), \
+                     patch.object(build.Path, 'unlink'), redirect_stdout(io.StringIO()):
+                    build.install(recipe(), None, False, coverage, False, False, profile)
+
+                payload = installer.call_args.args[0]
+                self.assertEqual(payload['pcov'], pcov)
+                self.assertIn('php8.5-pcov', [pin['name'] for pin in payload['versions']['8.5']['packages']])
+                self.assertEqual('pcov' in payload['versions']['8.5']['extensions'], pcov)
+
+    def test_gateway_verification_refuses_pcov_loaded_in_the_cli(self):
+        with patch.object(build, 'architecture', return_value='amd64'), \
+             patch.object(build, 'installed_versions', return_value={
+                 name: pin['version'] for name, pin in recipe()['tools'].items()}), \
+             patch.object(build, 'host_build', return_value=('8.5.11', ['core', 'pcov', 'zend opcache'])):
+            with self.assertRaisesRegex(build.BuildError, 'Extra extensions: pcov'):
+                build.verify(recipe(), None, 'gateway')
+
+    def test_profile_is_required_and_must_declare_the_selected_php_version(self):
+        for command in ('install', 'verify'):
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                build.main([command])
+            self.assertEqual(raised.exception.code, 2)
+        for profile, message in (('missing', 'no profile missing'), ('operator', 'does not declare PHP')):
+            with self.assertRaisesRegex(build.BuildError, message):
+                build.installer_input(recipe(), ['8.5'], profile=profile)
+        with self.assertRaisesRegex(build.BuildError, 'gateway does not declare PHP 8.4'):
+            build.build(build.load(build.RECIPE), '8.4', profile='gateway')
+
     def test_install_names_the_refusal_and_the_purge_option(self):
         with patch.object(build.os, 'geteuid', return_value=0), \
              patch.object(build, 'run_installer', return_value=('extra_packages', {'packages': ['php8.5-apcu']}, '')):
             with self.assertRaisesRegex(build.BuildError, 'extra_packages .*php8.5-apcu.*--purge-extras'):
-                build.install(recipe(), None, False, 'pcov', False, False)
+                build.install(recipe(), None, False, 'pcov', False, False, 'ci-runner')
 
     def test_the_installer_input_matches_the_gateway_contract(self):
-        payload = build.installer_input(recipe(), ['8.5'])
+        payload = build.installer_input(recipe(), ['8.5'], profile='ci-runner')
         self.assertEqual(sorted(payload), ['extras', 'fpm', 'git_read', 'mirror', 'mode', 'opentelemetry', 'pcov', 'release', 'repack', 'versions'])
         names = [pin['name'] for pin in payload['versions']['8.5']['packages']]
         self.assertEqual(names, ['libgd3', 'php-common', 'php8.5-cli', 'php8.5-common', 'php8.5-pcov'])
@@ -230,17 +271,31 @@ class RepositoryRecipeTest(unittest.TestCase):
     def test_ci_build_and_installer_exclude_app_dev_opentelemetry(self):
         document = build.load(build.RECIPE)
         for version in document['php']['versions']:
-            selected = build.build(document, version, 'amd64')
+            selected = build.build(document, version, 'amd64', profile='base')
             self.assertNotIn(f'php{version}-opentelemetry', selected['packages'])
             self.assertNotIn('opentelemetry', selected['extensions'])
-            payload = build.installer_input(document, [version])
+            payload = build.installer_input(document, [version], profile='base')
             self.assertFalse(payload['opentelemetry'])
             self.assertNotIn(f'php{version}-opentelemetry', [pin['name'] for pin in payload['versions'][version]['packages']])
             self.assertNotIn('opentelemetry', payload['versions'][version]['extensions'])
 
+    def test_each_profile_uses_the_recipe_extension_policy(self):
+        document = build.load(build.RECIPE)
+        for profile, pcov, opentelemetry in (
+                ('gateway', False, False), ('app-prod', False, False), ('websocket', False, False),
+                ('ci-runner', True, False), ('base', True, False), ('app-dev', True, True)):
+            with self.subTest(profile=profile):
+                payload = build.installer_input(document, ['8.5'], profile=profile)
+                self.assertEqual(payload['pcov'], pcov)
+                self.assertEqual(payload['opentelemetry'], opentelemetry)
+                packages = [pin['name'] for pin in payload['versions']['8.5']['packages']]
+                self.assertEqual('php8.5-opentelemetry' in packages, opentelemetry)
+                self.assertEqual('pcov' in payload['versions']['8.5']['extensions'], pcov)
+                self.assertNotIn('opentelemetry', payload['versions']['8.5']['extensions'])
+
     def test_the_repository_recipe_names_one_exact_ci_build(self):
         document = build.load(build.RECIPE)
-        selected = build.build(document, architecture='amd64')
+        selected = build.build(document, architecture='amd64', profile='ci-runner')
         self.assertEqual(selected['version'], document['php']['ci'])
         self.assertEqual(len({pin['version'] for name, pin in selected['pins'].items()
                               if pin['version'].startswith(selected['version'] + '.')}), 1)

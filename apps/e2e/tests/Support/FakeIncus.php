@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\E2E\IncusHost;
 use Closure;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\PendingProcess;
@@ -12,8 +13,9 @@ use RuntimeException;
 
 /**
  * An in-memory Incus behind `Process::fake()`: the `incus` CLI calls IncusHost makes, the concurrent exec helper,
- * and the host firewall helper. It keeps instances, networks, and images, so tests drive the real IncusHost
- * and assert on the state and the calls that remain.
+ * and the host firewall helper. It keeps instances and networks, so tests drive the real IncusHost and assert on the
+ * state and the calls that remain. Like a task VM, it holds the stopped template that every guest is a copy of, with
+ * its root disk on the topology seed pool.
  */
 final class FakeIncus
 {
@@ -22,9 +24,6 @@ final class FakeIncus
 
     /** @var array<string, array{config:array<string,string>}> */
     public array $networks = [];
-
-    /** @var array<string, array{type:string,aliases:list<string>,properties:array<string,string>,created_at:string}> */
-    public array $images = [];
 
     /** @var list<list<string>> every `incus` argument vector after the project, in order */
     public array $calls = [];
@@ -41,7 +40,15 @@ final class FakeIncus
     /** @var (Closure(list<string>): ?string)|null fails an `incus` call with this message when it returns one */
     private ?Closure $failure = null;
 
-    public function __construct(public string $project = 'default', public string $pool = 'orbit-e2e') {}
+    public function __construct(public string $project = 'default')
+    {
+        $this->instances[IncusHost::TEMPLATE] = [
+            'type' => 'virtual-machine',
+            'status' => 'Stopped',
+            'config' => ['volatile.base_image' => hash('sha256', 'node-template')],
+            'devices' => ['root' => ['type' => 'disk', 'path' => '/', 'pool' => IncusHost::POOL]],
+        ];
+    }
 
     /** Fakes only `incus` and the host helpers; every other process, such as `git` or `php`, really runs. */
     public function install(): self
@@ -72,13 +79,10 @@ final class FakeIncus
         return $this;
     }
 
-    /** @param array<string, string> $properties */
-    public function addImage(string $alias, string $type = 'virtual-machine', array $properties = [], ?string $fingerprint = null): string
+    /** @return array<string, array{type:string,status:string,config:array<string,string>,devices:array<string,array<string,string>>}> every instance but the template */
+    public function guests(): array
     {
-        $fingerprint ??= hash('sha256', 'image:'.$alias);
-        $this->images[$fingerprint] = ['type' => $type, 'aliases' => [$alias], 'properties' => $properties, 'created_at' => '2026-10-12T12:00:00Z'];
-
-        return $fingerprint;
+        return array_diff_key($this->instances, [IncusHost::TEMPLATE => true]);
     }
 
     /** @return list<list<string>> the calls whose first arguments are these */
@@ -103,17 +107,10 @@ final class FakeIncus
 
             return Process::result("{\"changed\":true}\n");
         }
-        if (($command[0] ?? null) === 'incus' && ($command[1] ?? null) === 'query') {
-            // `incus query` carries its project in the URL; a query for another project is not ours.
-            if (! str_ends_with((string) end($command), '?project='.$this->project)) {
-                return Process::result('', 'Error: not found', 1);
-            }
-            $arguments = array_slice($command, 1);
-        } elseif (($command[0] ?? null) !== 'incus' || ($command[1] ?? null) !== '--project' || ($command[2] ?? null) !== $this->project) {
+        if (($command[0] ?? null) !== 'incus' || ($command[1] ?? null) !== '--project' || ($command[2] ?? null) !== $this->project) {
             return Process::result();
-        } else {
-            $arguments = array_slice($command, 3);
         }
+        $arguments = array_slice($command, 3);
         $this->calls[] = $arguments;
         $failure = $this->failure === null ? null : ($this->failure)($arguments);
         if ($failure !== null) {
@@ -133,8 +130,8 @@ final class FakeIncus
                 $selected = $name($arguments[1] ?? '');
 
                 return $this->json($selected === '' ? array_keys($this->instances) : (isset($this->instances[$selected]) ? [$selected] : []));
-            case 'init':
-                return $this->init($arguments);
+            case 'copy':
+                return $this->copy($arguments, $name);
             case 'start':
                 $this->instances[$name($arguments[1])]['status'] = 'Running';
 
@@ -164,58 +161,31 @@ final class FakeIncus
                 return $this->guest($instance, array_slice($arguments, 3), $stdin);
             case 'network':
                 return $this->network($arguments, $name);
-            case 'image':
-                return $this->image($arguments, $name);
-            case 'publish':
-                $instance = $name($arguments[1]);
-                $alias = $arguments[array_search('--alias', $arguments, true) + 1];
-                $properties = [];
-                foreach (array_slice($arguments, array_search('--compression', $arguments, true) + 2) as $pair) {
-                    [$key, $value] = explode('=', $pair, 2);
-                    $properties[$key] = $value;
-                }
-                $fingerprint = hash('sha256', 'published:'.$instance.':'.$alias);
-                $this->images[$fingerprint] = ['type' => $this->instances[$instance]['type'], 'aliases' => [$alias], 'properties' => $properties, 'created_at' => '2026-10-12T13:00:00Z'];
-
-                return Process::result();
-            case 'query':
-                $data = json_decode($arguments[array_search('--data', $arguments, true) + 1], true, 8, JSON_THROW_ON_ERROR);
-                preg_match('#/1\.0/images/aliases/([^?]+)#', end($arguments), $match);
-                $this->moveAlias($match[1], $data['target']);
-
-                return Process::result();
             default:
                 return Process::result();
         }
     }
 
-    /** @param list<string> $arguments */
-    private function init(array $arguments): ProcessResult
+    /**
+     * A copy keeps the source's type, configuration, and devices; each `--config` overrides one key.
+     *
+     * @param  list<string>  $arguments
+     * @param  Closure(string): string  $name
+     */
+    private function copy(array $arguments, Closure $name): ProcessResult
     {
-        $image = $arguments[1];
-        $instance = substr($arguments[2], strpos($arguments[2], ':') + 1);
-        $config = [];
-        $devices = ['root' => ['type' => 'disk', 'path' => '/']];
+        $source = $this->instances[$name($arguments[1])] ?? null;
+        if ($source === null) {
+            return Process::result('', 'Error: Instance not found', 1);
+        }
+        $config = $source['config'];
         for ($index = 3; $index < count($arguments); $index++) {
             if ($arguments[$index] === '--config') {
                 [$key, $value] = explode('=', $arguments[++$index], 2);
                 $config[$key] = $value;
-            } elseif ($arguments[$index] === '--device') {
-                [$device, $pair] = explode(',', $arguments[++$index], 2);
-                [$key, $value] = explode('=', $pair, 2);
-                $devices[$device][$key] = $value;
-            } elseif ($arguments[$index] === '--storage') {
-                $devices['root']['pool'] = $arguments[++$index];
             }
         }
-        $fingerprint = str_contains($image, ':') ? substr($image, strpos($image, ':') + 1) : $image;
-        $config['volatile.base_image'] = preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) === 1 ? $fingerprint : hash('sha256', 'source:'.$image);
-        $this->instances[$instance] = [
-            'type' => in_array('--vm', $arguments, true) ? 'virtual-machine' : 'container',
-            'status' => 'Stopped',
-            'config' => $config,
-            'devices' => $devices,
-        ];
+        $this->instances[$name($arguments[2])] = [...$source, 'status' => 'Stopped', 'config' => $config];
 
         return Process::result();
     }
@@ -256,54 +226,6 @@ final class FakeIncus
             default:
                 return Process::result();
         }
-    }
-
-    /**
-     * @param  list<string>  $arguments
-     * @param  Closure(string): string  $name
-     */
-    private function image(array $arguments, Closure $name): ProcessResult
-    {
-        switch ($arguments[1] ?? null) {
-            case 'import':
-                $archive = json_decode((string) file_get_contents($arguments[2]), true, flags: JSON_THROW_ON_ERROR);
-                $this->addImage('imported-'.$archive['fingerprint'], 'virtual-machine', $archive['properties'], $archive['fingerprint']);
-
-                return Process::result();
-            case 'list':
-                $images = [];
-                foreach ($this->images as $fingerprint => $image) {
-                    $images[] = [
-                        'fingerprint' => $fingerprint,
-                        'type' => $image['type'],
-                        'aliases' => array_map(static fn (string $alias): array => ['name' => $alias], $image['aliases']),
-                        'properties' => $image['properties'],
-                        'created_at' => $image['created_at'],
-                    ];
-                }
-
-                return Process::result(json_encode($images, JSON_THROW_ON_ERROR));
-            case 'alias':
-                if (($arguments[2] ?? null) === 'create') {
-                    $this->moveAlias($name($arguments[3]), $arguments[4]);
-                }
-
-                return Process::result();
-            case 'delete':
-                unset($this->images[$name($arguments[2])]);
-
-                return Process::result();
-            default:
-                return Process::result();
-        }
-    }
-
-    private function moveAlias(string $alias, string $fingerprint): void
-    {
-        foreach ($this->images as $existing => $image) {
-            $this->images[$existing]['aliases'] = array_values(array_diff($image['aliases'], [$alias]));
-        }
-        $this->images[$fingerprint]['aliases'][] = $alias;
     }
 
     private function execAll(string $input): ProcessResult

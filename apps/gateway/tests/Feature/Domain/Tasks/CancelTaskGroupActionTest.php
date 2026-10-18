@@ -49,13 +49,6 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'public_ssh_host' => '10.44.0.160',
         'wireguard_ip' => '10.44.0.160',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-21',
-        'checkout_path' => '/srv/orbit/apps/cancel-app/task-21',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel me',
@@ -63,8 +56,12 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'status' => $status,
         'pr_url' => $prUrl,
     ]);
-    $group->taskable()->associate($instance);
-    $group->save();
+    test_task_workspace($group, [
+        'node_id' => $node->id,
+        'name' => 'task-21',
+        'branch_override' => null,
+        'checkout_path' => '/srv/orbit/apps/cancel-app/task-21',
+    ]);
 
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
@@ -314,8 +311,11 @@ it('asks for assistance and keeps the clone when removal of a source-resolved wo
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 });
 
-/** A group that holds no Instance while its provisioned `task-{id}` workspace stays on the Node. */
-function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceStatus = 'source_resolved'): array
+/**
+ * A group that holds no Instance while the `task-{id}` workspace it owns stays on the Node. Without `$owned`, the
+ * Instance is the user's own, with the same name and branch and no owner.
+ */
+function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceStatus = 'source_resolved', bool $owned = true): array
 {
     $group = cancellable_task_group($status);
     $attached = $group->taskable;
@@ -323,14 +323,14 @@ function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceSt
     $group->save();
     $attached?->delete();
     $name = 'task-'.$group->id;
-    $workspace = Instance::query()->create([
-        'project_id' => $group->project_id,
+    $attributes = [
         'node_id' => Node::query()->where('name', 'cancel-node')->value('id'),
-        'name' => $name,
-        'branch_override' => $name,
         'checkout_path' => "/srv/orbit/apps/cancel-app/{$name}",
         'status' => $instanceStatus,
-    ]);
+    ];
+    $workspace = $owned
+        ? test_task_workspace($group, $attributes, attach: false)
+        : Instance::query()->create(['project_id' => $group->project_id, 'name' => $name, 'branch_override' => $name, ...$attributes]);
 
     return [$group->fresh(['project', 'taskable']) ?? $group, $workspace];
 }
@@ -389,43 +389,34 @@ describe('a workspace the group never attached', function (): void {
             ->and($group->fresh()?->taskable_id)->toBeNull();
     });
 
-    it('removes an Instance a claim attached after cancel looked for the workspace', function (): void {
+    it('removes the workspace a claim attached after cancel looked for it', function (): void {
         app(TaskExtensionState::class)->enable();
-        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
-        $late = Instance::query()->create([
-            'project_id' => $group->project_id,
-            'node_id' => $workspace->node_id,
-            'name' => 'late-attach',
-            'checkout_path' => '/srv/orbit/apps/cancel-app/late-attach',
-            'status' => 'source_resolved',
-        ]);
-        $remover = new class($group->id, $late) implements InstanceRemover
-        {
-            /** @var list<int> */
-            public array $calls = [];
-
-            public function __construct(private int $groupId, private Instance $late) {}
-
-            public function execute(Instance $instance, bool $force): InstanceRemoval
-            {
-                $this->calls[] = $instance->id;
-                if ($this->calls === [$instance->id] && $instance->id !== $this->late->id) {
-                    $group = Task::topLevel()->findOrFail($this->groupId);
-                    $group->taskable()->associate($this->late);
-                    $group->save();
-                }
-                $instance->delete();
-
-                return new InstanceRemoval;
+        $remover = cancel_recording_remover();
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
+        $group->forceFill(['reserved_at' => now()->subSeconds(30)])->save();
+        // Cancel saw the claim in flight and left the workspace alone. The claim attaches it before cancel's lock.
+        $attached = false;
+        $database = app('db');
+        $double = Mockery::mock($database);
+        $double->shouldReceive('transaction')->andReturnUsing(static function (Closure $callback, int $attempts = 1) use ($database, $group, $workspace, &$attached): mixed {
+            if (! $attached) {
+                $attached = true;
+                $claimed = Task::topLevel()->findOrFail($group->id);
+                $claimed->taskable()->associate($workspace);
+                $claimed->save();
             }
-        };
-        app()->instance(InstanceRemover::class, $remover);
+
+            return $database->connection()->transaction($callback, $attempts);
+        });
+        DB::swap($double);
 
         $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
-        expect($remover->calls)->toBe([$workspace->id, $late->id])
+        expect($attached)->toBeTrue()
+            ->and($remover->calls)->toBe([[$workspace->id, true]])
+            ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
             ->and($cancelled->taskable_id)->toBeNull()
-            ->and(Instance::query()->whereKey([$workspace->id, $late->id])->exists())->toBeFalse();
+            ->and(Instance::query()->whereKey($workspace->id)->exists())->toBeFalse();
     });
 
     it('keeps a half-provisioned workspace and asks for assistance when removal refuses', function (): void {
@@ -449,16 +440,16 @@ describe('a workspace the group never attached', function (): void {
             ->and(Instance::query()->find($workspace->id))->not->toBeNull();
     });
 
-    it('never removes an Instance that only shares the workspace name', function (): void {
+    it('never removes a user Instance named and branched like the workspace', function (): void {
         app(TaskExtensionState::class)->enable();
         $remover = cancel_recording_remover();
-        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
-        $workspace->update(['branch_override' => null]);
+        [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo, owned: false);
 
-        app(CancelTaskGroupAction::class)->execute($group);
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
-        expect($remover->calls)->toBe([])
-            ->and(Instance::query()->find($workspace->id))->not->toBeNull();
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($remover->calls)->toBe([])
+            ->and(Instance::query()->find($workspace->id))->name->toBe('task-'.$group->id)->branch_override->toBe('task-'.$group->id);
     });
 });
 
@@ -706,3 +697,47 @@ it('cancels open subtasks left in a cancelled group', function (): void {
         DB::purge('cancelled_open_subtasks');
     }
 });
+
+it('preserves the removal error after a claim attaches during cancellation', function (bool $deleted): void {
+    app(TaskExtensionState::class)->enable();
+    [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
+    $group->forceFill(['reserved_at' => now()])->save();
+    $failure = new ResourceOperationException('instance.remove_refused', 'Original removal failure.', 409);
+    $remover = Mockery::mock(InstanceRemover::class);
+    $remover->shouldReceive('execute')->once()->withArgs(static fn (Instance $instance, bool $force): bool => $instance->is($workspace) && $force)
+        ->andReturnUsing(static function (Instance $instance) use ($deleted, $failure): never {
+            if ($deleted) {
+                $instance->delete();
+            }
+
+            throw $failure;
+        });
+    app()->instance(InstanceRemover::class, $remover);
+    $database = app('db');
+    $double = Mockery::mock($database);
+    $attached = false;
+    $double->shouldReceive('transaction')->andReturnUsing(static function (Closure $callback, int $attempts = 1) use ($database, $group, $workspace, &$attached): mixed {
+        if (! $attached) {
+            $attached = true;
+            $claimed = Task::topLevel()->findOrFail($group->id);
+            $claimed->taskable()->associate($workspace);
+            $claimed->save();
+        }
+
+        return $database->connection()->transaction($callback, $attempts);
+    });
+    DB::swap($double);
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception)->toBe($failure));
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $group->id,
+        'status' => 'cancelled',
+        'taskable_id' => $deleted ? null : $workspace->id,
+        'assistance_requested' => false,
+        'assistance_kind' => 'failure',
+        'assistance_reason' => 'Workspace removal failed: Original removal failure.',
+    ]);
+    expect(Instance::query()->whereKey($workspace->id)->exists())->toBe(! $deleted);
+})->with(['row already removed' => true, 'row retained for cleanup' => false]);

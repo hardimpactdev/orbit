@@ -80,13 +80,7 @@ function topologyConstructionFixture(
     string $character = 'a',
     ?TopologyRecipe $recipe = null,
 ): TopologyConstructionInputs {
-    $target = featureTarget($issue, $character, $recipe);
-    $images = [];
-    foreach ($target->recipe->images() as $index => $image) {
-        $images[$image->value] = str_repeat(dechex($index + 10), 64);
-    }
-
-    return TopologyConstructionInputs::create($target, 2, $images);
+    return TopologyConstructionInputs::create(featureTarget($issue, $character, $recipe), 2);
 }
 
 function temporaryDirectory(): string

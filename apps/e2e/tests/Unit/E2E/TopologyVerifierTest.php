@@ -19,11 +19,11 @@ function verifierTopology(FakeIncus $incus, TopologyRecipe $recipe): TopologyTar
     $incus->networks[$target->network()] = ['config' => ['ipv4.address' => '10.232.2.1/24', 'user.orbit.e2e.owner' => 'orbit-e2e']];
     foreach ($recipe->nodes as $node) {
         $incus->instances[$target->instance($node->key)] = [
-            'type' => $node->image->instanceType(),
+            'type' => 'virtual-machine',
             'status' => 'Running',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => [
-                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-e2e'],
+                'root' => ['type' => 'disk', 'path' => '/', 'pool' => IncusHost::POOL],
                 'eth0' => ['type' => 'nic', 'network' => $target->network(), 'hwaddr' => $target->mac($node->key), 'ipv4.address' => TopologyTarget::ipv4For(2, $node->address)],
             ],
         ];
@@ -72,7 +72,7 @@ describe('TopologyVerifier', function () {
         $target = verifierTopology($incus, TopologyRecipe::compose($workloads));
         $incus->respond(verifierResponder($sha));
 
-        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 60, 0)
+        $report = new TopologyVerifier(new IncusHost, 60, 0)
             ->verify($target, new SourceState($sha, $sha, mounted: true, mountTokenHash: str_repeat('e', 64)));
 
         $ran = [];
@@ -100,7 +100,7 @@ describe('TopologyVerifier', function () {
         $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
         $incus->respond(verifierResponder($sha));
 
-        new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 60, 0)
+        new TopologyVerifier(new IncusHost, 60, 0)
             ->verify($target, new SourceState($sha, $sha, mounted: true, mountTokenHash: str_repeat('e', 64)));
 
         $arguments = [];
@@ -121,7 +121,7 @@ describe('TopologyVerifier', function () {
         $failures = ['caddy.app-dev' => 2, 'operator.gateway' => PHP_INT_MAX];
         $incus->respond(verifierResponder($sha, $failures));
 
-        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)
+        $report = new TopologyVerifier(new IncusHost, 1, 0)
             ->verify($target, new SourceState($sha, $sha));
         $runs = array_count_values(array_map(static fn (array $exec): string => $exec['argv'][1], $incus->execs));
 
@@ -149,7 +149,7 @@ describe('TopologyVerifier', function () {
             return $answer;
         });
 
-        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)->verify($target, new SourceState($sha, $sha));
+        $report = new TopologyVerifier(new IncusHost, 1, 0)->verify($target, new SourceState($sha, $sha));
 
         expect($report->probes['service.vpn']['passed'])->toBeFalse()
             ->and($report->probes['service.vpn']['observed'])->toBe('malformed evidence');
@@ -165,7 +165,7 @@ describe('TopologyVerifier', function () {
         $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
         $incus->instances[$target->instance('app-dev')]['devices']['eth0']['hwaddr'] = '00:16:3e:00:00:01';
 
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)->verify($target, new SourceState($sha, $sha)))
+        expect(fn () => new TopologyVerifier(new IncusHost, 1, 0)->verify($target, new SourceState($sha, $sha)))
             ->toThrow(RuntimeException::class, 'MAC identity does not match topology')
             ->and($incus->execs)->toBe([]);
     });

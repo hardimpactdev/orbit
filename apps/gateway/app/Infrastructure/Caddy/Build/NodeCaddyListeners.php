@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\Extensions\ConfigValue;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 
@@ -25,7 +27,7 @@ final readonly class NodeCaddyListeners
      * Every site source name core uses. A contributed site may not use one: the task VM guard admits two of them, and
      * the Caddyfile and Doctor name each site by its source.
      */
-    public const array CoreSources = ['gateway', 'metrics', 'service-metrics', 'app-dev', 'app-prod', 'ingress', 'websocket', 'analytics'];
+    public const array CoreSources = ReservedNames::CaddySources;
 
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
@@ -100,6 +102,6 @@ final readonly class NodeCaddyListeners
 
     private static function address(?string $address): ?string
     {
-        return is_string($address) && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? $address : null;
+        return is_string($address) && ConfigValue::ipv4($address) ? $address : null;
     }
 }

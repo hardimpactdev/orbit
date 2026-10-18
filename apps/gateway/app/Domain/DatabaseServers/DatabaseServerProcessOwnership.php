@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
 use App\Models\Process;
@@ -14,7 +15,7 @@ use SensitiveParameter;
  * A Database server owns its Process. `database:server:destroy` removes it, not `process:destroy`. A Valkey server's
  * Process keeps the server's command, so `process:update` cannot drop `--aclfile` and open the server (ADR 0221).
  */
-final readonly class DatabaseServerProcessOwnership
+final readonly class DatabaseServerProcessOwnership implements ProcessRemovalGuard
 {
     public function assertRemovable(#[SensitiveParameter] Process $process): void
     {

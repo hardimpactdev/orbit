@@ -20,9 +20,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property ProcessRuntime $runtime
  * @property ?ProcessRuntime $retired_runtime
  * @property ?string $systemd_activation_hash
- * @property ?string $proxycli_source_revision
  * @property bool $systemd_activation_pending
- * @property bool $proxycli_source_activation_pending
  * @property ?string $working_directory
  * @property array<string, mixed> $runtime_config
  * @property string $restart_policy
@@ -60,9 +58,7 @@ final class Process extends Model
     protected $hidden = [
         'runtime_config',
         'systemd_activation_hash',
-        'proxycli_source_revision',
         'systemd_activation_pending',
-        'proxycli_source_activation_pending',
     ];
 
     public function isVpDev(): bool
@@ -92,7 +88,6 @@ final class Process extends Model
             'keep_alive' => 'boolean',
             'restart_on_deploy' => 'boolean',
             'systemd_activation_pending' => 'boolean',
-            'proxycli_source_activation_pending' => 'boolean',
             'desired_state' => DesiredProcessState::class,
             'status' => LifecycleStatus::class,
         ];

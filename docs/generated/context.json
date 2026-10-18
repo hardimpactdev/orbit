@@ -177,6 +177,7 @@
             "concepts": [
                 "Database server",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -214,7 +215,6 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
-                "Database server",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -280,12 +280,20 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role"
+                "Placement",
+                "Role",
+                "Route",
+                "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/cli/fleet.mdx",
@@ -447,7 +455,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database server",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -762,29 +769,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0191-clone-the-default-instance-database-for-each-new-instance.md",
-            "title": "ADR 0191: Clone the default Instance's database for each new Instance",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Database server",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0190",
-                "0191"
-            ]
-        },
-        {
             "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
             "title": "Derive the application directory from the web root",
             "kind": "decision",
@@ -811,27 +795,6 @@
             ],
             "governing_adrs": [
                 "0196"
-            ]
-        },
-        {
-            "path": "docs/decisions/0198-keep-delivery-line-proofs-as-repo-commands.md",
-            "title": "ADR 0198: Keep delivery-line proofs as repository commands",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Project",
-                "Subtask",
-                "Task",
-                "Task check"
-            ],
-            "governing_adrs": [
-                "0198"
             ]
         },
         {
@@ -870,28 +833,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0205-publish-database-credentials-to-vaultwarden.md",
-            "title": "ADR 0205: Publish database credentials to Vaultwarden",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Database server",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0205"
-            ]
-        },
-        {
             "path": "docs/decisions/0206-build-task-vm-images-as-chains-of-small-jobs.md",
             "title": "ADR 0206: Build task VM images as chains of small jobs",
             "kind": "decision",
@@ -908,7 +849,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0222"
             ]
         },
         {
@@ -937,7 +879,6 @@
             "governing_adrs": [
                 "0206",
                 "0209",
-                "0217",
                 "0218"
             ]
         },
@@ -1038,6 +979,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Task",
                 "Tool"
@@ -1107,55 +1049,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0216-run-one-exact-php-build-everywhere.md",
-            "title": "ADR 0216: Run one exact PHP build everywhere",
-            "kind": "decision",
-            "components": [
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Roleless Node",
-                "Schedule",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0213",
-                "0216"
-            ]
-        },
-        {
-            "path": "docs/decisions/0217-deploy-production-instances-automatically-by-polling.md",
-            "title": "ADR 0217: Deploy production Instances automatically by polling",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Project",
-                "Route",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0209",
-                "0217",
-                "0218"
-            ]
-        },
-        {
             "path": "docs/decisions/0218-take-long-commands-off-the-request-path.md",
             "title": "ADR 0218: Take long commands off the request path",
             "kind": "decision",
@@ -1191,35 +1084,39 @@
                 "0209",
                 "0211",
                 "0212",
-                "0217",
                 "0218"
             ]
         },
         {
-            "path": "docs/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users.md",
-            "title": "ADR 0221: Run Valkey Database servers with Orbit-owned ACL users",
+            "path": "docs/decisions/0219-answer-cluster-names-from-a-dns-on-the-router.md",
+            "title": "ADR 0219: Answer Cluster names from a DNS server on the Router",
             "kind": "decision",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "apps/gateway",
-                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Activity",
-                "Database server",
+                "Cluster",
                 "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
+                "Placement",
+                "Role",
+                "Route",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
-                "0190",
+                "0209",
+                "0210",
+                "0211",
                 "0212",
-                "0221"
+                "0218",
+                "0219"
             ]
         },
         {
@@ -1295,9 +1192,7 @@
             "governing_adrs": [
                 "0182",
                 "0190",
-                "0191",
                 "0196",
-                "0198",
                 "0200",
                 "0206",
                 "0209",
@@ -1307,10 +1202,8 @@
                 "0213",
                 "0214",
                 "0215",
-                "0216",
-                "0217",
                 "0218",
-                "0221",
+                "0219",
                 "0222"
             ]
         },
@@ -1650,6 +1543,7 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -1700,7 +1594,7 @@
             "governing_adrs": [
                 "0200",
                 "0206",
-                "0216"
+                "0222"
             ]
         },
         {
@@ -1733,6 +1627,7 @@
                 "Activity",
                 "Database server",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1772,17 +1667,13 @@
             "concepts": [
                 "Activity",
                 "Database server",
-                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
-                "Tool"
+                "Project"
             ],
-            "governing_adrs": [
-                "0221"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/delivery-line.md",
@@ -1833,9 +1724,7 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0217"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/desktop-app.md",
@@ -1869,6 +1758,24 @@
                 "Task",
                 "Task workspace",
                 "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/docker-provider-migration.md",
+            "title": "Docker CE migration",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1937,6 +1844,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1982,7 +1890,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1994,10 +1901,7 @@
                 "Schedule",
                 "Task"
             ],
-            "governing_adrs": [
-                "0212",
-                "0221"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-recovery.md",
@@ -2017,6 +1921,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Placement",
                 "Process",
                 "Project",
                 "Role",
@@ -2038,7 +1943,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Database server",
                 "Deliverable",
                 "Doctor",
                 "Extension",
@@ -2116,6 +2020,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task check",
@@ -2149,9 +2054,12 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -2596,7 +2504,9 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/reference/processes-and-schedules.md",
@@ -2688,7 +2598,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Database server",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2710,7 +2619,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",
@@ -2897,8 +2805,8 @@
             ],
             "concepts": [
                 "Activity",
-                "Database server",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -2997,10 +2905,11 @@
                 "Extension",
                 "Gateway",
                 "Node",
-                "Role",
                 "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",

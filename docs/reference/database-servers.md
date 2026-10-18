@@ -104,6 +104,8 @@ The Gateway runs `ACL SETUSER default resetpass #<sha256 of the admin password>`
 
 A server whose `default` already has the admin password returns at once, so the command is safe to repeat. A client that is not connected at that moment is not seen, so move every client before you close the server. Like adoption, the command exists only for the two adopted Processes.
 
+The server's Process is an ordinary Docker Node Process: read its logs, stop it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
+
 ## Create a database on a server
 
 `database:create` with `--server` creates a database and a user on a MySQL server, then records the [connection](/reference/database-connections).

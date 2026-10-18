@@ -37,3 +37,19 @@ arch('private DNS never uses proxycli code')
 arch('reserved hostnames never use proxycli code')
     ->expect('App\Domain\Routes')
     ->not->toUse(proxycli_namespaces());
+
+arch('Process removal never uses proxycli code')
+    ->expect('App\Actions\Processes\DestroyProcessAction')
+    ->not->toUse(proxycli_namespaces());
+
+arch('the Process model never uses proxycli code')
+    ->expect('App\Models\Process')
+    ->not->toUse([...proxycli_namespaces(), 'App\Models\ProxyCliProcessSource']);
+
+arch('Database connection updates never use proxycli code')
+    ->expect('App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction')
+    ->not->toUse(proxycli_namespaces());
+
+arch('Database connection removal never uses proxycli code')
+    ->expect('App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction')
+    ->not->toUse(proxycli_namespaces());

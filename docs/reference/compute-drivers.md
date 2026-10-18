@@ -4,7 +4,7 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
@@ -22,7 +22,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [import its base image](#prepare-the-topology).
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -36,7 +36,9 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
 | `tools` | Object keyed by the loader's known tool identifiers; each value has a concrete `version` (an Ubuntu floor or exact artifact version) and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
-| `php` | The [PHP build](#php-build): `ci`, `shared`, and `versions` |
+| `php` | The [PHP build](#php-build): `versions`, `shared`, `ci`, `rollback`, `pcov`, `opentelemetry`, and `purge_extras` |
+| `artifact_mirror` | The HTTPS base URL, without a trailing slash, of the [recipe artifact mirror](#the-recipe-artifact-mirror). Installers try it before each artifact's own URL |
+| `git` | The Git package set, `packages`, and the review date of the Git security notices, `usn_since` |
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names or `ci-runner`. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 
@@ -62,6 +64,10 @@ The restored sources use the generic Ubuntu hosts. A regional mirror cannot be r
 
 Ubuntu installs refuse downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
+The recipe pins both Ubuntu `docker.io` and `containerd` for Docker roles and the base image. Migration reads those pins rather than choosing a separate containerd version.
+
+Docker CE is not the recipe's Ubuntu `docker.io` provider. Convergence refuses it with `docker-provider:docker-ce` before planning or installing packages. It never stops containers to change providers. Follow the explicit [Docker provider migration](/reference/docker-provider-migration) during a planned window. That command may downgrade Docker and containerd after inventory and compatibility checks; normal recipe convergence still refuses downgrades.
+
 An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
@@ -76,13 +82,13 @@ Image builds refresh the snapshot indexes before assessing Git with the Ubuntu t
 
 Installed binaries built from source package `git` but absent from `git.packages` are refused as `git-dependency:<package>` before Git source or package changes. This includes siblings such as `gitk` and `git-gui`, even at the pinned version. An operator must remove these unmanaged siblings before convergence; the recipe owns only its declared package set.
 
-PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release retains its existing URL and now holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
+PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
 
 Exact Git pins block automatic Ubuntu and PPA security updates. Orbit owns the delay between an upstream fix and a reviewed recipe bump. The daily `Git build watch` workflow queries Launchpad for published Git builds for the recipe release and Ubuntu’s security notice API. It opens or updates one GitHub issue for a newer build or a notice published on or after `git.usn_since`. Network and parsing failures fail the workflow visibly.
 
-Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices. See [ADR 0216](/decisions/0216-run-one-exact-php-build-everywhere#git-artifacts-and-security-updates).
+Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices.
 
-Git bumps remain separate from nightly snapshot and PHP build pull requests. The snapshot flow changes only its date; the PHP bump authenticates Sury's indexes and knows PHP's package sets. Adding Launchpad key verification and a separately reviewed Git bump to that flow is outside this change. To bump Git by hand, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
+Git bumps stay separate from the nightly snapshot and PHP build pull requests. The snapshot flow changes only its date; the PHP bump authenticates Sury's indexes and knows PHP's package sets. No automated flow verifies Launchpad's signed indexes, so a maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
 
 The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
@@ -107,11 +113,22 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 | `websocket` | Caddy, Composer, OpenSSL, `php-curl`, `php-xml`, and `php:8.5` |
 | `ci-runner` | `acl`, `attr`, `unzip`, and `php:8.5`. A roleless Node that runs CI jobs, such as Sabre, selects it with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). It is not a Node role |
 | `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
-| `base` | The full `app-dev` set, explicit image-build packages described below, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
+| `base` | The full `app-dev` set, explicit image-build packages described below, the nested Incus packages, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
 
 The base list explicitly contains the app-dev tools. It does not inherit a role. One pinned distribution can supply several binaries, such as npm and npx, or Rust and Cargo. Every fetched input must have a recorded digest. Production Nodes receive only their role tools.
 
 The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each uses an exact package version from the same authenticated snapshot on both architectures.
+
+The base also holds the nested Incus packages, so a task VM [runs a topology](#prepare-the-topology) without an install:
+
+- `incus`, pinned to 6.0.5, whose recovery API adopts the [topology seed](#build-the-base-image).
+- `qemu-system-x86`, `ovmf`, `qemu-system-modules-spice`, `qemu-utils`, `virtiofsd`, and `dnsmasq-base`, which Incus VMs need but the Incus package only recommends.
+- `btrfs-progs`, for the pool of the topology seed.
+- `nftables`, for the isolation table.
+
+The recipe installs packages without recommended packages, so QEMU's GUI stack stays out. The `base` profile is amd64 only, because Pi is, so the amd64 QEMU packages suffice. The topology Nodes start from the same base and carry these packages unused.
+
+After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `base-image-clean.sh` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
 ### PHP build
 
@@ -127,7 +144,6 @@ The recipe is the single source of truth for Orbit's PHP build. Every machine th
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
 | `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
 | `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
-| `artifact_mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
 A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
@@ -138,7 +154,7 @@ Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry
 - `php.ci` names an undeclared version;
 - `php.purge_extras` names another profile than `ci-runner`, or `artifact_mirror` is not an HTTPS URL.
 
-PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
+PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. The other PHP profiles, `app-prod`, `websocket`, and `gateway`, keep PCOV installed but not loaded.
 
 OpenTelemetry is installed for the `php.opentelemetry` profiles and enabled in PHP-FPM only. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge, an FPM-only bridge that instruments web requests. The installer always disables OpenTelemetry in the CLI, including links enabled by Sury's package hooks. This preserves the CLI extension parity with CI that PHPStan's shared result cache needs.
 
@@ -146,20 +162,21 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 
 #### Install the PHP build
 
-`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install` runs it on a CI machine.
+`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
 
 Before it changes anything, the installer checks the machine:
 
-1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it.
-2. It refuses installed PHP packages outside the handled recipe sets, except OpenTelemetry packages kept disabled after app-dev removal.
-3. A plan run, such as a dry run, stops here and lists the packages it would change.
+1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it. With `purge` it deletes the source instead.
+2. It finds installed PHP packages outside the handled recipe sets. OpenTelemetry packages kept disabled after app-dev removal do not count.
+3. With `refuse` it refuses such packages. With `keep` it leaves them installed. With `purge` it purges them later in the run.
+4. A plan run, such as a dry run, stops here and lists the packages it would change.
 
 Then it gets the files:
 
 1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
 2. It downloads each pinned file that is not installed at its version. It tries `artifact_mirror` first, then the pin's URL.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
-4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one.
+4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one. A file already there is not downloaded again. The cache grows with each build; an operator can delete the files of builds that no machine runs.
 
 Then it keeps the installed build for a rollback:
 
@@ -195,7 +212,7 @@ After a change, it restarts PHP-FPM:
 4. It checks that OpenTelemetry loading matches the selected profile.
 5. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
 
-When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
+When the install or a check after it fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with the failure's outcome and `restored: true`: `install_failed`, `modules_mismatch`, `fpm_invalid`, or `rolled_back` for a master that fails after its restart. When the rollback fails too, it ends with `rollback_failed`.
 
 Each caller sets two options:
 
@@ -231,15 +248,9 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 [Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
-1. Each task VM host [builds a new base image](#build-the-base-image).
-2. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
-3. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
-
-#### Why one PHP build
-
-PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
-
-`setup-php` with a floating version was rejected: it cannot pin a patch, and it loads extensions that Orbit does not use. A separate pin for each environment was rejected because copies drift. Installing `package=version` from the Sury apt source was rejected because Sury removes a version from its index when it publishes the next one. The recipe's files are checked by digest, and the same files build images and converge Nodes. [ADR 0216](/decisions/0216-run-one-exact-php-build-everywhere) records this decision.
+2. Each task VM host [builds a new base image](#build-the-base-image).
+3. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
+4. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
 
 ### Recipe identity
 
@@ -282,11 +293,33 @@ Trusted Gateway jobs build images and fill package caches. Agents have root insi
 
 Every workspace clones and runs Project setup. Per-Project snapshots would keep setup coupled to image builds, invalidation, and retention. Package and CI caches speed setup without a saved workspace. Fresh VMs also avoid capacity held by idle pre-enrolled guests and their refill lifecycle, at the cost of boot time.
 
-Nightly convergence checks one Node before advancing to the next. This limits failure spread but permits a mixed-recipe fleet and a partly changed Node. Automatic rollback was rejected: the operator investigates and selects a reviewed recipe for recovery.
+Nightly convergence checks one Node before advancing to the next. This limits failure spread but permits a mixed-recipe fleet and a partly changed Node. Automatic rollback of a Node's convergence was rejected: the operator investigates and selects a reviewed recipe for recovery. The PHP build is the exception: its installer keeps the previous build as files and [restores it at once](/reference/php-runtime#one-installer-with-a-rollback).
+
+#### One PHP build
+
+PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
+
+A pin for each environment was rejected. CI, Nodes, and images would each keep a copy of the version and the extension list, and the copies drift. [Feature delivery](/reference/implementation-loop#one-php-build-in-ci) explains why CI does not use `setup-php`. [PHP runtimes](/reference/php-runtime#why-it-works-this-way) explains the Sury packages, the recipe's files instead of the Sury apt source, the one installer, and PCOV.
+
+The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
+
+Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the `ci-runner` profile purges, because its machine runs nothing but CI jobs.
+
+A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
+
+The PHP bump does not auto-merge with the snapshot. A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request keeps its narrow one-line auto-merge.
+
+Sabre did not wait for a `ci-runner` role. Its hand-managed PHP would keep breaking the cache match until then. A profile that a roleless Node selects manages it now.
+
+#### Git from exact artifacts
+
+A live PPA would be a second owner of Git, and an exact APT version alone does not last, because Launchpad deletes superseded builds. The cost is that Orbit, not unattended-upgrades, delivers Git security fixes, so the daily `Git build watch` workflow signals each one for review.
 
 ## Task VMs
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
+
+The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
 ### From claim to workspace
 
@@ -318,7 +351,7 @@ A Route that fails at the claim logs `The task workspace Route failed after the 
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and puts it in the system group `incus-admin`, so a [nested topology](#prepare-the-topology) needs no new login. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. The base image already put `orbit` in `incus-admin`, so a [nested topology](#prepare-the-topology) needs no new login. Cloud-init does nothing else, because the base image already holds Incus, `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
 
 `EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. Once the Incus agent in the guest runs, one check waits in the guest for up to 30 seconds with `cloud-init status --wait`, so the job hears at once when cloud-init is done.
 
@@ -358,16 +391,16 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 When the group ends, Orbit removes its workspace with the VM. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
-2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its workspace clone.
+2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its volumes.
 3. It removes the workspace records offline, as for [a VM that died](#a-vm-that-dies-before-its-group-ends).
 4. It queues `DestroyTaskVm`, which removes the Node.
 
-A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release.
+A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A group's topology runs in its VM, so it goes with the VM, and removal runs no topology release.
 
-Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
+Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and the workspace the group [owns](/reference/tasks#workspace-ownership) is gone. Any other Instance row on the Node goes with the VM. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
-2. It deletes the VM. Then it deletes any retained workspace volume, because Incus keeps custom volumes after VM deletion. A VM or a clone that is already gone counts as deleted.
+2. It deletes the VM, then the VM's [clone of the topology seed](#incus-provider). Incus keeps custom volumes after VM deletion. A VM or a volume that is gone counts as deleted.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
@@ -553,7 +586,7 @@ Every 10 minutes, while task VMs are enabled or the [UpCloud](#sweep-upcloud) to
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
-- An **orphaned clone** is a storage volume `tvm-<number>-workspace` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
+- An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
 
 The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
@@ -563,7 +596,7 @@ The job changes only the host's configured Incus project, such as `orbit-tasks`.
 
 It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Cleanup claims an older failed build before deleting its VMs, so it cannot race a resume. Builders without a row or with a completed or cleanup-claimed row are eligible for deletion. It never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
-[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned claim clones. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
+[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned volumes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
 
@@ -579,10 +612,11 @@ A **stray instance** is an Incus instance in any project of the host that is non
 
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
-- a legacy claim clone `tvm-<number>-workspace` in the host's project and pool;
+- a task VM's clone of the topology seed, `tvm-<number>-topology-seed`, in the host's project and pool;
+- the [topology seed](#build-the-base-image) `orbit-topology-seed-<12 hex>`, or a seed under construction `orbit-topology-seed-<12 hex>-new`, of an image that the host's project keeps, in its project and pool;
 - an entry of the host's `operator_owned` list.
 
-The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
+The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. It reads the images of the host's project only to recognize their topology seeds. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
 
 A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group is `completed` or `cancelled`, for more than one hour. The hour counts from the later change of the row and its group. A group that `failed` is still open: its VM stays for the operator. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
 
@@ -647,6 +681,14 @@ An old resume payload uses its original enqueue time for a fixed deadline, which
 
 A [medium VM](#size-by-declared-topology) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
 
+A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#build-the-base-image) of its `image_fingerprint`:
+
+1. When the volume `tvm-<id>-topology-seed` is missing, create copies the seed `orbit-topology-seed-<12 hex>` to that name. On ZFS the copy is a clone. It uses only what the VM writes.
+2. A retried create finds the clone and copies nothing.
+3. The launch adds the clone as the disk device `topology-seed` in the `devices` of the instance YAML on stdin, beside its `config`.
+
+When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone, and an UpCloud VM is always normal. The [claim gate](#claims-require-the-current-recipe) needs a promoted base, and promotion needs the seed, so a claimed VM always finds one.
+
 When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Build the recipe](#build-the-base-image) on the host. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
 Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
@@ -686,19 +728,46 @@ A recipe revert reuses a retained verified base. If pruning removed it, the chai
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
-Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
+Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
-Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type for the [topology importer](/reference/incus-topologies#one-recipe-base-image).
+Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
-Only a built and smoke-tested base can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the current-recipe claim gate.
+#### The topology seed
+
+The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)). A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
+
+The Gateway runs the [remote program](/reference/remote-programs) `task-vms.build-topology-seed` as root on the host. Its input names the host's project and pool, the smoke VM, the disk device `topology-seed`, the volume, its size, and the base fingerprint. The volume must end in `-new`. It runs these steps:
+
+1. It deletes the volume of an earlier run.
+2. It creates the block volume `orbit-topology-seed-<12 hex of the base fingerprint>-new`, 45 GiB, in the host's project and pool. ZFS volumes are thin, so the size costs nothing until Nodes write.
+3. It attaches the volume to the smoke VM as the disk `topology-seed`.
+4. It exports the base image to `/var/tmp` on the host and pushes the archive into the VM.
+5. In the VM, Incus creates the btrfs pool `topology-seed` on `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`. Incus doubles each `-` of a device name in the disk's serial.
+6. In the VM, Incus imports the archive and creates the stopped VM `node-template` from it. The template has no profiles and its own root disk on `topology-seed`.
+7. In the VM, Incus deletes the image. The template never boots, so it holds no machine identity.
+8. In the VM, it checks that `node-template` is the one stopped VM, and stops Incus, which unmounts the pool.
+
+Every command of the program reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
+
+The program creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
+
+The template's root disk keeps the size of the base image's disk. Each Node copies it, and a copy is a btrfs snapshot that uses only what the Node writes.
+
+On beast, the program took 37 seconds for the 4.3 GB base: 0.2 seconds for the volume, 14 seconds to export and push the archive, and 23 seconds for the pool, the import, and the template. The seed used 3.3 GB of its 45 GiB. Deleting the smoke VM took 1.6 seconds, and the rename 0.03 seconds.
+
+Only a built and smoke-tested base with its topology seed can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the current-recipe claim gate.
 
 Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the retained builder. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable. Publishing runs on the Incus host, so a publish failure reports the host command error and host name.
 
 A running older build stops at its next step before that host admits the newest desired recipe. Failed resources remain available for resume for 24 hours; cleanup and resume share a database fence so only one can claim them. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
 
-After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds. It also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 14 jobs, including promotion and pruning.
+After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds.
+
+Pruning deletes a base image's topology seed, and a seed under construction, right before the image, so a kept base keeps its seed. When VMs still use clones of a deleted seed, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
+
+Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 15 jobs, including the topology seed, promotion, and pruning.
 
 ### Nightly recipe maintenance
 
@@ -742,7 +811,7 @@ A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
 3. Run `task-vms:build-image {node}` to build the current recipe locally.
 
-To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, bridge, ACL, pool, and any unused legacy workspace volumes remain for manual removal.
+To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
 ### Limit fleet traffic on the hub
 
@@ -780,7 +849,7 @@ While task VMs are configured and the range is invalid, every Node Caddy build r
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
+A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
 
 ### Configure task VMs
 
@@ -841,6 +910,8 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
+| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
+| `task_vm.topology_seed_failed` | 502 | `task-vms.build-topology-seed` failed in the smoke VM. The error ends with the program's log |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_build_running` | 409 | A recipe image build on the host is already running |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
@@ -1018,15 +1089,14 @@ To prepare the topology, Orbit starts the systemd unit `orbit-task-topology-<run
 
 | Step | What happens |
 | --- | --- |
-| `host-setup` | `sudo bin/e2e-topology-host-setup --pool-size=SIZE`: Incus, the btrfs pool, and the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). The pool is 25 GiB in a medium VM and 45 GiB in a large VM. |
-| `images` | `bin/e2e-topology-images ensure --nodes=<union> --recipe-images=PATH` imports the claimed recipe's single base image by fingerprint and builds none. |
-| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. After a failure it runs once more; the log records the retry. |
+| `host-setup` | `sudo bin/e2e-topology-host-setup`: adopts the VM's clone of the topology seed as the Incus pool `topology-seed`, and installs the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). |
+| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. It copies each Node from `node-template`. After a failure it runs once more; the log records the retry. |
 
-For medium and large VMs, the preparation job on `task-vms` transfers the single prebuilt base image before the VM becomes ready. This also supports subtasks added later within that VM's size. The manifest records the VM's recipe. The [harness import contract](/reference/incus-topologies#one-recipe-base-image) defines validation and archive cleanup.
+A medium or large VM [boots with a clone](#incus-provider) of its base image's topology seed. So preparation installs no package, copies no image, and creates no pool. A VM without the clone fails at `host-setup` with `e2e-topology-host-setup: this machine has no topology seed disk; only a task VM of a size that runs a topology boots with one.` The subtask then asks for assistance.
 
-Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
+The base image already put `orbit` in the `incus-admin` group, so agents can run `bin/e2e-topology`. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
-A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the adopted pool stays. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
 
 A VM can also restart on its own. So before each of the turns above in a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
 

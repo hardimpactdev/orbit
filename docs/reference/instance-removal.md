@@ -145,7 +145,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 
 ### Processes inside a task workspace
 
-Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance `task-<group id>` of a task group of the same Project, on the Node linked to that group's live task VM. The name alone does not make a development Instance a task workspace.
+Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance that a task group [owns](/reference/tasks#workspace-ownership), on the Node of that group's live task VM. The name does not make a development Instance a task workspace.
 
 Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
 
@@ -210,7 +210,7 @@ Source finalization checks dirty and unpublished content before moving the tree 
 
 The quarantine is `.orbit-removals` below the Node's apps directory. The move must keep the checkout's recorded device and inode, so it works only within one filesystem. When the checkout is on another filesystem, for example a volume mounted below the apps directory, finalization fails before it stops a process or moves a file. The step's error output, which the `instance:destroy` Activity keeps in `stderr`, then starts with `cross-device:`, and the checkout stays at its path.
 
-Before this check, `mv` copied such a checkout into quarantine and deleted the original, and every retry then failed the identity check. A task VM workspace avoids the move: its removal deletes the VM with its workspace volume. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
+Before this check, `mv` copied such a checkout into quarantine and deleted the original, and every retry then failed the identity check. A task VM workspace avoids the move: its removal deletes the VM, and the checkout with it. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
 After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. If its quarantine directory is already gone, the matching journal, receipt, and recovery record authorize removal of only its recorded Git administration entry. A replaced quarantine or mismatched receipt still stops removal.
 

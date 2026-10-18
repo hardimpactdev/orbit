@@ -110,17 +110,8 @@ final readonly class IssueState
         return TopologyRecipe::fromArray($this->attempt()['recipe']);
     }
 
-    /** Old discovery leases use the same resource names and ownership as current leases. */
     public function releaseTarget(): TopologyTarget
     {
-        $lease = $this->store->read(self::ATTEMPT);
-        if (($lease['purpose'] ?? null) === 'discovery') {
-            unset($lease['purpose']);
-            $lease = $this->validatedAttempt($lease);
-
-            return TopologyTarget::for($this->issue, new AttemptId($lease['attempt_id']), TopologyRecipe::fromArray($lease['recipe']));
-        }
-
         return $this->topology()->target ?? TopologyTarget::for($this->issue, $this->attemptId(), $this->recipe());
     }
 

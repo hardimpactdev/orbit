@@ -14,6 +14,7 @@ use App\Models\NodeAccess;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Database\QueryException;
 
 function invariant_node(string $name, int $octet): Node
 {
@@ -43,23 +44,50 @@ beforeEach(function (): void {
 });
 
 it('places the group workspace on its task VM Node', function (): void {
-    $workspace = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->vmNode->id, 'name' => TaskWorkspaceName::for($this->group)]);
+    $workspace = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->vmNode->id, 'name' => TaskWorkspaceName::for($this->group), 'task_workspace_owner_id' => $this->group->id]);
 
     $workspace->update(['root' => 'web']);
 
     expect($workspace->fresh()?->node_id)->toBe($this->vmNode->id);
 });
 
-it('refuses a foreign Instance on a task VM Node', function (string $project, string $name): void {
-    $projectId = $project === 'group' ? $this->project->id : $this->other->id;
-    $name = $name === 'workspace' ? TaskWorkspaceName::for($this->group) : $name;
+it('keeps the owner that provisioning recorded', function (): void {
+    $other = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Other', 'brief' => 'Other', 'status' => 'todo']);
+    $workspace = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->shared->id, 'name' => TaskWorkspaceName::for($other), 'task_workspace_owner_id' => $other->id]);
+    $user = invariant_instance(['project_id' => $this->other->id, 'node_id' => $this->shared->id, 'name' => 'task-'.$this->group->id, 'branch_override' => 'task-'.$this->group->id, 'checkout_path' => '/home/orbit/user']);
 
-    expect(fn () => invariant_instance(['project_id' => $projectId, 'node_id' => $this->vmNode->id, 'name' => $name]))
+    expect(fn () => $workspace->update(['task_workspace_owner_id' => $this->group->id]))->toThrow(QueryException::class, 'A task workspace owner never changes.');
+    expect(fn () => $user->update(['task_workspace_owner_id' => $this->group->id]))->toThrow(QueryException::class, 'A task workspace owner never changes.');
+    expect($workspace->fresh()?->task_workspace_owner_id)->toBe($other->id)
+        ->and($user->fresh()?->task_workspace_owner_id)->toBeNull();
+
+    $other->delete();
+
+    expect($workspace->fresh()?->task_workspace_owner_id)->toBeNull();
+});
+
+it('lets a group hold only the workspace it owns', function (): void {
+    $user = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->shared->id, 'name' => 'task-'.$this->group->id, 'branch_override' => 'task-'.$this->group->id]);
+    $owned = invariant_instance(['project_id' => $this->project->id, 'node_id' => $this->vmNode->id, 'name' => 'workspace', 'task_workspace_owner_id' => $this->group->id]);
+
+    expect(fn () => $this->group->taskable()->associate($user)->save())->toThrow(LogicException::class, 'A task holds only the workspace it owns.');
+    expect($this->group->fresh()?->taskable_id)->toBeNull();
+
+    $this->group->refresh()->taskable()->associate($owned)->save();
+
+    expect($this->group->fresh()?->taskable_id)->toBe($owned->id);
+});
+
+it('refuses a foreign Instance on a task VM Node', function (string $project, bool $owned): void {
+    $projectId = $project === 'group' ? $this->project->id : $this->other->id;
+    $name = TaskWorkspaceName::for($this->group);
+
+    expect(fn () => invariant_instance(['project_id' => $projectId, 'node_id' => $this->vmNode->id, 'name' => $name, 'branch_override' => $name, 'task_workspace_owner_id' => $owned ? $this->group->id : null]))
         ->toThrow(TaskVmException::class, 'serves only the workspace');
     expect(Instance::query()->where('node_id', $this->vmNode->id)->exists())->toBeFalse();
 })->with([
-    'another Project' => ['other', 'workspace'],
-    'another name' => ['group', 'main'],
+    'another Project' => ['other', true],
+    'named and branched like the workspace without an owner' => ['group', false],
 ]);
 
 it('refuses moving an Instance onto a task VM Node', function (): void {
@@ -94,3 +122,18 @@ it('keeps access edges between other Nodes', function (): void {
     expect($added->alreadyExists)->toBeFalse()
         ->and(NodeAccess::query()->where('consumer_node_id', $this->shared->id)->exists())->toBeTrue();
 });
+
+it('refuses creating a group with an existing Instance attached', function (bool $owned): void {
+    $instance = invariant_instance([
+        'project_id' => $this->project->id, 'node_id' => $this->shared->id, 'name' => 'existing',
+        'task_workspace_owner_id' => $owned ? $this->group->id : null,
+    ]);
+
+    expect(fn () => Task::topLevel()->create([
+        'project_id' => $this->project->id, 'title' => 'Foreign attachment', 'brief' => 'Work', 'status' => 'todo',
+        'taskable_type' => 'instance', 'taskable_id' => $instance->id,
+    ]))->toThrow(LogicException::class, 'A task holds only the workspace it owns.');
+
+    $this->assertDatabaseMissing('tasks', ['title' => 'Foreign attachment']);
+    $this->assertModelExists($instance);
+})->with(['user Instance' => false, 'another group workspace' => true]);

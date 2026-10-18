@@ -178,9 +178,12 @@ final readonly class PiClient
         $code = $response->json('error.code');
         $message = $response->json('error.message');
 
-        throw new AgentDriverException(is_string($code) && is_string($message)
+        $exception = new AgentDriverException(is_string($code) && is_string($message)
             ? 'The Pi server refused the request ('.$code.'): '.$message
             : 'The Pi server failed with HTTP '.$response->status().'.');
+        $exception->turnRejected = $response->clientError() && is_string($code);
+
+        throw $exception;
     }
 
     private function request(Node $node): PendingRequest

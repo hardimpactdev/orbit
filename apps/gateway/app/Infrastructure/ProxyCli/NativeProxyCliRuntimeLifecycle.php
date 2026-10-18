@@ -18,6 +18,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProxyCliProcessSource;
 use RuntimeException;
 use SensitiveParameter;
 
@@ -37,26 +38,26 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         Node $node,
         #[SensitiveParameter]
         array $environment,
-        int $port = ProxyCliProcess::PORT,
     ): void {
         $script = $this->script();
         $revision = hash('sha256', $script);
         $existing = Process::query()->where('owner_type', Node::class)
             ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->first();
-        if ($existing !== null && (($existing->proxycli_source_revision !== null && $existing->proxycli_source_revision !== $revision)
+        $source = $existing === null ? null : ProxyCliProcessSource::query()->firstOrNew(['process_id' => $existing->id]);
+        if ($source !== null && (($source->source_revision !== null && $source->source_revision !== $revision)
             || ! $this->sourceMatches($node, $revision))) {
             // Inspect before publishing: a legacy null revision is not pending intent.
-            $existing->proxycli_source_activation_pending = true;
-            $existing->proxycli_source_revision = null;
-            $existing->save();
+            $source->activation_pending = true;
+            $source->source_revision = null;
+            $source->save();
         }
         $sourceChanged = $this->publishSource($node, $script);
-        if ($sourceChanged && $existing !== null) {
-            $existing->proxycli_source_activation_pending = true;
-            $existing->proxycli_source_revision = null;
-            $existing->save();
+        if ($sourceChanged && $source !== null) {
+            $source->activation_pending = true;
+            $source->source_revision = null;
+            $source->save();
         }
-        $data = ProxyCliProcess::data($node, $environment, $port);
+        $data = ProxyCliProcess::data($node, $environment);
 
         try {
             $result = $this->add->execute($data);
@@ -71,15 +72,17 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
             $process = $this->update->execute($process, $data);
         }
 
+        $source ??= ProxyCliProcessSource::query()->firstOrNew(['process_id' => $process->id]);
+
         // The source file can be current even when its Python process is still old.
-        if ($existing !== null && ($process->proxycli_source_activation_pending
-            || ($process->proxycli_source_revision !== null && $process->proxycli_source_revision !== $revision))
+        if ($existing !== null && ($source->activation_pending
+            || ($source->source_revision !== null && $source->source_revision !== $revision))
             && $process->desired_state === DesiredProcessState::Running) {
             app(RestartProcessAction::class)->execute($process);
         }
-        $process->proxycli_source_revision = $revision;
-        $process->proxycli_source_activation_pending = false;
-        $process->save();
+        $source->source_revision = $revision;
+        $source->activation_pending = false;
+        $source->save();
     }
 
     public function remove(Node $node): void

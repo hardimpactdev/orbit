@@ -55,20 +55,22 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
-use App\Domain\Tasks\TaskTurnFetchNotice;
-use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
@@ -81,6 +83,7 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -107,6 +110,13 @@ beforeEach(function (): void {
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => tick_observed_turn($threadId), 'state' => 'completed']]];
+        }
+    });
 });
 
 function scheduler_app(string $slug): Project
@@ -130,9 +140,10 @@ function scheduler_node(string $name, string $ip): Node
     ]);
 }
 
-function scheduler_instance(Project $project, Node $node, string $name): Instance
+function scheduler_instance(Project $project, Node $node, string $name, ?Task $owner = null): Instance
 {
     return Instance::query()->create([
+        'task_workspace_owner_id' => $owner?->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -142,7 +153,8 @@ function scheduler_instance(Project $project, Node $node, string $name): Instanc
     ]);
 }
 
-function queued_group(Project $project, string $title, ?Instance $instance = null): Task
+/** @param  (Closure(Task): Instance)|null  $workspace  Creates the group's workspace, owned by the group, as provisioning does. */
+function queued_group(Project $project, string $title, ?Closure $workspace = null): Task
 {
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -160,7 +172,8 @@ function queued_group(Project $project, string $title, ?Instance $instance = nul
         'status' => TaskStatus::Todo,
     ]);
 
-    if ($instance instanceof Instance) {
+    if ($workspace instanceof Closure) {
+        $instance = $workspace($group);
         $group->taskable()->associate($instance);
         $group->save();
         test_vm_workspace($group, $instance);
@@ -187,6 +200,13 @@ function scheduler_recording_spawner(): AgentSpawner
         /** @var list<string> */
         public array $events = [];
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -200,7 +220,11 @@ function scheduler_recording_spawner(): AgentSpawner
         {
             $this->events[] = 'implementer:'.$task->position;
 
-            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
+            $thread = test_agent_thread($task->parent, 'implementer-'.$task->position, $task);
+            app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+            app(TaskWorkspaceLease::class)->dispatch($thread);
+
+            return $thread->id;
         }
 
         public function requestReview(Task $task): void
@@ -280,8 +304,8 @@ it('claims another group when three reserved groups already occupy the App', fun
 it('starts a group when provisioning assigns an instance', function (): void {
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
-    $instance = scheduler_instance($project, $node, 'isolated');
     $group = queued_group($project, 'Wire Pi');
+    $instance = scheduler_instance($project, $node, 'isolated', $group);
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -298,6 +322,11 @@ it('starts a group when provisioning assigns an instance', function (): void {
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -329,8 +358,8 @@ it('starts a group when provisioning assigns an instance', function (): void {
 it('fails a group and its first task when the turn command cannot be installed', function (): void {
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
-    $instance = scheduler_instance($project, $node, 'isolated');
     $group = queued_group($project, 'Wire Pi');
+    $instance = scheduler_instance($project, $node, 'isolated', $group);
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
         public function __construct(private Instance $instance) {}
@@ -343,6 +372,13 @@ it('fails a group and its first task when the turn command cannot be installed',
     $spawner = new class implements AgentSpawner
     {
         public int $implementers = 0;
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -373,8 +409,8 @@ it('fails a group and its first task when the turn command cannot be installed',
 
 it('keeps the task in review and counts a communication failure when the reviewer spawn at the first handoff returns no thread id', function (): void {
     $project = scheduler_app('missing-reviewer');
-    $instance = scheduler_instance($project, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace');
     $group = queued_group($project, 'Missing reviewer');
+    $instance = scheduler_instance($project, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace', $group);
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -387,6 +423,11 @@ it('keeps the task in review and counts a communication failure when the reviewe
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return null;
@@ -403,6 +444,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
     $task = $group->tasks()->sole();
+    app(TaskWorkspaceLease::class)->dispatch($task->implementerThread);
     app(TaskScheduler::class)->settleImplementer($task);
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
@@ -415,8 +457,8 @@ it('keeps the task in review and counts a communication failure when the reviewe
 
 it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {
     $project = scheduler_app('missing-implementer');
-    $instance = scheduler_instance($project, scheduler_node('missing-implementer-node', '10.44.0.97'), 'workspace');
     $group = queued_group($project, 'Missing implementer');
+    $instance = scheduler_instance($project, scheduler_node('missing-implementer-node', '10.44.0.97'), 'workspace', $group);
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -429,6 +471,11 @@ it('fails a group and its first task when the implementer spawn returns no threa
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -457,8 +504,8 @@ it('fails a group and its first task when the implementer spawn returns no threa
 
 it('fails the group when a later implementer spawn returns no thread id', function (): void {
     $project = scheduler_app('missing-next-implementer');
-    $instance = scheduler_instance($project, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
-    $group = queued_group($project, 'Missing next implementer', $instance);
+    $group = queued_group($project, 'Missing next implementer', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace', $owner));
+    $instance = $group->taskable;
     Task::query()->create([
         'parent_id' => $group->id,
         'position' => 2,
@@ -478,6 +525,11 @@ it('fails the group when a later implementer spawn returns no thread id', functi
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -508,8 +560,8 @@ it('provisioning failures raise assistance after three exceptions without blocki
     $project = scheduler_app('throwing-provision');
     $group = queued_group($project, 'Fails');
     $node = scheduler_node('good-node', '10.44.0.95');
-    $instance = scheduler_instance($project, $node, 'good');
-    $second = queued_group($project, 'Starts', $instance);
+    $second = queued_group($project, 'Starts', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'good', $owner));
+    $instance = $second->taskable;
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     app()->instance(InstanceProvisioning::class, new class($group->id, $instance) implements InstanceProvisioning
     {
@@ -541,7 +593,7 @@ it('provisioning failures raise assistance only after the configured threshold a
     $project = scheduler_app('reset-provision');
     $group = queued_group($project, 'Reset');
     $node = scheduler_node('reset-node', '10.44.0.96');
-    $instance = scheduler_instance($project, $node, 'reset');
+    $instance = scheduler_instance($project, $node, 'reset', $group);
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     $provisioner = new class($instance) implements InstanceProvisioning
     {
@@ -712,7 +764,7 @@ it('provisioning failures raise assistance that clears on a capacity wait or bac
     $project = scheduler_app('clear-assistance');
     $group = queued_group($project, 'Clear assistance');
     $group->tasks->first()->update(['deliverables' => [['id' => 'recovery', 'type' => 'review', 'description' => 'Verify recovery']]]);
-    $instance = scheduler_instance($project, scheduler_node('clear-node', '10.44.0.98'), 'clear');
+    $instance = scheduler_instance($project, scheduler_node('clear-node', '10.44.0.98'), 'clear', $group);
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     for ($tick = 0; $tick < 3; $tick++) {
         app(TaskScheduler::class)->claimAvailable();
@@ -790,7 +842,7 @@ it('provisioning failures raise assistance safely when cache cleanup returns fal
 it('provisioning failures raise assistance using the original streak after a start transaction rolls back', function (): void {
     $project = scheduler_app('rollback-start');
     $group = queued_group($project, 'Rollback');
-    $instance = scheduler_instance($project, scheduler_node('rollback-node', '10.44.0.99'), 'rollback');
+    $instance = scheduler_instance($project, scheduler_node('rollback-node', '10.44.0.99'), 'rollback', $group);
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     app(TaskScheduler::class)->claimAvailable();
     app(TaskScheduler::class)->claimAvailable();
@@ -811,7 +863,7 @@ it('provisioning failures raise assistance using the original streak after a sta
 it('provisioning failures raise assistance from a new generation after a successful start despite a crash or cleanup failure', function (string $cleanup): void {
     $project = scheduler_app('crash-after-start');
     $group = queued_group($project, 'Crash after start');
-    $instance = scheduler_instance($project, scheduler_node('crash-after-node', '10.44.0.100'), 'crash-after');
+    $instance = scheduler_instance($project, scheduler_node('crash-after-node', '10.44.0.100'), 'crash-after', $group);
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     app(TaskScheduler::class)->claimAvailable();
     app(TaskScheduler::class)->claimAvailable();
@@ -855,8 +907,8 @@ it('provisioning failures raise assistance from a new generation after a success
 it('starts only the first pending subtask when a claimed group has later siblings', function (): void {
     $project = scheduler_app('opening-order-app');
     $node = scheduler_node('opening-order-node', '10.44.0.96');
-    $instance = scheduler_instance($project, $node, 'opening-order');
-    $group = queued_group($project, 'Opening order', $instance);
+    $group = queued_group($project, 'Opening order', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'opening-order', $owner));
+    $instance = $group->taskable;
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -876,8 +928,8 @@ it('starts only the first pending subtask when a claimed group has later sibling
 it('rejects starting a later subtask while a sibling is still running', function (): void {
     $project = scheduler_app('second-running-app');
     $node = scheduler_node('second-running-node', '10.44.0.97');
-    $instance = scheduler_instance($project, $node, 'second-running');
-    $group = queued_group($project, 'Second running', $instance);
+    $group = queued_group($project, 'Second running', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'second-running', $owner));
+    $instance = $group->taskable;
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -905,8 +957,8 @@ it('rejects starting a later subtask while a sibling is still running', function
 it('starts the next pending subtask as the sole running task after review is accepted', function (): void {
     $project = scheduler_app('accept-next-app');
     $node = scheduler_node('accept-next-node', '10.44.0.98');
-    $instance = scheduler_instance($project, $node, 'accept-next');
-    $group = queued_group($project, 'Accept next', $instance);
+    $group = queued_group($project, 'Accept next', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'accept-next', $owner));
+    $instance = $group->taskable;
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -928,8 +980,8 @@ it('starts the next pending subtask as the sole running task after review is acc
 it('starts a reviewer at each subtask handoff and starts the next implementer after approval', function (): void {
     $project = scheduler_app('handoff-app');
     $node = scheduler_node('handoff-node', '10.44.0.93');
-    $instance = scheduler_instance($project, $node, 'handoff');
-    $group = queued_group($project, 'Handoff', $instance);
+    $group = queued_group($project, 'Handoff', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'handoff', $owner));
+    $instance = $group->taskable;
     Task::query()->create([
         'parent_id' => $group->id,
         'position' => 2,
@@ -941,6 +993,13 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
     {
         /** @var list<string> */
         public array $events = [];
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -978,6 +1037,15 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), new NullTaskWorkspaceDiffReader),
     ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'],
+                'latestTurn' => ['id' => $threadId.'-finished', 'state' => 'completed']]];
+        }
+    });
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
@@ -1017,7 +1085,6 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 it('retries a review when the diff cannot be read instead of sending an empty change', function (): void {
     $project = scheduler_app('unread-diff');
     $node = scheduler_node('unread-diff-node', '10.44.0.78');
-    $instance = scheduler_instance($project, $node, 'unread');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1025,6 +1092,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
         'brief' => 'The diff read fails.',
         'status' => TaskGroupStatus::Running,
     ]);
+    $instance = scheduler_instance($project, $node, 'unread', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
@@ -1058,7 +1126,6 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
 it('holds a review resolution when diff reads fail on a reserved reviewer and retries it', function (): void {
     $project = scheduler_app('reserved-review');
     $node = scheduler_node('reserved-review-node', '10.44.0.79');
-    $instance = scheduler_instance($project, $node, 'reserved');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1066,6 +1133,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
         'brief' => 'The diff read fails until the operator answers.',
         'status' => TaskGroupStatus::Running,
     ]);
+    $instance = scheduler_instance($project, $node, 'reserved', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
@@ -1176,9 +1244,8 @@ it('reviews the first subtask with a missing start commit from the workspace sta
         ->and($opening)->toContain('+reviewed');
 });
 
-it('records a missing start commit on a later tick', function (): void {
+it('defers a missing start commit while assistance blocks admission', function (): void {
     $project = scheduler_app('retry-start');
-    $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1188,6 +1255,7 @@ it('records a missing start commit on a later tick', function (): void {
         'assistance_requested' => true,
         'assistance_reason' => 'Waiting.',
     ]);
+    $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
@@ -1217,12 +1285,11 @@ it('records a missing start commit on a later tick', function (): void {
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->subtask_start_commit)->toBe($head);
+    expect($task->fresh()?->subtask_start_commit)->toBeNull();
 });
 
-it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
+it('defers a migrated continuation boundary until admission', function (): void {
     $project = scheduler_app('continuation-start');
-    $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1232,6 +1299,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
         'assistance_requested' => true,
         'assistance_reason' => 'Waiting.',
     ]);
+    $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $start = str_repeat('a', 40);
@@ -1271,12 +1339,12 @@ it('keeps a migrated continuation on its source subtask start after the source c
 
     app(TaskScheduler::class)->tick();
 
-    expect($continuation->fresh()?->subtask_start_commit)->toBe($start);
+    expect($continuation->fresh()?->subtask_start_commit)->toBeNull()
+        ->and($source->fresh()?->subtask_start_commit)->toBe($start);
 });
 
 it('does not record a later head after the implementer starts and commits', function (): void {
     $project = scheduler_app('late-start');
-    $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1286,6 +1354,7 @@ it('does not record a later head after the implementer starts and commits', func
         'assistance_requested' => true,
         'assistance_reason' => 'Waiting.',
     ]);
+    $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
@@ -1328,9 +1397,8 @@ it('does not record a later head after the implementer starts and commits', func
     expect($task->fresh()?->subtask_start_commit)->toBeNull();
 });
 
-it('records a start commit on a later tick while the implementer is only reserved', function (): void {
+it('does not sample the workspace for a reserved implementer while assistance blocks admission', function (): void {
     $project = scheduler_app('reserved-start');
-    $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1340,6 +1408,7 @@ it('records a start commit on a later tick while the implementer is only reserve
         'assistance_requested' => true,
         'assistance_reason' => 'Waiting.',
     ]);
+    $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
@@ -1377,7 +1446,8 @@ it('records a start commit on a later tick while the implementer is only reserve
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->subtask_start_commit)->toBe($later);
+    expect($task->fresh()?->subtask_start_commit)->toBeNull()
+        ->and($reads)->toBe(0);
 });
 
 it('records a review-request failure and still reviews the other group', function (): void {
@@ -1389,6 +1459,13 @@ it('records a review-request failure and still reviews the other group', functio
     app()->instance(AgentSpawner::class, new class($first->id, $raw) implements AgentSpawner
     {
         public function __construct(private int $taskId, private string $raw) {}
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -1456,6 +1533,13 @@ it('does not replace an open direction request when a review request keeps faili
     {
         public function __construct(private int $taskId) {}
 
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             if ($task->id === $this->taskId) {
@@ -1493,8 +1577,6 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     static $octet = 80;
     $octet++;
     $project = scheduler_app('missing-start-'.$octet);
-    $instance = scheduler_instance($project, scheduler_node($project->slug.'-node', '10.44.3.'.$octet), 'missing');
-    $instance->update(['starting_commit' => $startingCommit]);
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1502,6 +1584,8 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
         'brief' => 'Review without a recorded start.',
         'status' => TaskGroupStatus::Running,
     ]);
+    $instance = scheduler_instance($project, scheduler_node($project->slug.'-node', '10.44.3.'.$octet), 'missing', owner: $group);
+    $instance->update(['starting_commit' => $startingCommit]);
     $group->taskable()->associate($instance);
     $group->save();
     if ($approvedCommit !== null) {
@@ -1561,7 +1645,6 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $project = scheduler_app('fresh-reviewer');
     $project->update(['task_check' => 'composer check']);
     $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
-    $instance = scheduler_instance($project, $node, 'fresh');
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
@@ -1569,6 +1652,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'brief' => 'Each subtask gets its own reviewer.',
         'status' => TaskGroupStatus::Running,
     ]);
+    $instance = scheduler_instance($project, $node, 'fresh', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
     $approved = Task::query()->create([
@@ -1680,6 +1764,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     expect($driver->calls)->toHaveCount(1)
         ->and($first->fresh()?->review_notified_attempt)->not->toBe($first->fresh()?->review_attempt);
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-1');
     $first->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh());
@@ -1696,6 +1781,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
         ->and(mb_strlen($continued))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-2');
     $driver->failNextSend = true;
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
@@ -1710,6 +1796,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-3');
     $second->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     TaskCheck::query()->create([
@@ -1746,8 +1833,8 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     $this->freezeTime();
     $project = scheduler_app('settle-app');
     $node = scheduler_node('settle-node', '10.44.0.95');
-    $instance = scheduler_instance($project, $node, 'settle');
-    $group = queued_group($project, 'Settle', $instance);
+    $group = queued_group($project, 'Settle', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'settle', $owner));
+    $instance = $group->taskable;
     $group->notify_coder = true;
     $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
     $group->save();
@@ -1785,6 +1872,11 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $group = $task->parent;
@@ -1803,6 +1895,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     app()->instance(CoderSettleNotifier::class, $notifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
     $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
     $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
@@ -1821,8 +1914,8 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
     $project = scheduler_app('baseline-app');
     $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
-    $group = queued_group($project, 'Baseline', $instance);
+    $group = queued_group($project, 'Baseline', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('baseline-node', '10.44.0.94'), 'baseline', $owner));
+    $instance = $group->taskable;
     ProjectLifecycleStep::query()->create(['project_id' => $project->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -1847,19 +1940,29 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 
 it('releases the baseline claim and retries after a VP_HOME probe failure', function (): void {
     $project = scheduler_app('vp-probe-retry');
-    $instance = scheduler_instance($project, scheduler_node('vp-probe-node', '10.44.0.100'), 'vp-probe');
-    $group = queued_group($project, 'VP_HOME probe retry', $instance);
+    $group = queued_group($project, 'VP_HOME probe retry', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('vp-probe-node', '10.44.0.100'), 'vp-probe', $owner));
+    $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $probe = new AppDevFakeSshExecutor([
         new CommandResult(42, '', '', 1, false),
         new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false),
     ]);
-    $transport = new AppDevFakeSshExecutor([
-        new CommandResult(0, json_encode([
-            'pid' => 4100, 'started' => 'started', 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
-        ], JSON_THROW_ON_ERROR), '', 1, false),
-    ]);
+    $transport = new class implements SshExecutor
+    {
+        public int $starts = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            if (str_contains($command->input ?? '', ' start "$checkout"')) {
+                $this->starts++;
+            }
+
+            return new CommandResult(0, json_encode([
+                'pid' => 4100, 'started' => 'started', 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
+            ], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
     app()->instance(TaskCheckRunner::class, new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(
         new DevelopmentSshExecutor(
             $transport,
@@ -1874,7 +1977,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     app(TaskScheduler::class)->claimNext();
 
     expect(TaskCheck::query()->count())->toBe(0);
-    expect($transport->commands)->toBeEmpty();
+    expect($transport->starts)->toBe(0);
     expect($group->tasks()->firstOrFail()->communication_failures)->toBe(1);
     expect($group->fresh()?->assistance_requested)->toBeFalse();
     expect($spawner->events)->toBe([]);
@@ -1882,7 +1985,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     test_pass_baseline();
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
-    expect($transport->commands)->toHaveCount(1);
+    expect($transport->starts)->toBe(1);
     expect($probe->commands)->toHaveCount(2);
     expect($group->tasks()->firstOrFail()->communication_failures)->toBe(0);
     expect($group->fresh()?->assistance_requested)->toBeFalse();
@@ -1891,8 +1994,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
 it('runs a custom baseline command without inferring dependency installs', function (): void {
     $project = scheduler_app('custom-baseline-command');
     $project->update(['task_check' => 'composer test && bun run check']);
-    $instance = scheduler_instance($project, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
-    queued_group($project, 'Custom baseline command', $instance);
+    $instance = queued_group($project, 'Custom baseline command', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check', $owner))->taskable;
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     app()->instance(TaskCheckRunner::class, $checks);
@@ -1907,8 +2009,7 @@ it('runs a custom baseline command without inferring dependency installs', funct
 it('does not infer a Composer install from the baseline command', function (string $command): void {
     $project = scheduler_app('composer-trigger');
     $project->update(['task_check' => $command]);
-    $instance = scheduler_instance($project, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
-    queued_group($project, 'Composer trigger', $instance);
+    $instance = queued_group($project, 'Composer trigger', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger', $owner))->taskable;
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     app()->instance(TaskCheckRunner::class, $checks);
@@ -1928,8 +2029,8 @@ it('does not infer a Composer install from the baseline command', function (stri
 
 it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
     $project = scheduler_app('no-baseline-command');
-    $instance = scheduler_instance($project, scheduler_node('no-baseline-command-node', '10.44.0.97'), 'no-check');
-    $group = queued_group($project, 'No baseline command', $instance);
+    $group = queued_group($project, 'No baseline command', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('no-baseline-command-node', '10.44.0.97'), 'no-check', $owner));
+    $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
@@ -1947,8 +2048,8 @@ it('passes an unset Project baseline without a command and starts the first impl
 it('asks for assistance, and starts no agent, when the fresh workspace fails its check', function (?string $failedStep, string $reason): void {
     $project = scheduler_app('broken-main');
     $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('broken-node', '10.44.0.95'), 'broken');
-    $group = queued_group($project, 'Broken main', $instance);
+    $group = queued_group($project, 'Broken main', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('broken-node', '10.44.0.95'), 'broken', $owner));
+    $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
@@ -1975,8 +2076,8 @@ it('asks for assistance, and starts no agent, when the fresh workspace fails its
 function scheduler_approved_subtask(string $slug, bool $last = false, ?string $receipt = null): array
 {
     $project = scheduler_app($slug);
-    $instance = scheduler_instance($project, scheduler_node($slug.'-node', '10.44.0.'.$project->id), $slug);
-    $group = queued_group($project, 'Push', $instance);
+    $group = queued_group($project, 'Push', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node($slug.'-node', '10.44.0.'.$project->id), $slug, $owner));
+    $instance = $group->taskable;
     $task = $group->tasks->first();
     if (! $task instanceof Task) {
         throw new RuntimeException('The group has no subtask.');
@@ -2405,10 +2506,15 @@ it('asks for assistance at settle when the pull request merged before the fixup 
 
 it('prepares a fixup review without pull request fields', function (): void {
     $project = scheduler_app('fixup-review');
-    $instance = scheduler_instance($project, scheduler_node('fixup-review-node', '10.44.3.41'), 'workspace');
-    $group = queued_group($project, 'Fixup review', $instance);
+    $group = queued_group($project, 'Fixup review', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('fixup-review-node', '10.44.3.41'), 'workspace', $owner));
+    $instance = $group->taskable;
     scheduler_bind_claim($instance, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             return test_agent_thread($task->parent, 'reviewer-thread')->id;
@@ -2522,8 +2628,8 @@ it('pushes the stored commit rather than HEAD', function (): void {
 
 it('does not run a baseline for a group whose implementers already started', function (): void {
     $project = scheduler_app('started-app');
-    $instance = scheduler_instance($project, scheduler_node('started-node', '10.44.0.96'), 'started');
-    $group = queued_group($project, 'Started', $instance);
+    $group = queued_group($project, 'Started', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('started-node', '10.44.0.96'), 'started', $owner));
+    $instance = $group->taskable;
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -2551,8 +2657,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
     $octet++;
     $project = scheduler_app('review-ws-'.$octet);
     $node = scheduler_node('review-ws-node-'.$octet, '10.44.2.'.$octet);
-    $instance = scheduler_instance($project, $node, 'workspace');
-    $group = queued_group($project, 'Review workspace', $instance);
+    $group = queued_group($project, 'Review workspace', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'workspace', $owner));
+    $instance = $group->taskable;
     scheduler_pending_task($group, 2, 'Second');
     $task = $group->tasks()->orderBy('position')->firstOrFail();
     $group->update([
@@ -2567,6 +2673,14 @@ function scheduler_review(array $receipts, bool $notified = true): array
         'review_workspace_head' => $notified ? str_repeat('a', 40) : null,
         'review_workspace_tree' => $notified ? str_repeat('b', 40) : null,
     ]);
+    if ($notified) {
+        $baseline = TaskWorkspaceLeaseRecord::query()->create([
+            'instance_id' => $instance->id, 'group_id' => $group->id, 'task_id' => $task->id,
+            'kind' => 'reviewer', 'owner' => 'baseline:'.$task->id, 'status' => 'released',
+            'acquisition_sequence' => 1, 'released_at' => now(),
+        ]);
+        $task->update(['review_workspace_lease_id' => $baseline->id]);
+    }
     app(TaskExtensionState::class)->enable();
     app()->instance(TaskWorkspaceStateReader::class, new class($group->id) implements TaskWorkspaceStateReader
     {
@@ -2584,9 +2698,17 @@ function scheduler_review(array $receipts, bool $notified = true): array
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
+        public function reserveReviewer(Task $task): ?int
+        {
+            return null;
+        }
+
         public function spawnReviewer(Task $task): ?int
         {
             $this->reviewBases[] = TaskReviewBase::reviewBase($task);
+
+            $snapshot = app(TaskCheckRunner::class)->snapshot($task->parent->taskable);
+            $task->update(['review_workspace_head' => $snapshot->head, 'review_workspace_tree' => $snapshot->tree]);
 
             return test_agent_thread($task->parent, 'spawned-reviewer')->id;
         }
@@ -2602,6 +2724,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
         public function requestReview(Task $task): void
         {
             $this->reviewBases[] = TaskReviewBase::reviewBase($task);
+            $snapshot = app(TaskCheckRunner::class)->snapshot($task->parent->taskable);
+            $task->update(['review_workspace_head' => $snapshot->head, 'review_workspace_tree' => $snapshot->tree]);
         }
     });
     $receipts = new FakeTaskTurnReceipts($receipts);
@@ -2701,7 +2825,7 @@ it('waits for a workspace check before taking the review baseline', function (Ta
         ->and($task->fresh()?->assistance_requested)->toBeFalse();
 })->with(TaskCheckKind::cases());
 
-it('does not blame a reviewer for untracked files from an overlapping legacy check', function (): void {
+it('does not infer mutation provenance from an overlapping legacy check', function (): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
@@ -2724,10 +2848,10 @@ it('does not blame a reviewer for untracked files from an overlapping legacy che
     app(TaskScheduler::class)->tick();
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Changed)
-        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($changedTree)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($signer->messages)->toBe([])
         ->and($dispatcher->commands)->toBe([]);
 });
@@ -2760,7 +2884,7 @@ it('queues a reviewer resolution behind a running workspace check', function (As
         ->and($task->fresh()?->assistance_requested)->toBeFalse();
 })->with([AssistanceKind::Failure, AssistanceKind::Direction]);
 
-it('recovers old workspace-change assistance when a finished check records the current tree', function (): void {
+it('keeps assistance when a legacy check only observed the changed tree', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
     $task->update($failure);
@@ -2775,15 +2899,15 @@ it('recovers old workspace-change assistance when a finished check records the c
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($signer->messages)->toBe([])
         ->and($dispatcher->commands)->toBe([]);
 });
 
-it('reconciles remote finished checks before recovering assistance with an exhausted review attempt', function (int $attempt, string $head, string $tree): void {
+it('reconciles remote finished checks under the lease while preserving assistance with an exhausted review attempt', function (int $attempt, string $head, string $tree): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
     $this->travelTo('2026-10-16 07:44:32');
     $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
@@ -2808,6 +2932,9 @@ it('reconciles remote finished checks before recovering assistance with an exhau
         ]);
     }
 
+    // Even attributed mutations cannot resolve an existing assistance request.
+    scheduler_record_merge_lease($group, $checks);
+
     app(TaskScheduler::class)->tick();
 
     foreach ($rows as $row) {
@@ -2818,13 +2945,13 @@ it('reconciles remote finished checks before recovering assistance with an exhau
             ->and($row->fresh()?->changed_paths)->toBe([])
             ->and($row->fresh()?->finished_at?->getTimestamp())->toBe($finishedAt);
     }
-    expect($task->fresh()?->review_attempt)->toBe($attempt + 1)
-        ->and($task->fresh()?->review_notified_attempt)->toBe($attempt + 1)
-        ->and($task->fresh()?->review_workspace_head)->toBe($head)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($tree)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)])
+    expect($task->fresh()?->review_attempt)->toBe($attempt)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($attempt)
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
         ->and($checks->starts)->toBe(0)
         ->and($checks->cancels)->toBe(0)
         ->and($signer->messages)->toBe([])
@@ -2832,8 +2959,8 @@ it('reconciles remote finished checks before recovering assistance with an exhau
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->review_attempt)->toBe($attempt + 1)
-        ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)]);
+    expect($task->fresh()?->review_attempt)->toBe($attempt)
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([]);
 })->with([
     'group 1632 attempt 5 of 5' => [5, str_pad('472a292a', 40, '0'), str_pad('fc0270cc', 40, '0')],
     'group 1692 attempt 4 of 4' => [4, str_pad('784b3522', 40, '0'), str_pad('88597428', 40, '0')],
@@ -2886,7 +3013,7 @@ it('keeps stale review assistance when the remote check result cannot be read', 
         ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
         ->and($task->fresh()?->communication_failures)->toBe(1)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toContain('The check result could not be read.')
+        ->and($task->fresh()?->assistance_reason)->toBe($failure['assistance_reason'])
         ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
         ->and($signer->messages)->toBe([])
@@ -2947,48 +3074,47 @@ it('approves a review when the workspace is unchanged since the review request',
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('refuses a review when the working tree differs and asks for assistance after a second turn with the mismatch', function (): void {
+it('asks for assistance immediately for an unattributed HEAD or tree change and never asks the reviewer to restore it', function (string $change): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
-    $checks->tree = str_repeat('c', 40);
-    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id);
-
+    $checks->tree = $change === 'same_tree_commit' ? str_repeat('b', 40) : str_repeat('c', 40);
+    if ($change !== 'edit') {
+        $checks->head = str_repeat('d', 40);
+        $checks->commitTree = $checks->tree;
+        $checks->parent = str_repeat('a', 40);
+    }
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->fresh()?->review_handled_comment_id)->toBeNull()
-        ->and($task->fresh()?->review_notified_turn_id)->toBe('review-turn')
-        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe(TaskScheduler::WorkspaceChangedReminder)
+        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".$reminder);
-
-    app(TaskScheduler::class)->tick();
+        ->and($task->fresh()->review_attempt)->toBe($task->review_attempt)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
     $checks->tree = str_repeat('b', 40);
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->fresh()?->review_handled_comment_id)->toBeNull()
-        ->and($dispatcher->commands)->toHaveCount(1);
-
-    $checks->tree = str_repeat('c', 40);
     $reader->turnId = 'review-turn-2';
     app(TaskScheduler::class)->tick();
-
-    expect($signer->messages)->toBe([])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder)
-        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
-        ->and($dispatcher->commands)->toHaveCount(1);
-});
+        ->and($task->fresh()->review_attempt)->toBe($task->review_attempt)
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+})->with(['working tree edit' => 'edit', 'reviewer commit' => 'commit', 'reviewer commits reviewed tree' => 'same_tree_commit']);
+
+function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks): void
+{
+    TaskWorkspaceLeaseRecord::query()->create([
+        'instance_id' => $group->taskable_id, 'group_id' => $group->id,
+        'kind' => 'main_merge', 'owner' => 'main-merge:'.$group->id, 'status' => 'released', 'orbit_mutation' => true,
+        'acquisition_sequence' => 2,
+        'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'acquired_at' => now()->subMinute(), 'released_at' => now(),
+    ]);
+}
 
 it('re-requests a review on an Orbit main merge with a fresh baseline and delta scope', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
@@ -3006,6 +3132,8 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
     ]);
 
+    scheduler_record_merge_lease($group, $checks);
+
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
@@ -3014,7 +3142,7 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and(app(AgentSpawner::class)->reviewBases)->toBe([str_repeat('b', 40)])
-        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->sole()->properties['cause'])->toBe('orbit_main_merge')
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->sole()->properties['cause'])->toBe('orbit_workspace_lease')
         ->and($dispatcher->commands)->toBe([])
         ->and($signer->messages)->toBe([]);
 
@@ -3025,7 +3153,7 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         ->and($signer->messages)->toBe([$task->title."\n\nReviewed the merge delta."]);
 });
 
-it('recovers an assistance-blocked stale final review on the next tick only from an Orbit merge record', function (string $reason, bool $recorded, bool $agentEdit, bool $recovers, ?string $groupReason = null, bool $failedSnapshots = false): void {
+it('preserves existing review assistance regardless of its text and historical merge evidence', function (string $reason, bool $recorded, bool $agentEdit, ?string $groupReason = null, bool $failedSnapshots = false): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $task->update(['type' => TaskType::FinalReview]);
     $group->tasks()->where('id', '!=', $task->id)->delete();
@@ -3052,6 +3180,9 @@ it('recovers an assistance-blocked stale final review on the next tick only from
             'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
         ]);
     }
+    if ($recorded) {
+        scheduler_record_merge_lease($group, $checks);
+    }
     if ($agentEdit) {
         $checks->tree = str_repeat('f', 40);
     }
@@ -3060,12 +3191,11 @@ it('recovers an assistance-blocked stale final review on the next tick only from
         for ($attempt = 1; $attempt <= 5; $attempt++) {
             app(TaskScheduler::class)->tick();
 
-            $inspectionFailure = 'Orbit could not inspect the workspace while recovering a stale review after a main merge: The workspace tree could not be read.';
             expect($task->fresh()?->assistance_requested)->toBeTrue()
                 ->and($group->fresh()?->assistance_requested)->toBeTrue()
-                ->and($task->fresh()?->assistance_reason)->toBe($groupReason === null ? $inspectionFailure : $reason)
-                ->and($group->fresh()?->assistance_reason)->toBe($groupReason ?? $inspectionFailure)
-                ->and($task->fresh()?->communication_failures)->toBe($groupReason === null ? $attempt : 0)
+                ->and($task->fresh()?->assistance_reason)->toBe($reason)
+                ->and($group->fresh()?->assistance_reason)->toBe($groupReason ?? $reason)
+                ->and($task->fresh()?->communication_failures)->toBe(0)
                 ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
                 ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
                 ->and($dispatcher->commands)->toBe([]);
@@ -3075,13 +3205,13 @@ it('recovers an assistance-blocked stale final review on the next tick only from
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->assistance_requested)->toBe(! $recovers)
-        ->and($group->fresh()?->assistance_requested)->toBe(! $recovers)
-        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + ($recovers ? 1 : 0))
-        ->and($task->fresh()?->review_workspace_head)->toBe($recovers ? $checks->head : str_repeat('a', 40))
-        ->and($task->fresh()?->review_workspace_tree)->toBe($recovers ? $checks->tree : str_repeat('b', 40))
-        ->and(app(AgentSpawner::class)->reviewBases)->toBe($recovers ? [str_repeat('b', 40)] : [])
-        ->and($task->fresh()?->review_reminder_attempt)->toBe($recovers ? null : $task->review_attempt)
+    expect($task->fresh()?->assistance_requested)->toBe(true)
+        ->and($group->fresh()?->assistance_requested)->toBe(true)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+        ->and($task->fresh()?->review_reminder_attempt)->toBe($task->review_attempt)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($signer->messages)->toBe([])
         ->and($dispatcher->commands)->toBe([]);
@@ -3090,20 +3220,20 @@ it('recovers an assistance-blocked stale final review on the next tick only from
             ->and($group->fresh()?->assistance_reason)->toBe($groupReason);
     }
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + ($recovers ? 1 : 0))
-        ->and(app(AgentSpawner::class)->reviewBases)->toBe($recovers ? [str_repeat('b', 40)] : []);
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([]);
 })->with([
-    'live legacy failure' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false, true],
-    'legacy failed inspections then restored workspace' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false, true, null, true],
-    'unrelated group direction with failed snapshots' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, false, 'Choose an environment.', true],
-    'current failure' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, true],
-    'no Orbit merge record' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, false, false, false],
-    'agent edited after merge' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, true, false],
-    'unrelated failure' => ['Project check failed.', true, false, false],
-    'unrelated group direction' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, false, 'Choose an environment.'],
+    'live legacy failure' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false],
+    'legacy failed inspections then restored workspace' => ['Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.', true, false, null, true],
+    'unrelated group direction with failed snapshots' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, 'Choose an environment.', true],
+    'current failure' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false],
+    'no Orbit merge record' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, false, false],
+    'agent edited after merge' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, true],
+    'unrelated failure' => ['Project check failed.', true, false],
+    'unrelated group direction' => ['Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder, true, false, 'Choose an environment.'],
 ]);
 
-it('applies the kept approval once the reviewer restores the workspace', function (): void {
+it('retains assistance after an unowned edit even if the tree is restored', function (): void {
     [, $task, , $signer, $checks, , $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
@@ -3115,14 +3245,14 @@ it('applies the kept approval once the reviewer restores the workspace', functio
 
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+        ->and($task->fresh()?->assistance_requested)->toBeTrue();
 
     $reader->turnId = 'review-turn-2';
     app(TaskScheduler::class)->tick();
 
-    expect($signer->messages)->toBe([$task->title."\n\nChecked the models."])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($signer->messages)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue();
 });
 
 it('counts an unreadable review workspace as a communication failure and does not treat it as a reviewer change', function (): void {
@@ -3158,9 +3288,7 @@ it('does not relay findings or accept a blocked question when the working tree d
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder)
-        ->and($dispatcher->commands[0]['message']['text'])->not->toContain('Distinct findings')
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe($outcome);
 })->with([
     'changes requested' => ['changes_requested', null, 'tree'],
@@ -3170,7 +3298,6 @@ it('does not relay findings or accept a blocked question when the working tree d
 it('treats a newer implementer turn during review as a new handoff without reminding the reviewer', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'Operator follow-up.'),
     ]);
     $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
@@ -3185,7 +3312,7 @@ it('treats a newer implementer turn during review as a new handoff without remin
         ->and($dispatcher->commands)->toBe([])
         ->and($signer->messages)->toBe([])
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->comments()->sole()->commit_sha)->toBeNull();
+        ->and($task->comments()->count())->toBe(0);
 
     $reader->implementerState = 'completed';
     app(TaskScheduler::class)->tick();
@@ -3247,8 +3374,7 @@ it('still reminds the reviewer when the implementer turn is the handoff turn', f
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($signer->messages)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+        ->and($dispatcher->commands)->toBe([]);
 });
 
 it('accepts a lost commit response as the stored commit without a reminder or a second commit', function (): void {
@@ -3259,6 +3385,14 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
     $checks->head = $stored;
     $checks->parent = str_repeat('a', 40);
     $checks->commitTree = str_repeat('b', 40);
+    TaskWorkspaceLeaseRecord::query()->create([
+        'instance_id' => $group->taskable_id, 'group_id' => $group->id, 'task_id' => $task->id,
+        'kind' => 'verdict', 'owner' => 'review-outcome:'.$task->id, 'status' => 'released', 'orbit_mutation' => true,
+        'acquisition_sequence' => 2,
+        'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'acquired_at' => now()->subMinute(), 'released_at' => now(),
+    ]);
     $signer = new class implements TaskWorkspaceSigner
     {
         public int $calls = 0;
@@ -3330,12 +3464,16 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         public function commit(Instance $instance, string $message): ?string
         {
             $this->calls++;
+            $leases = app(TaskWorkspaceLease::class);
+            $lease = $leases->remoteStarted($instance, changesCheckout: true);
             $checks = app(TaskCheckRunner::class);
             if ($checks instanceof FakeTaskCheckRunner) {
                 $checks->head = $this->sha;
                 $checks->parent = str_repeat('a', 40);
                 $checks->commitTree = str_repeat('b', 40);
             }
+
+            $leases->remoteFinished($lease);
 
             return null;
         }
@@ -3362,22 +3500,24 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
     expect($signer->calls)->toBe(1)
         ->and($dispatcher->commands)->toBe([])
-        ->and($task->comments()->sole()->commit_sha)->toBe($stored)
-        ->and($publisher->commits)->toBe([$stored])
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->comments()->sole()->commit_sha)->toBeNull()
+        ->and($publisher->commits)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->assistance_requested)->toBeFalse();
 
+    $this->travel(TaskScheduler::retryDelaySeconds(1))->seconds();
     app(TaskScheduler::class)->tick();
 
-    expect($signer->calls)->toBe(1)
+    expect($task->comments()->sole()->commit_sha)->toBe($stored)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($signer->calls)->toBe(1)
         ->and($publisher->commits)->toBe([$stored])
         ->and($task->comments()->count())->toBe(1);
 });
 
-it('restarts on an unexpected head with the previous review tree as delta scope and no assistance', function (string $outcome, ?string $question): void {
+it('asks for assistance for an unexplained head change without accepting the old receipt', function (string $outcome, ?string $question): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents($outcome, 'The old head was reviewed.', $question),
-        FakeTaskTurnReceipts::contents('approved', 'The new head was reviewed.'),
     ]);
     $checks->head = str_repeat('d', 40);
     $checks->parent = str_repeat('a', 40);
@@ -3388,27 +3528,25 @@ it('restarts on an unexpected head with the previous review tree as delta scope 
     expect($signer->messages)->toBe([])
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt + 1)
-        ->and($task->fresh()?->review_workspace_head)->toBe($checks->head)
-        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
-        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($dispatcher->commands)->toBe([]);
-    expect(app(AgentSpawner::class))->reviewBases->toBe([str_repeat('b', 40)]);
+    expect(app(AgentSpawner::class))->reviewBases->toBe([]);
 
-    // Polling the old turn must not apply its receipt or request the review again.
     app(TaskScheduler::class)->tick();
-    expect($task->comments()->count())->toBe(1);
-    expect(app(AgentSpawner::class))->reviewBases->toHaveCount(1);
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($dispatcher->commands)->toBe([]);
 
-    $reader->turnId = 'new-head-review';
+    $reader->turnId = 'unexplained-head-followup';
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($signer->messages)->toBe([$task->title."\n\nThe new head was reviewed."]);
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
+        ->and($signer->messages)->toBe([]);
 })->with([
     'approved' => ['approved', null],
     'changes requested' => ['changes_requested', null],
@@ -3418,8 +3556,8 @@ it('restarts on an unexpected head with the previous review tree as delta scope 
 it('runs the baseline before it prepares the topology, and starts the implementer only once the topology is ready', function (): void {
     $project = scheduler_app('topology-baseline');
     $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('topology-baseline-node', '10.44.0.94'), 'baseline');
-    $group = queued_group($project, 'Topology baseline', $instance);
+    $group = queued_group($project, 'Topology baseline', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('topology-baseline-node', '10.44.0.94'), 'baseline', $owner));
+    $instance = $group->taskable;
     $group->tasks()->sole()->update(['deliverables' => [
         ['id' => 'tasks-doc', 'type' => 'file', 'path' => 'docs/reference/tasks.md', 'change' => 'modified', 'description' => 'The tasks reference.'],
     ]]);
@@ -3488,8 +3626,8 @@ it('runs the baseline before it prepares the topology, and starts the implemente
 it('asks for assistance when the declared topology fails to prepare after the baseline, and starts no implementer', function (): void {
     $project = scheduler_app('topology-failed');
     $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('topology-failed-node', '10.44.0.96'), 'baseline');
-    $group = queued_group($project, 'Topology failure', $instance);
+    $group = queued_group($project, 'Topology failure', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('topology-failed-node', '10.44.0.96'), 'baseline', $owner));
+    $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
@@ -3537,8 +3675,8 @@ function scheduler_two_waiting_groups(string $slug, Closure $prepare): array
 {
     $project = scheduler_app($slug);
     $project->update(['task_check' => 'composer check']);
-    $first = queued_group($project, 'First', scheduler_instance($project, scheduler_node($slug.'-first', '10.44.0.99'), 'first'));
-    $second = queued_group($project, 'Second', scheduler_instance($project, scheduler_node($slug.'-second', '10.44.0.100'), 'second'));
+    $first = queued_group($project, 'First', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node($slug.'-first', '10.44.0.99'), 'first', $owner));
+    $second = queued_group($project, 'Second', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node($slug.'-second', '10.44.0.100'), 'second', $owner));
     app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
     {
         public function provision(InstanceProvisionIntent $intent): ?Instance
@@ -3671,8 +3809,8 @@ function topology_evidence_entry(CarbonInterface $start, string $label, string $
 it('polls a running baseline without preparing the topology, and prepares it once the baseline passes', function (): void {
     $project = scheduler_app('topology-running-baseline');
     $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('topology-running-node', '10.44.0.95'), 'baseline');
-    $group = queued_group($project, 'Running topology baseline', $instance);
+    $group = queued_group($project, 'Running topology baseline', static fn (Task $owner): Instance => scheduler_instance($project, scheduler_node('topology-running-node', '10.44.0.95'), 'baseline', $owner));
+    $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);

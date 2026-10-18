@@ -41,7 +41,22 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         private RepositoryPullRequestAccess $github,
     ) {}
 
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
+    {
+        $dispatched = false;
+        try {
+            return $this->startPrepared($instance, $command, $setup, $deliverables, $dispatched, $runId);
+        } catch (TaskCheckException $exception) {
+            $exception->startNotDispatched = ! $dispatched;
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool, base_merge?: bool}|null  $deliverables
+     */
+    private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched, ?string $runId): TaskCheckProcess
     {
         $instance->refresh();
         $script = file_get_contents(resource_path('tasks/check'));
@@ -81,7 +96,9 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 }
             }
         }
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true, composerAuth: $auth);
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command" '.escapeshellarg($runId ?? ''), withVpHome: true, allocateTemporary: true, composerAuth: $auth, beforeDispatch: static function () use (&$dispatched): void {
+            $dispatched = true;
+        });
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -90,17 +107,41 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check did not start.');
         }
 
-        return new TaskCheckProcess($pid, $started, $head, $tree);
+        return new TaskCheckProcess($pid, $started, $head, $tree, $runId);
+    }
+
+    public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+    {
+        $script = file_get_contents(resource_path('tasks/check'));
+        if (! is_string($script)) {
+            throw new TaskCheckException('The check script is unavailable.');
+        }
+        $data = $this->run($instance, [$runId], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" recover-start "$2"');
+        if (($data['run_id'] ?? null) !== $runId) {
+            throw new TaskCheckException('The check start identity does not match.');
+        }
+        if (($data['state'] ?? null) === 'not_started') {
+            return null;
+        }
+        if (! in_array($data['state'] ?? null, ['started', 'finished'], true) || ! is_int($data['pid'] ?? null) || $data['pid'] < 1
+            || ! is_string($data['started'] ?? null) || $data['started'] === ''
+            || ! is_string($data['head'] ?? null) || ! is_string($data['tree'] ?? null)) {
+            throw new TaskCheckException('The check start is not authoritatively known.');
+        }
+
+        return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree'], $runId);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $data = $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" status "$2" "$3"');
+        $data = $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" status "$2" "$3" "$4" "$checkout"');
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
 
         return match ($data['state'] ?? null) {
             'running' => TaskCheckReading::running(),
             'lost' => TaskCheckReading::lost($output),
+            'interrupted' => TaskCheckReading::interrupted($output),
             'finished' => $this->finished($data['result'] ?? null, $output),
             default => throw new TaskCheckException('The check state could not be read.'),
         };
@@ -108,7 +149,17 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function cancel(Instance $instance, TaskCheckProcess $process): void
     {
-        $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" cancel "$2" "$3"');
+        $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" cancel "$2" "$3" "$4"');
+    }
+
+    private function statusProtocol(): string
+    {
+        $script = file_get_contents(resource_path('tasks/check'));
+        if (! is_string($script)) {
+            throw new TaskCheckException('The check script is unavailable.');
+        }
+
+        return TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]);
     }
 
     public function snapshot(Instance $instance): TaskWorkspaceSnapshot
@@ -126,12 +177,16 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
         $parent = $data['parent'] ?? null;
         $commitTree = $data['commit_tree'] ?? null;
+        $parentTree = $data['parent_tree'] ?? null;
+        $secondParent = $data['second_parent'] ?? null;
 
         return new TaskWorkspaceSnapshot(
             $head,
             $tree,
             is_string($parent) && $parent !== '' ? $parent : null,
             is_string($commitTree) && $commitTree !== '' ? $commitTree : null,
+            is_string($parentTree) && $parentTree !== '' ? $parentTree : null,
+            is_string($secondParent) && $secondParent !== '' ? $secondParent : null,
         );
     }
 
@@ -158,11 +213,13 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             is_string($treeBefore) ? $treeBefore : null,
             is_string($failedStep) ? $failedStep : null,
             is_array($evidence) ? $evidence : null,
+            causalityUncertain: ($result['causality_uncertain'] ?? false) === true,
         );
     }
 
     /**
      * @param  list<string>  $arguments
+     * @param  (\Closure(): void)|null  $beforeDispatch
      * @return array<string, mixed>
      */
     private function run(
@@ -174,6 +231,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         bool $withVpHome = false,
         bool $allocateTemporary = false,
         #[\SensitiveParameter] ?string $composerAuth = null,
+        ?\Closure $beforeDispatch = null,
     ): array {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
@@ -215,6 +273,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                     ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
                     : '').
                 $command."\n";
+            $beforeDispatch?->__invoke();
             $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $composerAuth === null ? $input : null,

@@ -19,7 +19,8 @@ describe('console bootstrap', function () {
         expect($exitCode)
             ->toBe(0)
             ->and(implode(PHP_EOL, $output))
-            ->toContain('topology:acquire', 'topology-images:ensure', 'boost:update')
-            ->not->toContain('topology-snapshot:', 'topology-images:build');
+            ->toContain('topology:acquire', 'boost:update')
+            ->not->toContain('topology-snapshot:')
+            ->not->toContain('topology-images:');
     });
 });

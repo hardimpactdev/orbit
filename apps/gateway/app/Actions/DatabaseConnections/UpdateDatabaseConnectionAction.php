@@ -4,24 +4,24 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Actions\ProxyCli\ReconvergeProxyCliConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionProfile;
+use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 final readonly class UpdateDatabaseConnectionAction
 {
+    /** @param iterable<DatabaseConnectionUpdateHook> $hooks */
     public function __construct(
-        private ValkeyServerAdmin $valkey,
-        private ?RecordEventBroadcaster $broadcaster = null,
+        #[Tag(DatabaseConnectionUpdateHook::class)] private iterable $hooks,
+        private RecordEventBroadcaster $broadcaster,
     ) {}
 
     public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): DatabaseConnection
@@ -38,22 +38,6 @@ final readonly class UpdateDatabaseConnectionAction
             $proposed = clone $locked;
             $proposed->fill($attributes);
 
-            if ($locked->server?->driver === DatabaseDriver::Redis) {
-                foreach (['driver', 'node_id', 'host', 'port', 'path', 'username', 'password'] as $field) {
-                    if ($proposed->{$field} !== $locked->{$field}) {
-                        throw new ResourceOperationException(
-                            errorCode: 'database.server_connection_managed',
-                            message: 'Create a new Valkey connection and move its clients instead of changing its identity or credentials.',
-                            status: 409,
-                        );
-                    }
-                }
-            }
-
-            if ($locked->server?->driver === DatabaseDriver::Redis && $data->databaseProvided && $proposed->database !== null && (! ctype_digit($proposed->database) || (int) $proposed->database >= $this->valkey->databaseCount($locked->server))) {
-                throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
-            }
-
             if ($proposed->driver === DatabaseDriver::Sqlite) {
                 foreach ($locked->targets()->with('instance')->get() as $target) {
                     if ($target->instance->node_id !== $proposed->node_id) {
@@ -66,19 +50,25 @@ final readonly class UpdateDatabaseConnectionAction
                 }
             }
 
-            app(ReconvergeProxyCliConnectionAction::class)->validate($proposed);
+            foreach ($this->hooks as $hook) {
+                $hook->validate($proposed);
+            }
             $locked->update($attributes);
 
             return $locked->refresh();
         });
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::DatabaseUpdated,
-            $result->id,
-            DatabaseConnectionData::fromModel($result)->toArray(),
-        );
+        DB::afterCommit(function () use ($result): void {
+            $this->broadcaster->broadcast(
+                RecordEventType::DatabaseUpdated,
+                $result->id,
+                DatabaseConnectionData::fromModel($result)->toArray(),
+            );
 
-        app(ReconvergeProxyCliConnectionAction::class)->execute($result);
+            foreach ($this->hooks as $hook) {
+                $hook->afterCommit($result);
+            }
+        });
 
         return $result;
     }

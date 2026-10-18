@@ -4,9 +4,9 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,AppDev/ContributedPrivateDnsRecords,Routes/ContributedReservedHostnames}.php
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,AppDev/ContributedPrivateDnsRecords,Routes/ContributedReservedHostnames,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
-  - apps/gateway/bootstrap/providers.php
+  - apps/gateway/{bootstrap/providers.php,tests/Helpers/PlugInAssertions.php,tests/Unit/Domain/Extensions/**,tests/Feature/Infrastructure/PlugInWiringTest.php}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
   - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Unit/Architecture/ProxyCliPlugInPointsTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
@@ -29,6 +29,8 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | `proxycli` | Core, in the `ProxyCli` namespaces. See [proxycli](/reference/proxycli). | nothing |
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
+
+Task agent turns and checkout operations share the [workspace lease](/reference/tasks#workspace-lease). Task drivers and remote operations use that ownership rule regardless of which caller starts the work. A disabled extension does not erase an existing holder or its recovery evidence.
 
 ## Layout
 
@@ -58,6 +60,22 @@ The provider registers what the extension owns: its routes with `loadRoutesFrom(
 
 `ExtensionRegistry` lists the registered providers that implement `Extension`. That list is the set of known slugs: `extension:list`, `extension:enable`, and `extension:disable` accept only those. No other list of slugs exists in the Gateway.
 
+## Add a plug-in point
+
+Use this checklist when core adds a place for extensions to contribute:
+
+- Define a small typed interface and tag each implementation with the interface name in its provider.
+- Inject contributions through the constructor with Laravel's `#[Tag]` attribute. Trusted in-repo implementations need no runtime interface or duplicate-class validation.
+- State when the contribution runs and what happens while its extension is disabled.
+- Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
+- Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
+
+The existing configuration plug-in points use `ReservedNames` as their shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
+
+The existing private DNS and footprint contributions keep core entries in core wiring and reserve their names in that registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
+
+Test both sides of the publication boundary: a valid contribution renders beside existing Routes, while reserved source names, duplicate listener addresses, and invalid listener addresses stop a build before any transport call. A later valid build must still work. For the collector, switching the extension off keeps its deployed site; teardown withdraws that site and its certificate without changing the other site blocks.
+
 ## Plug-in points
 
 Core defines an interface for each place where an extension can add behavior. The provider tags its implementation with the interface name:
@@ -66,7 +84,7 @@ Core defines an interface for each place where an extension can add behavior. Th
 $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
 ```
 
-Core resolves every tagged implementation and calls each one. When a tagged class does not implement the interface, or one class is tagged twice for the same interface, core throws a `LogicException`. It never drops or repeats a contribution.
+Core resolves tagged implementations and calls each one through the typed interface. The Database connection points use constructor-injected tags directly. Older points still use `Contributions::of()`, which throws a `LogicException` for a wrong interface or a class tagged twice. That runtime check is not required for new points; their wiring is checked by tests.
 
 | Interface | Called by | Methods |
 | --- | --- | --- |
@@ -78,9 +96,16 @@ Core resolves every tagged implementation and calls each one. When a tagged clas
 | `App\Domain\AppDev\ContributedPrivateDnsRecords` | [Private DNS](/reference/private-dns) publication | `records()` |
 | `App\Domain\Routes\ContributedReservedHostnames` | The [Route domain](/reference/routes) and analytics tracking host checks, and private DNS publication | `hostnames()` |
 | `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
+| `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
+`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action reads all guards through strict `Contributions::of()` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
+
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
+
+`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion. These two points resolve trusted implementations directly from container tags. Contributions must not depend on their order. ProxyCli contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
 
 After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
 

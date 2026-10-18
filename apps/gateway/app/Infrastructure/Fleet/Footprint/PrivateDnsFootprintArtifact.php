@@ -7,6 +7,7 @@ namespace App\Infrastructure\Fleet\Footprint;
 use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Extensions\Contributions;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -25,7 +26,7 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
 
     public function name(): string
     {
-        return 'private-dns';
+        return ReservedNames::PrivateDnsArtifact;
     }
 
     public function applies(Node $node): bool

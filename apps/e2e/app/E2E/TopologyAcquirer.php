@@ -20,6 +20,7 @@ use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Closure;
+use DateTimeImmutable;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
@@ -27,7 +28,7 @@ use Throwable;
 /**
  * Acquire, sync, verify, and exec on one issue's topology.
  *
- * Acquisition composes the declared Nodes: each guest starts from the shared recipe base image on a new network, the
+ * Acquisition composes the declared Nodes: each guest is a copy of the task VM's `node-template` on a new network, the
  * worktree is mounted on the checkout Nodes, a fresh test Gateway is bootstrapped, and every other Node is
  * enrolled through it. The attempt lives in `<worktree>/.e2e/` and the topology stays until `release`.
  */
@@ -44,7 +45,6 @@ final readonly class TopologyAcquirer
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
-        private RoleImages $images,
         private TopologyComposer $composer,
         private WorktreeSynchronizer $synchronizer,
         private TopologyVerifier $verifier,
@@ -132,6 +132,43 @@ final readonly class TopologyAcquirer
         }
     }
 
+    /** @param Closure(string, GuestCommand, GuestCommandResult, DateTimeImmutable, DateTimeImmutable): void $record
+     * @return array<string, mixed> */
+    public function firewallFixture(TopologyRequest $request, string $operation, Closure $record): array
+    {
+        $this->assertRequestOwnership($request);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
+        try {
+            $topology = $state->requireTopology();
+            $nodes = $topology->construction->nodes;
+            $plan = [
+                'issue' => $request->issue, 'attempt' => $topology->attempt->value,
+                'lease' => $state->attempt(), 'mount_hash' => $state->mountTokenHash(),
+                'instance' => $topology->target->instance('app-dev'),
+                'router' => $nodes['app-dev']['incus_address'] ?? null,
+                'member' => $nodes['app-prod']['incus_address'] ?? null,
+                'nonmember' => $nodes['operator']['incus_address'], 'vpn' => $nodes['gateway']['wireguard_address'],
+            ];
+            $fixture = new RouterLanFirewallFixture(function (string $node, GuestCommand $command) use ($state, $plan, $request, $record): GuestCommandResult {
+                $current = $state->requireTopology();
+                if ($state->attempt() !== $plan['lease'] || $state->mountTokenHash() !== $plan['mount_hash']) {
+                    throw new RuntimeException('The fixture lease or mount identity changed.');
+                }
+                $instance = $this->ownedInstance($current, $node, $node === 'app-dev' ? $request->worktree : null);
+                $started = new DateTimeImmutable;
+                $result = $this->host->exec($instance, $command);
+                $record($node, $command, $result, $started, new DateTimeImmutable);
+
+                return $result;
+            });
+
+            return $fixture->run($operation, $plan);
+        } finally {
+            $lock->release();
+        }
+    }
+
     /** @param list<string> $argv */
     public function execute(
         TopologyRequest $request,
@@ -181,7 +218,7 @@ final readonly class TopologyAcquirer
                 $instances = array_values($target->instances());
                 $this->host->startAll($instances);
                 $this->host->waitForAgents($instances);
-                $this->images->settle($target);
+                $this->guests->settle($target);
                 $this->host->waitForGlobalIpv4($instances);
                 $this->guests->assertSourceMounted($target);
             });
@@ -198,8 +235,7 @@ final readonly class TopologyAcquirer
     }
 
     /**
-     * Under the host creation lock: reserve capacity, create the network, and create every guest from the
-     * role image its alias names right now.
+     * Under the host creation lock: reserve capacity, create the network, and copy every guest from the template.
      *
      * @param  array<string, array{device:string,source:string,path:string}>  $mounts
      */
@@ -213,7 +249,6 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('Another topology creation holds the host.');
         }
         try {
-            $images = $this->images->resolve($target->recipe->images());
             $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
             $metadata = [
                 'user.orbit.e2e.issue' => $target->issue,
@@ -224,23 +259,20 @@ final readonly class TopologyAcquirer
             $guests = [];
             foreach ($target->recipe->nodes as $node) {
                 $guests[$node->key] = [
-                    'image' => $images[$node->image->value],
                     'name' => $target->instance($node->key),
                     'network' => $target->network(),
                     'node' => $node->key,
                     'address' => $node->address,
                     'slot' => $slot,
-                    'container' => false,
-                    'preserve_image_size' => true,
                     'config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"],
                     'memory' => $node->memory,
-                    'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
+                    'metadata' => $metadata,
                     ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),
                 ];
             }
-            $this->host->initGuests($guests);
+            $this->host->createGuests($guests);
 
-            return TopologyConstructionInputs::create($target, $slot, $images);
+            return TopologyConstructionInputs::create($target, $slot);
         } finally {
             $creation->release();
         }
@@ -290,7 +322,7 @@ final readonly class TopologyAcquirer
         return $state->mountTokenHash() ?? $state->writeMountToken();
     }
 
-    private function ownedInstance(TopologyRecord $topology, string $node): string
+    private function ownedInstance(TopologyRecord $topology, string $node, ?string $mountedWorktree = null): string
     {
         if (! $topology->target->recipe->hasNode($node)) {
             throw new InvalidArgumentException(
@@ -307,6 +339,11 @@ final readonly class TopologyAcquirer
             || $owned->network !== $topology->network
         ) {
             throw new RuntimeException('Incus instance identity does not match the topology record.');
+        }
+        if ($mountedWorktree !== null && ($owned->disks[TopologyRecord::SOURCE_DEVICE] ?? null) !== [
+            'source' => $mountedWorktree, 'path' => MountPath::GUEST_SOURCE,
+        ]) {
+            throw new RuntimeException('The fixture Router mount does not match this worktree.');
         }
 
         return $instance;

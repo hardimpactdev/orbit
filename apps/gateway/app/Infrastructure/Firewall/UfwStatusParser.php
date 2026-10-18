@@ -55,21 +55,29 @@ final class UfwStatusParser
         return $shapes;
     }
 
-    /** @return list<UfwRuleShape> */
-    public function familyShapes(string $output, string $prefix): array
+    /**
+     * @return list<UfwRuleShape>
+     *
+     * @throws InvalidArgumentException When an owned family entry cannot be parsed.
+     */
+    public function familyShapes(string $output, string $prefix, bool $includeIpv6 = false): array
     {
         $shapes = [];
 
         foreach (explode("\n", $output) as $line) {
             $comment = $this->comment($line);
 
-            if ($comment === null || ! str_starts_with($comment, $prefix)) {
+            if ($comment === null || ($comment !== $prefix && ! str_starts_with($comment, $prefix.':'))) {
                 continue;
             }
 
             $shape = $this->parseLine($line, $comment);
 
-            if ($shape instanceof UfwRuleShape && $shape->family !== 'v6') {
+            if ($shape === null) {
+                throw new InvalidArgumentException('Unreadable owned UFW family entry.');
+            }
+
+            if ($includeIpv6 || $shape->family !== 'v6') {
                 $shapes[] = $shape;
             }
         }
@@ -239,7 +247,7 @@ final class UfwStatusParser
 
         if (
             preg_match(
-                '/\A(?:(.+?)\s+)?(\d{1,5}(?::\d{1,5})?)\/(tcp|udp)\z/D',
+                '/\A(?:(.+?)\s+)?(\d{1,5}(?::\d{1,5})?)(?:\/(tcp|udp))?\z/D',
                 $withInterface['value'],
                 $matches,
             ) === 1
@@ -254,7 +262,7 @@ final class UfwStatusParser
             return [
                 'endpoint' => $endpoint,
                 'port' => $port,
-                'protocol' => $matches[3],
+                'protocol' => $matches[3] ?? 'any',
                 'interface' => $withInterface['interface'],
             ];
         }

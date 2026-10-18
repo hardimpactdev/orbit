@@ -7,9 +7,13 @@ namespace App\Actions\Tasks;
 use App\Data\Tasks\TaskAssistanceData;
 use App\Data\Tasks\TaskMergeData;
 use App\Data\Tasks\TasksStatusData;
+use App\Data\Tasks\TaskWorkspaceActorData;
+use App\Data\Tasks\TaskWorkspaceLeaseData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskTickClock;
+use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Models\Instance;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
@@ -40,6 +44,33 @@ final readonly class ShowTasksStatusAction
             assistance: $assistance,
             lastTickAt: $this->clock->lastStartedAt(),
             merges: $merges,
+            workspaceLeases: $this->workspaceLeases(),
         );
+    }
+
+    /** @return list<TaskWorkspaceLeaseData> */
+    private function workspaceLeases(): array
+    {
+        $leases = app(TaskWorkspaceLease::class)->status();
+        $instances = Instance::query()->whereIn('id', array_column($leases, 'instance_id'))->get()->keyBy('id');
+        $groups = Task::topLevel()->with('project')->whereIn('id', array_column($leases, 'group_id'))->get()->keyBy('id');
+        $result = [];
+        foreach ($leases as $lease) {
+            $instance = $instances->get($lease['instance_id']);
+            $group = $groups->get($lease['group_id']);
+            if (! $instance instanceof Instance || ! $group instanceof Task) {
+                continue;
+            }
+            $result[] = new TaskWorkspaceLeaseData(
+                instanceId: $instance->id,
+                instanceName: $instance->name,
+                groupId: $group->id,
+                projectCode: $group->project->code,
+                holder: $lease['holder'] === null ? null : TaskWorkspaceActorData::fromLease($lease['holder']),
+                waiters: array_map(TaskWorkspaceActorData::fromLease(...), $lease['waiters']),
+            );
+        }
+
+        return $result;
     }
 }

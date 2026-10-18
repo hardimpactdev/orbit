@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Fleet\Footprint;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAgentRuntime;
@@ -28,7 +29,7 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
 
     public function name(): string
     {
-        return 'agent';
+        return ReservedNames::AgentArtifact;
     }
 
     public function applies(Node $node): bool

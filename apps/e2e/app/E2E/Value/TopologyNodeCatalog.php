@@ -7,12 +7,13 @@ namespace App\E2E\Value;
 use RuntimeException;
 
 /**
- * The one list of Nodes a topology can hold, read from `resources/topology-nodes.json`: each Node's role image,
- * address position, checkout mount, memory, and, for a declarable workload Node, its base role, TLD, and the Node it
- * requires. Topology selection, composition, and verification derive from it. The Gateway's
+ * The one list of Nodes a topology can hold, read from `resources/topology-nodes.json`: each Node's address position,
+ * checkout mount, memory, and, for a declarable workload Node, its base role, TLD, and the Node it requires. The two
+ * Nodes that are not declarable are the test Gateway and the operator, named by their purpose. Every Node is a copy of
+ * the task VM's `node-template`. Topology selection, composition, and verification derive from it. The Gateway's
  * own topology catalog has a parity test that reads the same file.
  *
- * @phpstan-type Entry array{image:RoleImage,address:int,checkout:bool,memory:string,declarable:bool,base_role:?string,tld:?string,requires:?string}
+ * @phpstan-type Entry array{purpose:TopologyNodePurpose,address:int,checkout:bool,memory:string,declarable:bool,base_role:?string,tld:?string,requires:?string}
  */
 final readonly class TopologyNodeCatalog
 {
@@ -50,12 +51,17 @@ final readonly class TopologyNodeCatalog
                 throw new RuntimeException('The topology node catalog is invalid.');
             }
             TopologyNode::assertKey($key);
+            $declarable = self::bool($node, 'declarable');
+            $purpose = $declarable ? TopologyNodePurpose::Workload : TopologyNodePurpose::tryFrom($key);
+            if ($purpose === null || (! $declarable && $purpose === TopologyNodePurpose::Workload)) {
+                throw new RuntimeException("The topology node catalog Node [{$key}] must be declarable, or be the gateway or the operator.");
+            }
             $nodes[$key] = [
-                'image' => RoleImage::from(self::string($node, 'image')),
+                'purpose' => $purpose,
                 'address' => self::int($node, 'address'),
                 'checkout' => self::bool($node, 'checkout'),
                 'memory' => self::string($node, 'memory'),
-                'declarable' => self::bool($node, 'declarable'),
+                'declarable' => $declarable,
                 'base_role' => self::optional($node, 'base_role'),
                 'tld' => self::optional($node, 'tld'),
                 'requires' => self::optional($node, 'requires'),
@@ -75,18 +81,6 @@ final readonly class TopologyNodeCatalog
     public function node(string $key): array
     {
         return $this->nodes[$key] ?? throw new RuntimeException("The topology node catalog has no Node [{$key}].");
-    }
-
-    /** The memory of the first Node that starts from the image; its builder gets the same. */
-    public function memoryFor(RoleImage $image): string
-    {
-        foreach ($this->nodes as $node) {
-            if ($node['image'] === $image) {
-                return $node['memory'];
-            }
-        }
-
-        throw new RuntimeException("The topology node catalog has no Node from the image [{$image->value}].");
     }
 
     /** @param array<array-key, mixed> $node */

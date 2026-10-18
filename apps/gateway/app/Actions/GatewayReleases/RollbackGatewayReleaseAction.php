@@ -7,6 +7,7 @@ namespace App\Actions\GatewayReleases;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
@@ -28,6 +29,7 @@ final readonly class RollbackGatewayReleaseAction
     public function execute(string $release, ?GatewayRelease $record = null): DeployedGatewayRelease
     {
         return $this->lock->run(function () use ($release, $record): DeployedGatewayRelease {
+            GatewayReleaseHold::assertNone();
             $startedAt = hrtime(true);
             $record = $this->recorder->begin('rollback', $release, $record);
 
