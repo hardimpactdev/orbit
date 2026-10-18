@@ -326,13 +326,17 @@ The base supplies pinned software. Convergence runs the checkout's Gateway and V
 
 The host's [topology seed](/reference/compute-drivers#the-topology-seed) lets preparation adopt a pool and copy its template without installing packages or transferring an image. The template is a stopped instance, because recovery restores instances but not images.
 
+Copying the base image into each task VM would repeat a large transfer, import, and unpack for every group. Installing Incus there would also repeat package installation. A clone avoids both costs.
+
+Baking the template into the base image would require the image to contain itself. Using the previous base instead would give the template a different recipe and add another base image's size to every task VM. A separate seed builder would duplicate the smoke VM, which already boots the published base and has a name that the builder audit tracks.
+
 ### Declared roles only
 
 The harness assigns the base roles of each declared Node and the roles its entry adds, and nothing else. The old profile also added a Cluster, Router, Ingress, Metrics, a database role, WebSocket, and sample Laravel applications to every topology. Building and hydrating those samples was the slowest and most fragile part of preparation, and most tasks did not need them. A declared role is added with `orbit node:role:add`, the product path the fleet uses, so the topology is set up the way a real one is. Anything else a task needs, it adds with the CLI.
 
 ### Nested in the task VM
 
-A group's topology runs inside the group's own task VM, so the VM edge stays the only boundary and an Orbit task VM is like any other task VM. Topology Nodes as siblings on the host were rejected: the host's Incus API would become reachable from every task VM.
+A group's topology runs inside the group's own task VM, so the VM edge stays the only boundary and an Orbit task VM is like any other task VM. Sibling Nodes on the host would make the host's Incus API reachable from every task VM. On Incus 6.0.5, even a project-restricted certificate can copy another project's instance. Siblings also cannot mount the task VM's workspace, so each edit would need a copy to them.
 
 The inner Incus uses a btrfs pool on the clone: a `dir` pool copies every disk in full, and ZFS on a ZFS volume caches twice. Every clone carries the seed's btrfs UUID, which is safe, because each VM sees one clone and the host never mounts a seed.
 
