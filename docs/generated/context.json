@@ -1145,38 +1145,34 @@
             ]
         },
         {
-            "path": "docs/decisions/0224-give-each-task-group-one-holder-and-one-sender.md",
-            "title": "ADR 0224: Give each task group one workspace holder and one sender",
+            "path": "docs/decisions/0223-run-one-gate-from-handoff-to-merge.md",
+            "title": "ADR 0223: Run one gate from handoff to merge",
             "kind": "decision",
             "components": [
                 "apps/cli",
                 "apps/docs",
+                "apps/e2e",
                 "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
+                "apps/web"
             ],
             "concepts": [
-                "Activity",
                 "Deliverable",
-                "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Pi server",
                 "Process",
-                "Schedule",
+                "Project",
+                "Role",
                 "Subtask",
                 "Task",
-                "Task workspace"
+                "Task check",
+                "Tool"
             ],
             "governing_adrs": [
                 "0200",
-                "0210",
-                "0211",
-                "0212",
-                "0218",
-                "0224"
+                "0213",
+                "0223"
             ]
         },
         {
@@ -1240,7 +1236,7 @@
                 "0218",
                 "0219",
                 "0222",
-                "0224"
+                "0223"
             ]
         },
         {
