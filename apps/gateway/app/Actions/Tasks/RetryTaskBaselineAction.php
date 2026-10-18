@@ -37,7 +37,7 @@ final readonly class RetryTaskBaselineAction
             return false;
         }
         // Keep the first pending request when two resolutions arrive before recovery finishes.
-        if ($locked->resolution_delivered_comment_id === null || $check->task_comment_id === $locked->resolution_delivered_comment_id) {
+        if (! $this->requested($locked, $check)) {
             $locked->update(['resolution_delivered_comment_id' => $comment->id]);
         }
 
