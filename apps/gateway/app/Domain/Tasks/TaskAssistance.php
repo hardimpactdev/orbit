@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Models\Activity;
 use App\Models\Task;
-use Illuminate\Database\Query\Builder;
+use App\Models\TaskComment;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Stores the kind and question of an assistance request.
@@ -16,94 +19,112 @@ use Illuminate\Support\Facades\DB;
  */
 final class TaskAssistance
 {
+    public const array Fields = ['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason'];
+
     public const string ImplementerBlockedPrefix = 'The implementer is blocked: ';
 
     public const string ReviewerBlockedPrefix = 'The reviewer is blocked: ';
 
-    /**
-     * @return array{assistance_requested: true, assistance_kind: AssistanceKind, assistance_question: string|null, assistance_reason: string}
-     */
-    public static function attributes(AssistanceKind $kind, ?string $question, string $reason): array
-    {
-        return [
-            'assistance_requested' => true,
-            'assistance_kind' => $kind,
-            'assistance_question' => $kind === AssistanceKind::Direction ? $question : null,
-            'assistance_reason' => $reason,
-        ];
-    }
-
-    /**
-     * @return array{assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null}
-     */
-    public static function cleared(): array
-    {
-        return [
-            'assistance_requested' => false,
-            'assistance_kind' => null,
-            'assistance_question' => null,
-            'assistance_reason' => null,
-        ];
-    }
-
     /** Compare the complete open request, not just its reason text. */
     public static function sameRequest(Task $left, Task $right): bool
     {
-        $fields = ['assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason'];
-
-        return $left->assistance_requested && $left->only($fields) === $right->only($fields);
+        return $left->assistance_requested && $left->only(self::Fields) === $right->only(self::Fields);
     }
 
     /** Call with both rows locked, before clearing the child's resolved request in the same transaction. */
-    public static function clearResolvedParent(Task $task, Task $parent): void
+    public static function clearResolvedParent(Task $task, Task $parent, ?TaskComment $source = null): void
     {
         if (self::sameRequest($task, $parent)
             && ! $parent->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
-            $parent->update(self::cleared());
+            self::apply($parent, source: $source);
         }
     }
 
     /**
      * Records the request against the current database row. Returns false when that row must stay as it is.
      *
-     * The check and the write are one update, so a stale in-memory model cannot replace a newer direction
-     * request or leave its question behind. Ended tasks keep the reason but never ask for assistance.
+     * The check and the write hold the same row lock, so a stale in-memory model cannot replace a newer direction
+     * request or leave its question behind. A new cleanup failure can request assistance after a task ends.
      */
-    public static function apply(Task $record, AssistanceKind $kind, ?string $question, string $reason, bool $replaceFailure = false, bool $replaceDirection = false): bool
+    public static function apply(Task $record, ?AssistanceKind $kind = null, ?string $question = null, ?string $reason = null, bool $replaceFailure = false, bool $replaceDirection = false, ?TaskComment $source = null, bool $reconcileStatus = false): bool
     {
-        $attributes = self::attributes($kind, $question, $reason);
-        $updated = DB::table('tasks')->where('id', $record->id)
-            ->where(function (Builder $query) use ($kind, $replaceFailure, $replaceDirection): void {
-                $query->where('assistance_requested', false)
-                    ->orWhere(function (Builder $open) use ($kind, $replaceFailure, $replaceDirection): void {
-                        if (! $replaceDirection) {
-                            $open->where(function (Builder $direction): void {
-                                $direction->whereNull('assistance_kind')
-                                    ->orWhere('assistance_kind', '!=', AssistanceKind::Direction->value);
-                            });
-                        }
-                        if ($kind === AssistanceKind::Failure && ! $replaceFailure) {
-                            $open->whereRaw('1 = 0');
-                        } elseif ($replaceDirection) {
-                            // An empty group would not match, so an intentional replacement needs a true condition.
-                            $open->whereRaw('1 = 1');
-                        }
-                    });
-            })
-            ->update([
-                'assistance_requested' => DB::raw("CASE WHEN status IN ('completed', 'cancelled') THEN 0 ELSE 1 END"),
-                'assistance_kind' => $kind->value,
-                'assistance_question' => $attributes['assistance_question'],
+        return DB::transaction(function () use ($record, $kind, $question, $reason, $replaceFailure, $replaceDirection, $source, $reconcileStatus): bool {
+            $current = Task::withoutGlobalScopes()->whereKey($record->id)->lockForUpdate()->firstOrFail();
+            $requested = $current->assistance_requested;
+            $ended = in_array($current->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskStatus::Completed, TaskStatus::Cancelled], true);
+            if ($reconcileStatus) {
+                if (! $ended) {
+                    self::sync($record, $current);
+
+                    return false;
+                }
+                $kind = $current->assistance_kind === AssistanceKind::RemovalFailure ? AssistanceKind::RemovalFailure : null;
+                $reason = $current->assistance_reason;
+            }
+            if ($ended && $kind !== null && $kind !== AssistanceKind::RemovalFailure) {
+                if ($current->assistance_kind === AssistanceKind::RemovalFailure) {
+                    self::sync($record, $current);
+
+                    return false;
+                }
+                $kind = null;
+                $question = null;
+                $reason = $current->assistance_reason;
+            }
+            if (! $ended && $kind !== null && $requested
+                && (($current->assistance_kind === AssistanceKind::Direction && ! $replaceDirection)
+                    || $kind === AssistanceKind::Observation
+                    || (in_array($kind, [AssistanceKind::Failure, AssistanceKind::RemovalFailure], true) && $current->assistance_kind !== AssistanceKind::Observation && ! $replaceFailure))) {
+                self::sync($record, $current);
+
+                return false;
+            }
+            $attributes = [
+                'assistance_requested' => $kind !== null,
+                'assistance_kind' => $kind?->value,
+                'assistance_question' => $kind === AssistanceKind::Direction ? $question : null,
                 'assistance_reason' => $reason,
-                'updated_at' => now(),
+            ];
+            if ($current->only(self::Fields) === [...$attributes, 'assistance_kind' => $kind]) {
+                self::sync($record, $current);
+
+                return false;
+            }
+            DB::table('tasks')->where('id', $record->id)->update([...$attributes, 'updated_at' => now()]);
+            $current->forceFill($attributes);
+            self::sync($record, $current);
+            if (! $requested && ! $record->assistance_requested) {
+                return true;
+            }
+            $description = ! $requested ? 'assistance requested' : ($record->assistance_requested ? 'assistance changed' : 'assistance cleared');
+            $requestId = $source->request_id ?? request()->attributes->get('orbit.request_id');
+            $sanitizer = app(CommandActivityInputSanitizer::class);
+            Activity::query()->create([
+                'log_name' => 'tasks',
+                'description' => $description,
+                'subject_type' => Task::class, 'subject_id' => $record->id,
+                'properties' => [
+                    ...($source === null ? [] : ['comment_id' => $source->id, 'actor' => $source->author]),
+                    'task_group_id' => $record->parent_id ?? $record->id,
+                    'kind' => $kind?->value,
+                    'question' => $question === null ? null : $sanitizer->redactText($question),
+                    'reason' => $reason === null ? null : $sanitizer->redactText($reason),
+                ],
+                'request_id' => is_string($requestId) ? $requestId : (string) Str::uuid(), 'command' => $source === null ? 'tasks:assistance' : 'tasks:comment', 'status' => 'completed',
             ]);
-
-        $record->refresh();
-        if ($updated > 0) {
             app(TaskBroadcasts::class)->groupChanged($record->parent_id ?? $record->id);
-        }
 
-        return $updated > 0;
+            return true;
+        });
+    }
+
+    /** Synchronize only assistance; never re-encode pending casts or reload the caller's relations. */
+    private static function sync(Task $record, Task $current): void
+    {
+        foreach (self::Fields as $field) {
+            $record->setAttribute($field, $current->getAttribute($field));
+        }
+        $record->syncOriginalAttributes(self::Fields);
     }
 
     /**

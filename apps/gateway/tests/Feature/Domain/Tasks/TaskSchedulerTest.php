@@ -14,7 +14,6 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -45,8 +44,6 @@ use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSequenceException;
-use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
@@ -97,7 +94,6 @@ use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\NullAgentSnapshotReader;
-use Tests\Support\NullCoderSettleNotifier;
 use Tests\Support\NullInstanceProvisioning;
 use Tests\Support\NullTaskWorkspaceDiffReader;
 use Tests\Support\ResolvedVp;
@@ -204,7 +200,6 @@ function scheduler_recording_spawner(): AgentSpawner
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -249,7 +244,6 @@ function scheduler_bind_claim(Instance $instance, AgentSpawner $spawner): void
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
         new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), new NullTaskWorkspaceDiffReader),
     ));
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 }
 
 it('reserves queued groups without a per-Project ceiling', function (): void {
@@ -377,7 +371,6 @@ it('fails a group and its first task when the turn command cannot be installed',
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -626,60 +619,34 @@ it('provisioning failures raise assistance only after the configured threshold a
         ->and($group->fresh()->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason);
 });
 
-it('notifies Coder once after committing threshold assistance and does not resend on another failure', function (): void {
+it('records threshold assistance once and does not repeat it on another failure', function (): void {
     config(['orbit.tasks.provisioning_failure_threshold' => 2]);
-    $group = queued_group(scheduler_app('notify-threshold'), 'Notify threshold');
-    $cause = 'RuntimeException: node-7 unreachable';
-    $reason = TaskScheduler::ProvisioningFailedReason.' '.$cause;
-    app()->instance(InstanceProvisioning::class, new class($cause) implements InstanceProvisioning
-    {
-        public function __construct(private string $cause) {}
-
-        public function provision(InstanceProvisionIntent $intent): InstanceProvisionFailure
-        {
-            return new InstanceProvisionFailure($this->cause);
-        }
-    });
-    $notifications = [];
-    mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()
-        ->withArgs(function (Task $notified, string $notifiedReason) use ($group, $reason, &$notifications): bool {
-            expect(DB::transactionLevel())->toBe(1);
-            expect($notified->fresh()->assistance_requested)->toBeTrue();
-            $notifications[] = [$notified->id, $notifiedReason];
-
-            return $notified->id === $group->id && $notifiedReason === $reason;
-        });
+    $group = queued_group(scheduler_app('assistance-threshold'), 'Assistance threshold');
+    app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->claimAvailable())->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
-    expect($notifications)->toBeEmpty();
-    DB::transaction(function () use ($scheduler, $group, &$notifications): void {
-        expect($scheduler->claimAvailable())->toBe(0);
-        expect($group->fresh()->assistance_requested)->toBeTrue();
-        expect($notifications)->toBeEmpty();
-    });
-    expect($notifications)->toBe([[$group->id, $reason]]);
     expect($scheduler->claimAvailable())->toBe(0);
-    expect($notifications)->toHaveCount(1);
-    expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::Failure)
-        ->and($group->fresh()->assistance_reason)->toBe($reason);
-    expect(Cache::get('tasks:provisioning-failures:'.$group->id)['failures'])->toBe(3);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+    expect($scheduler->claimAvailable())->toBe(0);
+    $entries = Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->get();
+    expect($entries)->toHaveCount(1)
+        ->and($entries->sole()->properties?->get('reason'))->toBe(TaskScheduler::ProvisioningFailedReason);
 });
 
-it('preserves a direction hold without threshold notification when releasing a failed reservation', function (bool $newDirection): void {
+it('preserves a direction hold without replacing it at the threshold when releasing a failed reservation', function (bool $newDirection): void {
     config(['orbit.tasks.provisioning_failure_threshold' => 1]);
     $group = queued_group(scheduler_app('notify-direction'), 'Direction hold');
-    $direction = TaskAssistance::attributes(AssistanceKind::Direction, 'Which branch?', 'Choose a branch.');
+    $direction = test_assistance_attributes(AssistanceKind::Direction, 'Which branch?', 'Choose a branch.');
     if (! $newDirection) {
-        $group->update($direction);
+        test_update_task($group, $direction);
     }
     $group->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
     $reserved = $group->fresh();
     if ($newDirection) {
-        $group->update($direction);
+        test_update_task($group, $direction);
     }
-    mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
 
     DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'releaseProvisioningFailure'))
         ->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $reserved, new InstanceProvisionFailure('node-7 unreachable')));
@@ -691,11 +658,10 @@ it('preserves a direction hold without threshold notification when releasing a f
         ->and($group->fresh()->assistance_reason)->toBe('Choose a branch.');
 })->with(['inherited direction' => false, 'direction added during provisioning' => true]);
 
-it('does not notify Coder when threshold assistance rolls back', function (): void {
+it('rolls back threshold assistance and its Activity entry', function (): void {
     config(['orbit.tasks.provisioning_failure_threshold' => 1]);
     $group = queued_group(scheduler_app('notify-rollback'), 'Rollback threshold');
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
-    mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
 
     expect(fn () => DB::transaction(function () use ($group): void {
         expect(app(TaskScheduler::class)->claimAvailable())->toBe(0);
@@ -747,7 +713,7 @@ it('provisioning failures raise assistance only while the original reservation i
     {
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            $intent->group->update(['status' => TaskGroupStatus::Backlog, 'assistance_reason' => 'Operator moved it.']);
+            test_update_task($intent->group, ['status' => TaskGroupStatus::Backlog, 'assistance_reason' => 'Operator moved it.']);
 
             return null;
         }
@@ -998,7 +964,6 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1036,7 +1001,6 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
         new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), new NullTaskWorkspaceDiffReader),
     ));
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
@@ -1169,7 +1133,6 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     app()->instance(TaskReviewDiff::class, $diff);
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
     app(TaskExtensionState::class)->enable();
@@ -1246,7 +1209,7 @@ it('reviews the first subtask with a missing start commit from the workspace sta
 
 it('defers a missing start commit while assistance blocks admission', function (): void {
     $project = scheduler_app('retry-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Retry start',
@@ -1258,7 +1221,7 @@ it('defers a missing start commit while assistance blocks admission', function (
     $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1290,7 +1253,7 @@ it('defers a missing start commit while assistance blocks admission', function (
 
 it('defers a migrated continuation boundary until admission', function (): void {
     $project = scheduler_app('continuation-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Continuation start',
@@ -1311,7 +1274,7 @@ it('defers a migrated continuation boundary until admission', function (): void 
         'status' => TaskStatus::Completed,
         'subtask_start_commit' => $start,
     ]);
-    $continuation = Task::query()->create([
+    $continuation = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Original task (continued 1)',
@@ -1345,7 +1308,7 @@ it('defers a migrated continuation boundary until admission', function (): void 
 
 it('does not record a later head after the implementer starts and commits', function (): void {
     $project = scheduler_app('late-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Late start',
@@ -1357,7 +1320,7 @@ it('does not record a later head after the implementer starts and commits', func
     $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1399,7 +1362,7 @@ it('does not record a later head after the implementer starts and commits', func
 
 it('does not sample the workspace for a reserved implementer while assistance blocks admission', function (): void {
     $project = scheduler_app('reserved-start');
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Reserved start',
@@ -1411,7 +1374,7 @@ it('does not sample the workspace for a reserved implementer while assistance bl
     $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved', owner: $group);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create([
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
@@ -1454,7 +1417,6 @@ it('records a review-request failure and still reviews the other group', functio
     Exceptions::fake();
     [, $first] = scheduler_review([], notified: false);
     [, $second] = scheduler_review([], notified: false);
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     $raw = 'Malformed UTF-8 characters, possibly incorrectly encoded';
     app()->instance(AgentSpawner::class, new class($first->id, $raw) implements AgentSpawner
     {
@@ -1464,7 +1426,6 @@ it('records a review-request failure and still reviews the other group', functio
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1515,20 +1476,19 @@ it('does not replace an open direction request when a review request keeps faili
     [, $first] = scheduler_review([], notified: false);
     $question = 'Which reviewer should take this subtask?';
     $reason = "The reviewer is blocked: No reviewer is available.\n\nQuestion: {$question}";
-    $first->update([
+    test_update_task($first, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
         'assistance_reason' => $reason,
         'communication_failures' => 4,
     ]);
-    $first->parent->update([
+    test_update_task($first->parent, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
         'assistance_reason' => $reason,
     ]);
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(AgentSpawner::class, new class($first->id) implements AgentSpawner
     {
         public function __construct(private int $taskId) {}
@@ -1537,7 +1497,6 @@ it('does not replace an open direction request when a review request keeps faili
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1829,13 +1788,12 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($agents->where('role', 'reviewer'))->toHaveCount(3);
 });
 
-it('keeps the reviewed pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
+it('keeps the reviewed pull request, writes settle metrics, after the last sign-off', function (): void {
     $this->freezeTime();
     $project = scheduler_app('settle-app');
     $node = scheduler_node('settle-node', '10.44.0.95');
     $group = queued_group($project, 'Settle', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'settle', $owner));
     $instance = $group->taskable;
-    $group->notify_coder = true;
     $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
     $group->save();
     $first = $group->tasks->first();
@@ -1846,19 +1804,6 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         {
             return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500, questions: 3, escalations: 2);
         }
-    };
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?Task $notified = null;
-
-        public function notify(Task $group): void
-        {
-            $this->notified = $group;
-        }
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void {}
     };
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
@@ -1892,7 +1837,6 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         public function requestReview(Task $task): void {}
     });
     app()->instance(TaskSettleMetricsCollector::class, $metrics);
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
@@ -1906,9 +1850,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         ->and($settled->duration_ms)->toBe(1500)
         ->and($settled->questions)->toBe(3)
         ->and($settled->escalations)->toBe(2)
-        ->and($settled->settled_at)->not->toBeNull()
-        ->and($notifier->notified?->id)->toBe($settled->id)
-        ->and($notifier->notified?->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543');
+        ->and($settled->settled_at)->not->toBeNull();
 });
 
 it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
@@ -2335,7 +2277,6 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     ]);
     $group->update([
         'pr_url' => $url,
-        'notify_coder' => true,
         'settled_at' => now()->subHour(),
         'tokens' => 3,
         'line_diff' => 4,
@@ -2352,19 +2293,6 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
 
             return ['Models'];
         }
-    };
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public int $settled = 0;
-
-        public function notify(Task $group): void
-        {
-            $this->settled++;
-        }
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void {}
     };
     $watcher = new class implements TaskPullRequestWatcher
     {
@@ -2391,7 +2319,6 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
             return new TaskSettleMetrics(tokens: 90, lineDiff: 18, durationMs: 2500);
         }
     });
-    app()->instance(CoderSettleNotifier::class, $notifier);
     app()->instance(TaskPullRequestWatcher::class, $watcher);
 
     app(TaskScheduler::class)->tick();
@@ -2410,7 +2337,6 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
         ->and($group->fresh()?->duration_ms)->toBe(2500)
         ->and($group->fresh()?->settled_at?->getTimestamp())->toBe($settledAt?->getTimestamp())
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($notifier->settled)->toBe(0)
         ->and($watcher->urls)->toBe([$url])
         ->and(Task::query()->where('parent_id', $group->id)->orderBy('position')->get()->pluck('status')->all())->toBe([
             TaskStatus::Completed,
@@ -2422,7 +2348,6 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     expect($watcher->urls)->toBe([$url, $url])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($group->fresh()?->pr_url)->toBe($url)
-        ->and($notifier->settled)->toBe(0)
         ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(1);
 });
 
@@ -2587,14 +2512,14 @@ it('does not replace an open direction request when publication fails', function
     }
     $question = 'Which remote should receive the branch?';
     $reason = "The implementer is blocked: The remote rejected the push.\n\nQuestion: {$question}";
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
         'assistance_reason' => $reason,
         'communication_failures' => 4,
     ]);
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -2858,9 +2783,9 @@ it('does not infer mutation provenance from an overlapping legacy check', functi
 
 it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
     [$group, $task, $receipts, , , $dispatcher] = scheduler_review([]);
-    $hold = TaskAssistance::attributes($kind, 'Which contract?', 'Choose the contract.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes($kind, 'Which contract?', 'Choose the contract.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
     app()->instance(TaskCheckRunner::class, $checks);
     $task->checks()->create([
@@ -2886,9 +2811,9 @@ it('queues a reviewer resolution behind a running workspace check', function (As
 
 it('keeps assistance when a legacy check only observed the changed tree', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks->tree = str_repeat('d', 40);
     $task->checks()->create([
         'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed, 'pid' => 1234,
@@ -2910,12 +2835,12 @@ it('keeps assistance when a legacy check only observed the changed tree', functi
 it('reconciles remote finished checks under the lease while preserving assistance with an exhausted review attempt', function (int $attempt, string $head, string $tree): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
     $this->travelTo('2026-10-16 07:44:32');
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update([
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    test_update_task($task, [
         ...$failure, 'review_attempt' => $attempt, 'review_notified_attempt' => $attempt,
         'review_reminder_attempt' => $attempt,
     ]);
-    $group->update($failure);
+    test_update_task($group, $failure);
     $finishedAt = now()->subHours(3)->getTimestamp();
     $result = TaskCheckReading::finished(0, $head, $tree, [], 'checks passed', finishedAt: $finishedAt);
     $checks = new FakeTaskCheckRunner([$result, $result]);
@@ -2968,9 +2893,9 @@ it('reconciles remote finished checks under the lease while preserving assistanc
 
 it('preserves assistance and check ownership while a remote check is active or unstarted', function (int $pid): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     $checks->failSnapshot = true;
     app()->instance(TaskCheckRunner::class, $checks);
@@ -2997,9 +2922,9 @@ it('preserves assistance and check ownership while a remote check is active or u
 
 it('keeps stale review assistance when the remote check result cannot be read', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $checks->failRead = true;
     $check = $task->checks()->create([
         'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
@@ -3022,9 +2947,9 @@ it('keeps stale review assistance when the remote check result cannot be read', 
 
 it('records failed or lost remote checks without excusing a later workspace mutation', function (bool $lost): void {
     [$group, $task, , $signer, , $dispatcher] = scheduler_review([]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
-    $task->update($failure);
-    $group->update($failure);
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    test_update_task($task, $failure);
+    test_update_task($group, $failure);
     $reading = $lost ? TaskCheckReading::lost('check disappeared')
         : TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], 'gate failed');
     $checks = new FakeTaskCheckRunner([$reading]);
@@ -3162,12 +3087,12 @@ it('preserves existing review assistance regardless of its text and historical m
         'body' => 'Approved the moved head.', 'review_attempt' => $task->review_attempt,
         'task_group_id' => $group->id, 'posted_at' => now(),
     ]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, $reason);
-    $task->update([
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, $reason);
+    test_update_task($task, [
         ...$failure, 'review_handled_comment_id' => $receipt->id,
         'review_reminder_attempt' => $task->review_attempt, 'review_reminder_input_id' => 'old-reminder',
     ]);
-    $group->update($groupReason === null ? $failure : TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $groupReason));
+    test_update_task($group, $groupReason === null ? $failure : test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $groupReason));
     $checks->head = str_repeat('d', 40);
     $checks->tree = str_repeat('e', 40);
     $checks->commitTree = $checks->tree;

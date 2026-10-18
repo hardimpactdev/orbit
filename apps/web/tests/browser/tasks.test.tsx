@@ -26,7 +26,6 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         watched_pr_url: null,
         watched_pr_number: null,
         watched_pr_state: null,
-        notify_coder: false,
         assistance_requested: false,
         assistance_kind: null,
         assistance_question: null,

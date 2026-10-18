@@ -210,8 +210,8 @@ it('tells the agent not to fetch or push in opening and continued reviewer turns
 
 it('fetches before an operator resolution is sent and still delivers it if the fetch fails', function (TaskStatus $status, bool $fail): void {
     [, $node, , $group] = turn_fetch_group('turn-fetch-resolution', TaskGroupStatus::Running->value);
-    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Access is missing.']);
-    $task = Task::query()->create([
+    test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Access is missing.']);
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Blocked',

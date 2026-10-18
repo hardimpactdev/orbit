@@ -155,10 +155,10 @@ describe('requests', function (): void {
         file_put_contents($path, '[{"title": "One", "brief": "First."}, {"title": "Two", "brief": "Second."}]');
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
 
-        expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--notify-coder' => true, '--json' => true]))->toBe(0);
+        expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","notify_coder":true,"tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
     });
 
     it('omits the status and notification that the caller did not supply', function (): void {

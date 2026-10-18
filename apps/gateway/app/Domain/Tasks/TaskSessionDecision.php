@@ -14,6 +14,6 @@ final readonly class TaskSessionDecision
 
     public static function escalate(string $reason, float $confidence = 0.0): self
     {
-        return new self(TaskSessionNextAction::EscalateCoder, $confidence, $reason);
+        return new self(TaskSessionNextAction::RequestAssistance, $confidence, $reason);
     }
 }

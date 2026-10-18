@@ -89,7 +89,6 @@ it('refuses a subtask that would have children', function (): void {
         'taskable_type' => null,
         'taskable_id' => null,
         'pr_url' => null,
-        'notify_coder' => null,
         'implementer_model' => null,
         'reviewer_model' => null,
         'reviewer_agent_thread_id' => null,

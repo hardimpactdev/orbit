@@ -97,7 +97,7 @@ it('creates and lists a task group through MCP after the extension is enabled', 
 describe('compact task group show', function (): void {
     it('keeps all subtasks under 64 KiB through MCP and preserves default show and list responses', function (): void {
         app(TaskExtensionState::class)->enable();
-        $group = Task::topLevel()->create([
+        $group = test_create_task(Task::topLevel(), [
             'project_id' => $this->appRecord->id,
             'title' => 'Large group',
             'brief' => str_repeat('g', 8000),
@@ -109,7 +109,7 @@ describe('compact task group show', function (): void {
         ]);
         $tasks = [];
         for ($position = 1; $position <= 10; $position++) {
-            $task = $group->tasks()->create([
+            $task = test_create_task($group->tasks(), [
                 'title' => 'Subtask '.$position,
                 'brief' => str_repeat('b', 8000),
                 'completion_summary' => str_repeat('s', 8000),

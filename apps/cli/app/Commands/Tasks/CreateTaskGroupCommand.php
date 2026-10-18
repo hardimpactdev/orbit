@@ -26,7 +26,6 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--status= : backlog (default) or todo}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--preview : Keep the sandbox running during review}
-        {--notify-coder : Post the Coder settle webhook when the group settles}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -86,7 +85,6 @@ final class CreateTaskGroupCommand extends TaskCommand
                 title: $title,
                 brief: $brief,
                 status: is_string($status) ? $status : null,
-                notifyCoder: $this->option('notify-coder') === true ? true : null,
                 tasks: $subtasks,
                 preview: $this->option('preview') === true ? true : null,
             ),

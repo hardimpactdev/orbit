@@ -28,7 +28,6 @@ final readonly class TaskClaimAdmission
     public function __construct(
         private TaskSubtaskRunner $runner,
         private InstanceProvisioning $provisioning,
-        private CoderSettleNotifier $coder,
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private FailTaskVmAction $failedVms,
@@ -194,7 +193,7 @@ final readonly class TaskClaimAdmission
         $group->started_at ??= now();
         $group->reserved_at = null;
         if ($group->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($group->assistance_reason)) {
-            $group->fill(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
         $group->save();
 
@@ -227,7 +226,9 @@ final readonly class TaskClaimAdmission
                 }
                 if ($this->holdsReservation($group, $reserved)) {
                     $group->status = TaskGroupStatus::Todo;
-                    $group->assistance_reason = TaskScheduler::StartFailedReason;
+                    if (! $group->assistance_requested) {
+                        TaskAssistance::apply($group, reason: TaskScheduler::StartFailedReason);
+                    }
                 }
                 $group->save();
             });
@@ -263,15 +264,11 @@ final readonly class TaskClaimAdmission
             $reason = TaskScheduler::ProvisioningFailedReason.($failure === null ? '' : ' '.$failure->cause);
             $group->status = TaskGroupStatus::Todo;
             if (! $group->assistance_requested) {
-                $group->assistance_reason = $reason;
+                TaskAssistance::apply($group, reason: $reason);
             }
             $group->save();
             if ($failures >= Config::integer('orbit.tasks.provisioning_failure_threshold', 3)) {
-                $wasAsking = $group->assistance_requested;
-                $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-                if (! $wasAsking && $applied) {
-                    DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
-                }
+                TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
             }
         });
     }
@@ -311,7 +308,7 @@ final readonly class TaskClaimAdmission
             $group->capacity_wait_reason = $reason;
             $group->status = TaskGroupStatus::Todo;
             if ($group->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($group->assistance_reason)) {
-                $group->fill(TaskAssistance::cleared());
+                TaskAssistance::apply($group);
             }
             $group->save();
         });
@@ -379,11 +376,20 @@ final readonly class TaskClaimAdmission
         $released = 0;
 
         foreach ($stale(Task::topLevel())->orderBy('id')->pluck('id') as $id) {
-            $updated = $stale(Task::topLevel()->whereKey($id))->update([
-                'status' => TaskGroupStatus::Todo,
-                'assistance_reason' => TaskScheduler::ReservationExpiredReason,
-            ]);
-            if ($updated === 0) {
+            $updated = DB::transaction(function () use ($stale, $id): bool {
+                $group = $stale(Task::topLevel()->whereKey($id))->lockForUpdate()->first();
+                if (! $group instanceof Task) {
+                    return false;
+                }
+
+                $group->update(['status' => TaskGroupStatus::Todo]);
+                if (! $group->assistance_requested) {
+                    TaskAssistance::apply($group, reason: TaskScheduler::ReservationExpiredReason);
+                }
+
+                return true;
+            });
+            if (! $updated) {
                 continue;
             }
 
