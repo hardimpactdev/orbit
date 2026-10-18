@@ -8,8 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 
 describe(ReservedPrivateHostname::class, function (): void {
     it('reserves the platform private hostnames, then the collector hostname that proxycli contributes', function (): void {
-        expect(ReservedPrivateHostname::names())->toBe(['gateway.orbit', 'metrics.orbit', 'reverb.orbit', 'analytics.orbit', 'collector.cli-proxy-api.orbit'])
-            ->and(ReservedPrivateHostname::contributed())->toBe([ProxyCliHostname::Value]);
+        expect(app(ReservedPrivateHostname::class)->names())->toBe(['gateway.orbit', 'metrics.orbit', 'reverb.orbit', 'analytics.orbit', 'collector.cli-proxy-api.orbit']);
     });
 
     it('reserves the collector hostname and leaves the apex free', function (): void {
@@ -17,16 +16,16 @@ describe(ReservedPrivateHostname::class, function (): void {
             ->toBe('collector.cli-proxy-api.orbit')
             ->and(ProxyCliHostname::Apex)
             ->toBe('cli-proxy-api.orbit')
-            ->and(ReservedPrivateHostname::names())
+            ->and(app(ReservedPrivateHostname::class)->names())
             ->toContain(ProxyCliHostname::Value)
             ->not
             ->toContain(ProxyCliHostname::Apex);
 
-        ReservedPrivateHostname::assertAvailable(ProxyCliHostname::Apex);
+        app(ReservedPrivateHostname::class)->assertAvailable(ProxyCliHostname::Apex);
     });
 
     it('refuses reserved private hostnames', function (string $domain): void {
-        expect(fn () => ReservedPrivateHostname::assertAvailable($domain))
+        expect(fn () => app(ReservedPrivateHostname::class)->assertAvailable($domain))
             ->toThrow(function (ResourceOperationException $exception) use ($domain): void {
                 expect($exception->errorCode)
                     ->toBe('route.domain_conflict')
@@ -42,7 +41,7 @@ describe(ReservedPrivateHostname::class, function (): void {
     ]);
 
     it('allows other private hostnames', function (string $domain): void {
-        ReservedPrivateHostname::assertAvailable($domain);
+        app(ReservedPrivateHostname::class)->assertAvailable($domain);
 
         expect($domain)->not->toBeEmpty();
     })->with([

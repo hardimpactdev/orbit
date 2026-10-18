@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Projects\DestroyProjectAction;
-use App\Domain\Extensions\ConfigValue;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -59,5 +58,13 @@ it('gives the collector a safe footprint identity that no other wired artifact u
 
     expect($name)->toBe('proxycli')
         ->and(array_count_values($names)[$name])->toBe(1)
-        ->and(ConfigValue::slug($name))->toBeTrue();
+        ->and($name)->toMatch('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D');
+});
+
+it('wires core footprint artifacts before extension artifacts in apply order', function (): void {
+    $footprint = app(NodeFootprint::class);
+    $artifacts = new ReflectionProperty($footprint, 'artifacts')->getValue($footprint);
+    $names = array_map(static fn (object $artifact): string => $artifact->name(), [...$artifacts]);
+
+    expect($names)->toBe(['agent', 'caddy-package', 'caddy', 'private-dns', 'route-residue', 'tmpfiles', 'proxycli']);
 });

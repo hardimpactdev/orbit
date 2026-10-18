@@ -9,27 +9,18 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Models\Node;
 
-/** The collector hostname on the collector Node's WireGuard address, while setup holds the collector. */
+/** Reserves the collector name even while ProxyCli is off; publishes its Node's WireGuard address while set up. */
 final readonly class ProxyCliPrivateHostnames implements ContributedPrivateHostnames
 {
     public function __construct(private ProxyCliState $state) {}
 
     public function hostnames(): array
     {
-        if (! $this->state->enabled()) {
-            return [ProxyCliHostname::Value => null];
-        }
+        $node = $this->state->enabled() ? Node::query()->find($this->state->nodeId()) : null;
+        $address = $node instanceof Node && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
+            ? $node->wireguard_ip
+            : null;
 
-        $nodeId = $this->state->nodeId();
-
-        if ($nodeId === null) {
-            return [ProxyCliHostname::Value => null];
-        }
-
-        $node = Node::query()->find($nodeId);
-
-        return $node instanceof Node && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
-            ? [ProxyCliHostname::Value => $node->wireguard_ip]
-            : [ProxyCliHostname::Value => null];
+        return [ProxyCliHostname::Value => $address];
     }
 }

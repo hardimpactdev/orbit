@@ -25,17 +25,11 @@ final readonly class ReservedPrivateHostname
     ) {}
 
     /** @return list<string> Core's names, then the names that extensions reserve. */
-    public static function names(): array
+    public function names(): array
     {
-        return [self::Gateway, self::Metrics, WebSocketHostname::Value, AnalyticsHostname::Value, ...self::contributed()];
-    }
+        $names = [self::Gateway, self::Metrics, WebSocketHostname::Value, AnalyticsHostname::Value];
 
-    /** @return list<string> The names that extensions reserve, in provider order. */
-    public static function contributed(): array
-    {
-        $names = [];
-
-        foreach (app(self::class)->contributions as $contribution) {
+        foreach ($this->contributions as $contribution) {
             array_push($names, ...array_keys($contribution->hostnames()));
         }
 
@@ -54,9 +48,9 @@ final readonly class ReservedPrivateHostname
         return array_any([self::PrivateSpace, $vpnDomain], static fn (string $zone): bool => $tld === $zone || str_ends_with($tld, '.'.$zone) || str_ends_with($zone, '.'.$tld));
     }
 
-    public static function assertAvailable(string $domain): void
+    public function assertAvailable(string $domain): void
     {
-        if (in_array($domain, self::names(), true)) {
+        if (in_array($domain, $this->names(), true)) {
             throw new ResourceOperationException(
                 errorCode: 'route.domain_conflict',
                 message: "Route domain [{$domain}] is reserved.",

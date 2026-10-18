@@ -13,6 +13,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -32,7 +33,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($node));
 
         expect($report->family)
             ->toBe(DoctorFamily::Route)
@@ -50,7 +51,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(
             new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
         );
 
@@ -88,7 +89,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->with(Mockery::on(fn (RouteCustomProxy $inspected): bool => $inspected->is($proxy)))
             ->andReturn(new CustomProxyRouteObservation($dns, $certificate, $caddy, $upstream));
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($node));
 
         expect($report->checked)
             ->toBe(1)
@@ -118,7 +119,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldReceive('inspect')->once()->andThrow(new DoctorInspectionException);
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($node));
 
         expect($report->issues)
             ->toHaveCount(1)
@@ -146,7 +147,7 @@ describe(RouteDoctorProbe::class, function (): void {
                 return new CustomProxyRouteObservation(true, true, true, true);
             });
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($node));
 
         expect($report->checked)
             ->toBe(3)
@@ -178,7 +179,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($router));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($router));
 
         expect($report->status)->toBe(DoctorFamilyStatus::Healthy)
             ->and($report->checked)->toBe(1)
@@ -196,7 +197,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($node));
 
         expect($report->status)->toBe(DoctorFamilyStatus::Drift)
             ->and($report->checked)->toBe(1)
@@ -222,7 +223,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(
             new DoctorNodeContext($node, new NodeInspectionData($reachable, null, null, null)),
         );
 
@@ -250,7 +251,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(
             new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
         );
 
@@ -280,7 +281,7 @@ describe(RouteDoctorProbe::class, function (): void {
         ]);
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
-        $probe = new RouteDoctorProbe($inspector);
+        $probe = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class));
 
         $onRouter = $probe->inspect(route_doctor_context($router));
         $onMember = $probe->inspect(route_doctor_context($member));
@@ -311,7 +312,7 @@ describe(RouteDoctorProbe::class, function (): void {
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldNotReceive('inspect');
 
-        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($router));
+        $report = new RouteDoctorProbe($inspector, app(ReservedPrivateHostname::class))->inspect(route_doctor_context($router));
 
         expect($report->checked)->toBe(0)
             ->and($report->issues)->toBeEmpty();
