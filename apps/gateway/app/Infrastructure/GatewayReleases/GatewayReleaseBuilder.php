@@ -109,6 +109,7 @@ final readonly class GatewayReleaseBuilder
         try {
             $this->removePartial($path);
             $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'add', '--detach', '--force', $path, $sha]);
+            $this->prepareCacheDirectory($path);
             $this->linkShared($path);
             $this->installDependencies($path);
             if ($withWeb) {
@@ -291,6 +292,15 @@ final readonly class GatewayReleaseBuilder
         }
 
         $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'prune']);
+    }
+
+    /** Keeps configuration and Composer discovery caches private before any release code runs. */
+    private function prepareCacheDirectory(string $path): void
+    {
+        $cache = $path.'/apps/gateway/bootstrap/cache';
+        if (! is_dir($cache) || realpath($cache) !== $cache || ! @chmod($cache, 0o700)) {
+            throw $this->failure('access', 'gateway.release_access_failed', 'The release cache directory cannot be made private.');
+        }
     }
 
     /**

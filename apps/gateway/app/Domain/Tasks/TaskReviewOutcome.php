@@ -17,8 +17,6 @@ use Throwable;
 
 final readonly class TaskReviewOutcome
 {
-    private const string StaleReviewInspectionFailure = 'Orbit could not inspect the workspace while recovering a stale review after a main merge: ';
-
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
@@ -33,20 +31,10 @@ final readonly class TaskReviewOutcome
         private TaskTurnFetcher $turnFetcher,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
-        private TaskSessionObserver $observer,
     ) {}
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
     {
-        try {
-            if ($this->runner->workspaceChecksRunning($group)) {
-                return true;
-            }
-        } catch (TaskCheckException $exception) {
-            $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return true;
-        }
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
         // subtask's thread. A Pi restart of that turn is not this review. Request the review
@@ -72,6 +60,45 @@ final readonly class TaskReviewOutcome
             return true;
         }
 
+        // A prior verdict already admitted this exact follow-up. Retry its durable command
+        // before requesting a new checkout verdict while the follow-up still owns the lease.
+        $findings = $scheduler->pendingReceipt($task, TaskThreadRole::Reviewer);
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        $implementerThread = $implementer === null ? null : AgentThread::query()->find($implementer->threadId);
+        if ($findings instanceof TaskComment && $scheduler->receiptOutcome($findings) === TaskTurnOutcome::ChangesRequested
+            && ! $task->isFinalReview() && $implementerThread instanceof AgentThread
+            && app(TaskWorkspaceLease::class)->retrying($implementerThread, 'tasks.findings:'.$findings->id)) {
+            $this->relayFindings($scheduler, $group, $task, $observation, $findings);
+
+            return true;
+        }
+        $thread = AgentThread::query()->find($reviewer->threadId);
+        $key = TaskConsultation::reminderKey($task, TaskThreadRole::Reviewer);
+        $pending = $thread instanceof AgentThread ? app(TaskWorkspaceLease::class)->pendingSend($thread, $key) : null;
+        if ($thread instanceof AgentThread && $pending !== null) {
+            try {
+                app(AgentDriverRegistry::class)->get($thread->driver)->send($thread, $pending['message'], $pending['key']);
+                $task->update(['review_reminder_attempt' => $task->review_attempt,
+                    'review_reminder_input_id' => $reviewer->pendingUserInputId ?? $reviewer->pendingApprovalId, 'communication_failures' => 0]);
+            } catch (AgentDriverException $exception) {
+                $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+            }
+
+            return true;
+        }
+
+        try {
+            return app(TaskWorkspaceLease::class)->run($group, 'verdict', 'review-outcome:'.$task->id,
+                fn (): bool => $this->applyStoppedReviewerOutcome($scheduler, $group, $task, $observation, $reviewer), taskId: $task->id);
+        } catch (TaskCheckException $exception) {
+            $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return true;
+        }
+    }
+
+    private function applyStoppedReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation, TaskThreadObservation $reviewer): bool
+    {
         try {
             $read = $scheduler->collectReceipt($group, $task, TaskThreadRole::Reviewer);
         } catch (TaskTurnReceiptException $exception) {
@@ -100,7 +127,7 @@ final readonly class TaskReviewOutcome
             $decision = $this->reviewWorkspaceDecision($scheduler, $group, $task, $reviewer, $receipt, $observation);
             if ($decision === 'orbit_commit') {
                 try {
-                    $recovered = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                    $recovered = $this->recoveredCommit($group, $task, $this->workspaceSnapshot($group));
                 } catch (TaskCheckException $exception) {
                     $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -215,14 +242,11 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
-        if (app(TaskWorkspaceHead::class)->held($group, $receipt)) {
-            return true;
-        }
         $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
         if ($commit === null && $instance instanceof Instance) {
-            // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
+            // Recover only after a completed mutation lease attributes the matching commit to Orbit.
             try {
-                $commit = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
+                $commit = $this->recoveredCommit($group, $task, $this->workspaceSnapshot($group));
             } catch (TaskCheckException $exception) {
                 $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -434,9 +458,12 @@ final readonly class TaskReviewOutcome
      */
     public function startFinalReview(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || app(TaskWorkspaceHead::class)->held($group,
-            ownCheck: $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first()?->id)
-            || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
+        app(TaskWorkspaceLease::class)->run($group, 'verdict', 'final-review:'.$task->id, fn () => $this->startFinalReviewWithLease($scheduler, $group, $task, $alreadyFetched), taskId: $task->id);
+    }
+
+    private function startFinalReviewWithLease(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
+    {
+        if ($task->status !== TaskStatus::Running || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
         try {
@@ -471,6 +498,8 @@ final readonly class TaskReviewOutcome
                 return;
             }
             $base = $this->bases->mergeBase($group);
+        } catch (TaskWorkspaceWaiting) {
+            return;
         } catch (Throwable $exception) {
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -504,11 +533,12 @@ final readonly class TaskReviewOutcome
         if ($scheduler->isWorking($implementer)) {
             return;
         }
+        $key = 'tasks.findings:'.$findings->id;
         try {
-            if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
+            if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Implementer, $implementer->threadId, sendKey: $key)) {
                 return;
             }
-            $this->actor->relayReviewBody($group, $implementer, $findings->body);
+            $this->actor->relayReviewBody($group, $implementer, $findings->body, $key);
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -559,14 +589,9 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
-     * from the pair recorded with the review request, unless a newer implementer turn explains the
-     * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
-     * stopped reviewer turn before it looks again. That later turn applies the outcome when the
-     * workspace matches, and asks for assistance when the working tree still differs. A changed
-     * HEAD starts a fresh delta review without attributing the change to an actor. Another poll of the reminded
-     * turn does neither. A failed read is a communication failure, not a change. A review notified
-     * before a baseline existed has nothing to compare, so its outcome applies as before.
+     * A reviewer turn is read-only. Only a newer implementer handoff, Orbit's committed approval, or a continuous
+     * Orbit mutation lease chain can explain a changed review baseline. An unattributed HEAD or tree change asks
+     * for assistance without restarting the review. A failed read is a communication failure, not a change.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
      * that commit and the working tree still matches. The HEAD from before the approval is not
      * accepted after Orbit has committed, so a reset that drops the commit is refused.
@@ -585,7 +610,7 @@ final readonly class TaskReviewOutcome
         if ($this->workspaceMatchesReview($task, $receipt, $current)) {
             return 'apply';
         }
-        if (! $task->isFinalReview() && $scheduler->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+        if (! $task->isFinalReview() && $scheduler->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($group, $task, $current) !== null) {
             return 'orbit_commit';
         }
         $implementer = $observation->thread(TaskThreadRole::Implementer);
@@ -598,148 +623,32 @@ final readonly class TaskReviewOutcome
 
             return 'wait';
         }
-        if ($this->recordedCheckTree($group, $task, $current)) {
+        if ($this->ownedWorkspaceChange($group, $task, $current)) {
             $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
 
             return 'reopened';
         }
-        $expectedHead = $this->committedApproval($receipt) ? $receipt->commit_sha : $task->review_workspace_head;
-        if (is_string($expectedHead) && $expectedHead !== '' && $current->head !== $expectedHead) {
-            $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
-
-            return 'reopened';
-        }
-        $scheduler->remindOrAssist($group, $task, $reviewer, [
-            new TaskRubricItem('workspace_unchanged', false, TaskScheduler::WorkspaceChangedReminder),
-        ]);
-        if ($task->assistance_requested) {
-            $task->update(['review_handled_comment_id' => $receipt->id]);
-        } elseif ($task->review_reminder_attempt === $task->review_attempt && is_string($reviewer->turnId) && $reviewer->turnId !== '') {
-            // The same stopped turn is not a second change. The next look waits for a newer one.
-            $task->update(['review_notified_turn_id' => $reviewer->turnId]);
-        }
+        $scheduler->requestAssistance($task, $group, TaskScheduler::WorkspaceChangedReminder, $observation, handled: ['review_handled_comment_id' => $receipt->id]);
 
         return 'reminded';
     }
 
-    /**
-     * Older deployments could consume a receipt and ask for assistance after Orbit changed the workspace.
-     * Run before the assistance gate; only an exact recorded Orbit check or merge tree can lift that failure.
-     */
-    public function recoverStaleReview(TaskScheduler $scheduler, Task $group, Task $task): bool
+    private function ownedWorkspaceChange(Task $group, Task $task, TaskWorkspaceSnapshot $current): bool
     {
-        if ($task->status !== TaskStatus::Reviewing || ! $task->assistance_requested
-            || ! $this->workspaceFailure($task)
-            || ($group->assistance_requested && ! $this->workspaceFailure($group))
-            || $group->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-            return false;
-        }
-        $head = $task->review_workspace_head;
-        if (! is_string($head) || $head === '') {
-            return false;
-        }
-        try {
-            if ($this->runner->workspaceChecksRunning($group)) {
-                return false;
-            }
-            $current = $this->workspaceSnapshot($group);
-        } catch (TaskCheckException $exception) {
-            $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
-            $this->reportStaleReviewInspectionFailure($group, $task, $reason);
-            $scheduler->recordCommunicationFailure($task, $group, $reason);
-
-            return false;
-        }
-        if (! (($current->head !== $head && $this->recordedMainMerge($group, $current)) || $this->recordedCheckTree($group, $task, $current))) {
-            return false;
-        }
-        $observation = $this->observer->observe($group, $task);
-        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        if (! $observation->available || $reviewer === null || $scheduler->isWorking($reviewer)
-            || $scheduler->isWorking($observation->thread(TaskThreadRole::Implementer))) {
-            return false;
-        }
-
-        return $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $task->review_handled_comment_id, recoverAssistance: true);
+        return is_string($task->review_workspace_head) && is_string($task->review_workspace_tree)
+            && app(TaskWorkspaceLease::class)->ownedChange($group, $task->review_workspace_head, $task->review_workspace_tree, $current, $task->review_workspace_lease_id);
     }
 
-    private function reportStaleReviewInspectionFailure(Task $group, Task $task, string $reason): void
-    {
-        // Only replace this recovery's failure. An operator may have requested unrelated
-        // assistance while the workspace inspection was in flight.
-        DB::transaction(function () use ($group, $task, $reason): void {
-            $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
-            if ($lockedTask->status !== TaskStatus::Reviewing || ! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)) {
-                return;
-            }
-            TaskAssistance::apply($lockedTask, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            if ($lockedGroup->assistance_requested && $this->workspaceFailure($lockedGroup)
-                && ! $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-                TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            }
-        });
-        $task->refresh();
-        $group->refresh();
-    }
-
-    private function workspaceFailure(Task $task): bool
-    {
-        $reason = $task->assistance_reason;
-
-        return $task->assistance_kind === AssistanceKind::Failure && is_string($reason)
-            && (str_starts_with($reason, self::StaleReviewInspectionFailure) || in_array($reason, [
-                'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder,
-                'Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.',
-            ], true));
-    }
-
-    private function recordedCheckTree(Task $group, Task $task, TaskWorkspaceSnapshot $current): bool
-    {
-        // A stored result proves Orbit observed this exact tree, not that the reviewer approved it.
-        // Re-review it rather than applying the old receipt or blaming the reviewer. This also
-        // covers old baselines captured while a check's temporary untracked files existed.
-        return ($task->review_workspace_head !== $current->head || $task->review_workspace_tree !== $current->tree)
-            && TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
-                ->where('status', '!=', TaskCheckStatus::Running)
-                ->where('head_after', $current->head)->where('tree_after', $current->tree)->exists();
-    }
-
-    private function recordedMainMerge(Task $group, TaskWorkspaceSnapshot $current): bool
-    {
-        // The gate starts after the merge: its before snapshot already contains the merged head.
-        // A finished gate also records after. Never infer ownership from Git parents or commit text.
-        return TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
-            ->where('kind', TaskCheckKind::BaseMerge)
-            ->where(function ($query) use ($current): void {
-                $query->where(function ($query) use ($current): void {
-                    $query->where('head_before', $current->head)->where('tree_before', $current->tree);
-                })->orWhere(function ($query) use ($current): void {
-                    $query->where('head_after', $current->head)->where('tree_after', $current->tree);
-                });
-            })->exists();
-    }
-
-    private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment, bool $recoverAssistance = false): bool
+    private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment): bool
     {
         // Keep the previous tree until the packet is sent so it remains the delta base.
         $previousHead = $task->review_workspace_head;
-        $advanced = DB::transaction(function () use ($group, $task, $handledComment, $recoverAssistance): bool {
+        $advanced = DB::transaction(function () use ($task, $handledComment): bool {
             $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             if ($lockedTask->status !== TaskStatus::Reviewing || $lockedTask->review_attempt !== $task->review_attempt) {
                 return false;
             }
-            if ($recoverAssistance) {
-                if (! $lockedTask->assistance_requested || ! $this->workspaceFailure($lockedTask)
-                    || ($lockedGroup->assistance_requested && ! $this->workspaceFailure($lockedGroup))
-                    || $lockedGroup->tasks()->where('id', '!=', $task->id)->where('assistance_requested', true)->exists()) {
-                    return false;
-                }
-                $lockedGroup->update(TaskAssistance::cleared());
-            }
             $lockedTask->update([
-                ...($recoverAssistance ? TaskAssistance::cleared() : []),
                 'review_handled_comment_id' => $handledComment,
                 'review_attempt' => $lockedTask->review_attempt + 1,
                 'review_reminder_attempt' => null,
@@ -755,8 +664,7 @@ final readonly class TaskReviewOutcome
         $group->refresh();
         TaskFinalReview::log($group, 'workspace head changed during review', [
             'subtask_id' => $task->id, 'previous_head' => $previousHead, 'head' => $current->head,
-            'cause' => $this->recordedMainMerge($group, $current) ? 'orbit_main_merge'
-                : ($this->recordedCheckTree($group, $task, $current) ? 'orbit_check' : 'unattributed_head_change'),
+            'cause' => 'orbit_workspace_lease',
         ]);
         $this->nudgeReviewer($scheduler, $task, $reviewer);
 
@@ -778,17 +686,17 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * Orbit's commit after a lost response: HEAD's parent is the HEAD recorded with the review
-     * request, and HEAD's tree is the tree recorded with that request (ADR 0133).
+     * Recover a matching parent and tree only when a completed Orbit mutation lease
+     * attributes the change. Git shape alone cannot distinguish a reviewer commit.
      */
-    private function recoveredCommit(Task $task, TaskWorkspaceSnapshot $current): ?string
+    private function recoveredCommit(Task $group, Task $task, TaskWorkspaceSnapshot $current): ?string
     {
         $head = $task->review_workspace_head;
         $tree = $task->review_workspace_tree;
         if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '' || $current->head === '' || $current->head === $head) {
             return null;
         }
-        if ($current->parent !== $head || $current->commitTree !== $tree) {
+        if ($current->parent !== $head || $current->commitTree !== $tree || ! $this->ownedWorkspaceChange($group, $task, $current)) {
             return null;
         }
 
@@ -845,7 +753,16 @@ final readonly class TaskReviewOutcome
      */
     public function nudgeReviewer(TaskScheduler $scheduler, Task $task, ?TaskThreadObservation $reviewer): void
     {
-        TaskExecutionHold::run($task->parent, fn () => $this->nudgeAdmittedReviewer($scheduler, $task, $reviewer));
+        if ($task->review_notified_attempt === $task->review_attempt) {
+            return;
+        }
+        try {
+            TaskExecutionHold::run($task->parent, function () use ($scheduler, $task, $reviewer): void {
+                $this->nudgeAdmittedReviewer($scheduler, $task, $reviewer);
+            });
+        } catch (TaskWorkspaceWaiting) {
+            // The durable waiter is retried on the next scheduler tick.
+        }
     }
 
     private function nudgeAdmittedReviewer(TaskScheduler $scheduler, Task $task, ?TaskThreadObservation $reviewer): void
@@ -859,37 +776,36 @@ final readonly class TaskReviewOutcome
         }
         $group = $task->parent()->with('taskable')->firstOrFail();
         try {
-            if ($this->runner->workspaceChecksRunning($group)) {
+            $reserved = $existing->id ?? $this->spawner->reserveReviewer($task);
+            $dispatch = function () use ($scheduler, $group, $task, $existing, $reserved): bool {
+                if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Reviewer, $reserved)) {
+                    return false;
+                }
+                if ($existing === null) {
+                    $threadId = $this->spawner->spawnReviewer($task);
+                    if ($threadId === null) {
+                        throw new AgentDriverException('The reviewer conversation could not be started.');
+                    }
+                } else {
+                    $this->spawner->requestReview($task);
+                    $continued = $scheduler->subtaskReviewer($task);
+                    $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
+                }
+                $group->update(['reviewer_agent_thread_id' => $threadId]);
+
+                return true;
+            };
+            $leases = app(TaskWorkspaceLease::class);
+            if ($reserved === null) {
+                $sent = $leases->run($group, 'reviewer', 'review-dispatch:'.$task->id, $dispatch, taskId: $task->id);
+            } else {
+                $sent = $leases->withThreadLock(AgentThread::query()->findOrFail($reserved), $dispatch);
+            }
+            if (! $sent) {
                 return;
             }
-            // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
-            $snapshot = $this->workspaceSnapshot($group);
-            if ($existing === null && $this->spawner instanceof TaskAgentSpawner) {
-                $reserved = $this->spawner->reserveReviewer($task);
-                if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Reviewer, $reserved)) {
-                    return;
-                }
-                $threadId = $this->spawner->spawnReviewer($task);
-                if ($threadId === null) {
-                    throw new AgentDriverException('The reviewer conversation could not be started.');
-                }
-            } elseif ($existing === null) {
-                if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Reviewer)) {
-                    return;
-                }
-                $threadId = $this->spawner->spawnReviewer($task);
-                if ($threadId === null) {
-                    throw new AgentDriverException('The reviewer conversation could not be started.');
-                }
-            } else {
-                if (! $this->runner->prepareTurn($scheduler, $group, $task, TaskThreadRole::Reviewer, $existing->id)) {
-                    return;
-                }
-                $this->spawner->requestReview($task);
-                $continued = $scheduler->subtaskReviewer($task);
-                $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
-            }
-            $group->update(['reviewer_agent_thread_id' => $threadId]);
+        } catch (TaskWorkspaceWaiting) {
+            return;
         } catch (Throwable $exception) {
             report($exception);
             $scheduler->recordCommunicationFailure($task, $group, TaskScheduler::ReviewRequestFailedReason.' ('.class_basename($exception).').');
@@ -900,8 +816,6 @@ final readonly class TaskReviewOutcome
         $task->update([
             'review_notified_attempt' => $task->review_attempt,
             'review_notified_turn_id' => $reviewer?->turnId,
-            'review_workspace_head' => $snapshot->head,
-            'review_workspace_tree' => $snapshot->tree,
         ]);
         $scheduler->clearCommunicationFailures($task);
     }

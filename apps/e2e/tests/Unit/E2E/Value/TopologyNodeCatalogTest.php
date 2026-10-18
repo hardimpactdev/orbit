@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyNodeCatalog;
+use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyRecipe;
 
 it('reads every Node of the catalog file in composition order', function () {
@@ -14,18 +14,26 @@ it('reads every Node of the catalog file in composition order', function () {
         ->and($catalog->defaults)->toBe(['app-dev', 'app-prod'])
         ->and($catalog->extraRoles)->toBe(['ingress'])
         ->and($catalog->ownClusterRoles)->toBe(['ingress'])
-        ->and($catalog->memoryFor(RoleImage::AppProd))->toBe('1GiB');
+        ->and($catalog->node('app-prod')['memory'])->toBe('1GiB');
 });
 
-it('names each declarable Node by the base role its role image renders', function () {
+it('gives each declarable Node the workload purpose, a base role, and a TLD', function () {
     foreach (TopologyNodeCatalog::load()->nodes as $key => $node) {
         if ($node['declarable']) {
-            expect($node['image']->programRoles())->toBe([$node['base_role']], $key)
+            expect($node['purpose'])->toBe(TopologyNodePurpose::Workload, $key)
+                ->and($node['base_role'])->not->toBeNull()
                 ->and($node['tld'])->not->toBeNull();
         } else {
-            expect($node['base_role'])->toBeNull($key);
+            expect($node['purpose'])->toBe(TopologyNodePurpose::from($key), $key)
+                ->and($node['base_role'])->toBeNull();
         }
     }
+});
+
+it('names the Gateway and operator Nodes by their purpose', function () {
+    expect(TopologyNodePurpose::Gateway->roles())->toBe(['gateway', 'vpn'])
+        ->and(TopologyNodePurpose::Operator->roles())->toBe([])
+        ->and(TopologyNodePurpose::Workload->roles())->toBe([]);
 });
 
 it('keeps the Gateway first, the operator last, and every address unique and ascending', function () {
@@ -49,6 +57,8 @@ it('refuses a catalog with a missing or mistyped field', function (string $json)
     expect(fn () => TopologyNodeCatalog::fromJson($json))->toThrow(RuntimeException::class);
 })->with([
     'no nodes' => ['{"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
-    'address as text' => ['{"nodes":{"gateway":{"declarable":false,"image":"gateway","address":"10","checkout":true,"memory":"1GiB"}},"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
+    'address as text' => ['{"nodes":{"gateway":{"declarable":false,"address":"10","checkout":true,"memory":"1GiB"}},"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
+    'an undeclarable Node with no purpose' => ['{"nodes":{"builder":{"declarable":false,"address":10,"checkout":true,"memory":"1GiB"}},"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
+    'an undeclarable workload' => ['{"nodes":{"workload":{"declarable":false,"address":10,"checkout":true,"memory":"1GiB"}},"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
     'no extra roles' => ['{"nodes":{},"default":[]}'],
 ]);

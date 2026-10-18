@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use Closure;
 use RuntimeException;
 
@@ -16,7 +17,7 @@ final class NativeTaskExecutionLock implements TaskExecutionLock
 
     public function __construct(private readonly string $directory) {}
 
-    public function synchronized(int $groupId, Closure $operation): mixed
+    public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
     {
         if (isset($this->held[$groupId])) {
             return $operation();
@@ -30,7 +31,10 @@ final class NativeTaskExecutionLock implements TaskExecutionLock
             throw new RuntimeException('Could not open task execution lock.');
         }
         try {
-            if (! chmod($this->directory, 0o700) || ! chmod($path, 0o600) || ! flock($handle, LOCK_EX)) {
+            if (! chmod($this->directory, 0o700) || ! chmod($path, 0o600) || ! flock($handle, LOCK_EX | ($wait ? 0 : LOCK_NB))) {
+                if (! $wait) {
+                    throw new TaskWorkspaceWaiting('Another admitted task operation is still recording its result.');
+                }
                 throw new RuntimeException('Could not acquire task execution lock.');
             }
             $this->held[$groupId] = true;

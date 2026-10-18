@@ -68,7 +68,7 @@ final readonly class UpdateTaskGroupAction
             $locked->save();
 
             return $locked;
-        }));
+        }), wait: false);
 
         if ($data->status === TaskGroupStatus::Todo) {
             $this->scheduler->claimNext();

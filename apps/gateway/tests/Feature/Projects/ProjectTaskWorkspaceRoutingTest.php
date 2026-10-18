@@ -225,18 +225,19 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
     ]);
     $ordinaryRoute->targets()->create(['instance_id' => $ordinary->id, 'position' => 0]);
 
-    $mismatched = Instance::query()->create([
-        'project_id' => $shop->id,
-        'node_id' => $node->id,
-        'name' => 'not-a-workspace',
-        'checkout_path' => '/srv/orbit/apps/shop/not-a-workspace',
-        'status' => 'source_resolved',
-    ]);
     $managed = Task::topLevel()->create([
         'project_id' => $shop->id,
         'title' => 'Mismatched name',
         'brief' => 'Not this Instance.',
         'status' => 'running',
+    ]);
+    $mismatched = Instance::query()->create([
+        'task_workspace_owner_id' => $managed->id,
+        'project_id' => $shop->id,
+        'node_id' => $node->id,
+        'name' => 'not-a-workspace',
+        'checkout_path' => '/srv/orbit/apps/shop/not-a-workspace',
+        'status' => 'source_resolved',
     ]);
     $managed->taskable()->associate($mismatched);
     $managed->save();
@@ -298,19 +299,20 @@ function routing_project_payload(string $slug): array
 
 function routing_task_workspace(Project $project, Node $node, string $status, ?string $root, bool $withRoute, string $domain): Instance
 {
+    $task = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Workspace '.$domain,
+        'brief' => 'Record the provisioned mode.',
+        'status' => 'running',
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $task->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'pending-'.Str::uuid()->toString(),
         'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/'.Str::uuid()->toString(),
         'root' => $root,
         'status' => $withRoute ? 'active' : $status,
-    ]);
-    $task = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Workspace '.$domain,
-        'brief' => 'Record the provisioned mode.',
-        'status' => 'running',
     ]);
     $name = 'task-'.$task->id;
     $attributes = ['name' => $name, 'branch_override' => $name];

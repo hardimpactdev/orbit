@@ -3520,7 +3520,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes the unattached workspace the group owns, unless a live claim still uses it. An Instance name or branch never makes an Instance a task workspace. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -3703,7 +3703,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -4872,6 +4872,7 @@ export interface components {
             assistance?: components["schemas"]["TaskAssistance"][];
             last_tick_at?: string | null;
             merges?: components["schemas"]["TaskMerge"][];
+            workspace_leases?: components["schemas"]["TaskWorkspaceLease"][];
         };
         TaskAssistance: {
             id?: number;
@@ -4899,6 +4900,24 @@ export interface components {
             /** @enum {string|null} */
             merge_status?: "waiting" | "refused" | "merged" | null;
             merge_reason?: string | null;
+        };
+        TaskWorkspaceLease: {
+            instance_id?: number;
+            instance_name?: string;
+            group_id?: number;
+            project_code?: string;
+            holder?: components["schemas"]["TaskWorkspaceActor"] | null;
+            waiters?: components["schemas"]["TaskWorkspaceActor"][];
+        };
+        TaskWorkspaceActor: {
+            id?: number;
+            kind?: string;
+            owner?: string;
+            acquired_at?: string | null;
+            queued_at?: string | null;
+            thread_id?: number | null;
+            check_id?: number | null;
+            remote_uncertain?: boolean;
         };
         ToolInventory: {
             node_id?: number;

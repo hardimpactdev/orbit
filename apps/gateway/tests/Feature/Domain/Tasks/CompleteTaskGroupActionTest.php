@@ -7,9 +7,12 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -49,13 +52,6 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'public_ssh_host' => '10.44.0.150',
         'wireguard_ip' => '10.44.0.150',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-20',
-        'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Complete me',
@@ -63,8 +59,12 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'status' => $status,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
     ]);
-    $group->taskable()->associate($instance);
-    $group->save();
+    test_task_workspace($group, [
+        'node_id' => $node->id,
+        'name' => 'task-20',
+        'branch_override' => null,
+        'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
+    ]);
 
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
@@ -96,6 +96,37 @@ it('removes the shared App instance and marks a settling group completed', funct
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and(Instance::query()->find($instanceId))->toBeNull();
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
+
+it('never removes a user Instance named and branched like the workspace of the group it completes', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = complete_group();
+    $name = 'task-'.$group->id;
+    $workspace = $group->taskable;
+    $group->taskable()->dissociate();
+    $group->save();
+    $workspace->delete();
+    $user = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $workspace->node_id, 'name' => $name, 'branch_override' => $name, 'checkout_path' => '/srv/orbit/apps/complete-app/'.$name, 'status' => 'source_resolved']);
+    $remover = new class implements InstanceRemover
+    {
+        /** @var list<int> */
+        public array $calls = [];
+
+        public function execute(Instance $instance, bool $force): InstanceRemoval
+        {
+            $this->calls[] = $instance->id;
+            $instance->delete();
+
+            return new InstanceRemoval;
+        }
+    };
+    app()->instance(InstanceRemover::class, $remover);
+
+    $completed = app(CompleteTaskGroupAction::class)->execute($group);
+
+    expect($completed->status)->toBe(TaskGroupStatus::Completed)
+        ->and($remover->calls)->toBe([])
+        ->and(Instance::query()->find($user->id))->name->toBe($name)->branch_override->toBe($name);
+});
 
 it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
     app(TaskExtensionState::class)->enable();
@@ -229,6 +260,7 @@ it('complete ended cancels open subtasks through the API and removes the workspa
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     $checks = new FakeTaskCheckRunner;
@@ -311,10 +343,11 @@ it('complete ended resumes a committed authorization without GitHub after a stop
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     $driver->failNextInterrupt = $failure === 'interrupt';
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     $checks->failNextCancel = $failure === 'check';
     app()->instance(TaskCheckRunner::class, $checks);
     $receipts = new FakeTaskTurnReceipts;
@@ -322,6 +355,13 @@ it('complete ended resumes a committed authorization without GitHub after a stop
     $spawner = new class implements AgentSpawner
     {
         public int $starts = 0;
+
+        public function reserveReviewer(Task $task): ?int
+        {
+
+            return null;
+
+        }
 
         public function spawnReviewer(Task $task): ?int
         {
@@ -411,10 +451,11 @@ it('complete ended holds stale transitions and start or send boundaries during i
         'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     $driver->failNextInterrupt = $fail;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner($fail ? [TaskCheckReading::running()] : null);
     app()->instance(TaskCheckRunner::class, $checks);
     $receipts = new FakeTaskTurnReceipts;
     app()->instance(TaskTurnReceipts::class, $receipts);
@@ -496,6 +537,7 @@ it('complete ended revalidates and stops a replacement reviewer and check before
     ]);
     $group->update(['reviewer_agent_thread_id' => $previousReviewer->id]);
     $driver = new FakeAgentDriver('fake');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     $checks = new FakeTaskCheckRunner;
@@ -569,7 +611,7 @@ it('complete ended refuses an interrupted baseline start and retries without Git
         'pid' => $pid, 'process_started' => $started, 'head_before' => '', 'tree_before' => '',
         'started_at' => now()->subSeconds(TaskScheduler::BASELINE_START_LIMIT_SECONDS + 1),
     ]);
-    $checks = new FakeTaskCheckRunner;
+    $checks = new FakeTaskCheckRunner($resume === 'tick' ? [TaskCheckReading::running()] : null);
     app()->instance(TaskCheckRunner::class, $checks);
     $remover = new class implements InstanceRemover
     {

@@ -346,6 +346,18 @@ Every Orbit task handoff selects affected tests from the subtask's latest passed
 
 CI ignores that base when `CI` or `GITHUB_ACTIONS` is set and selects the full branch. The gate accepts a stored tree or an ancestor commit, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the test base. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
 
+A handoff tree is not Pest's recorded commit. Pest accepts a baseline SHA only when that SHA is a commit and an ancestor of `HEAD`. The gate must not store the tree object in that field. Pest would report the recorded commit as unreachable and rebuild the project graph, which reruns the whole suite.
+
+The gate keeps the cached dependency edges, sets the recorded SHA to `HEAD`, and stores a snapshot of the comparison tree in Pest's working-tree baseline. Those snapshot values are Pest's own content hashes of the blobs in that tree. A path the tree does not contain is an empty string, which is Pest's mark for an absent file. The gate clears cached results. A pass or failure from another tree is not evidence for this one.
+
+The snapshot is what narrows the suite. A file that still matches the comparison tree is not selected, including uncommitted work already checked at that tree. A file that differs from the tree stays selected. That includes a later edit on top of uncommitted work and a file restored to the `HEAD` commit.
+
+An absent path must stay in the snapshot. Omitting it hides a later restore: the restored bytes can match `HEAD`, so Pest's commit diff never lists the file. The empty mark puts that file back into the affected set. A deletion that is still absent does not by itself select tests the graph does not already connect to that path. Setting the SHA to `HEAD` and leaving the whole snapshot empty does not do this. Every dirty file would look changed, and a revert to `HEAD` would disappear.
+
+When the copied graph is missing, cannot be read, has no dependency edges, or the snapshot cannot be hashed, the gate deletes that run copy and says why. Pest then records a new graph by running the full suite. The reason is part of the gate output. A structural fingerprint change, such as a different `composer.lock`, still makes Pest discard the graph itself. `CI` and `GITHUB_ACTIONS` never apply this retarget. They still select every change on the branch.
+
+A warm docs-only change against that tree baseline should not rebuild the graph or run tests for unchanged code. On one worker it should finish within two minutes. A later change that breaks an affected test should still fail the gate.
+
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
@@ -361,7 +373,7 @@ When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Program
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
 
-Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
+Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline, so a local branch baseline cannot hide changes. Without a handoff base, the gate selects tests for every change since `main`. With a handoff base, it retargets that `main` entry to the handoff commit, or to `HEAD` plus the comparison-tree snapshot described above. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
 
 When the candidate changes the project, the gate runs that project’s architecture tests from CI, including the CLI binary contract. CLI documentation, binary scripts, and workflows also trigger the CLI contracts. The SDK’s existing architecture checks include its request inventory in `RepositoryGuidanceTest`.
 
@@ -471,7 +483,7 @@ It refuses a path that exists but is not a registered worktree. Then it runs `bi
 
 `bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
 
-`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh, releases the worktree's discovery topology, and removes the worktree. Then it deletes the merged branch. A discovery topology holds no review evidence, so removal never waits on it.
+`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh and removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Main caches
 
@@ -621,7 +633,17 @@ A green gate must mean that every selected check ran. Skipping a check when its 
 
 ### The gate selects against main
 
-A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests. The gate keeps only the `main` baseline in its run copy, so it selects tests for every change since `main`. Local runs are unchanged and still write the project's own graph.
+A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests.
+
+The gate keeps only the `main` baseline in its run copy. Without a handoff base, that baseline stays `main`, so the gate selects every change since `main`. With a handoff base, the same entry is retargeted as [The candidate gate](#the-candidate-gate) describes. Local runs are unchanged and still write the project's own graph.
+
+### A handoff tree is not a Pest commit
+
+Pest rebuilds its graph when the recorded SHA is not an ancestor commit. Writing the handoff tree into that field is a rejected alternative, because every later handoff would run the whole suite. Using `HEAD` with an empty snapshot is also rejected. Uncommitted files that the comparison tree already checked would be tested again, and a file restored to `HEAD` would be skipped.
+
+Omitting a path the comparison tree does not contain is rejected as well. Pest stores that absence as an empty string. Without the mark, a later restore that matches `HEAD` never enters the affected set, even when another file in the project is selected.
+
+Keeping the previous run's pass results is rejected too. Those results belong to another tree. Deleting the edges and inventing a new cache is rejected as well. The existing edges stay, and an unusable graph falls back to Pest's own full recording with an explicit reason.
 
 Passing on a warning is a rejected alternative when a change selects no tests. The gate runs the project's full suite with `--no-tia` instead. Changed source files with no selected tests take this path.
 

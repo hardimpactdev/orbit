@@ -32,6 +32,10 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
     public ?string $commitTree = null;
 
+    public ?string $parentTree = null;
+
+    public ?string $secondParent = null;
+
     /** @var list<int> the database transaction level at each cancel */
     public array $cancelTransactionLevels = [];
 
@@ -59,7 +63,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<string|null> configured commands for each started check */
     public array $commands = [];
 
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;
@@ -67,6 +71,11 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         $this->commands[] = $command;
 
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', $this->head, $this->tree);
+    }
+
+    public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
+    {
+        return null;
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -100,6 +109,6 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The workspace tree could not be read.');
         }
 
-        return new TaskWorkspaceSnapshot($this->head, $this->tree, $this->parent, $this->commitTree);
+        return new TaskWorkspaceSnapshot($this->head, $this->tree, $this->parent, $this->commitTree, $this->parentTree, $this->secondParent);
     }
 }

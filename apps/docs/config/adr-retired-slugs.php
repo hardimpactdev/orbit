@@ -209,4 +209,5 @@ return [
         '0208-deploy-the-gateway-with-laravel-migrations',
     ],
     '0217' => ['0217-deploy-production-instances-automatically-by-polling'],
+    '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
 ];

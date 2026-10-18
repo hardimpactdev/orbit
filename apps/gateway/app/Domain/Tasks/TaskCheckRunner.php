@@ -32,7 +32,12 @@ interface TaskCheckRunner
      *
      * @throws TaskCheckException
      */
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $runId = null): TaskCheckProcess;
+
+    /** Adopt this exact start, or atomically tombstone a request that never arrived.
+     * @throws TaskCheckException
+     */
+    public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess;
 
     /** @throws TaskCheckException */
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading;

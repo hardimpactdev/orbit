@@ -125,6 +125,7 @@
               "reference/operations",
               "reference/tasks",
               "reference/compute-drivers",
+              "reference/docker-provider-migration",
               "reference/pi-server",
               "reference/conn",
               "reference/cli-binaries",
@@ -666,6 +667,7 @@
               "decisions/0215-start-development-processes-from-project-definitions",
               "decisions/0216-run-one-exact-php-build-everywhere",
               "decisions/0218-take-long-commands-off-the-request-path",
+              "decisions/0219-answer-cluster-names-from-a-dns-on-the-router",
               "decisions/0222-give-task-vms-a-cloned-topology-seed"
             ]
           }
@@ -1063,7 +1065,7 @@
     },
     {
       "source": "/decisions/0005-rolling-incus-development-topology",
-      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
+      "destination": "/reference/incus-topologies#composed-from-one-template"
     },
     {
       "source": "/decisions/0006-topology-led-feature-development",
@@ -1079,23 +1081,23 @@
     },
     {
       "source": "/decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
-      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
+      "destination": "/reference/incus-topologies#composed-from-one-template"
     },
     {
       "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
-      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
+      "destination": "/reference/incus-topologies#composed-from-one-template"
     },
     {
       "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
-      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
+      "destination": "/reference/incus-topologies#composed-from-one-template"
     },
     {
       "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
@@ -1103,15 +1105,15 @@
     },
     {
       "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0050-release-successful-proof-resources-before-landing",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0056-retain-proof-topologies-for-interactive-review",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
@@ -1327,7 +1329,7 @@
     },
     {
       "source": "/decisions/0051-select-discovery-only-feature-delivery",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0052-seed-worktrees-from-successful-main-test-baselines",
@@ -1343,7 +1345,7 @@
     },
     {
       "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",
-      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+      "destination": "/contributor-guide#review-reproduces-on-a-topology"
     },
     {
       "source": "/decisions/0059-make-the-builder-own-the-candidate-quality-gate",
@@ -1576,6 +1578,10 @@
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
+    },
+    {
+      "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
+      "destination": "/reference/tasks#workspace-lease"
     }
   ]
 }

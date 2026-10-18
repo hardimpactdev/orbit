@@ -6,8 +6,10 @@ namespace App\Providers;
 
 use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
+use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliReservedHostnames;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
@@ -77,6 +79,7 @@ final class ProxyCliServiceProvider extends ExtensionServiceProvider
             $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
             $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
         }
+        $this->contribute(ProcessRemovalGuard::class, ProxyCliProcessOwnership::class);
         $this->contribute(ContributedCaddySiteSource::class, ProxyCliCaddySiteSource::class);
         $this->contribute(NodeFootprintArtifact::class, ProxyCliFootprintArtifact::class);
         $this->contribute(ContributedPrivateDnsRecords::class, ProxyCliPrivateDnsRecords::class);

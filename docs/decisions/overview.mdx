@@ -38,6 +38,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0216](/decisions/0216-run-one-exact-php-build-everywhere) | Run one exact PHP build everywhere | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
+| [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress |
 | [0222](/decisions/0222-give-task-vms-a-cloned-topology-seed) | Give task VMs a cloned topology seed | In progress; changes items 4 and 5 of the Orbit Project section of [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm); adds a `topology-seed` phase to [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) |
 
 ## Retired decisions
@@ -50,7 +51,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |
 | 0004 | Define the verify-only Doctor boundary | [doctor: Why it works this way](/cli/doctor#why-it-works-this-way) |
-| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
+| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
 | 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topologies: A live mount](/reference/incus-topologies#a-live-mount) |
 | 0008 | Define typed app-dev node storage settings | [Node settings](/reference/node-settings) |
 | 0009 | Adopt clustered Instance routing | [Routes: Set up private traffic](/reference/routes#set-up-private-traffic) |
@@ -59,13 +60,13 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0012 | Ubuntu 24.04 operator clients (withdrawn) | [Node provisioning: Add a Node](/reference/node-provisioning#add-a-node) |
 | 0013 | Manage schedules with native systemd timers | [Schedules](/reference/schedules) |
 | 0014 | Maintain verified documentation as implementation context | [Contributor guide: One documentation corpus](/contributor-guide#one-documentation-corpus) |
-| 0015 | Retain Incus proof by recorded-input equivalence (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0015 | Retain Incus proof by recorded-input equivalence (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/projects#update-a-project) |
 | 0017 | Make Cluster placement optional | [cluster: Placement and TLDs](/cli/cluster#placement-and-tlds) |
 | 0018 | Register caller-local development worktrees as Instances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
-| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
+| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
 | 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
-| 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
 | 0024 | Make generated Route identity follow its target | [Routes: Why it works this way](/reference/routes#generated-identity-follows-the-target) |
 | 0025 | Stabilize the default Instance identity | [Applications: The default Instance keeps its name](/domains/applications#the-default-instance-keeps-its-name) |
@@ -78,9 +79,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0032 | Preserve explicit Instance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
 | 0034 | Select Instance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
-| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
+| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
 | 0036 | Support only Instances | [Applications: One application model](/domains/applications#one-application-model) |
-| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
+| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template) |
 | 0038 | Cascade Instance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/instance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
 | 0040 | Extend issue proof with one app-prod Node (superseded) | [Incus topologies: Declared Nodes](/reference/incus-topologies#declared-nodes) |
@@ -92,16 +93,16 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0046 | Own production release deployment in Orbit | [Production release layout](/reference/deployments) |
 | 0047 | Create production Instances from candidates | [Instance cloning](/reference/instance-cloning) |
 | 0048 | Copy Project process and schedule definitions into Instances | [Processes and schedules: Production copies](/reference/processes-and-schedules#production-copies) |
-| 0049 | Keep delivery artifacts off the merge head (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
-| 0050 | Release successful proof resources before landing (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
-| 0051 | Select discovery-only feature delivery (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0049 | Keep delivery artifacts off the merge head (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
+| 0050 | Release successful proof resources before landing (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
+| 0051 | Select discovery-only feature delivery (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0052 | Seed worktrees from successful main test baselines | [Feature delivery: Main caches come only from clean main](/reference/implementation-loop#main-caches-come-only-from-clean-main) |
 | 0053 | Use local review checks for feature landing (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0054 | Maintain main caches asynchronously | [Feature delivery: Maintenance runs in the background](/reference/implementation-loop#maintenance-runs-in-the-background) |
 | 0055 | Restrict Grafana access to authorized Gateway peers | [Metrics role: Grafana access](/reference/metrics#grafana-access) |
-| 0056 | Retain proof topologies for interactive review (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0056 | Retain proof topologies for interactive review (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0057 | Limit Metrics exporters to managed Nodes | [Metrics role: Exporter selection](/reference/metrics#exporter-selection) |
-| 0058 | Separate Incus requirements from delivery flow (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0058 | Separate Incus requirements from delivery flow (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0059 | Make the Builder own the candidate quality gate (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0060 | Record the latest Schedule run status | [Schedules: Latest run](/reference/schedules#latest-run) |
 | 0061 | Use VPN DNS by default on managed peers | [Private DNS: Resolver selection](/reference/private-dns#resolver-selection) |
@@ -246,7 +247,8 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#orbit-reviews-before-it-pushes); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
 | 0205 | Publish database credentials to Vaultwarden | [Vaultwarden](/reference/vaultwarden); [Vaultwarden: Why it works this way](/reference/vaultwarden#why-it-works-this-way) |
-| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One recipe base image](/reference/incus-topologies#one-recipe-base-image); [Node provisioning: Converge a Node to a recipe](/reference/node-provisioning#converge-a-node-to-a-recipe) |
+| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Node provisioning: Converge a Node to a recipe](/reference/node-provisioning#converge-a-node-to-a-recipe) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |
 | 0208 | Deploy the Gateway with Laravel migrations and explicit database recovery | [Update and recover a Gateway: Laravel owns migrations](/reference/gateway-recovery#laravel-owns-migrations) |
 | 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
+| 0220 | Serialize task workspaces with one durable lease | [Tasks: Workspace lease](/reference/tasks#workspace-lease) |

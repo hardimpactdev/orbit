@@ -27,6 +27,7 @@ final class SnapshotAgentDriver extends FakeAgentDriver
         $id = $intent->externalId ?? (string) Str::uuid();
         $result = $this->dispatch($intent->node, [
             'type' => 'create', 'threadId' => $id, 'title' => $intent->title,
+            'deferOpeningTurn' => $intent->deferOpeningTurn,
             'model' => $intent->model, 'effort' => $intent->effort,
             'worktreePath' => $intent->workspace->checkout_path, 'branch' => $intent->workspace->branch,
             'message' => ['text' => $intent->prompt],

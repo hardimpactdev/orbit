@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewRequestLogins;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Processes\CommandResult;
@@ -215,6 +216,16 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      */
     public function publishQueued(TaskVm $vm, string $commit, string $branch, float $deadline): void
     {
+        $group = $vm->group;
+        if (! $group instanceof Task) {
+            return;
+        }
+        app(TaskWorkspaceLease::class)->run($group, 'publication', 'publish-vm:'.$vm->id.':'.$commit,
+            fn () => $this->publishQueuedWithLease($vm, $commit, $branch, $deadline));
+    }
+
+    private function publishQueuedWithLease(TaskVm $vm, string $commit, string $branch, float $deadline): void
+    {
         $queued = static fn () => TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)
             ->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued);
         if ($queued()->update(['publish_started_at' => now()]) !== 1) {
@@ -240,7 +251,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     $branch,
                     array_values(array_filter($tips, is_string(...))),
                     $access,
-                    fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed'),
+                    fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed', mutates: true),
                     'tasks.push_failed',
                     $deadline,
                 );

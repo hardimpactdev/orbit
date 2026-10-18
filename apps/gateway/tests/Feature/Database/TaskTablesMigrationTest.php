@@ -89,17 +89,17 @@ it('persists a Task morph to a Project instance and ordered subtasks', function 
         'slug' => 'task-migration',
         'repository_url' => 'git@example.test:task-migration.git',
     ]);
+    $group = $project->tasks()->create([
+        'title' => 'Morph',
+        'brief' => 'Attach the instance.',
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => '/tmp/task-migration',
         'status' => 'reserved',
-    ]);
-
-    $group = $project->tasks()->create([
-        'title' => 'Morph',
-        'brief' => 'Attach the instance.',
     ]);
     $group->taskable()->associate($instance);
     $group->tokens = 12;

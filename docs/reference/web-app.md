@@ -115,7 +115,7 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries unattached leftovers. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
+The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
 
 The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies. A `question_closed` comment is labeled `Question closed`. The generated types also include `provider_retry` comments. These comments show the reserved attempt, delay, and failed turn for [transient provider retries](/reference/tasks#retry-a-transient-provider-error); the task stays in its current phase while it waits.
 
@@ -135,6 +135,8 @@ A card for a task that asks for direction says `Needs your direction`, and the t
 | `tasks.updated` | Nothing. It stores the new `enabled` value. |
 
 The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
+
+Checkout ownership is separate from the task board status. A task that waits for another [workspace lease](/reference/tasks#workspace-lease) stays in its current task state and does not gain a check failure. The `tasks:status` API and Doctor expose the holder and waiters for diagnosis.
 
 ## Live Activity
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\Extensions\ConfigValue;
 use App\Domain\Nodes\CaddyRelease;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -50,7 +51,7 @@ final readonly class NodeCaddyPushScript
         }
 
         foreach ($caddyfile->listenAddresses as $address) {
-            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            if (! ConfigValue::ipv4($address)) {
                 throw new InvalidArgumentException('A Node Caddyfile listen address must be an IPv4 address.');
             }
         }
@@ -84,7 +85,7 @@ final readonly class NodeCaddyPushScript
     public function addressCheck(NodeCaddyfile $caddyfile): RemoteCommand
     {
         foreach ($caddyfile->listenAddresses as $address) {
-            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            if (! ConfigValue::ipv4($address)) {
                 throw new InvalidArgumentException('A Node Caddyfile listen address must be an IPv4 address.');
             }
         }
