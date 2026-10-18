@@ -6,6 +6,7 @@ namespace App\Actions\DatabaseConnections;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 
@@ -24,6 +25,11 @@ final readonly class DestroyDatabaseConnectionAction
                 message: "Detach Database connection [{$connection->slug}] from every Instance before removing it.",
                 status: 409,
             );
+        }
+
+        /** @var DatabaseConnectionRemovalGuard $guard */
+        foreach (app()->tagged(DatabaseConnectionRemovalGuard::class) as $guard) {
+            $guard->assertRemovable($connection);
         }
 
         $this->drops->execute($connection);

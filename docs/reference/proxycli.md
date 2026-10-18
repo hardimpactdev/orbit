@@ -101,6 +101,8 @@ The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd d
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
+While setup uses a Database connection, `database:destroy` refuses to remove it with HTTP 409 `database_connection.required_by_ai_router`. Turning off the extension switch keeps this guard; teardown releases it. Updating that connection validates its proposed driver and placement before saving, then reconverges the collector after the transaction commits. Setup and reconvergence build the same collector environment from the stored settings, including the stored collector port, and the current connection credentials.
+
 The extension stores the collector Process’s source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. The upgrade copies rows with a non-null source revision or pending activation in one SQLite transaction before removing the old columns. A Process without either value has no source row; absence means a null revision and no pending activation. Rollback restores the source state and those defaults.
 
 This data move does not install or restart a Process. An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
