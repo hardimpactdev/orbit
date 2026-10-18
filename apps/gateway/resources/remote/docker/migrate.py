@@ -615,7 +615,7 @@ def public_report(state):
 def restore_policies(state):
     if ('docker-ce' not in packages() or DROPIN.exists()
             or daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon']))
-            or api('GET', '/info').get('DockerRootDir') != state['metadata_roots']['docker']):
+            or str(storage_root(api('GET', '/info').get('DockerRootDir'), 'restore-engine')) != state['metadata_roots']['docker']):
         raise RecipeFailure('restore-engine')
     current = [inspect_container(old['Id'], missing=True) for old in state['containers']]
     if any(not actual or actual['Name'] != old['Name'] for old, actual in zip(state['containers'], current, strict=True)):

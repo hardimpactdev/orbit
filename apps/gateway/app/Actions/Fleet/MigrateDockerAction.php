@@ -114,7 +114,10 @@ final readonly class MigrateDockerAction
         $report = $result->data;
         if ($result->outcome === 'failed') {
             $report['healthy'] = false;
-            $report['message'] = 'Resume the same command with the same recipe after resolving the failure. Use --fallback only after reviewing a fallback-required refusal. No volume data was deleted.';
+            $report['message'] = 'Resume the same command with the same recipe after resolving the failure. No volume data was deleted.';
+            if ($mode === 'prepare' && ($report['failure'] ?? null) === 'docker-migration:fallback-required') {
+                $report['message'] .= ' Review the refusal before retrying with --fallback.';
+            }
         }
 
         $fields = [];

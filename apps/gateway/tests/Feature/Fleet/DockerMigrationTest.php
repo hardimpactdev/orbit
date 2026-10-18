@@ -129,22 +129,32 @@ it('reports final states after reconciling stored specs for migration and policy
     }
 })->with(['migration' => [false, false], 'migration Process failure' => [true, false], 'policy recovery' => [false, true], 'policy recovery Process failure' => [true, true]]);
 
-it('reports final states on remote failure without reconciling Processes or exposing logs', function (): void {
+it('reports remote failures with recovery advice for the failed action', function (bool $restorePolicies, string $failure, bool $offerFallback): void {
     $node = FleetFixtures::node('docker-failure', [RoleName::AppProd]);
     $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(new ProgramResult('failed', [
-        'failure' => 'docker-migration:swapping', 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, RemoteProgram $program, array $input): bool => $input['mode'] === ($restorePolicies ? 'restore-policies' : 'prepare'))->andReturn(new ProgramResult('failed', [
+        'failure' => $failure, 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
     ], 'PASSWORD=private'));
     app()->instance(RemoteProgramRunner::class, $runner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true]))->toBe(1)
-        ->and(Artisan::output())->toContain('docker-migration:swapping', 'Resume', 'mailpit', 'unreadable')
+    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe(1)
+        ->and(Artisan::output())->toContain($failure, 'Resume', 'mailpit', 'unreadable')
         ->not->toContain('PASSWORD=private')
         ->and($runtime->convergedProcessIds)->toBe([]);
-});
+    $message = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['message'];
+    if ($offerFallback) {
+        expect($message)->toContain('--fallback');
+    } else {
+        expect($message)->not->toContain('--fallback');
+    }
+})->with([
+    'package failure' => [false, 'docker-migration:swapping', false],
+    'explicit fallback required' => [false, 'docker-migration:fallback-required', true],
+    'policy recovery failure' => [true, 'docker-migration:restore-engine', false],
+]);
 
 it('executes the Docker inventory swap fallback preservation and resume regression programs', function (): void {
     $process = new Process(['python3', base_path('tests/Programs/test_docker_migration.py'), '-v']);

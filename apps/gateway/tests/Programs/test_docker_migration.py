@@ -24,7 +24,7 @@ class DockerMigrationTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name)
+        self.root = Path(directory.name).resolve()
         self.apt = self.root / 'apt'
         (self.apt / 'sources.list.d').mkdir(parents=True)
         self.source = self.apt / 'sources.list.d/docker.sources'
@@ -972,6 +972,25 @@ class DockerMigrationTest(unittest.TestCase):
             module.migrate(self.payload, 'restore-policies')
         self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
         self.assert_read_only_commands()
+
+    def test_policy_recovery_resolves_the_effective_root_and_refuses_a_different_target(self):
+        self.custom_root()
+        alias = self.root / 'docker-root-alias'
+        alias.symlink_to(self.docker_root, target_is_directory=True)
+        self.docker_root = alias
+        state = self.restored_engine()
+        self.assertEqual(state['metadata_roots']['docker'], str(alias.resolve()))
+
+        self.assertEqual(module.migrate(self.payload, 'restore-policies')['containers'][0]['state'], 'running')
+
+        different = self.root / 'different-root'
+        different.mkdir()
+        alias.unlink()
+        alias.symlink_to(different, target_is_directory=True)
+        self.requests.clear()
+        with self.assertRaisesRegex(module.RecipeFailure, 'restore-engine'):
+            module.migrate(self.payload, 'restore-policies')
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
 
     def test_policy_recovery_requires_the_journal_and_every_original_container(self):
         with self.assertRaisesRegex(module.RecipeFailure, 'missing-inventory'):
