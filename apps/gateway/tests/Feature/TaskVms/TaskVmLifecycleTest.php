@@ -1212,14 +1212,14 @@ function tvm_life_workspace(Task $group, Node $node): Instance
 }
 
 describe('failed VM claims', function (): void {
-    it('keeps an ended group quiet when its VM fails', function (TaskGroupStatus $status): void {
+    it('requests assistance when an ended group VM fails', function (TaskGroupStatus $status): void {
         $group = tvm_life_group($status);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
         $reason = TaskVmFailedException::stoppedReason('task_vm.vm_missing', 'The VM is gone.');
 
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Ready], 'task_vm.vm_missing', 'The VM is gone.', $reason))->toBeTrue();
 
-        expect($group->fresh())->status->toBe($status)->assistance_requested->toBeFalse()->assistance_reason->toBe($reason);
+        expect($group->fresh())->status->toBe($status)->assistance_requested->toBeTrue()->assistance_reason->toBe($reason);
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
 

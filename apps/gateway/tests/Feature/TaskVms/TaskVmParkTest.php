@@ -72,7 +72,7 @@ function tvm_park_settings(int $parkAfterMinutes = 30): void
  */
 function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireguardIp = '10.44.0.129'): array
 {
-    $task = Task::topLevel()->create([
+    $task = test_create_task(Task::topLevel(), [
         'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
         'pr_url' => 'https://github.com/acme/dlf/pull/7',
         'settled_at' => now()->subMinutes($minutesAgo + 10), ...$group,
