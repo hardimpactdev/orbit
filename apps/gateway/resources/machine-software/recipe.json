@@ -1030,6 +1030,7 @@
         "vp": {
             "source": "artifact",
             "version": "1.2.0",
+            "lock_sha256": "77a0fcddbc77d4532e03b98ba1f7601108cbb215aee5b1f2bbc37275dfd5412b",
             "artifacts": {
                 "amd64": {
                     "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.2.0.tgz",

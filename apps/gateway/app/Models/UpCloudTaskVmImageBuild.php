@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property TaskVmImageBuildState $state
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
+ * @property array{phase: string, exit_code: int|null, stderr: string}|null $failure
  * @property string|null $template_uuid
  */
 final class UpCloudTaskVmImageBuild extends Model
@@ -37,7 +38,7 @@ final class UpCloudTaskVmImageBuild extends Model
     #[\Override]
     protected function casts(): array
     {
-        return ['state' => TaskVmImageBuildState::class, 'started_at' => 'datetime', 'finished_at' => 'datetime'];
+        return ['state' => TaskVmImageBuildState::class, 'started_at' => 'datetime', 'finished_at' => 'datetime', 'failure' => 'array'];
     }
 
     public function status(): string

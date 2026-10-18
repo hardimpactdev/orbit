@@ -185,15 +185,60 @@ class RecipeGitTest(unittest.TestCase):
         for content in (SOURCE.replace('resolute', 'other'),
                         SOURCE.replace('Suites:', ' https://other.example/\nSuites:')):
             self.source.write_text(content)
-            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
                 recipe.configure_git(self.payload)
+            self.assertIn(str(self.source), failed.exception.detail)
+            self.assertIn('unsupported or mixed fields', failed.exception.detail)
         self.source.write_text(SOURCE)
         (self.apt / (self.source.name + '.orbit-git-backup')).write_text('another backup')
         with patch.object(recipe, 'publish') as publish:
-            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
                 recipe.configure_git(self.payload, apply=True)
+        self.assertIn('differs from the source', failed.exception.detail)
         publish.assert_not_called()
         self.assertEqual(self.source.read_text(), SOURCE)
+
+    def test_deb822_validation_names_the_source_line_and_invalid_field(self):
+        cases = [
+            (' continuation', 'line 1 continues a field before any field was declared'),
+            ('Types deb', 'line 1: missing field separator'),
+            ('Types: deb\nTypes: deb-src', 'line 2: duplicate field [types]'),
+            ('Bad Field: deb', 'line 1: invalid field name'),
+        ]
+        for content, reason in cases:
+            with self.subTest(reason=reason), self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
+                recipe.deb822_fields(content, str(self.source))
+            self.assertIn(str(self.source), failed.exception.detail)
+            self.assertIn(reason, failed.exception.detail)
+
+    def test_source_symlink_is_named_without_changing_its_target(self):
+        target = self.apt / 'original-source'
+        target.write_text(SOURCE)
+        self.source.unlink()
+        self.source.symlink_to(target)
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
+            recipe.configure_git(self.payload, apply=True)
+        self.assertIn(f'Provider source [{self.source}] is a symlink', failed.exception.detail)
+        self.assertEqual(target.read_text(), SOURCE)
+
+    def test_malformed_list_entry_names_its_source(self):
+        self.source.unlink()
+        source = self.apt / 'sources.list.d/git.list'
+        source.write_text('deb https://ppa.launchpadcontent.net/git-core/ppa/ubuntu resolute\n')
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
+            recipe.configure_git(self.payload)
+        self.assertIn(str(source), failed.exception.detail)
+        self.assertIn('invalid deb/deb-src list entry', failed.exception.detail)
+
+    def test_git_preference_symlink_is_named_without_changing_its_target(self):
+        target = self.apt / 'original-preference'
+        target.write_text('operator preference')
+        preference = self.apt / 'preferences.d/orbit-git'
+        preference.symlink_to(target)
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failed:
+            recipe.configure_git(self.payload, apply=True)
+        self.assertIn(f'Git preference [{preference}] is a symlink', failed.exception.detail)
+        self.assertEqual(target.read_text(), 'operator preference')
 
     def test_git_download_uses_the_mirror_then_ppa_and_checks_both_digests(self):
         pin = {'version': PIN, 'artifacts': {'amd64': {'url': 'https://ppa.example/git.deb',

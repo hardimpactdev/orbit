@@ -9,11 +9,13 @@ use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Fleet\FleetServingRelease;
+use App\Domain\Fleet\NightlyRecipePendingDeployment;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Gateway\GatewayQueue;
 use App\Jobs\TaskVms\TaskVmJob;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -45,9 +47,18 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
             return;
         }
         if ($this->snapshot) {
-            Log::info('Nightly recipe snapshot PR.', ['url' => $pullRequest->execute()]);
-            // The same night also moves the Sury PHP pins to Sury's newest build, in a PR that a maintainer reviews.
-            Log::info('Nightly PHP build PR.', ['url' => $php->execute()]);
+            $date = now('Europe/Amsterdam');
+            $key = 'machine-recipe:nightly-completed:'.$date->format('Ymd');
+            if (Cache::has($key)) {
+                return;
+            }
+            try {
+                Log::info('Nightly recipe snapshot PR.', ['url' => $pullRequest->execute()]);
+                Log::info('Nightly PHP build PR.', ['url' => $php->execute()]);
+                Cache::put($key, true, $date->copy()->endOfDay());
+            } catch (NightlyRecipePendingDeployment $wait) {
+                Log::info($wait->getMessage());
+            }
         } else {
             $merge->execute();
             $fleet->execute();

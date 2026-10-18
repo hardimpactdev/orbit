@@ -26,6 +26,7 @@ use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\Fleet\ScriptedSshExecutor;
+use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmSettingsBuilder;
 
 final class NightlyRecipeDoctor implements FleetNodeVerification
@@ -72,8 +73,8 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
             'images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'base', 'fingerprint' => str_repeat('a', 64), 'type' => 'virtual-machine']]]);
     }
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', static function (RemoteCommand $command) use ($newerUbuntu): CommandResult {
-        $data = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+    $ssh->on('/^python3 - inspect$/', static function (RemoteCommand $command) use ($newerUbuntu): CommandResult {
+        $data = RecipeProgramPayload::read($command->input);
 
         $tools = [];
         foreach ($data['tools'] as $name => $pin) {
@@ -83,7 +84,7 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
 
         return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
     });
-    $ssh->on('/^sudo timeout .* python3 - apply /', ScriptedSshExecutor::ok(json_encode([
+    $ssh->on('/^sudo timeout .* python3 - apply$/', ScriptedSshExecutor::ok(json_encode([
         'changed_packages' => $newerUbuntu ? [] : ['curl'], 'restarted_services' => [], 'changed_tools' => $newerUbuntu ? [] : ['curl'], 'healthy' => true,
         'newer_than_recipe' => $newerUbuntu ? ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]] : [],
     ], JSON_THROW_ON_ERROR)));
@@ -137,7 +138,7 @@ it('waits for both promoted current-generation hosts then visits one Node per ti
 it('skips Docker CE Nodes with the typed reason instead of halting fleet convergence', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
+    $ssh->on('/^python3 - inspect$/', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
     $action = app(ConvergeFleetRecipeAction::class);
@@ -236,7 +237,7 @@ it('schedules the date PR at Amsterdam 03:00 across DST and fleet visits each mi
     $events = collect(app(Schedule::class)->events())->filter(fn ($event): bool => $event->description === MaintainMachineRecipe::class)->values();
 
     expect($events)->toHaveCount(2);
-    expect($events[0]->expression)->toBe('0 3 * * *');
+    expect($events[0]->expression)->toBe('*/5 * * * *');
     expect($events[0]->timezone)->toBe('Europe/Amsterdam');
     expect($events[0]->isDue(app()))->toBeTrue();
     expect($events[1]->expression)->toBe('* * * * *');
