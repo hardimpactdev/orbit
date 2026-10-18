@@ -1483,7 +1483,7 @@ it('does not replace an open direction request when a review request keeps faili
         'assistance_reason' => $reason,
         'communication_failures' => 4,
     ]);
-    $first->parent->update([
+    test_update_task($first->parent, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,

@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -68,6 +69,7 @@ final readonly class CompleteTaskGroupAction
                 Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
                 $group->refresh();
                 TaskQuestions::settle($group, 'Task completed.');
+                app(TaskBroadcasts::class)->groupChanged($group->id);
             });
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;

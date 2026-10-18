@@ -668,7 +668,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
     $octet = 220;
     $ended = static function (string $title, TaskGroupStatus $status, array $attributes = []) use ($group, &$octet): Task {
         $octet++;
-        $owner = Task::topLevel()->create([
+        $owner = test_create_task(Task::topLevel(), [
             'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi', 'project_id' => $group->project_id,
             'title' => $title, 'brief' => $title, 'status' => $status, ...$attributes,
         ]);

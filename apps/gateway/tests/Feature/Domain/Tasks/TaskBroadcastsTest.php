@@ -79,6 +79,21 @@ describe('task broadcasts', function (): void {
             ->and($events[0]->data)->toBe(['id' => $group->id, 'status' => 'backlog']);
     });
 
+    it('broadcasts cancellation of an unclaimed group with no subtasks or assistance', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $group = live_group('backlog');
+        $group->tasks()->delete();
+        app(TaskBroadcasts::class)->flush();
+        Event::fake([RecordBroadcast::class]);
+
+        app(\App\Actions\Tasks\CancelTaskGroupAction::class)->execute($group);
+        app(TaskBroadcasts::class)->flush();
+
+        $events = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($events)->toHaveCount(1)
+            ->and($events[0]->data['status'])->toBe('cancelled');
+    });
+
     it('coalesces every change to a group and its subtasks into one update without free text', function (): void {
         $group = live_group();
         app(TaskBroadcasts::class)->flush();

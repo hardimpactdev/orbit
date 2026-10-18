@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
@@ -84,6 +85,7 @@ final readonly class CancelTaskGroupAction
             }
             $locked->save();
             TaskQuestions::settle($locked, 'Task cancelled.');
+            app(TaskBroadcasts::class)->groupChanged($locked->id);
 
             return $attached;
         });

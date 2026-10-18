@@ -272,7 +272,7 @@ it('does not replace an open direction request when the implementer thread fails
         'assistance_question' => $question,
         'assistance_reason' => $reason,
     ]);
-    $task->parent->update([
+    test_update_task($task->parent, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
