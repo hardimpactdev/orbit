@@ -323,13 +323,13 @@ TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs t
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
-Root `bin/test` runs all five project suites in parallel and splits the processes that [`ORBIT_CHECK_PROCESSES`](#parallel-processes) allows between them. It still reads the older `ORBIT_TEST_PROCESSES` when `ORBIT_CHECK_PROCESSES` is unset.
+Root `bin/test` runs all five project suites in parallel and splits the [available process budget](#parallel-processes) between them.
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how many: `ORBIT_CHECK_PROCESSES`. When it is unset, each tool uses the machine's core count, up to 4. An explicit value is used as it is, also above 4. `bin/check-processes` prints the value that the checks use and fails when the setting is not a positive integer.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it divides available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
 
-| Tool | How it reads the setting |
+| Tool | How it reads the process count |
 | --- | --- |
 | Pest | `--processes=$(../../bin/check-processes)` in the `test` and `test:affected` scripts |
 | Pint | `--parallel --max-processes=$(../../bin/check-processes)` in the `format:check` script |
@@ -338,7 +338,7 @@ Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how 
 
 Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-Each PHPStan worker may use up to 1 GB, the `--memory-limit` of `composer analyse`, and a task VM may have 2 GB. That is why the default stops at 4. Lower the setting on a Node, a task VM, or a CI job with little memory, and raise it on a large machine. The candidate gate splits the setting between the projects it runs at once, as [Projects run at the same time](#projects-run-at-the-same-time) describes. CI sets its own Pest process counts, as [Gateway shards](#gateway-shards) describes.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
 
 ### The candidate gate
 
@@ -383,7 +383,7 @@ When that project has changed and `test:affected` selects no tests, the gate run
 
 #### Projects run at the same time
 
-The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `ORBIT_CHECK_PROCESSES` is the budget of the whole gate, and the tools of all groups together stay within it. The gate shares the budget in three ways:
+The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `bin/check-processes` supplies the budget of the whole gate, and the tools of all groups together stay within it. The gate shares the budget in three ways:
 
 1. It runs one more group than half the budget at once. So the largest group can keep at least half of the budget.
 2. It gives each command a share by the size of its group's test suites. The share compares the group with the groups that still run.
@@ -391,9 +391,9 @@ The gate groups its project checks by project and runs the groups at the same ti
 
 The largest group starts first. Its later commands get the processes that finished groups freed.
 
-A budget of 2 or less runs one group at a time. The budget counts workers, not each tool's main process. Two groups of PHPStan or Rector at once could outgrow a 2 GB task VM.
+A budget of 2 or less runs one group at a time. The budget counts workers, not each tool's main process.
 
-With the default of 4, the Gateway's checks run with two processes while two other groups run with one each. Set the budget to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
+With a budget of 4, the Gateway's checks run with two processes while two other groups run with one each. A budget of 1 checks one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
 
 The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
@@ -734,7 +734,16 @@ CI checks every file. It tests the merge result of a pull request, and its resul
 
 All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
 
-Memory is the real limit. A task VM with 2 GB cannot run 16 PHPStan workers, so the default stops at 4, and the gate shares that budget between the projects it runs at once instead of giving each project the whole budget. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. `ORBIT_CHECK_PROCESSES` changes every tool at once.
+Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
+
+The 1.25 GiB allocation comes from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these worker peaks. The allocation is 1280 MiB, 38% above the largest measured peak.
+
+| Worker | Peak resident memory |
+| --- | --- |
+| Pest | 927.4 MiB |
+| PHPStan | 484.1 MiB |
+| Rector | 695.8 MiB |
+| Pint | 92.5 MiB |
 
 ### Findings are fixed, not silenced
 

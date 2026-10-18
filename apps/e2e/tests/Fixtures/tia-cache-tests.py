@@ -1538,7 +1538,7 @@ fi
     def test_the_heaviest_lane_gets_most_of_the_budget_and_the_processes_that_others_free(self):
         gate = self.gate_module(self.gate_fixture())
         weights = {'apps/gateway': 1500, 'apps/cli': 200, 'apps/docs': 20, 'apps/e2e': 100, 'packages/php-sdk': 80}
-        # The default budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
+        # A budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
         for first in ('apps/gateway', 'apps/cli'):
             with self.subTest(first=first):
                 budget = gate.ProcessBudget(4, weights)

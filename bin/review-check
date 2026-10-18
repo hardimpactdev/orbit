@@ -80,7 +80,7 @@ PARALLEL_FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', 
 
 
 def check_processes(root):
-    """The process budget of the whole gate: ORBIT_CHECK_PROCESSES, or the default of bin/check-processes."""
+    """The resource-derived process budget of the whole gate, shared between its lanes."""
     result = subprocess.run([str(root / 'bin/check-processes')], capture_output=True, text=True)
     if result.returncode or not re.fullmatch(r'[1-9][0-9]*', result.stdout.strip()):
         raise RuntimeError(result.stderr.strip() or 'bin/check-processes printed no process count.')

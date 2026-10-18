@@ -5,13 +5,8 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repository_root"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
-# ORBIT_CHECK_PROCESSES, then the older ORBIT_TEST_PROCESSES, then the default of bin/check-processes,
-# split between the suites.
-if [[ -z "${ORBIT_CHECK_PROCESSES:-}" && -n "${ORBIT_TEST_PROCESSES:-}" ]]; then
-    available_processes="$(ORBIT_CHECK_PROCESSES="$ORBIT_TEST_PROCESSES" "$repository_root/bin/check-processes")"
-else
-    available_processes="$("$repository_root/bin/check-processes")"
-fi
+# Split the resource-derived budget between the suites.
+available_processes="$("$repository_root/bin/check-processes")"
 
 suite_processes=$((available_processes / ${#projects[@]}))
 if ((suite_processes < 1)); then
