@@ -16,6 +16,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Cache\ArrayStore;
@@ -741,9 +742,9 @@ describe('the agent view subscriber during a websocket move', function (): void 
 
     beforeEach(function (): void {
         $this->source = subscriber_managed_node('websocket-source', '10.44.0.89');
-        new CaddySiteCertificates()->record($this->source->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($this->source->id, WebSocketCaddySiteSource::CertificateSlug);
         [$this->target] = activate_websocket_role();
-        new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($this->target->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->markServing($this->target->id);
         $this->node = subscriber_managed_node('app-dev', '10.44.0.3');
     });
@@ -862,7 +863,7 @@ describe('the agent view subscriber during a websocket move', function (): void 
         $old->push(agent_snapshot($this->node->id, 4, []));
         $subscriber->pass();
 
-        new CaddySiteCertificates()->forget($this->source->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->forget($this->source->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->forget($this->source->id);
         $state->now += AgentViewSubscriber::LinkCheckSeconds;
         $subscriber->pass();

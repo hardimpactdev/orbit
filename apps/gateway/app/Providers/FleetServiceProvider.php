@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\Fleet\ShowFleetRolloutAction;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetConvergeUnits;
@@ -72,18 +71,14 @@ final class FleetServiceProvider extends ServiceProvider
                 order: self::order(),
             ),
         );
-        $this->app->bind(
-            NodeFootprint::class,
-            static fn (Application $app): NodeFootprint => new NodeFootprint([
-                $app->make(AgentFootprintArtifact::class),
-                $app->make(CaddyPackageFootprintArtifact::class),
-                $app->make(CaddyFootprintArtifact::class),
-                $app->make(PrivateDnsFootprintArtifact::class),
-                $app->make(RouteResidueFootprintArtifact::class),
-                $app->make(TmpfilesFootprintArtifact::class),
-                ...$app->make(Contributions::class)->of(NodeFootprintArtifact::class),
-            ]),
-        );
+        $this->app->tag([
+            AgentFootprintArtifact::class,
+            CaddyPackageFootprintArtifact::class,
+            CaddyFootprintArtifact::class,
+            PrivateDnsFootprintArtifact::class,
+            RouteResidueFootprintArtifact::class,
+            TmpfilesFootprintArtifact::class,
+        ], NodeFootprintArtifact::class);
         $this->app->bind(
             FleetRolloutRunner::class,
             static fn (Application $app): FleetRolloutRunner => new FleetRolloutRunner(

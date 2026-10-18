@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,7 +25,7 @@ it('removes every Instance-owned Process in stable order and leaves other owners
     $nodeOwned = orb131_cascade_process($target->node_id, 'postgres', LifecycleStatus::Active, Node::class);
     $runtime = new Orb131CascadeRuntimeManager;
 
-    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver))->execute(
+    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)))->execute(
         $target->id,
     );
 
@@ -44,7 +45,7 @@ it('retains failed cleanup for retry and repeats only unfinished Process removal
     $third = orb131_cascade_process($target->id, 'third', LifecycleStatus::Removing);
     $runtime = new Orb131CascadeRuntimeManager;
     $runtime->failureId = $second->id;
-    $cascade = new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver));
+    $cascade = new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)));
 
     expect(fn () => $cascade->execute($target->id))
         ->toThrow(ProcessOperationException::class, 'Exact Process ownership could not be verified.');

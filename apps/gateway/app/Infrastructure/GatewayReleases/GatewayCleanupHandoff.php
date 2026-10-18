@@ -6,6 +6,7 @@ namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use Closure;
+use Illuminate\Container\Attributes\Tag;
 
 /**
  * Resumes each extension's release cleanup after the runtime handoff ({@see GatewayReleaseCleanup}). A scheduler start
@@ -21,11 +22,11 @@ final readonly class GatewayCleanupHandoff
     private Closure $sleep;
 
     /**
-     * @param  list<GatewayReleaseCleanup>  $cleanups
+     * @param  iterable<int, GatewayReleaseCleanup>  $cleanups
      * @param  (Closure(int): void)|null  $sleep  microseconds
      */
     public function __construct(
-        private array $cleanups,
+        #[Tag(GatewayReleaseCleanup::class)] private iterable $cleanups,
         private int $generationWaitSeconds = 30,
         ?Closure $sleep = null,
     ) {
@@ -43,7 +44,7 @@ final readonly class GatewayCleanupHandoff
     {
         return array_map(
             static fn (GatewayReleaseCleanup $cleanup): ?string => $cleanup->configured() ? $cleanup->status()['cleanup_generation'] : null,
-            $this->cleanups,
+            [...$this->cleanups],
         );
     }
 

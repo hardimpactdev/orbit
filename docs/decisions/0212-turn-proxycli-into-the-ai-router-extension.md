@@ -184,14 +184,13 @@ Both Processes are Orbit-managed. `process:destroy` refuses them with `process.r
 
 ### Plug-in points
 
-Each point is a typed core interface that the extension tags. ADR 0210 lists six of them as points for the extensions that move after Documents. The other five are new, which ADR 0210 allows: each extension that moves adds its points the same way. For each point, the pull request that adds it deletes the hard-coded call in the last column.
+Each point is a typed core interface that the extension tags. ADR 0210 lists five of them as points for the extensions that move after Documents. The other five are new, which ADR 0210 allows: each extension that moves adds its points the same way. For each point, the pull request that adds it deletes the hard-coded call in the last column.
 
 | Point | In ADR 0210's list | Core caller | Hard-coded call it replaces and deletes |
 | --- | --- | --- | --- |
 | Caddy site source | Yes | Caddy build | `ProxyCliCaddySiteSource` in the source list in `ApplicationServiceProvider`, and the `CaddySiteCertificates::ProxyCli` slug. The source supplies its own slug `ai-router`. |
 | Footprint artifact | Yes | `node:converge`, fleet rollout | `ProxyCliFootprintArtifact` in the artifact list in `FleetServiceProvider` |
-| Private DNS records | Yes | `DevelopmentDnsConfigRenderer` | `proxycliNode()` and its `host-record` line |
-| Reserved hostnames | Yes | `ReservedPrivateHostname` | `ProxyCliHostname::Value` in `NAMES` |
+| Private hostnames with optional DNS addresses | Yes | `DevelopmentDnsConfigRenderer`, `ReservedPrivateHostname` | `proxycliNode()` and its `host-record` line, and `ProxyCliHostname::Value` in `NAMES` |
 | Process removal guard | Yes, as ownership guards | `DestroyProcessAction` | The direct `ProxyCliProcessOwnership::assertRemovable()` call |
 | Role firewall rules | Yes, as firewall rules | `NodeFirewallRuleCatalog` | None. ProxyCli has no rules today |
 | Database connection update hook | No | `UpdateDatabaseConnectionAction` | `ReconvergeProxyCliConnectionAction::validate()` and `::execute()` |
@@ -240,7 +239,7 @@ Each step is one pull request, except step 2, which is four. Each keeps Tasks wo
 1. **Core seam and hazard fix.** Add `ModelKeyIssuer`. ProxyCli implements it with today's settings and anchor key. `TaskVmRuntime` uses it and stops importing ProxyCli. `tasks` declares `proxycli` in `dependencies()`. `proxycli:teardown` refuses with HTTP 409 while Tasks is enabled or a task VM holds a key. Needs ADR 0210 merged.
 2. **Plug-in points.** Add the points in the table above, except the role firewall rules and the role baseline and assignment check. Nothing can implement those two before `RoleName::AiRouter` exists, and ProxyCli has no hard-coded call there to delete, so step 4 adds them. ProxyCli contributes through tags, and core stops naming it, except in the provider list. Move the `processes.proxycli_*` columns into the extension table. Add the cache connection removal guard. No other behavior changes. Four serial pull requests do this step:
    - 2a: the Caddy site source. The ProxyCli bindings move from `ApplicationServiceProvider` into the ProxyCli provider.
-   - 2b: the footprint artifact, private DNS records, and reserved hostnames.
+   - 2b: the footprint artifact and private hostnames with optional DNS addresses.
    - 2c: the Process removal guard and the Process source record.
    - 2d: the database connection update hook and removal guard. Core calls tagged `DatabaseConnectionUpdateHook` contributions to validate the proposal before writing and reconverge after the outer transaction commits. Tagged `DatabaseConnectionRemovalGuard` contributions refuse before any drop or deletion; ProxyCli returns `database_connection.required_by_ai_router` while setup uses the connection, including while its extension switch is off. Setup and reconvergence share one collector environment builder. `ProxyCliProcess::data()` adds both the listener environment value and the Process port mapping from `ProxyCliProcess::PORT` (8787), with no override parameter. These points use trusted tagged interfaces without a runtime contribution registry.
 3. **Move and rename.** Move ProxyCli into `extensions/ai-router` and rename every surface, setting, Valkey key, environment variable, hostname, certificate slug, footprint artifact, and page. `proxycli:setup` and `proxycli:teardown` become `ai-router:setup` and `ai-router:teardown` until step 4 removes them. `/reference/proxycli` and `/cli/proxycli` get no redirect. The redirects of retired ADRs 0104, 0109, 0145, and 0150, and of `/solutions/cutover-proxycli`, point at the matching sections of the new pages. The router Process is untouched. The collector restarts once under its new name and hostname. The Caddy digest walk, `SourceClosure`, learns the extension namespaces and their imports, so the moved collector site source and every class it uses stay in the Caddy footprint digest.

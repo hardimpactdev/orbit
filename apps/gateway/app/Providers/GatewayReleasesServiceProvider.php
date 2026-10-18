@@ -6,10 +6,8 @@ namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
-use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
@@ -134,7 +132,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                     applicationPath: GatewayApplicationPath::resolve(),
                     drainSeconds: self::drainSeconds(),
                 ),
-                cleanup: new GatewayCleanupHandoff($app->make(Contributions::class)->of(GatewayReleaseCleanup::class)),
+                cleanup: $app->make(GatewayCleanupHandoff::class),
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),

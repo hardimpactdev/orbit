@@ -41,6 +41,9 @@ it('rejects requested network broadcast and outside addresses', function (string
     'network' => '10.44.0.0',
     'broadcast' => '10.44.0.7',
     'outside subnet' => '10.44.0.8',
+    'IPv6' => '2001:db8::1',
+    'malformed IPv4' => '10.44.0.999',
+    'config separator' => "10.44.0.3\n0.0.0.0",
 ]);
 
 it('rejects another nodes address while permitting stable reuse by the same node', function (): void {

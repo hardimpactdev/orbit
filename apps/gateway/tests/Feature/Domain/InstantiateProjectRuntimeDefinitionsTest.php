@@ -11,6 +11,7 @@ use App\Data\Schedules\ScheduleLogsData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
@@ -313,7 +314,7 @@ it('refuses record and artifact conflicts without adoption and removes only targ
     $this->scheduleRuntime->failName = null;
     $this->action->execute($this->target->refresh());
     new CascadeInstanceProcessesAction(
-        new DestroyProcessAction($this->processRuntime, new ProcessTargetResolver),
+        new DestroyProcessAction($this->processRuntime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)),
     )->execute($this->target->id);
     new CascadeInstanceSchedulesAction(
         new DestroyScheduleAction($this->scheduleRuntime),

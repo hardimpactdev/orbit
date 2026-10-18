@@ -72,6 +72,8 @@ def load_routes():
             'uri': r['uri'],
             'name': r.get('name'),
             'action': r['action'].split('\\')[-1],
+            'extension': next((middleware.split(':', 1)[1] for middleware in r['middleware']
+                               if middleware.startswith('App\\Http\\Middleware\\RequireEnabledExtension:')), None),
         })
     return routes
 
@@ -588,6 +590,8 @@ def load_sdk_responses():
 
 
 routes = load_routes()
+extensions = sorted({route['extension'] for route in routes if route['extension'] is not None})
+extension_choices = ', '.join(f'`{slug}`' for slug in extensions[:-1]) + f', or `{extensions[-1]}`'
 commands = load_commands()
 controllers = load_controllers()
 form_requests = load_form_requests()
@@ -782,9 +786,9 @@ DESCRIPTIONS = {
     'conn:pairing:list': 'Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
     'conn:pairing:create': 'Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in Conn to pair. An expired admin session returns `conn.session_expired` (409).',
     'conn:pairing:revoke': 'Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.',
-    'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, `documents`, `vault`, and `conn`.',
-    'extension:enable': 'Enable a Gateway extension for every client. The Gateway runs the extension\'s enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook\'s error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.',
-    'extension:disable': 'Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.',
+    'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers.',
+    'extension:enable': 'Enable a Gateway extension for every client. The Gateway runs the extension\'s enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook\'s error. An unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.',
+    'extension:disable': 'Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. An unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.',
     'proxycli:setup': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
     'proxycli:teardown': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with proxycli.keys_outstanding (409) while a task VM holds a model key, and with proxycli.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.',
     'proxycli:status': 'Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.',
@@ -834,7 +838,7 @@ def description_for(route):
 # ---------------------------------------------------------------- path parameters
 PARAM_RENAME = {'firewallRule:name': 'firewall_rule', 'servingNode': 'serving_node', 'consumerNode': 'consumer_node', 'processDefinition': 'process_definition', 'scheduleDefinition': 'schedule_definition'}
 PARAM_SCHEMAS = {
-    'extension': ({'type': 'string', 'enum': ['tasks', 'proxycli', 'documents', 'vault', 'conn']}, 'Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`.'),
+    'extension': ({'type': 'string', 'enum': extensions}, f'Extension slug: {extension_choices}.'),
     'node': ({'type': 'integer', 'minimum': 1}, 'Numeric Node ID.'),
     'operation': ({'type': 'integer', 'minimum': 1}, 'Numeric operation ID.'),
     'serving_node': ({'type': 'integer', 'minimum': 1}, 'Numeric ID of the Node that receives commands.'),
@@ -1566,9 +1570,9 @@ RESPONSE_OVERRIDES = {
     'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@update': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@destroy': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
-    'ExtensionsController@index': {'type': 'object', 'description': 'Enabled state keyed by extension slug.', 'properties': {'tasks': {'type': 'boolean'}, 'proxycli': {'type': 'boolean'}, 'documents': {'type': 'boolean'}, 'vault': {'type': 'boolean'}, 'conn': {'type': 'boolean'}}, 'required': ['tasks', 'proxycli', 'documents', 'vault', 'conn'], 'additionalProperties': False},
-    'ExtensionsController@enable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli', 'documents', 'vault', 'conn']}, 'enabled': {'type': 'boolean', 'const': True}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
-    'ExtensionsController@disable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli', 'documents', 'vault', 'conn']}, 'enabled': {'type': 'boolean', 'const': False}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
+    'ExtensionsController@index': {'type': 'object', 'description': 'Enabled state keyed by extension slug.', 'properties': {slug: {'type': 'boolean'} for slug in extensions}, 'required': extensions, 'additionalProperties': False},
+    'ExtensionsController@enable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': extensions}, 'enabled': {'type': 'boolean', 'const': True}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
+    'ExtensionsController@disable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': extensions}, 'enabled': {'type': 'boolean', 'const': False}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
     'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
     'FirewallRulesController@managed': {'type': 'array', 'description': 'The rules Orbit intends on the Node after role converge. Public SSH recovery is omitted once an active role has closed it. No request adds, changes, or removes one.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The `orbit:` comment that identifies the rule in UFW.'}, 'role': {'type': ['string', 'null'], 'description': 'The role that needs the rule, or null for a baseline rule the Node still intends.'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null'], 'description': 'The interface the rule is limited to; `orbit` is the WireGuard interface.'}}}},
     'FirewallRulesController@live': {'type': 'object', 'required': ['backend_status', 'live', 'missing'], 'properties': {'backend_status': {'type': 'string', 'enum': ['active', 'inactive', 'absent', 'unreachable'], 'description': 'Whether UFW answered on the Node. `unreachable` means the Gateway could not read `ufw status numbered`.'}, 'live': {'type': 'array', 'description': 'IPv4 UFW rules currently on the Node, in status order.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'Operator rule name, `orbit:` comment, or `unmanaged` when UFW has no comment.'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['exact', 'drift', 'unmanaged'], 'description': '`exact` matches a desired managed or operator rule. `drift` has a known comment with a different shape. `unmanaged` is not an Orbit managed or operator rule.'}}}}, 'missing': {'type': 'array', 'description': 'Desired managed or operator rules that are absent from live UFW.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['missing']}}}}}},
@@ -1700,16 +1704,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if '-definitions' in route['uri'] and route['name'].split(':')[0] in {'process', 'schedule'}:
         op_id = 'app-' + op_id + '-definition'
     op = {'operationId': op_id, 'summary': summary_for(route), 'tags': [tag], 'parameters': []}
-    if route['name'] and route['name'].startswith('tasks:') and route['name'] != 'tasks:status':
-        op['x-orbit-extension'] = 'tasks'
-    elif route['name'] and route['name'].startswith('proxycli:'):
-        op['x-orbit-extension'] = 'proxycli'
-    elif route['name'] and route['name'].startswith('project:document'):
-        op['x-orbit-extension'] = 'documents'
-    elif route['name'] and route['name'].startswith('vault:'):
-        op['x-orbit-extension'] = 'vault'
-    elif route['name'] and route['name'].startswith('conn:'):
-        op['x-orbit-extension'] = 'conn'
+    if route['extension'] is not None:
+        op['x-orbit-extension'] = route['extension']
     description = description_for(route)
     if description:
         op['description'] = description

@@ -21,6 +21,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
@@ -120,7 +121,7 @@ it('renders old and candidate hostname sites with separate certificate scopes be
 
     $workloadSites = $sites->forNode($workload);
     $routerSites = $sites->forNode($router);
-    $dns = new DevelopmentDnsConfigRenderer($sites)->render();
+    $dns = new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
 
     expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -173,7 +174,7 @@ it('retires a transferred generated Route without inventing an old Router certif
         expect(new DevelopmentCaddyConfigRenderer()->render($sites->forNode($source)))
             ->toContain("/route-{$replacement->id}-router/current/cert.pem")
             ->not->toContain("/route-{$sourceRoute->id}-router/current/cert.pem", 'feature.acme.test');
-        expect(new DevelopmentDnsConfigRenderer($sites)->render())
+        expect(new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
             ->toContain('host-record=transferred.acme.test,10.44.0.10')
             ->not->toContain('feature.acme.test');
 
@@ -401,7 +402,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
 
     $workloadSites = $sites->forNode($workload);
     $routerSites = $sites->forNode($router);
-    $dns = new DevelopmentDnsConfigRenderer($sites)->render();
+    $dns = new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
 
     expect($workloadSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -432,7 +433,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
     $route->update(['status' => RouteStatus::Retiring, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
     $replacement->update(['status' => RouteStatus::Active, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
     expect($sites->forNode($router)->pluck('domain')->sort()->values()->all())->toBe(['next.acme.test']);
-    expect(new DevelopmentDnsConfigRenderer($sites)->render())
+    expect(new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
         ->toContain("host-record=next.acme.test,{$router->wireguard_ip}")
         ->not->toContain("host-record=feature.acme.test,{$router->wireguard_ip}");
 });
@@ -518,7 +519,7 @@ it('renders a pending replacement only after the step that writes each certifica
 
     expect($domains($workload))->toBe(['feature.acme.test'])
         ->and($domains($router))->toBe(['feature.acme.test'])
-        ->and(new DevelopmentDnsConfigRenderer($sites)->render())->not->toContain('next.acme.test');
+        ->and(new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())->not->toContain('next.acme.test');
 });
 
 it('withdraws a failed domain change before removing its certificates and retries it from the start', function (): void {
@@ -1738,7 +1739,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     config()->set('orbit.home', $home);
     $certificates = new RemoteAppDevCertificateManager($executor, $signer, $accounts);
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor);
-    $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites));
+    $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
     $sourceAccess = new NativeDevelopmentSourceAccess($executor);
     $projector = new NativeDevelopmentRouteProjector(
         new RemoteAppDevPhpFpmManager(

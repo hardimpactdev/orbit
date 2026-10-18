@@ -7,7 +7,7 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Models\Node;
 
-it('uses the absolute python interpreter and fixes the collector listener and mapping to one port', function (array $portOverride): void {
+it('uses the absolute python interpreter and fixes the collector listener and mapping to one port', function (): void {
     $node = new Node(['name' => 'beast']);
     $node->id = 8;
     $environment = [
@@ -21,7 +21,7 @@ it('uses the absolute python interpreter and fixes the collector listener and ma
         'PROXYCLI_CACHE_PASSWORD' => '',
     ];
 
-    $data = ProxyCliProcess::data($node, [...$environment, ...$portOverride]);
+    $data = ProxyCliProcess::data($node, $environment);
 
     expect($data->targetType)->toBe(ProcessTargetType::Node)
         ->and($data->targetId)->toBe(8)
@@ -32,7 +32,9 @@ it('uses the absolute python interpreter and fixes the collector listener and ma
         ->and($data->workingDirectory)->toBe('/var/lib/orbit/proxycli')
         ->and($data->environment)->toBe([...$environment, 'PROXYCLI_PORT' => '8787'])
         ->and($data->ports)->toBe(['127.0.0.1:8787:8787/tcp']);
-})->with([
-    'missing listener value' => [[]],
-    'conflicting listener value' => [['PROXYCLI_PORT' => '8899']],
-]);
+});
+
+it('refuses a caller-supplied listener value', function (): void {
+    expect(fn () => ProxyCliProcess::data(new Node, ['PROXYCLI_PORT' => '8899']))
+        ->toThrow(LogicException::class, 'ProxyCliProcess owns PROXYCLI_PORT.');
+});

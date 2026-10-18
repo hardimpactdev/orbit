@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -172,7 +173,7 @@ final class PrivateDnsPublishHarness
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
             projection: $this->projectionLock(),
-            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
+            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',
@@ -188,7 +189,7 @@ final class PrivateDnsPublishHarness
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
             projection: $this->projectionLock(),
-            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
+            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',

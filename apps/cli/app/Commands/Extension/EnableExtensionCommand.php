@@ -24,10 +24,6 @@ final class EnableExtensionCommand extends GatewayCommand
     public function handle(GatewayConfigRepository $profiles, GatewayConnectorFactory $connectors): int
     {
         $extension = (string) $this->argument('extension');
-        if (! in_array($extension, GatewayExtensionState::EXTENSIONS, true)) {
-            return $this->renderGatewayFailure('extension.unknown', 'Unknown Orbit extension.');
-        }
-
         try {
             $profile = $this->activeGatewayProfile($profiles);
             if ($profile === null) {

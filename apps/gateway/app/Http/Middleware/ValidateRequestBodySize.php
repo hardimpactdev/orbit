@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Domain\Extensions\Contributions;
 use App\Domain\Gateway\ExactRequestBody;
 use Closure;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Http\Middleware\ValidatePostSize;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -18,6 +18,11 @@ final class ValidateRequestBodySize extends ValidatePostSize
     private const array MCP_PATHS = ['mcp', 'mcp/search'];
 
     private const string EXACT_BODY = 'orbit.exact_body';
+
+    /** @param iterable<ExactRequestBody> $bodies */
+    public function __construct(
+        #[Tag(ExactRequestBody::class)] private readonly iterable $bodies,
+    ) {}
 
     /** @param Closure(Request): Response $next */
     public function handle($request, Closure $next): Response
@@ -41,19 +46,19 @@ final class ValidateRequestBodySize extends ValidatePostSize
     {
         $exact = $request->attributes->get(self::EXACT_BODY);
         if (! is_bool($exact)) {
-            $exact = self::matches($request->path());
+            $exact = app(self::class)->matches($request->path());
             $request->attributes->set(self::EXACT_BODY, $exact);
         }
 
         return $exact;
     }
 
-    private static function matches(string $path): bool
+    private function matches(string $path): bool
     {
         if (in_array($path, self::MCP_PATHS, true)) {
             return true;
         }
-        foreach (app(Contributions::class)->of(ExactRequestBody::class) as $body) {
+        foreach ($this->bodies as $body) {
             if ($body->matches($path)) {
                 return true;
             }

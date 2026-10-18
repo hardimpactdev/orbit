@@ -24,6 +24,7 @@ use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Projects\ProjectLifecycleRunner;
@@ -75,8 +76,7 @@ beforeEach(function (): void {
         $this->orb131ProcessLock,
         new CascadeInstanceProcessesAction(new DestroyProcessAction(
             $this->orb131ProcessRuntime,
-            new ProcessTargetResolver,
-        )),
+            new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class))),
         $this->orb181Lock,
         $this->orb183Content,
         app(RouteStateResolver::class),

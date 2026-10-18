@@ -1,1 +1,1 @@
-{"error":{"code":"extension.unknown","message":"Unknown Orbit extension.","request_id":null}}
+{"error":{"code":"validation.failed","message":"The request data is invalid.","details":{"extension":["The selected extension is invalid."]},"request_id":null}}

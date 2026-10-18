@@ -6036,7 +6036,7 @@
         "tags": [
           "Extensions"
         ],
-        "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, `documents`, `vault`, and `conn`.",
+        "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6049,28 +6049,28 @@
                       "type": "object",
                       "description": "Enabled state keyed by extension slug.",
                       "properties": {
-                        "tasks": {
-                          "type": "boolean"
-                        },
-                        "proxycli": {
+                        "conn": {
                           "type": "boolean"
                         },
                         "documents": {
                           "type": "boolean"
                         },
-                        "vault": {
+                        "proxycli": {
                           "type": "boolean"
                         },
-                        "conn": {
+                        "tasks": {
+                          "type": "boolean"
+                        },
+                        "vault": {
                           "type": "boolean"
                         }
                       },
                       "required": [
-                        "tasks",
-                        "proxycli",
+                        "conn",
                         "documents",
-                        "vault",
-                        "conn"
+                        "proxycli",
+                        "tasks",
+                        "vault"
                       ],
                       "additionalProperties": false
                     },
@@ -6126,17 +6126,17 @@
             "schema": {
               "type": "string",
               "enum": [
-                "tasks",
-                "proxycli",
+                "conn",
                 "documents",
-                "vault",
-                "conn"
+                "proxycli",
+                "tasks",
+                "vault"
               ]
             },
-            "description": "Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`."
+            "description": "Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`."
           }
         ],
-        "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
+        "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. An unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6151,11 +6151,11 @@
                         "name": {
                           "type": "string",
                           "enum": [
-                            "tasks",
-                            "proxycli",
+                            "conn",
                             "documents",
-                            "vault",
-                            "conn"
+                            "proxycli",
+                            "tasks",
+                            "vault"
                           ]
                         },
                         "enabled": {
@@ -6236,17 +6236,17 @@
             "schema": {
               "type": "string",
               "enum": [
-                "tasks",
-                "proxycli",
+                "conn",
                 "documents",
-                "vault",
-                "conn"
+                "proxycli",
+                "tasks",
+                "vault"
               ]
             },
-            "description": "Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`."
+            "description": "Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`."
           }
         ],
-        "description": "Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
+        "description": "Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. An unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6261,11 +6261,11 @@
                         "name": {
                           "type": "string",
                           "enum": [
-                            "tasks",
-                            "proxycli",
+                            "conn",
                             "documents",
-                            "vault",
-                            "conn"
+                            "proxycli",
+                            "tasks",
+                            "vault"
                           ]
                         },
                         "enabled": {

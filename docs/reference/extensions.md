@@ -4,9 +4,9 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,AppDev/ContributedPrivateDnsRecords,Routes/ContributedReservedHostnames,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
-  - apps/gateway/{bootstrap/providers.php,tests/Helpers/PlugInAssertions.php,tests/Unit/Domain/Extensions/**,tests/Feature/Infrastructure/PlugInWiringTest.php}
+  - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
   - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Unit/Architecture/ProxyCliPlugInPointsTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
@@ -70,12 +70,6 @@ Use this checklist when core adds a place for extensions to contribute:
 - Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
 - Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
 
-The existing configuration plug-in points use `ReservedNames` as their shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
-
-The existing private DNS and footprint contributions keep core entries in core wiring and reserve their names in that registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
-
-Test both sides of the publication boundary: a valid contribution renders beside existing Routes, while reserved source names, duplicate listener addresses, and invalid listener addresses stop a build before any transport call. A later valid build must still work. For the collector, switching the extension off keeps its deployed site; teardown withdraws that site and its certificate without changing the other site blocks.
-
 ## Plug-in points
 
 Core defines an interface for each place where an extension can add behavior. The provider tags its implementation with the interface name:
@@ -84,7 +78,7 @@ Core defines an interface for each place where an extension can add behavior. Th
 $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
 ```
 
-Core resolves tagged implementations and calls each one through the typed interface. The Database connection points use constructor-injected tags directly. Older points still use `Contributions::of()`, which throws a `LogicException` for a wrong interface or a class tagged twice. That runtime check is not required for new points; their wiring is checked by tests.
+Core receives tagged implementations through constructor parameters marked with Laravel's `#[Tag(Interface::class)]` attribute and typed as `iterable<Interface>`. Each caller uses the typed interface directly.
 
 | Interface | Called by | Methods |
 | --- | --- | --- |
@@ -93,43 +87,36 @@ Core resolves tagged implementations and calls each one through the typed interf
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
 | `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()` and `certificateSlug()` |
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, `digest()`, and `apply()` |
-| `App\Domain\AppDev\ContributedPrivateDnsRecords` | [Private DNS](/reference/private-dns) publication | `records()` |
-| `App\Domain\Routes\ContributedReservedHostnames` | The [Route domain](/reference/routes) and analytics tracking host checks, and private DNS publication | `hostnames()` |
+| `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
 | `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
-`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action reads all guards through strict `Contributions::of()` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
+`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
 
-`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion. These two points resolve trusted implementations directly from container tags. Contributions must not depend on their order. ProxyCli contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
+`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion. Contributions must not depend on their order. ProxyCli contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
 
 After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
 
 `ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
-The Node Caddy build renders core's own site sources first, then each `ContributedCaddySiteSource` in provider order. A contributed source renders from stored state only, as core's sources do. When its site uses an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`, and the source renders the site only after its publisher recorded the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers a contributed source and the classes it uses, so a changed site template reaches its Node at the next fleet rollout. ProxyCli contributes the collector site this way.
+The Node Caddy build renders core's sources first, then each `ContributedCaddySiteSource` in provider order. Every source renders from stored state only. For an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`; the site renders only after its publisher records the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers the source and its dependencies, so template changes reach the Node at the next fleet rollout. ProxyCli contributes the collector site. Switching it off keeps the deployed site; teardown withdraws that site and certificate without changing other site blocks.
 
-A contributed source cannot take a core name:
+A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
 
-- A core certificate slug, such as `websocket`, makes the renderer throw a `LogicException`. No publisher can then record or forget that slug.
-- A core source name on a contributed site, such as `gateway` or `websocket`, fails the build at stage `render`. The task VM guard admits those two names.
+The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact owns its name, because the footprint keys its digests by name. ProxyCli contributes the `proxycli` artifact.
 
-The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact needs its own name, because the footprint keys its digests by name. A contributed artifact with the name of a core artifact, such as `caddy`, or of another contribution makes the footprint throw a `LogicException`. ProxyCli contributes the `proxycli` artifact this way.
+`ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. ProxyCli publishes the collector Node's stored `wireguard_ip`.
 
-Private DNS publishes each record that a `ContributedPrivateDnsRecords` returns as a `host-record`. A contribution decides its records from stored state, as core does. Core checks each record before it writes the dnsmasq configuration:
+`Ipv4Subnet::containsUsableAddress()` defines usable IPv4 hosts in the configured VPN subnet, excluding network and broadcast addresses. `WireGuardAddressAllocator::forProvisioning()` applies this rule during Node provisioning and macOS enrollment; `GatewayBootstrapIdentityValidator` applies it during Gateway bootstrap, before either path stores the address. The contribution does not validate that address again. Its test checks that the hostname is unique, lowercase, under `.orbit`, and free of commas and whitespace, and that publication follows the Node's stored address.
 
-- The hostname must be one that an extension reserves. It cannot take a core name, and new Routes cannot take the reserved name.
-- Only one contribution may publish a hostname.
-- The hostname must not be a Cluster TLD that the publication answers for, or a name under one.
-- The address must be an IPv4 host address in the VPN subnet.
+The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contribution and the classes it uses.
 
-A record that breaks a rule makes publication throw a `LogicException` before it changes the `vpn` Node. So no contribution can add a dnsmasq directive. The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contributed record source and the classes it uses. ProxyCli contributes the `collector.cli-proxy-api.orbit` record this way.
-
-The reserved hostnames are core's names, then each name that a `ContributedReservedHostnames` returns. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. A contributed name must be a lowercase DNS name under `.orbit`, with no comma or whitespace, that core and the other contributions do not reserve. Any other name makes the check throw a `LogicException`. Private DNS publication then throws too, before it changes the `vpn` Node. ProxyCli reserves `collector.cli-proxy-api.orbit` this way.
+The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. ProxyCli reserves `collector.cli-proxy-api.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 
 `GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
 

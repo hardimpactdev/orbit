@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Models\Node;
 use InvalidArgumentException;
 
@@ -47,7 +48,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
             $this->address($metrics);
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
             $this->certificatePublisher->publish($certificate);
-            $this->certificateRecords()->record($gateway->id, CaddySiteCertificates::Metrics);
+            $this->certificateRecords()->record($gateway->id, MetricsCaddySiteSource::CertificateSlug);
             $this->firewall->converge($metrics, $gatewayAddress);
             $this->build($gateway);
             $this->dns->converge($metrics);
@@ -91,7 +92,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
     {
         if (CaddySiteRoles::serving(RoleName::Metrics) === []) {
             $this->certificatePublisher->remove();
-            $this->certificateRecords()->forget($gateway->id, CaddySiteCertificates::Metrics);
+            $this->certificateRecords()->forget($gateway->id, MetricsCaddySiteSource::CertificateSlug);
         }
     }
 

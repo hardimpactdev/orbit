@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -151,7 +152,7 @@ it('finishes an admitted Process before removal acceptance includes it in cleanu
         ->toBe(InstanceState::Removing);
     $this->assertDatabaseHas('processes', ['id' => $result['process']->id]);
 
-    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver))->execute(
+    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)))->execute(
         $instance->id,
     );
 

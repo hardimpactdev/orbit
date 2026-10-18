@@ -7,9 +7,11 @@ use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\PrivateDnsListenerRelease;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
@@ -30,8 +32,8 @@ use Tests\Support\Fleet\ScriptedSshExecutor;
 
 describe('footprint digests', function (): void {
     it('pins the Caddy digest to the code the Caddy build renders from, never to a rendered Caddyfile', function (): void {
-        $inputs = CaddyFootprintArtifact::inputs();
-        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds);
+        $inputs = app(CaddyFootprintArtifact::class)->inputs();
+        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class));
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
 
         expect($inputs)->toContain(
@@ -57,15 +59,15 @@ describe('footprint digests', function (): void {
         $artifact = new PrivateDnsFootprintArtifact(new class implements PrivateDnsManager
         {
             public function converge(?Node $pendingNode = null): void {}
-        });
+        }, contributions: app()->tagged(ContributedPrivateHostnames::class));
 
-        expect(PrivateDnsFootprintArtifact::inputs())->toContain(
+        expect(app(PrivateDnsFootprintArtifact::class)->inputs())->toContain(
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
-            'app/Infrastructure/ProxyCli/ProxyCliPrivateDnsRecords.php',
+            'app/Infrastructure/ProxyCli/ProxyCliPrivateHostnames.php',
             'app/Domain/ProxyCli/ProxyCliState.php',
             'app/Domain/ProxyCli/ProxyCliHostname.php',
         )
-            ->and($artifact->digest($vpn))->toBe(hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of(PrivateDnsFootprintArtifact::inputs())));
+            ->and($artifact->digest($vpn))->toBe(hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of(app(PrivateDnsFootprintArtifact::class)->inputs())));
     });
 
     it('carries the contributed collector script on the collector Node only', function (): void {
@@ -83,7 +85,7 @@ describe('footprint digests', function (): void {
         $artifact = new PrivateDnsFootprintArtifact(new class implements PrivateDnsManager
         {
             public function converge(?Node $pendingNode = null): void {}
-        });
+        }, contributions: app()->tagged(ContributedPrivateHostnames::class));
         $before = $artifact->digest($vpn);
 
         FleetFixtures::node('joined', [RoleName::AppDev]);
@@ -92,7 +94,7 @@ describe('footprint digests', function (): void {
     });
 
     it('keeps the Caddy digest the same for every Node, whatever its sites', function (): void {
-        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds);
+        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class));
 
         expect($artifact->digest(FleetFixtures::node('dev', [RoleName::AppDev])))
             ->toBe($artifact->digest(FleetFixtures::node('prod', [RoleName::AppProd])));
@@ -101,7 +103,7 @@ describe('footprint digests', function (): void {
     it('skips a Caddyfile the render or validation refuses with its reason, and fails a broken publish', function (): void {
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
         $builds = new FakeNodeCaddyBuilds;
-        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), $builds);
+        $artifact = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), $builds, contributions: app()->tagged(ContributedCaddySiteSource::class));
 
         foreach (['render' => 'caddy_render_refused', 'validate' => 'caddy_validate_refused'] as $stage => $reason) {
             $builds->failures['dev'] = new NodeCaddyBuildException('dev', $stage, 'A site is invalid.');
@@ -114,7 +116,7 @@ describe('footprint digests', function (): void {
 
     it('runs the Caddy package step on the Nodes that run Caddy, pinned to the program and the floor', function (): void {
         $ssh = new ScriptedSshExecutor;
-        $caddy = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds);
+        $caddy = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class));
         $artifact = new CaddyPackageFootprintArtifact($caddy, FleetTestSsh::shell($ssh));
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
         $database = FleetFixtures::node('database', [RoleName::Database]);
@@ -137,7 +139,7 @@ describe('footprint digests', function (): void {
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
         $ssh = new ScriptedSshExecutor;
         $artifact = new CaddyPackageFootprintArtifact(
-            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds),
+            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class)),
             FleetTestSsh::shell($ssh),
         );
 
@@ -146,7 +148,7 @@ describe('footprint digests', function (): void {
 
         $ssh = new ScriptedSshExecutor;
         $artifact = new CaddyPackageFootprintArtifact(
-            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds),
+            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class)),
             FleetTestSsh::shell($ssh),
         );
         $ssh->on('/sudo bash/', new CommandResult(1, '', "The Caddy 2.11.7 package does not match the Orbit pin.\n", 1, false));
