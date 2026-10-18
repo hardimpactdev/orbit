@@ -772,6 +772,76 @@ it('retries a failed baseline on resolution at the current default branch tip wi
     expect($task->fresh()?->subtask_start_commit)->toBe($tip);
 });
 
+it('takes no baseline retry lease for an earlier resolution during a later assistance hold', function (bool $tick): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('resolved-baseline', 'composer check', [], '10.51.0.20');
+    $agents = tick_running_agents();
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once();
+    $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+    app(TaskScheduler::class)->tick();
+    app()->instance(TaskBaseBranchFetcher::class, $agents);
+    app(TaskScheduler::class)->tick();
+    TaskAssistance::apply($task, AssistanceKind::Failure, null, 'Operator hold after the implementer started.');
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Operator hold after the implementer started.');
+    $leases = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count();
+
+    if ($tick) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+    } else {
+        // Direct callers must also reject the resolved request before workspace admission.
+        expect(app(RetryTaskBaselineAction::class)->recover($task))->toBeFalse();
+    }
+
+    expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count())->toBe($leases);
+    expect($runner->starts)->toBe(2);
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+})->with(['scheduler tick' => true, 'direct recovery' => false]);
+
+it('takes no retry lease when the retried baseline fails without a new resolution', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('consumed-baseline-resolution', 'composer check', [], '10.51.0.21');
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "first failure\n"),
+        TaskCheckReading::finished(1, str_repeat('c', 40), str_repeat('b', 40), [], "retry failure\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once();
+    $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+    $runner->head = str_repeat('c', 40);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $failed = $task->checks()->latest('id')->first();
+    expect($failed->status)->toBe(TaskCheckStatus::Failed);
+    expect($failed->task_comment_id)->toBe($resolution->id);
+    $leases = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count();
+
+    app(TaskScheduler::class)->tick();
+    expect(app(RetryTaskBaselineAction::class)->recover($task))->toBeFalse();
+
+    expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->count())->toBe($leases);
+    expect($runner->starts)->toBe(2);
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+});
+
 it('keeps baseline assistance and evidence when retry preparation fails', function (string $step): void {
     app(TaskExtensionState::class)->enable();
     $group = tick_baseline_group('baseline-retry-failed', 'composer check', [], '10.51.0.7');
