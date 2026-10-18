@@ -189,6 +189,9 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $this->artisan('orbit:ai-router-converge')->assertSuccessful();
         expect(trim($run(['systemctl', 'show', '--property=MainPID', '--value', 'orbit-process-163-ai-router-collector.service'])))->toBe($pid);
         $probeAfter = json_decode(file_get_contents($home.'/probe.json'), true, flags: JSON_THROW_ON_ERROR);
+        if ($probeAfter['failed'] > 0) {
+            fwrite(STDERR, json_encode($probeAfter, flags: JSON_THROW_ON_ERROR)."\n");
+        }
         $caddyfile = $run(['sudo', 'cat', '/etc/caddy/Caddyfile']);
         $curl = $run(['curl', '--interface', '10.44.0.254', '--fail', '--silent', '--show-error', '--noproxy', '*', '--cacert', $home.'/ca/root.pem', '--resolve', 'collector.ai-router.orbit:443:'.$ip, '-H', 'Authorization: Bearer synthetic-read', 'https://collector.ai-router.orbit/api/v1/usage']);
         expect(json_decode($curl, true, flags: JSON_THROW_ON_ERROR)['providers'])->not->toBeEmpty()

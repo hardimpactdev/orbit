@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Domain\Processes\ProcessRuntimeLease;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\Process;
@@ -21,6 +23,7 @@ final readonly class AiRouterRenameCutover
         private ProcessRuntimeLease $lease,
         private AiRouterCache $cache,
         private NodeShell $shell,
+        private RemoteProgramRunner $programs,
     ) {}
 
     public function assertComplete(): void
@@ -41,21 +44,10 @@ final readonly class AiRouterRenameCutover
     {
         $this->lease->run($process, function (Process $fresh): void {
             $node = Node::query()->findOrFail($fresh->owner_id);
-            $id = $fresh->id;
-            $script = <<<BASH
-                unit=orbit-process-{$id}-cli-proxy-api-collector.service
-                path=/etc/systemd/system/\$unit
-                test ! -L "\$path"
-                if test -e "\$path"; then
-                    grep -Fxq 'X-Orbit-Process-ID={$id}' "\$path"
-                    systemctl disable --now "\$unit"
-                    rm -f -- "\$path"
-                    systemctl daemon-reload
-                    systemctl reset-failed "\$unit" 2>/dev/null || true
-                fi
-                BASH;
-            $result = $this->shell->run($node, new RemoteCommand(arguments: ['sudo', 'bash', '-seu'], input: $script));
-            if (! $result->succeeded()) {
+            $program = new RemoteProgramCatalog(base_path('extensions/ai-router/resources/remote'))
+                ->program('ai-router.retire-collector', user: 'root');
+            $result = $this->programs->run($node, $program, [(string) $fresh->id]);
+            if ($result->outcome !== 'succeeded') {
                 throw new RuntimeException('Could not retire the owned collector unit.');
             }
             $fresh->update(['status' => 'provisioning']);

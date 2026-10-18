@@ -171,7 +171,7 @@ it('refuses to enable tasks while ai-router holds no management key, so no task 
     $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
     $this->deleteJson('/api/v1/ai-router')->assertOk();
 
-    expect(app(AiRouterState::class)->cliproxyManagementKey())->toBeNull();
+    expect(app(AiRouterState::class)->managementKey())->toBeNull();
     $this->postJson('/api/v1/extensions/tasks/enable')->assertStatus(409)
         ->assertJsonPath('error.code', 'ai_router.disabled');
     $this->getJson('/api/v1/extensions')->assertJsonPath('data.tasks', false);

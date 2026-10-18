@@ -17,7 +17,7 @@ A remote program is a file that the Gateway runs on a Node to inspect or change 
 
 ## Program files
 
-Each program is one file under `apps/gateway/resources/remote/<area>/<name>.py` or `<name>.sh`. Its name is `<area>.<name>`, such as `instances.inspect-source`. Shared code lives in `apps/gateway/resources/remote/lib/`.
+Core programs live under `apps/gateway/resources/remote/<area>/<name>.py` or `<name>.sh`. An extension keeps its programs under `extensions/<name>/resources/remote/` and passes that directory to `RemoteProgramCatalog`. Both use the same loader and runner. Its name is `<area>.<name>`, such as `instances.inspect-source`. Shared code lives in `apps/gateway/resources/remote/lib/`.
 
 A header of comment lines opens each program:
 
@@ -90,7 +90,7 @@ A program that reads a private repository receives the [Git read environment](/r
 
 ## Lint and direct tests
 
-`bin/remote-programs-check` runs from the repository root. It checks every program under `apps/gateway/resources`, the older files outside `remote/` included:
+`bin/remote-programs-check` runs from the repository root. It checks every program under `apps/gateway/resources` and each extension's `resources/`, the older files outside `remote/` included:
 
 - shellcheck checks each Bash file.
 - ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.

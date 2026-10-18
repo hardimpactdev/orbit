@@ -169,6 +169,7 @@ pest()->tia()->watch([
     'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'extensions/ai-router/resources/*.py' => 'tests/Unit/Extensions/AiRouter/Infrastructure/AiRouterCollectorValkeyClientTest.php',
+    'extensions/ai-router/resources/remote/**/*.sh' => 'tests/Feature/Extensions/AiRouter/Actions/AiRouterCutoverTest.php',
     'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
     'resources/instances/tia-baseline.py' => 'tests/Feature/Domain/TiaBaselineSetupTest.php',
     'resources/instances/ci-caches.sh' => 'tests/Feature/Domain/CiCacheSetupTest.php',

@@ -49,7 +49,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def probe(path):
-    result = {'ok': 0, 'failed': 0}
+    result = {'ok': 0, 'failed': 0, 'errors': []}
     while True:
         try:
             request = urllib.request.Request('http://127.0.0.1:8317/v1/chat/completions', data=b'{"model":"test-model","messages":[{"role":"user","content":"ping"}]}', headers={'Authorization': 'Bearer held-task-key', 'Content-Type': 'application/json'})
@@ -57,8 +57,9 @@ def probe(path):
                 assert response.status == 200
                 assert json.load(response)['choices'][0]['message']['content'] == 'ok'
             result['ok'] += 1
-        except Exception:
+        except Exception as error:
             result['failed'] += 1
+            result['errors'].append({'time': time.time(), 'error': repr(error)})
         with open(path + '.next', 'w', encoding='utf-8') as output:
             json.dump(result, output)
         os.replace(path + '.next', path)

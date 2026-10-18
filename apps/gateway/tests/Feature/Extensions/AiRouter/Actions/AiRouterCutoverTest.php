@@ -88,7 +88,8 @@ it('defers a rollout visit during recorded cutover state and retries publication
         app()->instance(AiRouterPublicationManager::class, app(RecordingAiRouterPublicationManager::class));
     }
     $this->artisan('orbit:ai-router-converge')->assertSuccessful();
-    expect($commands[0]->input)->toContain('orbit-process-163-cli-proxy-api-collector.service', 'X-Orbit-Process-ID=163')
+    expect($commands[0]->arguments)->toBe(['sudo', '-n', '-u', 'root', '-H', 'bash', '-seu', '--', '163']);
+    expect($commands[0]->input)->toContain('cli-proxy-api-collector.service', 'X-Orbit-Process-ID=$id')
         ->not->toContain('orbit-process-163-ai-router-collector.service');
     expect($process->refresh()->runtime_config['command'])->toBe(['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'])
         ->and($process->runtime_config['environment'])->toHaveKeys(['AI_ROUTER_READ_TOKEN', 'AI_ROUTER_MANAGEMENT_KEY'])
