@@ -438,7 +438,7 @@ Count is `occurrences`, the number of windows. Occurrences lists one line per wi
 | Evidence | The sample caps. Expected and observed are cut at 200 characters |
 | Suspected entry point | 500 characters, then `...` |
 
-The finished brief is at most 8,000 characters. The Evidence and Occurrences headings are always present. When either section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and both headings stay. The occurrence lines stay. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+The finished brief is at most 8,000 characters. The Evidence and Occurrences headings are always present. When either section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and both headings stay. The occurrence lines stay. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief states that subtask's goal. The symptom appears once, in the group brief.
 
 | Source | Title | Suspected entry point |
 | --- | --- | --- |
@@ -1040,11 +1040,11 @@ For a delta re-review, the retrieval command stages the candidate in a temporary
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
-The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
+The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. The implementer blocks only when ownership is unclear, the work needs live or shared resources beyond the task, access is missing, or a product decision needs the operator. The prompt does not explain consults or their limits, because the engine enforces them. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
-The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`, to verify behaviour.
+The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`. It does not edit or commit the code.
 
-The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to check a framework or library API the reviewer is not sure of against the documentation for the Project's version. A continued turn repeats these rules. The shared prompt adds no Project policy.
+The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. A continued turn repeats these rules. Both agents check framework APIs with the Pi server's `search_docs` tool, whose own description says when to use it. The shared prompt adds no Project policy.
 
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `task.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
@@ -1057,7 +1057,7 @@ When the change adds or alters runtime behaviour, the reviewer first traces the 
 - (c) An unmet brief item or deliverable.
 - (d) A regression of existing behaviour.
 
-Each blocking finding states its normal-operation trigger. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer prefers an operator recovery command and does not prescribe new markers, fences, or locks.
+Each blocking finding names its file and line, its normal-operation trigger, and what must change. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window.
 
 After two `changes_requested` outcomes on one subtask, only (b), (c), and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
@@ -1384,7 +1384,7 @@ When a main merge's Project gate fails for an environment reason, repair the pre
 
 The retry requires the same head and tree: source changes cannot inherit the retained approval. A failed retry stays blocked until another repair and resolution. After the PR opens, the retry may merge newer main before checking again; before publication, it keeps the same merged tree.
 
-The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
+The fixup fixes each blocking finding at its root cause, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
 The fixup has one `review` deliverable, `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
 

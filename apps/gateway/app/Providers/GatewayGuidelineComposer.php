@@ -43,13 +43,13 @@ final class GatewayGuidelineComposer extends GuidelineComposer
         );
 
         $guidelines = preg_replace(
-            pattern: '/\n## (?:Frontend Bundling|Vite Error)\n.*?(?=\n(?:## |=== )|\z)/s',
+            pattern: '/\n## (?:Frontend Bundling|Vite Error|Documentation Files)\n.*?(?=\n(?:## |=== )|\z)/s',
             replacement: '',
             subject: $guidelines,
         );
 
         if (! is_string($guidelines)) {
-            throw new RuntimeException('Could not remove unsupported UI guidance.');
+            throw new RuntimeException('Could not remove unsupported guidance.');
         }
 
         return $guidelines;

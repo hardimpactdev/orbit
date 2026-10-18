@@ -17,9 +17,7 @@ Check correctness, regressions, test coverage, architectural decisions, and docu
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
-When the subtask declares a topology, Orbit has prepared it as `TASK-<group>` in the task VM. Prove each deliverable on the declared nodes with `bin/e2e-topology exec --record=LABEL`; Orbit refuses the approval without a successful recorded command on each declared node. See [using-incus-topologies](../using-incus-topologies/SKILL.md#use-the-declared-topology).
-
-A subtask without a declared topology has none. Agents never acquire or release topologies; the topology goes with the task VM.
+In an Orbit task, the review prompt names a declared topology and how to record evidence on it. A subtask without a declared topology has none, and agents never acquire or release one.
 
 Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. A missing topology does not block task approval of a subtask that declares none. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
 

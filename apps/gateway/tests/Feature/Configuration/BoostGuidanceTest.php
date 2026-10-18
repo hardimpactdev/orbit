@@ -117,6 +117,7 @@ it('regenerates strict guidance while preserving project-owned sections', functi
             'stale guidance',
             '## Frontend Bundling',
             '## Vite Error',
+            '## Documentation Files',
             '=== deployments rules ===',
             'Laravel Cloud',
             'in `.ai/rules` when that directory exists',

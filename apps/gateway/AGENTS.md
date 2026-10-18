@@ -139,10 +139,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Stick to existing directory structure; don't create new base folders without approval.
 - Do not change the application's dependencies without approval.
 
-## Documentation Files
-
-- You must only create documentation files if explicitly requested by the user.
-
 === boost rules ===
 
 # Laravel Boost

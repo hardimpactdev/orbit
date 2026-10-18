@@ -2,9 +2,17 @@
 
 Orbit contains nine projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
 
+## Quality bar
+
+- Read [Mission](docs/mission.md) and the reference page or ADR that owns the behaviour before you change it.
+- Fix the root cause from first principles. Add no fallback, compatibility path, or legacy branch.
+- Keep one rule in one place.
+- Guard against a race only when it occurs in normal operation. A crash or timeout between two specific steps is a follow-up.
+- Every behaviour change has a test that fails without it. The documentation changes with the code.
+
 ## Feature contributions
 
-Follow the [contributor guide](docs/contributor-guide.md): **architecture → documentation → implementation → complete PR → review → maintainer approval → merge**.
+Follow the [contributor guide](docs/contributor-guide.md): **architecture → documentation → implementation → complete PR → review → maintainer approval → merge**. In an Orbit task, Orbit reviews each subtask, opens the PR, and merges it when the Project has review and merge on. The PR, review, and merge steps below do not apply to task agents.
 
 - Check existing ADRs and propose significant architectural changes in the feature PR.
 - Write documentation before coding. Keep the code, tests, documentation, and ADRs consistent.
@@ -31,7 +39,7 @@ For focused documentation work, use [writing-documentation](.agents/skills/writi
 
 ## Checks and resources
 
-In an Orbit task, run `composer test:affected` in each changed project. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
+In an Orbit task, run the affected tests of each changed project: `composer test:affected` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 

@@ -358,7 +358,7 @@ final readonly class ProblemFiler
             tasks: [
                 new TaskInputData(
                     title: 'Document the owning page',
-                    brief: $symptom,
+                    brief: 'Update the page that owns the failing behaviour so it describes the fixed behaviour, or confirm that no page changes.',
                     deliverables: [[
                         'id' => 'docs',
                         'type' => 'review',
@@ -367,7 +367,7 @@ final readonly class ProblemFiler
                 ),
                 new TaskInputData(
                     title: 'Reproduce the failure and fix it',
-                    brief: $symptom,
+                    brief: 'Add a test that fails on the start commit for the symptom in the group brief. Then fix the root cause so it passes.',
                     deliverables: [[
                         'id' => 'test',
                         'type' => 'review',

@@ -583,7 +583,7 @@ describe('final review before every push', function (): void {
             ->and($fixup->status)->toBe(TaskStatus::Running)
             ->and($fixup->title)->toBe(TaskFinalReview::FixupTitle)
             ->and($fixup->brief)->toContain('app/Models/Task.php: the scope misses legacy rows.')
-            ->and($fixup->brief)->toContain('Address each blocking finding of final review subtask #'.$final->id.' with the smallest change', 'List follow-ups in the handoff instead of implementing them.')
+            ->and($fixup->brief)->toContain('Fix each blocking finding of final review subtask #'.$final->id.' at its root cause', 'List follow-ups in the handoff instead of implementing them.')
             ->and($fixup->deliverables[0]['description'])->toBe('Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.')
             ->and(array_column($fixup->deliverables ?? [], 'id'))->toBe(['final-review-findings'])
             ->and($runtime->implementers)->toBe([$fixup->id])

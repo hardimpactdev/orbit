@@ -18,9 +18,9 @@ final readonly class TaskTurnInstructions
     public static function implementer(array $deliverables = [], ?string $check = null, ?int $threadId = null): string
     {
         $gate = $check === null ? '' : ' Orbit runs '.$check.' when you hand off.';
-        $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run.';
+        $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met.';
 
-        return self::origin().' '.self::autonomy().' Never acquire or release a topology yourself.'.$gate.' When the brief is complete, end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$confirm.' '.self::blocked($threadId);
+        return self::origin().' '.self::autonomy().$gate.' When the brief is complete, end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$confirm.' '.self::blocked($threadId);
     }
 
     /**
@@ -39,7 +39,7 @@ final readonly class TaskTurnInstructions
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return ($delta ? 'This is a delta re-review since the last reviewed tree. Check whether the earlier findings are resolved and whether the delta adds a new rule-(a)–(d) defect. Do not re-review the whole branch. ' : '').self::origin().' Leave the workspace tree as you found it: Orbit checks that no tracked or untracked workspace file changed when your turn ends. You may run commands, use sudo, and create disposable files outside the workspace, such as under /tmp, to verify behaviour. Request changes from the implementer instead of editing the code. Do not commit; Orbit commits after you approve. Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, state the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up, unless a deliverable names that guarantee. List follow-ups under \'Follow-ups\' in the approval; they never block. Do not prescribe new markers, fences or locks; prefer an operator recovery command. After two changes_requested on one subtask, only (b), (c) and (d) findings may block; everything else becomes a follow-up. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"'.$cause).'. '.($cause === '' ? '' : 'This review follows an operator direction. Every review outcome needs --cause. ').self::blocked($threadId, true);
+        return ($delta ? 'This is a delta re-review since the last reviewed tree. Check whether the earlier findings are resolved and whether the delta adds a new blocking defect. Do not re-review the whole branch. ' : '').self::origin().' Leave the workspace tree as you found it: Orbit checks that no tracked or untracked workspace file changed when your turn ends. You may run commands, use sudo, and create disposable files outside the workspace, such as under /tmp. Do not edit or commit the code; Orbit commits after you approve. Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, give its file:line, its normal-operation trigger, and what must change. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee; do not ask for markers, fences or locks against it. List follow-ups under \'Follow-ups\' in the approval; they never block. After two changes_requested on one subtask, only (b), (c) and (d) findings may block. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"'.$cause).'. '.($cause === '' ? '' : 'This review follows an operator direction. Every review outcome needs --cause. ').self::blocked($threadId, true);
     }
 
     /** The reviewer answers an implementer's question from the contract, before the operator is asked. */
@@ -107,7 +107,7 @@ final readonly class TaskTurnInstructions
 
     private static function autonomy(): string
     {
-        return 'Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task\'s allocated environment without asking for permission. This authority does not extend to live or shared resources or another task\'s fixtures. Resolve routine test prerequisites yourself.';
+        return 'Work autonomously. You may change or delete disposable fixtures in this task\'s environment and resolve routine test prerequisites yourself. Do not touch live or shared resources or another task\'s fixtures.';
     }
 
     private static function command(?int $threadId, string $arguments): string
@@ -126,10 +126,10 @@ final readonly class TaskTurnInstructions
     private static function blocked(?int $threadId, bool $reviewer = false): string
     {
         if ($reviewer) {
-            return 'A blocked review asks the operator for direction. End it with '.self::command($threadId, '--outcome=blocked --summary="What the contract cannot answer" --question="One specific question" --cause=CAUSE').'. '.self::causes().' If you can decide from the brief, the ADRs, the documentation, the code, or the task history, keep working instead.';
+            return 'When the brief, the documentation, the code, and the task history cannot answer a question, end your turn with '.self::command($threadId, '--outcome=blocked --summary="What the contract cannot answer" --question="One specific question" --cause=CAUSE').' to ask the operator. '.self::causes();
         }
 
-        return 'Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task\'s authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with '.self::command($threadId, '--outcome=blocked --summary="What stops you, what you tried, and the boundary you cannot cross" --question="One specific question"').'. A blocked turn starts a consult: Orbit sends the summary and the question to the subtask\'s reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.';
+        return 'Block only when ownership is unclear, the work needs live or shared resources beyond this task, access is missing, or a product decision needs the operator. Then end your turn with '.self::command($threadId, '--outcome=blocked --summary="What stops you and what you tried" --question="One specific question"').'. Your reviewer answers first. If you can decide or find the answer yourself, keep working instead.';
     }
 
     /** @param list<TaskDeliverable> $deliverables */
