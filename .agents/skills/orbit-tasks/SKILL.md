@@ -75,6 +75,6 @@ Create the group in Backlog with `tasks-create` for the Orbit Project, and its s
 
 ## Review a subtask
 
-Check the risk that the brief names first. Then check the change against the quality bar; the blocking rule in the review prompt decides whether a finding blocks.
+Check the risk that the brief names first, then the quality bar. The review prompt's blocking rule decides what blocks.
 
-Follow-ups never block. The final review lists the open follow-ups under `Follow-ups` in its approval. When it opens the pull request, it puts any limitation a user must know in `--pr-summary`. The operator decides which follow-ups become a later group.
+The reviewer whose approval opens the pull request puts any open follow-up that users must know about into `--pr-summary`. The operator decides which follow-ups become a later group.

@@ -87,10 +87,6 @@ current branch does not contain it, replace the incomplete checkout. Then run
 Boost cannot recreate deleted project-owned rules. Never silently continue when
 the required project guidance is incomplete.
 
-## Skills Activation
-
-This project has domain-specific skills in `.agents/skills`. Activate each relevant skill before work in its domain.
-
 ## Test Enforcement
 
 - Test every code change by adding or updating a test.
@@ -167,7 +163,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Project Rules
 
-- This project contains committed, area-grouped rules in `.ai/rules` as required repository state, including path-scoped framework guidelines under `.ai/rules/boost`. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. The complete project guidance inventory is required repository state. Run `composer guidance:check` before planning or editing. If it fails, make no product-code edits. Restore the exact affected tracked guidance path, validate again, and then run `composer guidance:update`.
+- This project contains committed, area-grouped rules in `.ai/rules` as required repository state, including path-scoped framework guidelines under `.ai/rules/boost`. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If guidance is missing or incomplete, follow Required Guidance Bootstrap above.
 
 ## Artisan
 

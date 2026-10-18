@@ -1018,7 +1018,7 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `$(git rev-parse --git-path orbit)/check.log` holds the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 | Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 
-A re-review receives only the diff since the last reviewed tree and the earlier requested changes. It checks whether those findings are resolved and whether the delta introduces a new defect under rules (a)–(d). It does not review the whole subtask again. A replacement reviewer gets the same scope and findings. After a final-review fixup, the next final review follows this rule too; a new operator subtask starts a whole-branch review again. Findings are capped in the packet and kept in full in `$(git rev-parse --git-path orbit)/context.md`.
+A re-review receives only the diff since the last reviewed tree and the earlier requested changes. It checks whether those findings are resolved and whether the delta introduces a new defect under rules (a)–(e). It does not review the whole subtask again. A replacement reviewer gets the same scope and findings. After a final-review fixup, the next final review follows this rule too; a new operator subtask starts a whole-branch review again. Findings are capped in the packet and kept in full in `$(git rev-parse --git-path orbit)/context.md`.
 
 Before each review turn, opening or continued, Orbit writes `$(git rev-parse --git-path orbit)/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
@@ -1044,7 +1044,7 @@ The implementer prompt asks the implementer to finish the brief. Orbit runs the 
 
 The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`. It does not edit or commit the code.
 
-The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. A continued turn repeats these rules. Both agents check Laravel ecosystem APIs with the Pi server's `search_docs` tool, whose own description says when to use it. The shared prompt adds no Project policy.
+The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. A continued turn repeats these rules. The shared prompt adds no Project policy: the Project's own instructions say how agents check an unfamiliar framework API.
 
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `task.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
@@ -1056,10 +1056,11 @@ When the change adds or alters runtime behaviour, the reviewer first traces the 
 - (b) Data loss, a security issue, or a state that no supported command can recover.
 - (c) An unmet brief item or deliverable.
 - (d) A regression of existing behaviour.
+- (e) A breach of the quality bar in the repository's instructions, such as a fallback, a legacy or compatibility path, or a rule kept in two places. The Orbit repository defines its quality bar in the root `AGENTS.md`.
 
-Each blocking finding names its file and line, its normal-operation trigger, and what must change. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window; an operator recovery command is enough.
+This list is the one statement of when a finding blocks. Repository instructions refer to it and do not restate it. Each blocking finding names its file and line, the rule it meets, and what must change. A finding under (a) also names its normal-operation trigger. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window; an operator recovery command is enough.
 
-After two `changes_requested` outcomes on one subtask, only (b), (c), and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
+After two `changes_requested` outcomes on one subtask, only (b), (c), (d), and (e) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. When the reviewer's receipt arrives, it reads them again.
 
@@ -1750,7 +1751,7 @@ An audit of eight task groups found 11 real bugs likely in normal operation, 23 
 
 Blocking every missing guarantee against injected failures was rejected because it spent review and implementation effort on narrow failure windows before the main paths were understood. Reviewers trace ordinary paths first, block only under the blocking rule, and retain other findings as follow-ups. This serves [lean](/mission#principles).
 
-Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on data loss, security issues, unrecoverable states, unmet work, or regressions, so each subtask has a bounded repair loop that never ships a known data-loss or security defect. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
+Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on data loss, security issues, unrecoverable states, unmet work, regressions, or quality-bar breaches, so each subtask has a bounded repair loop that never ships a known data-loss or security defect. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
 
 ### The reviewer does not edit
 

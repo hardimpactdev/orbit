@@ -381,7 +381,7 @@ it('tells the packet reviewer not to re-run passed checks and to leave the works
 
     expect($composer)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed. The Project task check is `composer check`.')
         ->and($composer)->not->toContain('say why')
-        ->and($composer)->toContain('give its file:line, its normal-operation trigger, and what must change.')
+        ->and($composer)->toContain('give its file:line, the rule it meets, and what must change; for (a), also name the normal-operation trigger.')
         ->and($composer)->toContain('Leave the workspace tree as you found it')
         ->and($composer)->toContain('--outcome=approved')
         ->and($composer)->toContain('--outcome=changes_requested')

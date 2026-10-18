@@ -7,8 +7,11 @@ Orbit contains nine projects. Five are separate Composer projects: CLI, Gateway,
 - Read [Mission](docs/mission.md) and the reference page or ADR that owns the behaviour before you change it.
 - Fix the root cause from first principles. Add no fallback, compatibility path, or legacy branch.
 - Keep one rule in one place.
-- Guard against a race only when it occurs in normal operation. A crash or timeout between two specific steps is a follow-up.
+- Guard against a race or crash window only when the [blocking rule](docs/reference/tasks.md#reviewer-outcomes) would block on it.
 - Every behaviour change has a test that fails without it. The documentation changes with the code.
+- Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`.
+
+A breach of this bar blocks a review under the [blocking rule](docs/reference/tasks.md#reviewer-outcomes).
 
 ## Feature contributions
 

@@ -35,9 +35,7 @@ final class GatewayGuidelineComposer extends GuidelineComposer
             [$optionalLocation, $permissiveFallback],
             [
                 'in `.ai/rules` as required repository state',
-                'The complete project guidance inventory is required repository state. Run `composer guidance:check` '
-                    .'before planning or editing. If it fails, make no product-code edits. Restore the exact affected '
-                    .'tracked guidance path, validate again, and then run `composer guidance:update`.',
+                'If guidance is missing or incomplete, follow Required Guidance Bootstrap above.',
             ],
             $guidelines,
         );
