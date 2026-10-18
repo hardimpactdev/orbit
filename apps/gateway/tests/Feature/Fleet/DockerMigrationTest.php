@@ -140,11 +140,12 @@ it('reports remote failures with recovery advice for the failed action', functio
     $runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
-    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe(1)
-        ->and(Artisan::output())->toContain($failure, 'Resume', 'mailpit', 'unreadable')
+    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain($failure, 'Resume', 'mailpit', 'unreadable')
         ->not->toContain('PASSWORD=private')
         ->and($runtime->convergedProcessIds)->toBe([]);
-    $message = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['message'];
+    $message = json_decode($output, true, flags: JSON_THROW_ON_ERROR)['message'];
     if ($offerFallback) {
         expect($message)->toContain('--fallback');
     } else {
