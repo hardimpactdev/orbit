@@ -457,7 +457,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both [in the scheduler itself](/reference/gateway-queue#scheduled-work), never on the Gateway queue, so they keep running while Horizon is down. Each holds an overlap lock and its own lock: 15 minutes for the collector, and 30 minutes for the filer. A killed run leaves its locks until they expire, so the collector can skip one run after a kill, and the filer skips none.
+`problems:collect` is dispatched every 10 minutes as a unique job on the `tasks` queue, with a 900-second unique lock and timeout. It also keeps its own 15-minute command lock. It requires the Gateway queue. `problems:collect --horizon` runs separately in the scheduler every 10 minutes and inspects only the Gateway's Horizon Process through Doctor. It has its own one-minute overlap and command locks, so it can record a stopped Horizon while a fleet collection waits or runs. `problems:file` stays in the scheduler, with its 30-minute overlap and command locks. All three run only while the Tasks extension is enabled. See [Scheduled work](/reference/gateway-queue#scheduled-work).
 
 | Source | Bound per run |
 | --- | --- |
@@ -476,7 +476,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also runs `problems:collect` every 10 minutes and `problems:file` every hour, itself, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also dispatches `problems:collect` every 10 minutes, observes Horizon separately, and runs `problems:file` every hour, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 A tick that takes the lock records that time in the Gateway cache, and [`tasks:status`](/cli/tasks#orbit-tasksstatus) reports it as `last_tick_at`. A ticking scheduler moves it forward about every 10 seconds. Clearing the cache forgets it until the next tick. [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) reads it to prove the scheduler runs after a Gateway release.
 

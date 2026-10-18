@@ -15,6 +15,8 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskSchedule;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -30,6 +32,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Console\Scheduling\CallbackEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -298,6 +302,32 @@ describe('gateway:release:handoff', function (): void {
             ->and($probe->cleared)->toBe(0)
             ->and(array_filter($processes->ran, static fn (array $arguments): bool => in_array('php-fpm8.5', $arguments, true)))->toBe([])
             ->and($cleanup->calls)->toContain('reconcile', 'resume:r1');
+    });
+
+    it('hands the scheduler over while a fleet collection job is still reserved', function (): void {
+        handoff_scheduler(handoff_gateway());
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        app(TaskExtensionState::class)->enable();
+        $schedule = new Schedule;
+        app(TaskSchedule::class)->register($schedule);
+        $event = collect($schedule->events())->firstWhere('description', 'problems:collect');
+        expect($event)->toBeInstanceOf(CallbackEvent::class);
+        $event->run(app());
+        DB::table('jobs')->update(['reserved_at' => now()->timestamp, 'attempts' => 1]);
+        $collectionLock = Cache::lock('orbit:problems:collect', 900);
+        $collectionLock->get();
+        [$handoff, , , , , $probe] = runtime_handoff();
+        $probe->members = ['/usr/bin/php8.5 artisan schedule:work'];
+
+        try {
+            $result = $handoff->schedule();
+        } finally {
+            $collectionLock->release();
+        }
+
+        expect($result['scheduler_drain'])->toMatchArray(['outcome' => 'drained', 'running' => []]);
+        expect(DB::table('jobs')->whereNotNull('reserved_at')->count())->toBe(1);
+        expect($probe->cleared)->toBe(0);
     });
 
     it('stops the scheduler only after the drain limit, under the tick lock, and then clears the overlap mutexes', function (): void {

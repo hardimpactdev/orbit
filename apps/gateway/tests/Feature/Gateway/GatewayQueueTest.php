@@ -96,21 +96,37 @@ describe('the schedule', function (): void {
             ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
     });
 
-    it('runs problem collection and filing itself, with their overlap locks, while the Gateway queue is set', function (): void {
+    it('queues fleet collection once without running Doctor in the scheduler', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $collect = gateway_queue_event('problems:collect');
-        $file = gateway_queue_event('problems:file');
 
-        expect($collect)->not->toBeInstanceOf(CallbackEvent::class)
-            ->and($collect->command)->toEndWith("'artisan' problems:collect")
-            ->and([$collect->expression, $collect->withoutOverlapping, $collect->expiresAt])->toBe(['*/10 * * * *', true, 15])
-            ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
-            ->and($file->command)->toEndWith("'artisan' problems:file")
-            ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
-
+        expect($collect)->toBeInstanceOf(CallbackEvent::class);
+        $collect->run(app());
         $collect->run(app());
 
-        expect(DB::table('jobs')->count())->toBe(0);
+        $row = DB::table('jobs')->sole();
+        $job = unserialize(json_decode($row->payload, true)['data']['command']);
+        expect($row->queue)->toBe(GatewayQueue::Tasks->value)
+            ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])
+            ->toBe(['problems:collect', 900, 900, GatewayQueue::Connection]);
+    });
+
+    it('refuses fleet collection dispatch without a queue instead of running it inline', function (): void {
+        config(['orbit.gateway_queue.connection' => '']);
+
+        expect(fn () => gateway_queue_event('problems:collect')->run(app()))
+            ->toThrow(RuntimeException::class, 'ORBIT_GATEWAY_QUEUE_CONNECTION is empty');
+    });
+
+    it('keeps Horizon observation and filing outside Horizon', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $horizon = gateway_queue_event('problems:collect --horizon');
+        $file = gateway_queue_event('problems:file');
+
+        expect($horizon)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and([$horizon->expression, $horizon->withoutOverlapping, $horizon->expiresAt])->toBe(['*/10 * * * *', true, 1])
+            ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
     });
 
     it('lists tasks:tick under its own name, as the release smoke reads it', function (): void {

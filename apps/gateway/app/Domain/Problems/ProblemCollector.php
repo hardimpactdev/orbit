@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace App\Domain\Problems;
 
+use App\Actions\Doctor\ProcessDoctorProbe;
 use App\Actions\Doctor\RunDoctorAction;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\StoredInteger;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Activity;
+use App\Models\Node;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
+use App\Models\Process;
 use App\Models\Task;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,6 +33,7 @@ final readonly class ProblemCollector
 {
     public function __construct(
         private RunDoctorAction $doctor,
+        private ProcessDoctorProbe $processDoctor,
         private GatewayLogLocator $logs,
         private GatewayLogReader $reader,
         private ProblemLogParser $parser,
@@ -69,6 +76,39 @@ final readonly class ProblemCollector
         }
 
         return $failures;
+    }
+
+    /** Record Horizon health even when its queue workers cannot collect the fleet. */
+    public function collectHorizon(): void
+    {
+        $gateway = Node::query()
+            ->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn ($query) => $query
+                ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))
+            ->orderBy('id')->first();
+
+        if (! $gateway instanceof Node) {
+            return;
+        }
+
+        $process = Process::query()->whereMorphedTo('owner', $gateway)
+            ->orderBy('id')->get()->first(GatewayHorizon::runs(...));
+
+        if (! $process instanceof Process) {
+            return;
+        }
+
+        $issue = $this->processDoctor->inspectProcess($process);
+
+        if ($issue === null) {
+            return;
+        }
+
+        DB::transaction(fn () => $this->record(
+            $this->fingerprint(ProblemSource::Doctor, $issue->code.'|'.$issue->resourceType.'|'.$issue->resourceId),
+            ProblemSource::Doctor,
+            ['expected' => $issue->expected, 'observed' => $issue->observed, 'summary' => $issue->summary],
+        ));
     }
 
     /**

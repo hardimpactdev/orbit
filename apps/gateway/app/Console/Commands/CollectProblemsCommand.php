@@ -13,7 +13,7 @@ use Throwable;
 final class CollectProblemsCommand extends Command
 {
     #[\Override]
-    protected $signature = 'problems:collect';
+    protected $signature = 'problems:collect {--horizon : Inspect only the Gateway Horizon Process, without a fleet scan}';
 
     #[\Override]
     protected $description = 'Record recurring Doctor, Activity, log, and assistance problems.';
@@ -24,14 +24,22 @@ final class CollectProblemsCommand extends Command
             return self::SUCCESS;
         }
 
-        $lock = Cache::lock('orbit:problems:collect', 15 * 60);
+        $horizon = (bool) $this->option('horizon');
+        $lock = $horizon
+            ? Cache::lock('orbit:problems:collect:horizon', 60)
+            : Cache::lock('orbit:problems:collect', 15 * 60);
 
         if (! $lock->get()) {
             return self::SUCCESS;
         }
 
         try {
-            $failures = $collector->collect();
+            if ($horizon) {
+                $collector->collectHorizon();
+                $failures = [];
+            } else {
+                $failures = $collector->collect();
+            }
         } finally {
             $lock->release();
         }

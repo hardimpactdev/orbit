@@ -3,12 +3,17 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
+use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\ProcessInspectionData;
+use App\Domain\Doctor\ProcessInspectionStatus;
+use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Problems\ProblemEvidence;
 use App\Domain\Problems\ProblemSource;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tools\ToolInventoryPackage;
@@ -20,14 +25,78 @@ use App\Models\Activity;
 use App\Models\Node;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Support\TestOrbitHome;
+
+it('observes only Horizon without a fleet scan or queue worker, even while fleet collection holds its lock', function (string $desired, string $observed, ?string $code): void {
+    problem_collector_sandbox();
+    $gateway = $this->markAsGateway(problem_collector_node('gateway'));
+    $gateway->update(['status' => LifecycleStatus::Active]);
+    problem_collector_node('unreachable-fleet-node');
+    $process = Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $gateway->id, 'name' => 'horizon',
+        'runtime' => ProcessRuntime::Systemd,
+        'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon']],
+        'desired_state' => $desired, 'status' => LifecycleStatus::Active,
+    ]);
+    Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $gateway->id, 'name' => 'unrelated',
+        'runtime' => ProcessRuntime::Systemd,
+        'runtime_config' => ['command' => ['unrelated']],
+        'desired_state' => 'running', 'status' => LifecycleStatus::Active,
+    ]);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            throw new RuntimeException('A Horizon observation must not scan Nodes.');
+        }
+    });
+    $inspector = new class($process->id, $observed) implements ProcessStateInspector
+    {
+        public int $calls = 0;
+
+        public function __construct(private int $expectedId, private string $observed) {}
+
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            expect($process->id)->toBe($this->expectedId);
+            $this->calls++;
+            if ($this->observed === 'unknown') {
+                throw new DoctorInspectionException;
+            }
+
+            return new ProcessInspectionData(true, ProcessInspectionStatus::from($this->observed));
+        }
+    };
+    app()->instance(ProcessStateInspector::class, $inspector);
+    $lock = Cache::lock('orbit:problems:collect', 900);
+    $lock->get();
+
+    try {
+        expect(Artisan::call('problems:collect', ['--horizon' => true]))->toBe(0);
+    } finally {
+        $lock->release();
+    }
+
+    expect($inspector->calls)->toBe(1);
+    expect(ProblemFingerprint::query()->pluck('fingerprint')->all())->toBe(
+        $code === null ? [] : ['doctor|'.$code.'|process|'.$process->id],
+    );
+})->with([
+    'stopped worker' => ['running', 'inactive', 'process.state_mismatch'],
+    'healthy worker' => ['running', 'active', null],
+    'intentional stop' => ['stopped', 'inactive', null],
+    'inspection failure' => ['running', 'unknown', 'process.inspection_failed'],
+]);
 
 it('collects fingerprints for the same doctor issue across two runs', function (): void {
     problem_collector_sandbox();

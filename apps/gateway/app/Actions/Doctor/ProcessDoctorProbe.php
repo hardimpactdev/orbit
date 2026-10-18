@@ -87,49 +87,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         $instanceIssues = [];
         $asleep = [];
         foreach ($processes as $process) {
-            $issue = null;
-            try {
-                $inspection = $this->inspector->inspect($process);
-            } catch (DoctorInspectionException) {
-                $issue = $this->failure($process);
-            }
-
-            if (! $issue instanceof DoctorIssueData && ! $inspection->present) {
-                $issue = $this->issue(
-                    $process,
-                    ProcessDoctorIssueCode::RuntimeMissing,
-                    DoctorIssueKind::Drift,
-                    'present',
-                    'absent',
-                );
-            }
-
-            if (! $issue instanceof DoctorIssueData) {
-                $observed = $inspection->status;
-                if ($observed === null) {
-                    $issue = $this->failure($process);
-                } elseif (
-                    $process->runtime === ProcessRuntime::Systemd
-                    && $process->desired_state === DesiredProcessState::Running
-                    && $inspection->isCrashLoop()
-                ) {
-                    $issue = $this->issue(
-                        $process,
-                        ProcessDoctorIssueCode::CrashLoop,
-                        DoctorIssueKind::Drift,
-                        DesiredProcessState::Running->value,
-                        $inspection->crashLoopEvidence(),
-                    );
-                } elseif (! $this->isHealthy($process, $observed, $asleep)) {
-                    $issue = $this->issue(
-                        $process,
-                        ProcessDoctorIssueCode::StateMismatch,
-                        DoctorIssueKind::Drift,
-                        $process->desired_state->value,
-                        $observed->value,
-                    );
-                }
-            }
+            $issue = $this->inspectState($process, $asleep);
 
             if (! $issue instanceof DoctorIssueData) {
                 continue;
@@ -160,6 +118,64 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues);
+    }
+
+    /** Inspect one Process without a fleet or Node scan. */
+    public function inspectProcess(Process $process): ?DoctorIssueData
+    {
+        $asleep = [];
+
+        return $this->inspectState($process, $asleep);
+    }
+
+    /** @param array<int, bool> $asleep */
+    private function inspectState(Process $process, array &$asleep): ?DoctorIssueData
+    {
+        $issue = null;
+        try {
+            $inspection = $this->inspector->inspect($process);
+        } catch (DoctorInspectionException) {
+            $issue = $this->failure($process);
+        }
+
+        if (! $issue instanceof DoctorIssueData && ! $inspection->present) {
+            $issue = $this->issue(
+                $process,
+                ProcessDoctorIssueCode::RuntimeMissing,
+                DoctorIssueKind::Drift,
+                'present',
+                'absent',
+            );
+        }
+
+        if (! $issue instanceof DoctorIssueData) {
+            $observed = $inspection->status;
+            if ($observed === null) {
+                $issue = $this->failure($process);
+            } elseif (
+                $process->runtime === ProcessRuntime::Systemd
+                && $process->desired_state === DesiredProcessState::Running
+                && $inspection->isCrashLoop()
+            ) {
+                $issue = $this->issue(
+                    $process,
+                    ProcessDoctorIssueCode::CrashLoop,
+                    DoctorIssueKind::Drift,
+                    DesiredProcessState::Running->value,
+                    $inspection->crashLoopEvidence(),
+                );
+            } elseif (! $this->isHealthy($process, $observed, $asleep)) {
+                $issue = $this->issue(
+                    $process,
+                    ProcessDoctorIssueCode::StateMismatch,
+                    DoctorIssueKind::Drift,
+                    $process->desired_state->value,
+                    $observed->value,
+                );
+            }
+        }
+
+        return $issue;
     }
 
     /** @param array<int, bool> $asleep */

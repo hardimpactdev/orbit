@@ -9,7 +9,7 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. Problem collection and filing, and document cleanup, run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
+The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. The narrow Horizon observation, problem filing, and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
 
 ## Connection
 
@@ -48,6 +48,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
 | `tasks:tick` | 10 seconds | `tasks` | 330 seconds |
+| `problems:collect` | 10 minutes | `tasks` | 900 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
@@ -63,16 +64,16 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 | Command | Every | Overlap lock |
 | --- | --- | --- |
-| `problems:collect` | 10 minutes | 15 minutes |
+| `problems:collect --horizon` | 10 minutes | 1 minute |
 | `problems:file` | hour | 30 minutes |
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-[Problem collection and filing](/reference/tasks#outer-loop) watch Horizon, so they must not depend on it. A collection usually takes under a minute. While it runs, the rest of that minute's scheduler run waits, so the 10-second dispatches of that minute run late. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
+Full [problem collection](/reference/tasks#outer-loop) needs the queue and never runs in the scheduler. Without a queue, dispatch fails with an error. The separate `--horizon` observation inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks, and the Gateway creates no `horizon` Process. Fleet problem collection and task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too. An Instance deploy or rollback request answers `503` with `operation.queue_unavailable` and records nothing ([Operations](/reference/operations#start-an-operation)).
 
@@ -162,12 +163,12 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate `problems:collect --horizon` observation runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 ## Why it works this way
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Problem collection is the exception, because it is how a stopped Horizon gets recorded. As a queued job, it would stop with Horizon, and the failure it should report would go unseen. In the scheduler, a collection costs late 10-second dispatches once every 10 minutes, and a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff) waits for a running collection. Both are short and need no extra machinery.
+Fleet problem collection runs as a queued job, so a slow Doctor scan cannot delay scheduler dispatch or a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff). Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
