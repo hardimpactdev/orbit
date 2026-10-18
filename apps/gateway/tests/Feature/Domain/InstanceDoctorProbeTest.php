@@ -7,6 +7,8 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
@@ -613,7 +615,7 @@ it('reports missing and shared production PHP associations before native project
                 caddyProjectionMatches: true,
             );
         }
-    })->inspect(new DoctorNodeContext($node, instance_probe_context($node)->inspection, resourceId: $scoped ? $sharedFirst->id : null));
+    })->inspect(new DoctorNodeContext($node, instance_probe_context($node)->inspection, resources: $scoped ? new DoctorResources(DoctorResourceKind::Rows, [$sharedFirst->id]) : null));
 
     expect(collect($report->issues)->map(fn ($issue): array => [$issue->resourceId, $issue->code])->all())
         ->toBe($scoped ? [[$sharedFirst->id, 'instance.php_fpm_association_shared']] : [

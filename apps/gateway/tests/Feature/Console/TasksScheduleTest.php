@@ -24,7 +24,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
 
     $commands = array_map(static fn ($event): string => $event->command ?? $event->description, $schedule->events());
     $collect = collect($schedule->events())->first(
-        static fn ($event): bool => $event->description === 'problems:collect',
+        static fn ($event): bool => str_contains((string) $event->command, 'problems:collect'),
     );
     $file = collect($schedule->events())->first(
         static fn ($event): bool => str_contains((string) $event->command, 'problems:file'),
@@ -34,7 +34,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeFalse()
         ->and($collect)->not->toBeNull()
         ->and($collect->expression)->toBe('*/10 * * * *')
-        ->and($collect)->toBeInstanceOf(CallbackEvent::class)
+        ->and($collect)->not->toBeInstanceOf(CallbackEvent::class)
         ->and($file)->not->toBeNull()
         ->and($file->expression)->toBe('0 * * * *')
         ->and($file->withoutOverlapping)->toBeTrue()

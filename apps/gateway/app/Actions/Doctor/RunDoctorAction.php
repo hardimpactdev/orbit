@@ -191,7 +191,7 @@ final readonly class RunDoctorAction
         ));
     }
 
-    private function probe(DoctorFamily $family): DoctorFamilyProbe
+    public function probe(DoctorFamily $family): DoctorFamilyProbe
     {
         return match ($family) {
             DoctorFamily::Node => $this->nodeProbe,

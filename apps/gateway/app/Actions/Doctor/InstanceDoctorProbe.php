@@ -11,6 +11,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -49,10 +50,23 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Instance;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return DoctorResources::groups($this->rows($node)->modelKeys());
+    }
+
+    /** @return Collection<int, Instance> */
+    private function rows(Node $node): Collection
+    {
+        return Instance::query()->with(['project', 'tasks'])->where('node_id', $node->id)->orderBy('id')->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $peers = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
-        $rows = $context->resourceId === null ? $peers : $peers->where('id', $context->resourceId)->values();
+        $peers = $this->rows($context->node);
+
+        $rows = $context->resources === null ? $peers : $peers->whereIn('id', $context->resources->ids)->values();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }

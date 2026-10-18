@@ -6,6 +6,8 @@ use App\Actions\Doctor\ToolDoctorProbe;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Tools\DebianVersionNormalizer;
@@ -1271,7 +1273,7 @@ it('retains registered manager context in the separate inventory job', function 
         tool_doctor_scan(ToolManagerName::BrewCask, ToolInventoryScanState::Unsupported),
         tool_doctor_scan(ToolManagerName::Vp, ToolInventoryScanState::Unsupported),
     ]);
-    $report = tool_doctor_probe(tool_doctor_installed_inspector(), $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resourceId: 'inventory'));
+    $report = tool_doctor_probe(tool_doctor_installed_inspector(), $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Inventory)));
 
     expect($report->checked)->toBe(0)
         ->and($report->issues)->toHaveCount(1)

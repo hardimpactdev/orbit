@@ -11,6 +11,7 @@ use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -22,6 +23,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Jobs\Problems\CollectDoctorResource;
 use App\Jobs\Problems\CollectProblemSignals;
 use App\Jobs\Problems\DispatchProblemBatch;
@@ -450,14 +452,14 @@ it('queues database attachments by attachment identity and retains their finding
 
             return true;
         },
-        DispatchProblemBatch::class,
         CollectProblemSignals::class,
     ]);
     $job = $checks->sole(fn ($job): bool => $job instanceof CollectDoctorResource && $job->family === DoctorFamily::DatabaseConnection);
-    expect($job->resourceId)->toBe('attachment:'.$attachment->id);
+    expect($job->resources->kind)->toBe(DoctorResourceKind::Attachments);
+    expect($job->resources->ids)->toBe([$attachment->id]);
     $context = database_connection_doctor_context($node);
     Cache::put(ProblemCollection::contextKey($job->collection, $node->id), ['inspection' => $context->inspection->toArray(), 'failed' => false]);
-    $job->handle(app(RunDoctorAction::class), app(ProblemCollector::class));
+    $job->handle(app(RunDoctorAction::class), app(ProblemCollector::class), app(CommandDeadline::class));
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|database_connection.env_mismatch|database_connection|'.$attachment->id)->exists())->toBeTrue();
 });
 
@@ -475,8 +477,11 @@ it('still queues a Node connection when its only attachment is on a removing Ins
 
     Bus::assertChained([
         DispatchProblemBatch::class,
-        fn (DispatchProblemBatch $batch): bool => $batch->jobs->filter(fn ($job): bool => $job instanceof CollectDoctorResource && $job->family === DoctorFamily::DatabaseConnection)->pluck('resourceId')->all() === ['connection:'.$connection->id],
-        DispatchProblemBatch::class,
+        function (DispatchProblemBatch $batch) use ($connection): bool {
+            $job = $batch->jobs->sole(fn ($job): bool => $job instanceof CollectDoctorResource && $job->family === DoctorFamily::DatabaseConnection);
+
+            return $job->resources->kind === DoctorResourceKind::Connections && $job->resources->ids === [$connection->id];
+        },
         CollectProblemSignals::class,
     ]);
 });

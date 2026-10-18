@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * Laravel Horizon works the Gateway queue (docs/reference/gateway-queue.md): one supervisor per queue, so a long build
+ * Laravel Horizon works the Gateway queue (docs/reference/gateway-queue.md): four supervisors, so a long build
  * never holds up a short job. It runs as the Gateway Node's `horizon` Process.
  */
 return [
@@ -17,6 +17,7 @@ return [
     'middleware' => ['web'],
     'waits' => [
         'gateway:tasks' => 60,
+        'gateway:problems' => 600,
         'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
         'gateway:operations' => 300,
@@ -44,7 +45,7 @@ return [
     'defaults' => [
         'tasks' => [
             'connection' => 'gateway',
-            'queue' => ['tasks'],
+            'queue' => ['tasks', 'problems'],
             'balance' => false,
             'minProcesses' => 3,
             'maxProcesses' => 3,

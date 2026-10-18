@@ -10,6 +10,8 @@ use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
@@ -925,7 +927,7 @@ it('keeps shared Caddy and PHP observations out of another roles resource job', 
     $pools = role_probe_php_pools([], throws: true);
     $probe = new RoleDoctorProbe(role_probe_state_inspector($roleCalls), role_probe_vpn_inspector($vpnCalls), caddyBuilds: $builds, phpPools: $pools);
 
-    $report = $probe->inspect(new DoctorNodeContext($node, role_probe_context($node)->inspection, resourceId: $metrics->id));
+    $report = $probe->inspect(new DoctorNodeContext($node, role_probe_context($node)->inspection, resources: new DoctorResources(DoctorResourceKind::Rows, [$metrics->id])));
 
     expect($roleCalls)->toBe(1)->and($builds->nodes)->toBeEmpty()->and($pools->nodes)->toBeEmpty()->and($report->issues)->toBeEmpty();
 });

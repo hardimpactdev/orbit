@@ -12,6 +12,8 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
@@ -40,6 +42,12 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
     public function family(): DoctorFamily
     {
         return DoctorFamily::Node;
+    }
+
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return [new DoctorResources(DoctorResourceKind::Rows, [$node->id])];
     }
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData

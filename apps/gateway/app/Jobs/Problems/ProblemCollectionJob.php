@@ -16,7 +16,9 @@ abstract class ProblemCollectionJob implements ShouldQueue
     use Batchable;
     use Queueable;
 
-    public const int Timeout = 5;
+    public const int ProbeSeconds = 12;
+
+    public const int Timeout = self::ProbeSeconds + 1;
 
     public int $tries = 1;
 
@@ -33,6 +35,6 @@ abstract class ProblemCollectionJob implements ShouldQueue
     /** @param list<int> $nodeIds */
     public function __construct(public string $collection, public array $nodeIds)
     {
-        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value);
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Problems->value);
     }
 }

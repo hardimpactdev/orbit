@@ -457,13 +457,13 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-`problems:collect` dispatches short jobs on `tasks` every 10 minutes. A batch observes each Node, a second batch checks each resource separately, and a final job collects the other signals and files problems. Each job has a five-second timeout and fails on timeout. A completion batch records an unverifiable observation for each resource whose check failed or timed out, before filing starts.
+`problems:collect` runs every 10 minutes and dispatches short jobs on `problems`, below `tasks` in the same Horizon supervisor. A batch observes each Node, a second checks resource groups selected by each Doctor family, and a final job collects the other signals. Each group has one 12-second command deadline and a 13-second worker timeout. Laravel's `failed()` hook records an unverifiable observation when a job fails. Collection does not file problems; only hourly `problems:file` does that under its lock. [Gateway queue](/reference/gateway-queue#scheduled-work) gives the measured timings and group sizes.
 
 The cached Node observations last at most one hour and are removed after collection; they are not a second problem ledger. The scheduler observes the Gateway Horizon Process separately, without a cache or overlap lock, so it can record a stopped Horizon without queue workers. `problems:file` also runs hourly in the scheduler, with its 30-minute overlap and command locks. All run only while the Tasks extension is enabled. See [Scheduled work](/reference/gateway-queue#scheduled-work).
 
 | Source | Bound per run |
 | --- | --- |
-| Doctor | One resource check per job; five seconds per job |
+| Doctor | Typed resource groups; 12-second probe deadline, 13-second worker timeout |
 | Activity | 500 rows with `id` above the stored cursor |
 | Log | 1 MiB, stopping at the end of a whole record |
 | Assistance | 200 open rows |

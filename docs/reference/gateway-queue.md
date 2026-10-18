@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection, four queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection, five queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -26,11 +26,12 @@ The Gateway reads the host, port, and password of that connection from its recor
 
 ## Queues
 
-Laravel Horizon runs four queues on the connection. Each has its own supervisor, so a long build or deploy never holds up a short job:
+Laravel Horizon runs five queues on the connection with four supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. Builds, task VMs and operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
+| `problems` | shares the 3 `tasks` workers | Doctor collection and signal collection, after waiting `tasks` jobs |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
 | `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 | `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
@@ -63,18 +64,23 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 | Command | Every | Overlap lock |
 | --- | --- | --- |
+| `problems:collect` (dispatch only) | 10 minutes | none |
 | Horizon Doctor observation | 10 minutes | none |
 | `problems:file` | hour | 30 minutes |
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-[Problem collection](/reference/tasks#outer-loop) dispatches short jobs every 10 minutes on `tasks`: one observation per Node, then one Doctor check per resource, then signal collection and filing. Laravel batches keep the full fleet observation context available to family checks. Every collection job has a five-second timeout and fails on timeout; a completion batch records an unverifiable observation for each failed resource before filing.
+`problems:collect` runs every 10 minutes and only dispatches collection on `problems`. One batch observes each Node; a second checks typed resource groups selected by each Doctor family. The last job collects the other signals. Collection never files problems. Only hourly `problems:file` does that, under its lock.
 
-Resource checks commit separately because both a Node scan and a family scan can run many remote probes in sequence. Collection needs the queue and never scans the fleet in the scheduler. Without a queue, dispatch fails with an error.
+Each probe group shares one 12-second command deadline. The worker timeout is 13 seconds, a backstop derived from the same budget. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside the probe deadline rather than be replaced by worker failures.
+
+Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database checks took under 0.5 seconds each, so at most 20 share a job. Tool environment checks keep one batch read per Node; inventory is separate. Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
+
+Laravel batches keep all Node observations available to related-node checks. Observations survive release switches in shared cache. Resource groups commit separately, so a release waits only for the running group, never the full fleet scan. Collection needs the queue; without it, dispatch fails with an error.
 
 The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
 
-Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `tasks` with a five-second deadline.
+Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout.
 
 ### Without a queue
 
@@ -174,6 +180,6 @@ A Horizon that is down while its Process should run is ordinary Process drift. D
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Fleet problem collection runs as short queued steps, so it cannot hold the [scheduler drain](/reference/gateway-recovery#runtime-handoff), and an in-flight collection step holds Horizon termination for at most its five-second timeout. Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
+Fleet problem collection runs as short queued steps, so it cannot hold the [scheduler drain](/reference/gateway-recovery#runtime-handoff), and an in-flight collection step holds Horizon termination for at most its 13-second worker timeout. Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.

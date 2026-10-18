@@ -11,6 +11,8 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
@@ -23,6 +25,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
@@ -37,31 +40,44 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Process;
     }
 
-    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
     {
-        $processes = Process::query()
-            ->where(function ($query) use ($context): void {
+        return DoctorResources::groups($this->rows($node)->modelKeys(), 3);
+    }
+
+    /** @return Collection<int, Process> */
+    private function rows(Node $node): Collection
+    {
+        return Process::query()
+            ->where(function ($query) use ($node): void {
                 $query
-                    ->where(function ($query) use ($context): void {
+                    ->where(function ($query) use ($node): void {
                         $query
                             ->whereIn('owner_type', Instance::morphTypes())
                             ->whereIn(
                                 'owner_id',
                                 Instance::query()
                                     ->select('id')
-                                    ->where('node_id', $context->node->id)
+                                    ->where('node_id', $node->id)
                                     ->where('status', '!=', InstanceState::Removing),
                             );
                     })
-                    ->orWhere(function ($query) use ($context): void {
+                    ->orWhere(function ($query) use ($node): void {
                         $query
                             ->where('owner_type', Node::class)
-                            ->where('owner_id', $context->node->id);
+                            ->where('owner_id', $node->id);
                     });
             })
             ->orderBy('id')
-            ->tap($context->select(...))
+
             ->get();
+    }
+
+    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    {
+        $processes = $this->rows($context->node);
+        $processes = $context->resources === null ? $processes : $processes->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
 
         if ($processes->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, 0, []);

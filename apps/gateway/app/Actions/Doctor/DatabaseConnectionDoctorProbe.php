@@ -10,6 +10,8 @@ use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Instances\InstanceState;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -28,15 +30,15 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::DatabaseConnection;
     }
 
-    /** @return list<string> */
+    /** @return list<DoctorResources> */
     public function resources(Node $node): array
     {
         $attachments = $this->attachmentsOn($node);
         $connections = $this->unattachedNodeConnections($node, $attachments);
 
         return [
-            ...$attachments->map(static fn (DatabaseConnectionTarget $target): string => 'attachment:'.$target->id)->all(),
-            ...$connections->map(static fn (DatabaseConnection $connection): string => 'connection:'.$connection->id)->all(),
+            ...DoctorResources::groups($attachments->modelKeys(), kind: DoctorResourceKind::Attachments),
+            ...DoctorResources::groups($connections->modelKeys(), kind: DoctorResourceKind::Connections),
         ];
     }
 
@@ -44,10 +46,9 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
     {
         $attachments = $this->attachmentsOn($context->node);
         $unattached = $this->unattachedNodeConnections($context->node, $attachments);
-        if ($context->resourceId !== null) {
-            $target = (string) $context->resourceId;
-            $attachments = str_starts_with($target, 'attachment:') ? $attachments->where('id', (int) substr($target, 11))->values() : new Collection;
-            $unattached = str_starts_with($target, 'connection:') ? $unattached->where('id', (int) substr($target, 11))->values() : new Collection;
+        if ($context->resources !== null) {
+            $attachments = $attachments->whereIn('id', $context->resources->kind === DoctorResourceKind::Attachments ? $context->resources->ids : [])->values();
+            $unattached = $unattached->whereIn('id', $context->resources->kind === DoctorResourceKind::Connections ? $context->resources->ids : [])->values();
         }
         $checked = $attachments->count() + $unattached->count();
 

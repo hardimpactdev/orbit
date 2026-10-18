@@ -11,6 +11,8 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\FirewallDoctorIssueCode;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallInspectionBatchData;
@@ -20,6 +22,8 @@ use App\Domain\Firewall\FirewallRuleInspectionStatus;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
+use App\Models\Node;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
 {
@@ -33,11 +37,24 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Firewall;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return [...DoctorResources::groups($this->rows($node)->modelKeys()), new DoctorResources(DoctorResourceKind::Inventory)];
+    }
+
+    /** @return Collection<int, FirewallRule> */
+    private function rows(Node $node): Collection
+    {
+        return FirewallRule::query()->where('node_id', $node->id)->orderBy('id')
+            ->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rules = FirewallRule::query()->where('node_id', $context->node->id)->orderBy('id')->tap($context->select(...))
-            ->get();
-        $expectations = $context->resourceId === null || $context->resourceId === 'inventory' ? $this->expectations->for($context->node) : [];
+        $rules = $this->rows($context->node);
+        $rules = $context->resources === null ? $rules : $rules->whereIn('id', $context->resources->kind === DoctorResourceKind::Rows ? $context->resources->ids : [])->values();
+        $expectations = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory ? $this->expectations->for($context->node) : [];
 
         if ($rules->isEmpty() && $expectations === []) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, []);

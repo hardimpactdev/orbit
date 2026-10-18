@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $log_path
  * @property int|null $log_inode
  * @property int|null $log_offset
- * @property string|null $doctor_resume_key
  */
 final class ProblemCollectorState extends Model
 {
@@ -23,7 +22,6 @@ final class ProblemCollectorState extends Model
         'log_path',
         'log_inode',
         'log_offset',
-        'doctor_resume_key',
     ];
 
     /** @var string */

@@ -21,7 +21,7 @@ final class PruneProblemBatches implements ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value);
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Problems->value);
     }
 
     public function handle(): void

@@ -6,6 +6,7 @@ namespace App\Jobs\Problems;
 
 use App\Actions\Doctor\RunDoctorAction;
 use App\Domain\Problems\ProblemCollection;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Node;
 use Illuminate\Support\Facades\Cache;
 
@@ -17,11 +18,11 @@ final class ObserveProblemNode extends ProblemCollectionJob
         parent::__construct($collection, $nodeIds);
     }
 
-    public function handle(RunDoctorAction $doctor): void
+    public function handle(RunDoctorAction $doctor, CommandDeadline $deadline): void
     {
         $node = Node::query()->find($this->nodeId);
         if ($node instanceof Node) {
-            $context = $doctor->context($node);
+            $context = $deadline->within(self::ProbeSeconds, fn () => $doctor->context($node));
             Cache::put(ProblemCollection::contextKey($this->collection, $this->nodeId), ['inspection' => $context->inspection->toArray(), 'failed' => $context->inspectionFailed], now()->addHour());
         }
     }
