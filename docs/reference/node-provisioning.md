@@ -44,6 +44,12 @@ After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of t
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
+Router LAN reconciliation expands and prunes HTTPS and both DNS transport families together, using the same proposed member eligibility. A failure before membership or Cluster state commits leaves the previous state authoritative. If pruning fails after the commit, the committed state remains authoritative and the command reports cleanup failure; stale rules may remain. Restoring a preceding firewall snapshot does not roll back database state.
+
+After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <current-router-node-id>` for the active Router already in that Cluster. This accepts unchanged membership and reconciles Router LAN rules even when the Router hosts Instances or the Cluster is inactive; it does not remove workloads or change Cluster state. Then verify managed/live rules and role Doctor against current authoritative state.
+
+`node:add` with unchanged configuration is an alternative only when its provisioning guards permit it: a Node with Instances is refused with `node.has_instances`. Do not remove workloads or change configuration to bypass that guard. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) defines eligibility, cleanup recovery, snapshot-restore failures, and rollout rollback. These rules alone do not install Cluster DNS or change a member's resolver.
+
 ### Bootstrap identity
 
 The Gateway picks the bootstrap user from the Node record, unless the request names one.
