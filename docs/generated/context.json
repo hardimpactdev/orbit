@@ -1176,6 +1176,42 @@
             ]
         },
         {
+            "path": "docs/decisions/0224-give-each-task-group-one-holder-and-one-sender.md",
+            "title": "ADR 0224: Give each task group one workspace holder and one sender",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deliverable",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Pi server",
+                "Process",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0210",
+                "0211",
+                "0212",
+                "0218",
+                "0223",
+                "0224"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1236,7 +1272,8 @@
                 "0218",
                 "0219",
                 "0222",
-                "0223"
+                "0223",
+                "0224"
             ]
         },
         {
