@@ -1,8 +1,8 @@
 # Program: docker.migrate
 # Uses: lib/program.py lib/artifacts.py lib/recipe.py
-# Outcomes: planned prepared reported failed
+# Outcomes: planned prepared restored reported failed
 # Timeout: 3600
-# Input: {"mode": "plan"|"prepare"|"report", "recipe": identity, "snapshot": timestamp,
+# Input: {"mode": "plan"|"prepare"|"restore-policies"|"report", "recipe": identity, "snapshot": timestamp,
 #   "architecture": amd64|arm64, "docker_version": version, "containerd_version": version,
 #   "process_ids": [...], "process_states": {...}, "process_specs": {...}, "fallback": bool}
 # Result: plan or per-container final states. failed adds a fixed stage and resumable=true.
@@ -612,17 +612,47 @@ def public_report(state):
                                    if (c['Config'].get('Labels') or {}).get('orbit.managed') == 'true'})}
 
 
+def restore_policies(state):
+    if ('docker-ce' not in packages() or DROPIN.exists()
+            or daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon']))
+            or api('GET', '/info').get('DockerRootDir') != state['metadata_roots']['docker']):
+        raise RecipeFailure('restore-engine')
+    current = [inspect_container(old['Id'], missing=True) for old in state['containers']]
+    if any(not actual or actual['Name'] != old['Name'] for old, actual in zip(state['containers'], current, strict=True)):
+        raise RecipeFailure('restore-container')
+    stage(state, 'recover-policies')
+    # The restored engine has the original IDs, even if migration used fallback.
+    policies(dict(state, fallback=False), restore=True)
+    for old, actual in zip(state['containers'], current, strict=True):
+        if (old['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+            continue  # The Gateway reconciles Processes after this step.
+        if old['State']['Running']:
+            run(['docker', 'start', old['Id']])
+        elif actual['State']['Running']:
+            run(['docker', 'stop', '--time', '60', old['Id']], timeout=90)
+    state['fallback'] = False
+    state['prepared'] = True
+    stage(state, 'restored')
+    return public_report(state)
+
+
 def migrate(payload, mode):
     path = JOURNAL / 'inventory.json'
     state = json_file(path) if path.exists() else None
     if state and state['recipe'] != payload['recipe']:
         raise RecipeFailure('recipe-mismatch')
+    if state is None and mode == 'restore-policies':
+        raise RecipeFailure('missing-inventory')
     if state is None:
         if 'docker-ce' not in packages():
             raise RecipeFailure('not-docker-ce')
         state = inventory(payload)
     for container in state['containers']:
         validate_process(container, payload)
+    if mode == 'restore-policies':
+        return restore_policies(state)
+    if state['stage'] in ('recover-policies', 'restored') and mode != 'report':
+        raise RecipeFailure('already-restored')
     sources = docker_sources()
     if mode == 'plan':
         return {'steps': STEPS, 'containers': [c['Name'].lstrip('/') for c in state['containers']],
@@ -818,7 +848,7 @@ def migration_main(payload):
                             state['stopped'] = False
                             stage(state, 'post-stop-refusal')
                     raise
-        return {'plan': 'planned', 'prepare': 'prepared', 'report': 'reported'}[mode], report
+        return {'plan': 'planned', 'prepare': 'prepared', 'restore-policies': 'restored', 'report': 'reported'}[mode], report
     except Exception as error:
         # Fixed stage names only. Docker and apt errors can include credentials.
         failure_stage = str(error) if isinstance(error, RecipeFailure) and re.fullmatch('[a-z-]+', str(error)) else 'remote'

@@ -902,6 +902,87 @@ class DockerMigrationTest(unittest.TestCase):
         self.payload['fallback'] = True
         self.assertTrue(module.migrate(self.payload, 'prepare')['fallback'])
 
+    def restored_engine(self):
+        state = module.inventory(self.payload)
+        state.update(fallback=True, swapped=True, prepared=True, stage='prepared')
+        module.record('inventory.json', state)
+        for container in self.containers.values():
+            container['HostConfig']['RestartPolicy'] = {'Name': 'no'}
+            container['State'] = {'Running': False, 'Status': 'exited'}
+        return state
+
+    def test_manual_ce_restore_recovers_policies_and_non_orbit_running_states_from_journal(self):
+        self.custom_root()
+        self.containers['one']['HostConfig']['RestartPolicy'] = {'Name': 'no'}
+        self.containers['two']['HostConfig']['RestartPolicy'] = {'Name': 'on-failure', 'MaximumRetryCount': 3}
+        self.containers['three']['HostConfig']['RestartPolicy'] = {'Name': 'always'}
+        state = self.restored_engine()
+        # Recovery also corrects an originally stopped container started by hand.
+        self.containers['three']['State'] = {'Running': True, 'Status': 'running'}
+        self.commands.clear()
+
+        report = module.migrate(self.payload, 'restore-policies')
+
+        self.assertFalse(report['fallback'])
+        for original in state['containers']:
+            self.assertEqual(self.containers[original['Id']]['HostConfig']['RestartPolicy'], original['HostConfig']['RestartPolicy'])
+        self.assertEqual([c['state'] for c in report['containers']], ['running', 'exited', 'exited'])
+        self.assertEqual(report['process_ids'], ['7'])  # Gateway owns Process restart/reconciliation.
+        self.assertFalse(any(c[0] in ('apt-get', 'systemctl') for c in self.commands))
+        self.assertEqual(module.migrate(self.payload, 'restore-policies'), report)
+        for mode in ('plan', 'prepare'):
+            with self.assertRaisesRegex(module.RecipeFailure, 'already-restored'):
+                module.migrate(self.payload, mode)
+
+    def test_policy_recovery_resumes_after_a_failed_container_start(self):
+        self.restored_engine()
+        command = self.command
+        def fail_start(argv, **kwargs):
+            if argv == ['docker', 'start', 'one']:
+                raise module.RecipeFailure('start-fixture')
+            return command(argv, **kwargs)
+        with patch.object(module, 'run', fail_start), self.assertRaisesRegex(module.RecipeFailure, 'start-fixture'):
+            module.migrate(self.payload, 'restore-policies')
+        self.assertEqual(json.loads((self.journal / 'inventory.json').read_text())['stage'], 'recover-policies')
+        self.assertEqual(module.migrate(self.payload, 'restore-policies')['containers'][0]['state'], 'running')
+
+    def test_migration_can_resume_its_original_policy_restoration_stage(self):
+        module.migrate(self.payload, 'prepare')
+        state = json.loads((self.journal / 'inventory.json').read_text())
+        state['prepared'] = False
+        module.stage(state, 'restore-policies')
+        self.assertEqual(module.migrate(self.payload, 'prepare')['containers'][0]['state'], 'running')
+
+    def test_policy_recovery_requires_the_original_ce_engine_before_changing_policies(self):
+        self.restored_engine()
+        with patch.object(module, 'packages', return_value={'docker.io': 'fixture'}), self.assertRaisesRegex(module.RecipeFailure, 'restore-engine'):
+            module.migrate(self.payload, 'restore-policies')
+        self.dropin.parent.mkdir(parents=True)
+        self.dropin.write_text('fallback engine')
+        with self.assertRaisesRegex(module.RecipeFailure, 'restore-engine'):
+            module.migrate(self.payload, 'restore-policies')
+        self.dropin.unlink()
+        root = self.docker_root
+        self.docker_root = self.journal / 'engine'
+        with self.assertRaisesRegex(module.RecipeFailure, 'restore-engine'):
+            module.migrate(self.payload, 'restore-policies')
+        self.docker_root = root
+        self.daemon.write_text('{}')
+        with self.assertRaisesRegex(module.RecipeFailure, 'restore-engine'):
+            module.migrate(self.payload, 'restore-policies')
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+        self.assert_read_only_commands()
+
+    def test_policy_recovery_requires_the_journal_and_every_original_container(self):
+        with self.assertRaisesRegex(module.RecipeFailure, 'missing-inventory'):
+            module.migrate(self.payload, 'restore-policies')
+        self.restored_engine()
+        del self.containers['three']
+        with self.assertRaisesRegex(module.RecipeFailure, 'restore-container'):
+            module.migrate(self.payload, 'restore-policies')
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+        self.assert_read_only_commands()
+
     def test_unrelated_downgrade_refuses_and_only_loaded_units_are_stopped(self):
         self.simulation = 'Inst unrelated [9] (8 Ubuntu:26.04/resolute [amd64])\n'
         with self.assertRaisesRegex(module.RecipeFailure, 'unrelated-package-downgrade'):

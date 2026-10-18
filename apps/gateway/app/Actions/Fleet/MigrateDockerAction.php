@@ -38,7 +38,7 @@ final readonly class MigrateDockerAction
     ) {}
 
     /** @return array<string, mixed> */
-    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun, bool $fallback = false): array
+    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun, bool $fallback = false, bool $restorePolicies = false): array
     {
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException('node.docker_migration_unsupported', 'Docker migration requires an active managed Linux Node.', 422);
@@ -52,13 +52,13 @@ final readonly class MigrateDockerAction
             return $this->remote($node, $recipe, $ids, $states, $processes, 'plan', $fallback);
         }
 
-        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states, $fallback): array {
+        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states, $fallback, $restorePolicies): array {
             foreach ($processes as $process) {
                 if ($this->targets->forInstallation($process)->node->id !== $node->id) {
                     throw new RuntimeException('The Docker Process target changed. Nothing was migrated.');
                 }
             }
-            $prepared = $this->remote($node, $recipe, $ids, $states, $processes, 'prepare', $fallback);
+            $prepared = $this->remote($node, $recipe, $ids, $states, $processes, $restorePolicies ? 'restore-policies' : 'prepare', $fallback);
             if (isset($prepared['failure'])) {
                 return $prepared;
             }

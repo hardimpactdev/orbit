@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Fleet\MigrateDockerAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\RemotePrograms\ProgramResult;
@@ -22,14 +21,23 @@ use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-it('requires explicit Docker migration consent before any SSH', function (): void {
+it('requires explicit Docker maintenance consent before any SSH', function (bool $restorePolicies): void {
     $ssh = new ScriptedSshExecutor;
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
 
-    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast']))->toBe(1)
+    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--restore-policies' => $restorePolicies]))->toBe(1)
         ->and(Artisan::output())->toContain('--yes is required')
         ->and($ssh->commands)->toBe([]);
-});
+})->with([false, true]);
+
+it('refuses policy recovery combined with migration options before any SSH', function (string $option): void {
+    $ssh = new ScriptedSshExecutor;
+    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+
+    expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--restore-policies' => true, $option => true]))->toBe(1)
+        ->and(Artisan::output())->toContain('--restore-policies cannot be combined')
+        ->and($ssh->commands)->toBe([]);
+})->with(['--dry-run', '--fallback']);
 
 it('refuses a Docker migration recipe mismatch before any SSH', function (): void {
     $ssh = new ScriptedSshExecutor;
@@ -68,7 +76,7 @@ it('runs the Docker plan as an ADR 0211 program with stdin input and recipe cont
             ->and($program->name)->toBe('docker.migrate')
             ->and($program->user)->toBe('root')
             ->and($program->timeoutSeconds)->toBe(3600)
-            ->and($program->outcomes)->toBe(['planned', 'prepared', 'reported', 'failed'])
+            ->and($program->outcomes)->toBe(['planned', 'prepared', 'restored', 'reported', 'failed'])
             ->and($program->source)->toContain('def snapshot_options(', 'def retire_sources(', 'def transient_prepare(')
             ->and($input['docker_version'])->toBe($recipe->tools['docker.io']->version)
             ->and($input['containerd_version'])->toBe($recipe->tools['containerd']->version)
@@ -84,7 +92,7 @@ it('runs the Docker plan as an ADR 0211 program with stdin input and recipe cont
         ->and(Artisan::output())->toContain('mailpit');
 });
 
-it('reports final states after reconciling stored specs even when a Process fails', function (bool $failConverge): void {
+it('reports final states after reconciling stored specs for migration and policy recovery', function (bool $failConverge, bool $restorePolicies): void {
     $node = FleetFixtures::node('docker-specs', [RoleName::AppProd]);
     $other = FleetFixtures::node('docker-other', [RoleName::AppProd]);
     $attributes = ['owner_type' => $node->getMorphClass(), 'owner_id' => $node->id, 'name' => 'mysql',
@@ -96,14 +104,14 @@ it('reports final states after reconciling stored specs even when a Process fail
     $runtime->failConverge = $failConverge;
     app()->instance(ProcessRuntimeManager::class, $runtime);
     $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($process): bool {
-        expect($input['mode'])->toBe('prepare')
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($process, $restorePolicies): bool {
+        expect($input['mode'])->toBe($restorePolicies ? 'restore-policies' : 'prepare')
             ->and($input['process_ids'])->toBe([(string) $process->id])
             ->and($input['process_states']->{(string) $process->id})->toBe('running')
             ->and(json_encode($input))->not->toContain('private');
 
         return true;
-    })->andReturn(new ProgramResult('prepared', ['fallback' => true, 'process_ids' => [(string) $process->id]], ''));
+    })->andReturn(new ProgramResult($restorePolicies ? 'restored' : 'prepared', ['fallback' => true, 'process_ids' => [(string) $process->id]], ''));
     $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($runtime, $process): bool {
         expect($input['mode'])->toBe('report')->and($runtime->convergedProcessIds)->toBe([$process->id]);
 
@@ -112,13 +120,14 @@ it('reports final states after reconciling stored specs even when a Process fail
     app()->instance(RemoteProgramRunner::class, $runner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
 
-    $report = app(MigrateDockerAction::class)->execute($node, new RecipeLoader()->load(), false);
+    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe($failConverge ? 1 : 0);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($report['healthy'])->toBe(! $failConverge)->and($runtime->convergedProcessIds)->toBe([$process->id]);
     if ($failConverge) {
         expect($report['failed_process_ids'])->toBe([$process->id]);
     }
-})->with(['success' => false, 'Process failure' => true]);
+})->with(['migration' => [false, false], 'migration Process failure' => [true, false], 'policy recovery' => [false, true], 'policy recovery Process failure' => [true, true]]);
 
 it('reports final states on remote failure without reconciling Processes or exposing logs', function (): void {
     $node = FleetFixtures::node('docker-failure', [RoleName::AppProd]);
