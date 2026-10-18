@@ -37,14 +37,18 @@ final readonly class TaskSettlingFixup
 
     /**
      * Problems in the order one tick considers them: the conflict, then failed checks in GitHub's order.
-     * The Project slug and CI job names do not change that order. Each plan snapshots `$taskCheck`.
+     * The Project slug and CI job names do not change that order. Each plan requires reviewer confirmation.
      *
      * @param  list<TaskPullRequestCheck>  $failedChecks
      * @return list<self>
      */
-    public static function plans(?string $taskCheck, bool $conflicts, ?string $baseRef, array $failedChecks): array
+    public static function plans(bool $conflicts, ?string $baseRef, array $failedChecks): array
     {
-        $deliverables = self::deliverables($taskCheck);
+        $deliverables = [[
+            'id' => 'fixup-review',
+            'type' => TaskDeliverableType::Review->value,
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
+        ]];
         $plans = [];
         if ($conflicts) {
             $base = $baseRef ?? 'the base branch';
@@ -84,16 +88,13 @@ final readonly class TaskSettlingFixup
     }
 
     /** A per-account cap identity; source review IDs do not reset that identity. */
-    public static function reviewPlan(?string $taskCheck, TaskReviewFindingsPacket $packet): self
+    public static function reviewPlan(TaskReviewFindingsPacket $packet): self
     {
         $deliverables = [[
             'id' => 'review-findings',
             'type' => TaskDeliverableType::Review->value,
             'description' => 'Read the complete immutable findings in .git/orbit/context.md and confirm every snapshotted finding was addressed or explicitly resolved within the existing feature contract. Scope conflicts and product decisions require operator assistance. Internal approval does not replace GitHub re-review.',
         ]];
-        if (is_string($taskCheck) && trim($taskCheck) !== '') {
-            $deliverables = [...$deliverables, ...self::deliverables($taskCheck)];
-        }
 
         return new self(
             identity: 'review:'.$packet->reviewerId,
@@ -101,40 +102,5 @@ final readonly class TaskSettlingFixup
             brief: $packet->brief,
             deliverables: $deliverables,
         );
-    }
-
-    /**
-     * The Project task check as one command in `.`, or a review when none is configured.
-     * A blank command is treated as no check, matching a Project task check.
-     *
-     * @return list<array<string, string>>
-     */
-    private static function deliverables(?string $taskCheck): array
-    {
-        $command = is_string($taskCheck) ? trim($taskCheck) : '';
-        $deliverable = $command === ''
-            ? new TaskDeliverable(
-                id: 'fixup-review',
-                type: TaskDeliverableType::Review,
-                description: 'Confirm the conflict or failed check is resolved from the available evidence.',
-            )
-            : new TaskDeliverable(
-                id: 'project-check',
-                type: TaskDeliverableType::Command,
-                description: 'Run the Project task check',
-                command: $command,
-                directory: '.',
-            );
-
-        $encoded = [];
-        foreach ($deliverable->toArray() as $key => $value) {
-            if (! is_string($value)) {
-                throw new \LogicException('A fixup deliverable field must be a string.');
-            }
-
-            $encoded[$key] = $value;
-        }
-
-        return [$encoded];
     }
 }

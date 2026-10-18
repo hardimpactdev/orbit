@@ -37,5 +37,5 @@ Laravel or Boost support.
   before inventing a transport pattern.
 - Use Pest 5 with `describe()` and `it()`.
 - Use `composer test:affected` for Pest development checks. CI runs checks across all projects.
-- Run Pint format checks and PHPStan analysis, Rector, and
+- Follow the root `AGENTS.md` check policy for task and non-task work. Run
   `git diff --check -- packages/php-sdk` from the monorepo root before handoff.

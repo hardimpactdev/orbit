@@ -307,7 +307,7 @@ The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull req
 
 ## Local checks
 
-Run these commands in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Each project keeps its own dependencies, test configuration, and test-impact graph.
+In an Orbit task, run `composer test:affected` in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Do not run `composer check` or `bin/review-check`: the Gateway runs the full Project check at handoff. Outside a task, run both the affected tests and the full checks below. Each project keeps its own dependencies, test configuration, and test-impact graph.
 
 | Command | Result |
 | --- | --- |

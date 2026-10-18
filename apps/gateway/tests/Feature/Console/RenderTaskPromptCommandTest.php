@@ -264,7 +264,7 @@ it('renders the same prompt for the implementer with optional command fields, in
 });
 
 it('renders only the configured or absent Project check in implementer prompts', function (): void {
-    foreach ([['vp run check', 'When the brief is complete and vp run check passes'], [null, 'When the brief is complete, end your turn']] as [$check, $expected]) {
+    foreach ([['vp run check', 'Orbit runs vp run check when you hand off.'], [null, 'When the brief is complete, end your turn']] as [$check, $expected]) {
         $group = render_task_prompt_group();
         $group['task_check'] = $check;
         $prompt = render_task_prompt('implementer', [

@@ -107,15 +107,9 @@ final readonly class TaskFinalReview
     }
 
     /** @return list<array<string, string>> */
-    public static function fixupDeliverables(?string $taskCheck): array
+    public static function fixupDeliverables(): array
     {
-        $deliverables = [];
-        if ($taskCheck !== null) {
-            $deliverables[] = ['id' => 'project-check', 'type' => 'command', 'description' => 'The Project task check passes.', 'command' => $taskCheck, 'directory' => '.'];
-        }
-        $deliverables[] = ['id' => 'final-review-findings', 'type' => 'review', 'description' => 'Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.'];
-
-        return $deliverables;
+        return [['id' => 'final-review-findings', 'type' => 'review', 'description' => 'Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.']];
     }
 
     /**

@@ -864,7 +864,7 @@ it('defers the idle task handoff check while another task owns the workspace rev
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
 });
 
-it('reminds the implementer with the failing check output once, then asks for assistance', function (): void {
+it('reminds three failed handoffs and asks for assistance on the fourth', function (): void {
     $group = tick_group();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
@@ -877,9 +877,12 @@ it('reminds the implementer with the failing check output once, then asks for as
         }
     });
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
-    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed]));
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed, $failed, $failed]));
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
-        FakeTaskTurnReceipts::contents('ready_for_review'), null, FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed the export test.'), null,
+        FakeTaskTurnReceipts::contents('ready_for_review'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed once.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed twice.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed three times.'),
     ]));
 
     app(TaskScheduler::class)->tick();
@@ -891,14 +894,73 @@ it('reminds the implementer with the failing check output once, then asks for as
         ->and($reminder)->toContain("Orbit ran composer check, and it failed with exit code 1. The end of its output:\n\n```\nFAILED tests/Feature/ExportTest.php\n```")
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed);
 
+    for ($failure = 2; $failure <= 3; $failure++) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($dispatcher->commands)->toHaveCount($failure)
+            ->and(TaskCheck::query()->count())->toBe($failure);
+    }
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($group->fresh()?->assistance_reason)->toStartWith('Checks still failed after the reminder. Orbit ran composer check, and it failed with exit code 1.')
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and(TaskCheck::query()->count())->toBe(2);
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_reason)->toStartWith('The handoff check failed 4 times in a row.')
+        ->and($group->tasks()->sole()->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($dispatcher->commands)->toHaveCount(3)
+        ->and(TaskCheck::query()->count())->toBe(4);
 });
+
+it('starts a fresh handoff failure budget after a pass and ignores other check histories', function (string $history): void {
+    $group = tick_group();
+    $task = $group->tasks()->sole();
+    $owner = $history === 'sibling'
+        ? Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Earlier work', 'brief' => 'Done.', 'status' => TaskStatus::Completed])
+        : $task;
+    $kind = $history === 'baseline' ? 'baseline' : 'handoff';
+    foreach ([1, 2, 3, 4] as $pid) {
+        TaskCheck::query()->create([
+            'task_id' => $owner->id, 'kind' => $kind, 'status' => TaskCheckStatus::Failed,
+            'pid' => $pid, 'process_started' => 'old', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now(),
+        ]);
+    }
+    if ($history === 'passed') {
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => 'handoff', 'status' => TaskCheckStatus::Passed,
+            'pid' => 5, 'process_started' => 'passed', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now(),
+        ]);
+    }
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('idle', $threadId);
+        }
+    });
+    $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "Failed again.\n");
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed, $failed]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('ready_for_review'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed once.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed twice.'),
+    ]));
+
+    foreach ([1, 2, 3] as $failure) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+    }
+
+    expect($task->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toHaveCount(3);
+})->with(['passed', 'sibling', 'baseline']);
 
 it('shows an unexpected check error as a failed check whose output ends with the error', function (): void {
     $group = tick_group();

@@ -72,9 +72,11 @@ it('uses consult and relay instructions only for those turns', function (): void
         ->and($relay)->not->toContain('--outcome=approved');
 });
 
-it('tells the implementer to pass the Project task check, or only to finish the brief without one', function (): void {
+it('tells the implementer Orbit runs the Project check at handoff', function (): void {
     expect(TaskTurnInstructions::implementer([], 'vp run check'))
-        ->toContain('When the brief is complete and vp run check passes, end your turn')
+        ->toContain('Orbit runs vp run check when you hand off.')
+        ->toContain('When the brief is complete, end your turn')
+        ->not->toContain('and vp run check passes')
         ->not->toContain('access you do not have')
         ->and(TaskTurnInstructions::implementer([], null))
         ->toContain('When the brief is complete, end your turn')

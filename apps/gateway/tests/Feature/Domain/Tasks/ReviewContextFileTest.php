@@ -78,7 +78,7 @@ it('writes the uncut task context before the opening review', function (): void 
 
 it('writes full findings for a fresh feedback implementer and its reviewer without scheduler dispatch', function (bool $reserved, bool $stale): void {
     $case = review_context_opening();
-    $plan = TaskSettlingFixup::reviewPlan(null,
+    $plan = TaskSettlingFixup::reviewPlan(
         TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate(
             str_repeat('Complete finding. ', 1500).'FINAL-FINDING',
             [ReviewFindings::comment()],
@@ -113,7 +113,7 @@ it('writes full findings for a fresh feedback implementer and its reviewer witho
 it('fails closed when reserved feedback context installation fails and installs current context on retry', function (): void {
     $case = review_context_opening();
     $task = $case['task'];
-    $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate()));
+    $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate()));
     $task->update(['brief' => $plan->brief, 'fixup_problem' => $plan->identity, 'deliverables' => $plan->deliverables]);
     $path = review_context_file_path($case['checkout']);
     unlink($path);
@@ -130,7 +130,7 @@ it('fails closed when reserved feedback context installation fails and installs 
     // A new reservation can also be interrupted before startup. Retry must not
     // assume that reserving the row installed its receipt or its current context.
     $replacement = $spawner->reserveImplementer($task);
-    $current = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate('Current findings after interrupted startup.')));
+    $current = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate('Current findings after interrupted startup.')));
     $task->update(['brief' => $current->brief]);
     expect($spawner->spawnImplementer($task))->toBe($replacement)
         ->and($case['log']->turns)->toHaveCount(2)

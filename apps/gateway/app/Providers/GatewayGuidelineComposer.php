@@ -84,7 +84,7 @@ final class GatewayGuidelineComposer extends GuidelineComposer
                         '- Keep models focused on persisted control-plane state. Add a factory or seeder only when an executing test or explicit bootstrap workflow needs it.',
                         '- Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests.',
                         '- Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present.',
-                        '- After the TIA tests pass, run `composer check` locally and follow the root contributor guide for CI and independent review.',
+                        '- After the TIA tests pass, follow the root `AGENTS.md` check policy for task and non-task work. Follow the root contributor guide for CI and independent review.',
                     ],
                     $block['body'],
                 );

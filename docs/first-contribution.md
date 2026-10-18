@@ -76,7 +76,7 @@ Then build the change and its tests. A bug fix adds a test that fails before the
 
 ## 5. Run the checks
 
-Run these commands in each Composer project that you changed, such as `apps/cli`:
+In an Orbit task, the implementer runs only `composer test:affected` in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
 
 ```bash
 composer test:affected
