@@ -6,6 +6,8 @@ namespace App\Actions\DatabaseServers;
 
 use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Models\DatabaseServer;
 use App\Models\Process;
 
@@ -18,6 +20,17 @@ final readonly class DestroyDatabaseServerAction
     public function __construct(private DestroyProcessAction $processes) {}
 
     public function execute(DatabaseServer $server): void
+    {
+        if ($server->driver === DatabaseDriver::Redis) {
+            ValkeyAclLock::run($server, fn () => $this->remove($server->refresh()));
+
+            return;
+        }
+
+        $this->remove($server);
+    }
+
+    private function remove(DatabaseServer $server): void
     {
         if ($server->databaseConnections()->exists()) {
             throw new ResourceOperationException(

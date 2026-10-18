@@ -84,7 +84,8 @@ The file holds `default` and one line per recorded user, with only password hash
 - The Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - It publishes container port 6379 on the Node's WireGuard address.
 - No server owns the Process.
-- The live ACL has no user other than `default`. Adoption would remove other users.
+- The live ACL contains only `default`, with all rights and exactly the selected password, or `nopass` without password hashes.
+- Effective persistence and database settings match the managed command: `/data`, append-only persistence, `appendonlydir`, `appendonly.aof`, `dump.rdb`, and 16 databases.
 - The connection is a `redis` connection to that address and port that logs in as `default`. With a password, that password logs in. Without one, Valkey accepts a client without a password.
 
 The adoption never locks out a client that works today:
@@ -101,7 +102,7 @@ Then the Gateway writes `/data/users.acl` into the Process's volume, and replace
 - A connection on the server has no password, because its clients would be locked out.
 - A client other than the Gateway is logged in to the server as `default`.
 
-A server whose `default` already has the admin password returns at once. A client that is not connected at that moment is not seen, so the operator moves every client first.
+After saving the password, the Gateway revokes every other `default` session to close the authentication boundary. A retry repeats the save and revocation before recording closure. A client that is not connected at that moment is not seen, so the operator moves every client first.
 
 ### The collector gets its own user later
 

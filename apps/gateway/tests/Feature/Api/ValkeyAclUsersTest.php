@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
+use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
@@ -457,7 +459,40 @@ describe('database:destroy on a Valkey server', function (): void {
     });
 });
 
+it('runs removal guards before deleting a managed ACL user or its records', function (): void {
+    $this->postJson('/api/v1/database-connections', valkey_acl_user_request())->assertCreated();
+    $this->valkey->calls = [];
+    $guard = new class implements DatabaseConnectionRemovalGuard
+    {
+        public function assertRemovable(DatabaseConnection $connection): void
+        {
+            throw new ResourceOperationException('database_connection.test_required', 'The connection is in use.', 409);
+        }
+    };
+    app()->instance($guard::class, $guard);
+    app()->tag($guard::class, DatabaseConnectionRemovalGuard::class);
+
+    $this->deleteJson('/api/v1/database-connections/gateway-queue')->assertConflict()
+        ->assertJsonPath('error.code', 'database_connection.test_required');
+
+    expect(DatabaseConnection::query()->where('slug', 'gateway-queue')->exists())->toBeTrue()
+        ->and(DatabaseUser::query()->where('username', 'gateway-queue')->exists())->toBeTrue()
+        ->and($this->valkey->users)->toHaveKey('gateway-queue')
+        ->and($this->valkey->calls)->toBe([]);
+});
+
 describe('database:update on a Valkey server', function (): void {
+    it('accepts unchanged credentials through the managed connection hook', function (): void {
+        $this->postJson('/api/v1/database-connections', valkey_acl_user_request())->assertCreated();
+        $password = DatabaseConnection::query()->sole()->password;
+        $this->valkey->calls = [];
+
+        $this->patchJson('/api/v1/database-connections/gateway-queue', ['password' => $password])->assertOk();
+
+        expect(DatabaseConnection::query()->sole()->password)->toBe($password)
+            ->and($this->valkey->calls)->toBe([]);
+    });
+
     it('refuses changing the managed user or endpoint without changing either record or ACL', function (array $change): void {
         $this->postJson('/api/v1/database-connections', valkey_acl_user_request())->assertCreated();
         $before = DatabaseConnection::query()->sole()->getAttributes();

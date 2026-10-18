@@ -77,7 +77,8 @@ The Gateway refuses with `database.server_adoption_refused` and changes nothing 
 - The driver is `redis`, and the Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - The Process publishes container port `6379` on the Node's WireGuard address. That host port becomes the server's port.
 - No server owns the Process yet.
-- The live ACL has no user other than `default`. Adoption would remove other users.
+- The live ACL contains only `default`, with all rights and exactly the selected password, or `nopass` without password hashes.
+- The effective configuration uses `/data`, append-only persistence, `appendonlydir`, `appendonly.aof`, `dump.rdb`, and 16 databases. Adoption refuses other values before it writes a file.
 - The connection is a `redis` connection to that address and port.
 - The connection logs in as `default`, with its password or without a password.
 
@@ -102,9 +103,7 @@ The Gateway runs `ACL SETUSER default resetpass #<sha256 of the admin password>`
 - A connection on the server has no password. Its clients would be locked out. Destroy it, or move its clients first.
 - A client other than the Gateway is logged in as `default`. The message gives the number of clients and their addresses.
 
-A server whose `default` already has the admin password returns at once, so the command is safe to repeat. A client that is not connected at that moment is not seen, so move every client before you close the server. Like adoption, the command exists only for the two adopted Processes.
-
-The server's Process is an ordinary Docker Node Process: read its logs, stop it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
+After saving the password, the Gateway revokes every other `default` session, including one accepted between the client check and the password change. A retry repeats the save and revocation before it records closure. A client that is not connected at that moment is not seen, so move every client before you close the server. Like adoption, the command exists only for the two adopted Processes.
 
 ## Create a database on a server
 
@@ -154,14 +153,14 @@ Orbit adds every part except the patterns and the rules. So a user never has pub
 
 The Gateway refuses these inputs with `validation.failed`:
 
-- A key pattern that starts with a glob character, `*`, `?`, `[`, or `\`, such as `*`. Each pattern starts with a literal key prefix, so no user reaches every key.
+- A key pattern that starts with `*`, `?`, `[`, or `\`. Each pattern needs a literal key prefix.
 - The rule `@all` or `@scripting`. A user gets only the categories and commands its clients need.
 
 The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-valkey-server-with-doctor) can compare them. `database:user:list` shows those rules.
 
 The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know returns `database.acl_rules_invalid` with Valkey's message. A create that fails removes the user and records nothing. Concurrent ACL changes return `database.server_in_use`; retry after the other command finishes.
 
-`database:update` can change the database index, but cannot change a managed Valkey connection's driver, Node, address, port, username, or password. Such a change returns `database.server_connection_managed` (409). Create a new connection and move its clients instead.
+`database:update` can change the database index, but cannot change a managed Valkey connection's driver, Node, address, port, username, or password. Such a change returns `database.server_connection_managed` (409). Create a new connection and move its clients instead. Core applies this validation through the [typed connection update hook](/reference/extensions#plug-in-points). Connection removal runs every removal guard before it deletes an ACL user or its records.
 
 Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an index, so a user can select any index, and its patterns apply in each one. `SCAN` and `DBSIZE` show the names and the count of all keys in an index, but no values. A user that can write can also fill the server's memory, because Orbit sets no memory limit.
 
@@ -191,7 +190,7 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. Valkey removal holds the ACL lock across both steps, so no user can be created during removal. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
 
 A new Valkey server with the slug of a removed one finds the old volume. It writes a new ACL file there, so the old users are gone, but the old keys stay.
 
@@ -221,9 +220,11 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 The Gateway takes these steps:
 
 1. It checks that `default` logs in with the admin password and that Valkey runs with `/data/users.acl`.
-2. When either check fails, Valkey cannot be repaired through its own commands, for example because its ACL file is lost and it does not start. The Gateway then writes the ACL file again from the records, restarts the Process as [`process:restart`](/cli/process) does, and waits until `default` logs in. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`.
+2. If either check fails, or admin commands cannot restore the ACL, it rebuilds the file and restarts the Process.
 3. It runs `ACL SETUSER <name> reset <rules> #<hash>` for each recorded user that is missing or differs. It runs `ACL DELUSER` for each other user, except the `default` of an open server.
 4. It runs `ACL SAVE`.
+
+Rebuilding the file repairs a server that cannot start because the file is lost. The Gateway waits for the admin login before it retries ACL commands. It uses the same program as creation. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The restart uses [`process:restart`](/cli/process).
 
 A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server changes nothing.
 

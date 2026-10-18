@@ -39,6 +39,9 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 
     public int $databases = 16;
 
+    /** @var array<string, string> */
+    public array $configuration = ['dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir', 'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16'];
+
     /** @var list<string> */
     public array $defaultClients = [];
 
@@ -79,6 +82,13 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         $this->command($server, 'config get databases');
 
         return $this->databases;
+    }
+
+    public function adoptionConfiguration(DatabaseServer $server): array
+    {
+        $this->command($server, 'config get adoption');
+
+        return $this->configuration;
     }
 
     public function userExists(DatabaseServer $server, string $username): bool

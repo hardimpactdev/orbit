@@ -298,6 +298,21 @@ describe('a Valkey Database server in Docker', function (): void {
             ->and($default->executeRaw(['GET', 'orbit-gateway:kept']))->toBe('job');
     });
 
+    it('repairs default when it can log in but cannot inspect or restore the server', function (string $deny): void {
+        $connection = valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*'], ['@connection', '@list']);
+        $default = valkey_docker_client($this->server, 'default', $this->password);
+        $default->executeRaw(['ACL', 'SETUSER', 'default', $deny]);
+        $default->executeRaw(['ACL', 'SAVE']);
+        $default->disconnect();
+        expect($this->admin->acceptsAdminLogin($this->server))->toBeTrue();
+
+        app(ConvergeValkeyServerAction::class)->execute($this->server);
+
+        expect(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []])
+            ->and($this->admin->acceptsAnonymous($this->server))->toBeFalse()
+            ->and(valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password)->executeRaw(['LLEN', 'orbit-gateway:jobs']))->toBe(0);
+    })->with(['CONFIG GET denied' => '-config|get', 'ACL LIST denied' => '-acl|list', 'ACL SETUSER denied' => '-acl|setuser']);
+
     it('writes a lost ACL file again from the records and starts Valkey from it', function (): void {
         $connection = valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*'], ['@connection', '@list', '@string']);
         valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password)->executeRaw(['SET', 'orbit-gateway:kept', 'job']);
@@ -331,6 +346,36 @@ describe('a Valkey Database server in Docker', function (): void {
         expect((string) $default->executeRaw(['ACL', 'LOAD']))->toBe('OK')
             ->and($default->executeRaw(['GET', 'orbit-test-preserved']))->toBe('job')
             ->and($this->admin->acceptsAnonymous($this->server))->toBeFalse();
+    });
+
+    it('revokes a session accepted before an interrupted close on retry', function (): void {
+        $default = valkey_docker_client($this->server, 'default', $this->password);
+        $default->executeRaw(['ACL', 'SETUSER', 'default', 'nopass']);
+        $anonymous = new Client(['host' => '127.0.0.1', 'port' => $this->server->port, 'timeout' => 5]);
+        expect((string) $anonymous->executeRaw(['PING']))->toBe('PONG');
+        $default->executeRaw(['ACL', 'SETUSER', 'default', 'resetpass', '#'.hash('sha256', $this->password)]);
+        $default->executeRaw(['ACL', 'SAVE']);
+        $default->disconnect();
+        // This already-authenticated session survives the password change, including a lost close reply.
+        expect($anonymous->executeRaw(['ACL', 'LIST']))->toBeArray();
+
+        $this->admin->closeDefaultUser($this->server);
+
+        try {
+            $reply = $anonymous->executeRaw(['ACL', 'LIST']);
+            expect((string) $reply)->toStartWith('NOAUTH');
+        } catch (\Predis\Connection\ConnectionException) {
+            $anonymous->disconnect();
+            expect((string) $anonymous->executeRaw(['ACL', 'LIST']))->toStartWith('NOAUTH');
+        }
+        expect($this->admin->acceptsAnonymous($this->server))->toBeFalse();
+    });
+
+    it('reads the effective persistence and database settings before adoption', function (): void {
+        expect($this->admin->adoptionConfiguration($this->server))->toMatchArray([
+            'dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir',
+            'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16',
+        ]);
     });
 
     it('restores an open default when ACL SAVE fails and allows a safe retry', function (): void {

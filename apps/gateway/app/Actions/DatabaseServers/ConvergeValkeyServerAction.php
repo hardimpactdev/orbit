@@ -16,7 +16,7 @@ use App\Models\Process;
 /**
  * Makes an active Valkey Database server match its records again; a repeat of `database:server:create` runs it.
  *
- * When `default` cannot log in with the admin password, or Valkey runs without Orbit's ACL file, Valkey cannot be
+ * When admin commands cannot inspect or restore the ACL, or Valkey runs without Orbit's ACL file, Valkey cannot be
  * repaired through its own commands: the action writes the ACL file from the records, restarts the Process, and waits
  * for the admin login. Then it sets each recorded user that is missing or differs, deletes every other user, and runs
  * `ACL SAVE`. A server that matches gets only the save, so a repeat is safe.
@@ -34,13 +34,25 @@ final readonly class ConvergeValkeyServerAction
         ValkeyAclLock::run($server, function () use ($server): void {
             $server->refresh()->load(['node', 'process', 'databaseConnections.users']);
 
-            if (! $this->admin->acceptsAdminLogin($server) || $this->admin->aclFile($server) !== DatabaseServerProcess::VALKEY_ACL_FILE) {
-                $this->rebuild($server);
+            try {
+                if ($this->admin->acceptsAdminLogin($server) && $this->admin->aclFile($server) === DatabaseServerProcess::VALKEY_ACL_FILE) {
+                    $this->reconcile($server);
+
+                    return;
+                }
+            } catch (ResourceOperationException) {
+                // ACL drift can revoke the commands needed to inspect or restore the recorded users.
             }
 
-            $changes = ValkeyAcl::changes($server, $this->admin->aclUsers($server));
-            $this->admin->applyUsers($server, $changes['set'], $changes['delete']);
+            $this->rebuild($server);
+            $this->reconcile($server);
         });
+    }
+
+    private function reconcile(DatabaseServer $server): void
+    {
+        $changes = ValkeyAcl::changes($server, $this->admin->aclUsers($server));
+        $this->admin->applyUsers($server, $changes['set'], $changes['delete']);
     }
 
     /** Write the ACL file from the records and start Valkey from it again. */

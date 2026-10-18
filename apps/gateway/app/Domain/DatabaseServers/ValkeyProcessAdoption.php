@@ -78,8 +78,24 @@ final readonly class ValkeyProcessAdoption
             throw self::refused("The password of Database connection [{$connectionSlug}] does not log in as default.");
         }
 
-        if (array_diff(array_keys($this->valkey->aclUsers($candidate)), ['default']) !== []) {
+        $users = $this->valkey->aclUsers($candidate);
+        if (array_diff(array_keys($users), ['default']) !== []) {
             throw self::refused('The Process already has non-default ACL users. Adoption would remove them.');
+        }
+
+        $default = $users['default'] ?? null;
+        $expectedDefault = filled($connection->password)
+            ? ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, (string) $connection->password)
+            : new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
+        if (! $default?->sameAs($expectedDefault)) {
+            throw self::refused("Adoption would replace the default user's authentication or permissions.");
+        }
+
+        $configuration = $this->valkey->adoptionConfiguration($candidate);
+        foreach (['dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir', 'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16'] as $key => $value) {
+            if (($configuration[$key] ?? null) !== $value) {
+                throw self::refused("Adoption would change the effective [{$key}] configuration.");
+            }
         }
 
         return ['process' => $process, 'connection' => $connection, 'port' => $port];

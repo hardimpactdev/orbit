@@ -363,6 +363,7 @@ describe('database:server:create --process --connection', function (): void {
             'password' => 'queue-secret',
         ]);
         $this->valkey->passwords['10.44.0.80:6379'] = 'queue-secret';
+        $this->valkey->users['default'] = ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, 'queue-secret');
         $this->adoption = valkey_server_request($this->dbNode, [
             'slug' => 'services-valkey',
             'process_id' => $this->process->id,
@@ -370,9 +371,36 @@ describe('database:server:create --process --connection', function (): void {
         ]);
     });
 
+    it('refuses adoption that would replace persistence, database indexes, or default authentication', function (string $field, string $value): void {
+        if ($field === 'passwords') {
+            $this->valkey->users['default'] = new ValkeyAclUser('default', ValkeyAclUser::ADMIN_RULES, [hash('sha256', 'queue-secret'), hash('sha256', $value)]);
+        } else {
+            $this->valkey->configuration[$field] = $value;
+        }
+        $before = $this->process->getAttributes();
+
+        $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()
+            ->assertJsonPath('error.code', 'database.server_adoption_refused');
+
+        expect(DatabaseServer::query()->exists())->toBeFalse()
+            ->and($this->process->refresh()->getAttributes())->toBe($before)
+            ->and($this->connection->refresh()->database_server_id)->toBeNull()
+            ->and($this->programs->runs)->toBe([])
+            ->and($this->runtime->restarted)->toBe([]);
+    })->with([
+        'working directory' => ['dir', '/data/custom'],
+        'RDB-only persistence' => ['appendonly', 'no'],
+        'append directory' => ['appenddirname', 'custom-aof'],
+        'append filename' => ['appendfilename', 'custom.aof'],
+        'snapshot filename' => ['dbfilename', 'custom.rdb'],
+        'database count' => ['databases', '32'],
+        'extra password' => ['passwords', 'second-secret'],
+    ]);
+
     it('adopts an open server without locking out clients and closes it only after migration', function (): void {
         $this->connection->update(['password' => null]);
         $this->valkey->anonymous = true;
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertCreated();
         $server = DatabaseServer::query()->sole();
         expect($server->default_open)->toBeTrue()
@@ -406,6 +434,7 @@ describe('database:server:create --process --connection', function (): void {
     it('retries failed open adoption with the same generated admin password', function (): void {
         $this->connection->update(['password' => null]);
         $this->valkey->anonymous = true;
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
         $this->runtime->failConverge = true;
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertStatus(502);
         $password = DatabaseServer::query()->sole()->root_password;
@@ -614,6 +643,36 @@ describe('database:server:create --process --connection', function (): void {
             $this->valkey->passwords['10.44.0.80:6379'] = 'rotated-secret';
         }, 'The password of Database connection [services-valkey] does not log in as default.'],
     ]);
+});
+
+it('serializes server removal with ACL creation through Process and record removal', function (): void {
+    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertCreated();
+    $server = DatabaseServer::query()->sole();
+    $lock = Cache::lock('database-server:'.$server->id.':acl', 60);
+    expect($lock->get())->toBeTrue();
+    try {
+        $this->deleteJson('/api/v1/database-servers/beast-valkey')->assertConflict()
+            ->assertJsonPath('error.code', 'database.server_in_use');
+    } finally {
+        $lock->release();
+    }
+    $this->assertModelExists($server);
+    expect($this->runtime->removed)->toBe([]);
+
+    $this->mock(ProcessRuntimeManager::class, function ($mock): void {
+        $mock->shouldReceive('remove')->once()->andReturnUsing(function (): void {
+            $this->postJson('/api/v1/database-connections', [
+                'slug' => 'racing-user', 'server' => 'beast-valkey',
+                'patterns' => ['jobs:*'], 'allow' => ['@list'],
+            ])->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
+        });
+    });
+
+    $this->deleteJson('/api/v1/database-servers/beast-valkey')->assertOk();
+
+    $this->assertModelMissing($server);
+    expect(Process::query()->exists())->toBeFalse()
+        ->and(DatabaseConnection::query()->exists())->toBeFalse();
 });
 
 describe('database:server:create on an active Valkey server', function (): void {

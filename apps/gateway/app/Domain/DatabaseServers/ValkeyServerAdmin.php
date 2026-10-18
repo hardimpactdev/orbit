@@ -24,6 +24,14 @@ interface ValkeyServerAdmin
     /** The configured database count; valid indexes are zero through count minus one. */
     public function databaseCount(DatabaseServer $server): int;
 
+    /**
+     * Effective configuration that adoption must preserve: dir, appendonly, appenddirname, appendfilename,
+     * dbfilename, and databases.
+     *
+     * @return array<string, string>
+     */
+    public function adoptionConfiguration(DatabaseServer $server): array;
+
     public function userExists(DatabaseServer $server, string $username): bool;
 
     /**

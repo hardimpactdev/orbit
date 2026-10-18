@@ -67,6 +67,25 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         return (int) $count;
     }
 
+    public function adoptionConfiguration(DatabaseServer $server): array
+    {
+        $keys = ['dir', 'appendonly', 'appenddirname', 'appendfilename', 'dbfilename', 'databases'];
+        $reply = $this->connected($server, true, fn (Client $client): mixed => $this->command($server, $client, ['CONFIG', 'GET', ...$keys]));
+        if (! is_array($reply) || count($reply) !== count($keys) * 2) {
+            throw $this->failed($server);
+        }
+
+        $configuration = [];
+        foreach (array_chunk($reply, 2) as [$key, $value]) {
+            if (! is_string($key) || ! is_string($value) || ! in_array($key, $keys, true) || array_key_exists($key, $configuration)) {
+                throw $this->failed($server);
+            }
+            $configuration[$key] = $value;
+        }
+
+        return $configuration;
+    }
+
     public function userExists(DatabaseServer $server, string $username): bool
     {
         return $this->connected(
@@ -163,13 +182,7 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
     {
         $this->connected($server, true, function (Client $client) use ($server): void {
             $default = $this->users($server, $client)['default'] ?? throw $this->failed($server);
-            if ($default->hasOnlyPassword($server->root_password)) {
-                // A previous attempt may have lost its reply after SETUSER but before SAVE.
-                $this->command($server, $client, ['ACL', 'SAVE']);
-
-                return;
-            }
-
+            if (! $default->hasOnlyPassword($server->root_password)) {
             $ownId = $this->command($server, $client, ['CLIENT', 'ID']);
             if (! is_int($ownId) && ! is_string($ownId)) {
                 throw $this->failed($server);
@@ -198,6 +211,7 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
             }
 
             $this->command($server, $client, ['ACL', 'SETUSER', 'default', 'resetpass', '#'.ValkeyAclUser::passwordHash($server->root_password)]);
+            }
             try {
                 $this->command($server, $client, ['ACL', 'SAVE']);
             } catch (ResourceOperationException $exception) {
@@ -212,6 +226,8 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
                 }
                 throw $exception;
             }
+
+            $this->command($server, $client, ['CLIENT', 'KILL', 'USER', 'default', 'SKIPME', 'yes']);
         });
     }
 
