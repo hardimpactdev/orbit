@@ -12,6 +12,10 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+import runpy
+
+_budget = runpy.run_path(str(Path(__file__).resolve().parent.parent / "tools/check_budget.py"))
+ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBudget", "lane_count", "lane_weight"))
 
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
@@ -99,63 +103,6 @@ def lane_key(entries):
     return SHARED_LANES.get(entries[0][1], entries[0][1])
 
 
-def lane_weight(root, entries):
-    """A lane's share of the budget follows the size of its test suites; other checks count as one."""
-    weight = 0
-    for _order, project, _commands in entries:
-        tests = root / project / 'tests'
-        weight += max(1, sum(1 for _path in tests.rglob('*Test.php'))) if project in PHP_PROJECTS and tests.is_dir() else 1
-    return weight
-
-
-def lane_count(groups, processes):
-    """How many lanes run at once. The heaviest lane keeps at least half the budget, so with the default of 4 the
-    Gateway runs two processes while two other lanes run one each. A budget of 2 or less runs one lane: the budget
-    counts workers, not each tool's main process, so two lanes of PHPStan or Rector could outgrow a 2 GB task VM."""
-    if processes <= 2:
-        return 1
-    return max(1, min(len(groups), 1 + processes // 2))
-
-
-class ProcessBudget:
-    """Hands out processes to the commands of the running lanes, so the tools of all lanes together stay within the
-    budget. A command gets its lane's weighted share of the lanes that are still running, so a lane gets the
-    processes that finished lanes freed. A command waits when every process is in use."""
-
-    def __init__(self, processes, weights):
-        self.processes, self.weights = processes, weights
-        self.held, self.running = {}, set()
-        self.condition = threading.Condition()
-
-    def start(self, lane):
-        with self.condition:
-            self.running.add(lane)
-
-    def finish(self, lane):
-        with self.condition:
-            self.running.discard(lane)
-            self.held.pop(lane, None)
-            self.condition.notify_all()
-
-    def acquire(self, lane):
-        with self.condition:
-            while True:
-                others = [other for other in self.running if other != lane]
-                free = self.processes - sum(self.held.get(other, 0) for other in others)
-                # Keep one process for each running lane between commands, so it can continue.
-                waiting = sum(1 for other in others if not self.held.get(other))
-                total = sum(self.weights[other] for other in self.running | {lane})
-                share = max(1, self.processes * self.weights[lane] // total)
-                granted = min(share, free - waiting) if free - waiting >= 1 else min(1, free)
-                if granted >= 1:
-                    self.held[lane] = granted
-                    return granted
-                self.condition.wait()
-
-    def release(self, lane):
-        with self.condition:
-            self.held[lane] = 0
-            self.condition.notify_all()
 
 
 def git(root, *args):
@@ -623,7 +570,7 @@ def main():
         'ORBIT_CHECK_SCOPE': 'changed', 'ORBIT_CHECK_BASE': base or ''}
     lane_checks = []
     groups = lanes(selected_projects(paths, root))
-    weights = {lane_key(entries): lane_weight(root, entries) for entries in groups}
+    weights = {lane_key(entries): sum(lane_weight(root, project) for _order, project, _commands in entries) for entries in groups}
     # The heaviest lane starts first, so it never waits for a free lane.
     groups.sort(key=lambda entries: -weights[lane_key(entries)])
     budget = ProcessBudget(processes, weights)

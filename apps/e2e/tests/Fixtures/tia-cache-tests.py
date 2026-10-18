@@ -1362,6 +1362,8 @@ class ReviewGateTest(unittest.TestCase):
     # Reuse repository setup, without repeating the cache test cases.
     def gate_fixture(self):
         (self.root / 'bin').mkdir()
+        (self.root / 'tools').mkdir()
+        (self.root / 'tools/check_budget.py').write_bytes(Path(cache.__file__).parent.parent.joinpath('tools/check_budget.py').read_bytes())
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)

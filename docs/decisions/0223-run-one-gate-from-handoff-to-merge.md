@@ -205,10 +205,10 @@ The data does not show what a tree base saves. The only rework measured after #1
 
 ### 6. Derive the process count from cores and memory
 
-- `bin/check-processes` prints the smaller of two numbers, and at least 1: the core count, and the available memory divided by the memory of one worker.
+- `bin/check-processes` prints the smaller of two numbers, and at least 1: the core count, and the worker count that fits in available memory after subtracting the gate reserve.
 - It reads the available memory when the check starts: the cgroup's `memory.max` minus `memory.current` when the cgroup has a limit, or `MemAvailable` otherwise. It reads the cgroup CPU limit the same way.
 - Available memory already leaves out what the agent, the system, and a running topology use. So one rule fits every VM size, with or without a topology.
-- Step 2 measures the peak memory of one worker and sets the per-worker value from that measurement.
+- Step 2 measures worker peaks and whole-gate memory on normal, medium, and large task VMs, with their supported topologies running. It sets the per-worker allocation and gate reserve from those measurements. One allocator splits the total worker budget between every concurrent lane and suite.
 - On today's VM sizes without a topology, the core count decides: 2 on a normal VM and 4 on a medium VM. The OOM on 2026-10-17 came from the implementer's concurrent full-gate runs, which item 1 removes. The memory term matters where memory is short for the cores.
 - When `ORBIT_CHECK_PROCESSES` is set, `bin/check-processes` prints it, because it is the lane share below.
 - `tools/check-processes.php` runs `bin/check-processes` instead of its own copy of the rule.
@@ -246,7 +246,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the `project-check` deliverable in `TaskFinalReview.php:114`, `TaskSettlingFixup::deliverables`, and `TaskSettlingFixup::reviewPlan`, with its fixture in `gateway-response-fixtures.md`.
    - Delete `matches_task_check` and the `task_check` reuse in `verify_deliverables` of `check`.
    - Delete the reuse note in `TaskCheckRunner` and the `project-check` paragraph of [Project check](/reference/tasks#project-check).
-2. **Process count.** Change `bin/check-processes` and `tools/check-processes.php`, with the measured per-worker memory. Then set the Orbit Project's task check to `composer check`.
+2. **Process count.** Change `bin/check-processes` and `tools/check-processes.php`, with measured per-worker memory and a whole-gate reserve. Share one total budget between all concurrent lanes and suites, including `bin/test`. Then set the Orbit Project's task check to `composer check`.
    - Delete `DEFAULT_LIMIT` and its 2 GB comment, and the 2 GB reason in `implementation-loop.md:737`.
    - Delete the PHP copy of the rule.
    - Delete `ORBIT_TEST_PROCESSES` from `bin/test`, `implementation-loop.md`, and `environment-variables.md`, and the operator text for `ORBIT_CHECK_PROCESSES` in `implementation-loop.md` and `environment-variables.md`.

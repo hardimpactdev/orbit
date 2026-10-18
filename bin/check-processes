@@ -13,6 +13,8 @@ import sys
 SETTING = 'ORBIT_CHECK_PROCESSES'
 # Measured Gateway worker RSS, rounded up with headroom. See implementation-loop.md.
 WORKER_MEMORY = 1280 * 1024 ** 2
+# Fixed gate overhead, in addition to the headroom in each worker allocation.
+MEMORY_RESERVE = 512 * 1024 ** 2
 PROC = Path('/proc')
 CGROUP = Path('/sys/fs/cgroup')
 
@@ -76,7 +78,7 @@ def processes(environment=os.environ):
         cpus, memory = macos_resources()
     else:
         raise ValueError(f'Unsupported check platform: {sys.platform}.')
-    return max(1, min(cpus, memory // WORKER_MEMORY))
+    return max(1, min(cpus, (memory - MEMORY_RESERVE) // WORKER_MEMORY))
 
 
 if __name__ == '__main__':

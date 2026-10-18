@@ -5,6 +5,7 @@ covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
   - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
+  - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/ci.yml,actions/php/action.yml}
@@ -323,11 +324,11 @@ TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs t
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
-Root `bin/test` runs all five project suites in parallel and splits the [available process budget](#parallel-processes) between them.
+Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it divides available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 512 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
 
 | Tool | How it reads the process count |
 | --- | --- |
@@ -338,7 +339,7 @@ Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. A
 
 Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
 
 ### The candidate gate
 
@@ -736,7 +737,7 @@ All four tools run in parallel processes. The old limits of two PHPStan and Pest
 
 Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
 
-The 1.25 GiB allocation comes from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these worker peaks. The allocation is 1280 MiB, 38% above the largest measured peak.
+The 1.25 GiB allocation comes from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these worker peaks. The allocation is 1280 MiB. A later cold TIA run with two workers reached 1197.5 MiB per Pest worker, leaving 6.9% headroom; the whole-gate measurements below also account for the controllers.
 
 | Worker | Peak resident memory |
 | --- | --- |
@@ -744,6 +745,16 @@ The 1.25 GiB allocation comes from the Gateway's full suite and `composer check`
 | PHPStan | 484.1 MiB |
 | Rector | 695.8 MiB |
 | Pint | 92.5 MiB |
+
+
+Whole-gate measurements on Beast used disposable task VMs from base image `46ccd3ced25598cdf6693a5b83213669ae44b8b9246f053ca10fa7a541773442`, recipe `5f4f8085d91f6523112b8ecb558db1fc85988e114356883afac08ebf8fba2100`, PHP 8.5.11, and the reviewed step 2 code. Each ran root `composer check` with `ORBIT_CHECK_SCOPE=full`, the main TIA graphs at `353ef196c`, and no worker-count override. The normal size supports no topology. The other sizes kept their nested Nodes running after the harness passed readiness. The VMs ran one at a time.
+
+| VM | Nested Nodes | Derived workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS |
+| --- | --- | --- | --- | --- | --- | --- |
+| Normal: 2 CPUs, 4 GiB | None | 2 | 1.699 GiB | 1.525 GiB | 1.707 GiB | 226.9 MiB |
+| Medium: 4 CPUs, 8 GiB | Gateway, operator, app-dev | 1 | 1.173 GiB | 1.226 GiB | 1.843 GiB | 266.3 MiB |
+
+The sampler ran in a separate systemd service and summed every process in the gate's cgroup about every 200 ms. Summed RSS counts shared pages more than once. The kernel cgroup peak accounts for the gate's charged memory, including its descendants. Controller PSS divides shared pages between processes and excludes tool workers and their descendants. It measures the fixed overhead that the reserve covers.
 
 ### Findings are fixed, not silenced
 
