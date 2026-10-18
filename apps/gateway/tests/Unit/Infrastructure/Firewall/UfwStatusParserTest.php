@@ -73,6 +73,42 @@ it('parses normalized named rule shapes without accepting unrelated same-port ru
         ]]);
 });
 
+it('parses protocol-unspecified ports and ranges in owned family inventory', function (string $target, string $source, string $destination, string $port, string $family): void {
+    $output = "Status: active\n[ 1] {$target} ALLOW IN {$source} # orbit:router-lan-dns-udp:999\n";
+
+    expect(new UfwStatusParser()->familyShapes($output, 'orbit:router-lan-dns-udp', includeIpv6: true))->toEqual([
+        new UfwRuleShape(
+            comment: 'orbit:router-lan-dns-udp:999',
+            action: 'allow',
+            direction: 'in',
+            source: $family === 'v6' ? '2001:db8::99' : 'any',
+            destination: $destination,
+            port: $port,
+            protocol: 'any',
+            inInterface: null,
+            outInterface: null,
+            family: $family,
+        ),
+    ]);
+})->with([
+    'port' => ['53', 'Anywhere', 'any', '53', 'v4'],
+    'scoped port' => ['10.20.0.10 53', 'Anywhere', '10.20.0.10', '53', 'v4'],
+    'range' => ['50:53', 'Anywhere', 'any', '50:53', 'v4'],
+    'scoped range' => ['10.20.0.10 50:53', 'Anywhere', '10.20.0.10', '50:53', 'v4'],
+    'IPv6 port' => ['2001:db8::10 53 (v6)', '2001:db8::99 (v6)', '2001:db8::10', '53', 'v6'],
+]);
+
+it('rejects unreadable owned family entries but ignores similarly named comments', function (string $comment): void {
+    $output = "Status: active\n[ 1] OpenSSH ALLOW IN Anywhere # {$comment}\n";
+    $parse = fn (): array => new UfwStatusParser()->familyShapes($output, 'orbit:router-lan-dns-udp', includeIpv6: true);
+
+    if ($comment === 'orbit:router-lan-dns-udp-operator') {
+        expect($parse())->toBe([]);
+    } else {
+        expect($parse)->toThrow(InvalidArgumentException::class);
+    }
+})->with(['orbit:router-lan-dns-udp', 'orbit:router-lan-dns-udp:999', 'orbit:router-lan-dns-udp-operator']);
+
 it('requires the exact managed destination and interface shape', function (): void {
     $output = <<<'OUTPUT'
         Status: active

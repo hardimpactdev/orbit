@@ -341,7 +341,9 @@ Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` pre
 
 ### Private network trust
 
-Every active WireGuard member may reach every other active member on its WireGuard address, over every protocol and port. Each Node keeps the firewall rule `orbit:wireguard-members` for this. An access grant never limits ordinary private traffic. It authorizes only Orbit commands and Gateway API calls. `metrics.orbit` is the exception: it checks Gateway authority, as [Metrics](/reference/metrics#grafana-access) describes. A Router admits Router traffic on a configured LAN path only from registered Nodes.
+Every active WireGuard member may reach every other active member on its WireGuard address, over every protocol and port. Each Node keeps the firewall rule `orbit:wireguard-members` for this. An access grant never limits ordinary private traffic. It authorizes only Orbit commands and Gateway API calls. `metrics.orbit` is the exception: it checks Gateway authority, as [Metrics](/reference/metrics#grafana-access) describes.
+
+On its LAN address, a Router admits HTTPS on TCP port 443 and DNS on UDP and TCP port 53 from eligible members of its active Cluster. Each source is an active registered Node with LAN and WireGuard IPv4 addresses and a WireGuard public key, excluding the Router itself. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) owns exact destination scope, transition ordering, Doctor checks, and rollout. An overlapping operator or unmanaged allow must be narrowed before member-only DNS isolation can be claimed. Adding firewall rules does not install Cluster DNS, switch member resolvers, or change Route answers.
 
 Public traffic enters only through Ingress, on HTTP and HTTPS. The firewall never makes a Router or workload Node a direct public endpoint. A standalone production Route is private and terminates Orbit CA TLS on its workload Node.
 

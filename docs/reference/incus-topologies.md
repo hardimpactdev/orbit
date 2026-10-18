@@ -7,6 +7,7 @@ covers:
   - apps/e2e/app/Console/Commands/Topology/**
   - apps/e2e/app/E2E/**
   - apps/e2e/resources/**
+  - apps/e2e/tests/{Support/GuestScripts.php,Unit/E2E/GuestScriptsTest.php}
   - apps/gateway/app/Console/Commands/RenderNodeProgramsCommand.php
 ---
 
@@ -47,6 +48,34 @@ The harness assigns the roles in the table and the roles each entry adds, and no
 | Checkouts | `gateway`, `app-dev`, and `operator` mount the worktree live at `/home/orbit/orbit`. Production Nodes have no checkout. |
 | Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`. `acquire` and `sync` require it in the worktree's branch name, such as `TASK-58` on branch `task-58`. |
 
+### Router LAN firewall acceptance fixture
+
+`bin/e2e-topology firewall-fixture TASK-1791 <operation> --record=LABEL` is a narrowly authorized acceptance fixture for retained attempt `8b819011a28fd78fbb64149fa1b814ae` only. It does not acquire, release or rebuild a topology. It refuses another issue/attempt, a changed lease, mismatched Incus ownership/network/mount identity, missing preinstalled tools, an occupied bind address, or a foreign fixture resource. It accepts no guest name, program, shell, arbitrary firewall rule or installation option. This is maintained harness support, not a Cluster DNS service or permission to change the task VM, Beast, shared bridges or live fleet firewall.
+
+Prepare the active Cluster through the normal Orbit CLI: `app-dev` is its Router, `app-prod` its eligible member, and `operator` remains a nonmember. The fixture verifies these identities and their managed HTTPS/UDP53/TCP53 rules. The harness holds the issue operation lock, checks the current lease and fresh Incus ownership before every guest call, and the guest control rechecks the mounted lease/token and its root-owned resource journal before each mutation. Group membership never supplies privilege. The fixture never adopts an existing rule with the same shape. Deletion resolves only journaled comment identities in the last verified ordered inventory.
+
+| Operation | Result |
+| --- | --- |
+| `prepare` | Inventories UFW runtime, persistent files and operator records before creating owned endpoints, bridge, veth, namespace client and bridge-scoped DNS allowances. |
+| `overlap` | Adds two owned IPv4 DNS allowances that overlap the member policy, then saves this ordered runtime/persistent checkpoint. |
+| `narrow` | Removes only those two broad allowances, retaining the bridge-scoped replacement and all product/operator/unrelated rules. |
+| `probe` | Checks source-bound member/nonmember UDP/TCP DNS, HTTPS, loopback/VPN DNS and namespace bridge DNS, with positive controls around negatives. |
+| `rollback` | Restores the exact ordered overlap checkpoint and persistent file bytes; the next probe must reproduce the previous exposure. |
+| `restore` | Removes owned allowances, endpoints and nested network resources, then verifies exact prefixture inventories. Retains diagnostics and the completed journal. |
+| `inspect` | Reports the current phase, inventories, listener health and retained diagnostics without changing firewall/network state. |
+
+The fixture starts preinstalled dnsmasq on the Router LAN and nested bridge addresses, plus preinstalled OpenSSL on the exact LAN HTTPS address. It never moves or restarts an existing service. The bridge UDP/TCP53 allowances require its input interface, DNS destination and exact client source. The nonmember must time out only in member-only phases and answer in broad-allow phases. A dead listener, refused connection, source-bind error or missing tool is not denial evidence.
+
+`rollback` rehearses firewall-inventory restoration, not a code deployment revert. A subsequent `prepare` archives a successfully restored run before taking a new baseline.
+
+Run `prepare`, `probe`, `overlap`, `probe`, `narrow`, `probe`, `rollback`, `probe`, then `restore`, each with a distinct evidence label. Do not make other firewall, network or membership changes while the fixture is active. Every transition compares the last recorded inventory first. Unexpected changes or failed restoration stop the operation and retain the journal and resources; inspect and resolve ownership before retrying. Never flush/reset UFW or restore a whole stale snapshot over intervening work. Runtime equality excludes changing packet counters and generated timestamps, not rules, scope or ordering; persistent rollback restores the original bytes and metadata of the two UFW user rule files after verifying all other files are unchanged.
+
+The member HTTPS probe trusts the fixture's SHA-256 public-key pin, obtained from the owned Router's generated certificate over the harness control channel. It does not install a CA or write a certificate onto the member. Curl uses this explicit pin as its trust root instead of the member's system CA store; a different endpoint key fails the probe. Checks on the Router also validate the generated certificate and LAN IP.
+
+The nested bridge is a real guest-local bridge with its own DNS destination and namespace client, not a Docker privilege shortcut or a change to the topology host's Incus bridge. Evidence proves this bridge's scoped DNS path. It does not establish the live fleet's actual Incus bridge interface/destination; [live firewall acceptance](/cli/firewall#safe-dns-firewall-rollout) must repeat that check after deploy. Keep the useful topology lease. Independent native review must reproduce the fixture matrix before publication; postdeploy live acceptance remains mandatory before DNS step 2.
+
+Host-side control tests use a temporary copy with Python bytecode disabled, so imports leave the checkout unchanged. Host copies of guest scripts include only regular top-level files, with their permissions and sibling scripts intact. Generated directories such as `__pycache__` are ignored; their presence does not prevent guest-script tests from running.
+
 ### The operator guest
 
 The operator is a roleless Node registered with the topology's Gateway, with a Gateway access grant and its own WireGuard peer in that topology. It has no workload role and hosts no Instance. It trusts the topology's Orbit CA and mounts the worktree live, so host edits reach `apps/web` without a copy or rebuild. Its CLI profile and web proxy configuration refer only to this topology. Missing configuration is an error, not permission to use the real Gateway or another user's credentials.
@@ -65,7 +94,9 @@ Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launc
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Workload and operator enrollment still use the normal product paths. Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
+The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
+
+Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 
 ## Composition
 

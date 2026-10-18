@@ -7,6 +7,7 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -184,6 +185,10 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     private function firewallMatches(CommandResult $result, Node $node, NodeRole $role): bool
     {
-        return $this->firewallCheck->matches($result, $this->firewall->forRole($node, $role->role));
+        return $this->firewallCheck->matches(
+            $result,
+            $this->firewall->forRole($node, $role->role),
+            $role->role === RoleName::Router ? array_keys(RouterLanIngressPolicy::Families) : [],
+        );
     }
 }

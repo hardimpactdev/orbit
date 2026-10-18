@@ -107,6 +107,7 @@ describe('topology commands', function () {
         expect($harness)->toBe([
             'topology:acquire',
             'topology:exec',
+            'topology:firewall-fixture',
             'topology:kill',
             'topology:logs',
             'topology:release',
@@ -347,6 +348,15 @@ describe('topology commands', function () {
                     ."--- stdout\n2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence\n--- stderr\n\n", '/')
                 .'\z/')
             ->not->toContain('hunter2', 'secret-token');
+    });
+
+    it('requires an evidence label before the scoped firewall control can run', function () {
+        commandPrimaryFixture();
+        Process::fake();
+
+        $this->artisan('topology:firewall-fixture', ['issue' => 'TST-12', 'operation' => 'prepare', '--json' => true])
+            ->expectsOutputToContain('requires --record=LABEL')->assertFailed();
+        Process::assertNothingRan();
     });
 
     it('refuses web without a topology rather than acquiring one', function () {
