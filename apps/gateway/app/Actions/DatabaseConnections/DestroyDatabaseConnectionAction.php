@@ -9,12 +9,15 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use Illuminate\Container\Attributes\Tag;
 
 final readonly class DestroyDatabaseConnectionAction
 {
+    /** @param iterable<DatabaseConnectionRemovalGuard> $guards */
     public function __construct(
         private DropServerDatabaseAction $drops,
-        private ?RecordEventBroadcaster $broadcaster = null,
+        #[Tag(DatabaseConnectionRemovalGuard::class)] private iterable $guards,
+        private RecordEventBroadcaster $broadcaster,
     ) {}
 
     public function execute(DatabaseConnection $connection): void
@@ -27,15 +30,14 @@ final readonly class DestroyDatabaseConnectionAction
             );
         }
 
-        /** @var DatabaseConnectionRemovalGuard $guard */
-        foreach (app()->tagged(DatabaseConnectionRemovalGuard::class) as $guard) {
+        foreach ($this->guards as $guard) {
             $guard->assertRemovable($connection);
         }
 
         $this->drops->execute($connection);
         $connection->delete();
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        $this->broadcaster->broadcast(
             RecordEventType::DatabaseDeleted,
             $connection->id,
             ['id' => $connection->id, 'slug' => $connection->slug],

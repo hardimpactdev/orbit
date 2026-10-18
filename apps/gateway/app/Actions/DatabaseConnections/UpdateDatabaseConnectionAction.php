@@ -13,20 +13,20 @@ use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateDatabaseConnectionAction
 {
-    public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
+    /** @param iterable<DatabaseConnectionUpdateHook> $hooks */
+    public function __construct(
+        #[Tag(DatabaseConnectionUpdateHook::class)] private iterable $hooks,
+        private RecordEventBroadcaster $broadcaster,
+    ) {}
 
     public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): DatabaseConnection
     {
-        $hooks = [];
-        /** @var DatabaseConnectionUpdateHook $hook */
-        foreach (app()->tagged(DatabaseConnectionUpdateHook::class) as $hook) {
-            $hooks[] = $hook;
-        }
-        $result = DB::transaction(function () use ($connection, $data, $hooks): DatabaseConnection {
+        $result = DB::transaction(function () use ($connection, $data): DatabaseConnection {
             $locked = DatabaseConnection::query()->lockForUpdate()->findOrFail($connection->id);
             $attributes = DatabaseConnectionProfile::fromUpdate($locked, $data)->attributes();
             unset($attributes['slug']);
@@ -50,7 +50,7 @@ final readonly class UpdateDatabaseConnectionAction
                 }
             }
 
-            foreach ($hooks as $hook) {
+            foreach ($this->hooks as $hook) {
                 $hook->validate($proposed);
             }
             $locked->update($attributes);
@@ -58,14 +58,14 @@ final readonly class UpdateDatabaseConnectionAction
             return $locked->refresh();
         });
 
-        DB::afterCommit(function () use ($hooks, $result): void {
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+        DB::afterCommit(function () use ($result): void {
+            $this->broadcaster->broadcast(
                 RecordEventType::DatabaseUpdated,
                 $result->id,
                 DatabaseConnectionData::fromModel($result)->toArray(),
             );
 
-            foreach ($hooks as $hook) {
+            foreach ($this->hooks as $hook) {
                 $hook->afterCommit($result);
             }
         });

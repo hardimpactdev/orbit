@@ -64,17 +64,15 @@ The provider registers what the extension owns: its routes with `loadRoutesFrom(
 
 Use this checklist when core adds a place for extensions to contribute:
 
-- Resolve the typed interface with strict `Contributions::of()`; reject a wrong interface or a class tagged twice.
-- Reserve core names and slugs in `App\Domain\Extensions\ReservedNames`: Caddy sources, certificate slugs, private DNS names, and footprint artifact names.
-- Validate contributed values with `ConfigValue` at the boundary before rendering config to reject newlines, syntax separators and out-of-range addresses or ports according to the target field's grammar.
-- Refuse duplicate names, slugs, and addresses across contributions before writing anything; test collisions with core and with another contribution.
-- Name the disable lifecycle in the feature ADR: what stays active, what is removed, who removes it, and how a failed removal retries.
-- Test production wiring from the container with `assertPlugInContributions()` in `tests/Helpers/PlugInAssertions.php`; assert the consumer's contributed list, not just a manually constructed consumer.
+- Define a small typed interface and tag each implementation with the interface name in its provider.
+- Inject contributions through the constructor with Laravel's `#[Tag]` attribute. Trusted in-repo implementations need no runtime interface or duplicate-class validation.
+- State when the contribution runs and what happens while its extension is disabled.
+- Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
 - Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
 
-`ReservedNames` is the shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
+The existing configuration plug-in points use `ReservedNames` as their shared registry; existing public constants such as `CaddySiteCertificates::CoreSlugs` and `ReservedPrivateHostname::CoreNames` refer to it. `ConfigValue` provides field checks, not escaping for whole templates. A printable description can contain spaces and punctuation; a DNS name, slug, IPv4 address, or port has a narrower grammar. The caller keeps its own error type and message. Full contributed programs and Caddy blocks remain trusted extension code, not scalar config values.
 
-Private DNS and footprint artifacts have contribution interfaces. Keep core entries in core wiring and reserve their names in the shared registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
+The existing private DNS and footprint contributions keep core entries in core wiring and reserve their names in that registry; an extension contribution cannot replace a core entry. Extension-owned identities, such as the collector hostname and its footprint artifact, stay in the extension's contributions, not in the core registry. The production wiring tests assert the core artifacts followed by the contributed artifacts.
 
 Test both sides of the publication boundary: a valid contribution renders beside existing Routes, while reserved source names, duplicate listener addresses, and invalid listener addresses stop a build before any transport call. A later valid build must still work. For the collector, switching the extension off keeps its deployed site; teardown withdraws that site and its certificate without changing the other site blocks.
 
@@ -86,7 +84,7 @@ Core defines an interface for each place where an extension can add behavior. Th
 $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
 ```
 
-Core resolves every tagged implementation and calls each one. When a tagged class does not implement the interface, or one class is tagged twice for the same interface, core throws a `LogicException`. It never drops or repeats a contribution.
+Core resolves tagged implementations and calls each one through the typed interface. The Database connection points use constructor-injected tags directly. Older points still use `Contributions::of()`, which throws a `LogicException` for a wrong interface or a class tagged twice. That runtime check is not required for new points; their wiring is checked by tests.
 
 | Interface | Called by | Methods |
 | --- | --- | --- |

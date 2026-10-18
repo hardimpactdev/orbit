@@ -44,6 +44,6 @@ final readonly class ReconvergeProxyCliConnectionAction implements DatabaseConne
         }
         $node = $this->placement->node($nodeId);
         $connection = $this->placement->connection($connection->slug);
-        $this->runtime->converge($node, $this->environment->build($connection), $this->state->processPort());
+        $this->runtime->converge($node, $this->environment->build($connection));
     }
 }

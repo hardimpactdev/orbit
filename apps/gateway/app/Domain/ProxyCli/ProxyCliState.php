@@ -64,13 +64,6 @@ final readonly class ProxyCliState
         return $this->settings->get($this->scope(), ProxyCliSettings::ControlToken);
     }
 
-    public function processPort(): int
-    {
-        $value = $this->settings->get($this->scope(), ProxyCliSettings::ProcessPort);
-
-        return is_string($value) && ctype_digit($value) ? (int) $value : 8787;
-    }
-
     public function enable(
         int $nodeId,
         string $cacheConnection,
@@ -78,7 +71,6 @@ final readonly class ProxyCliState
         string $managementKey,
         string $readToken,
         string $controlToken,
-        int $port = 8787,
     ): void {
         $scope = $this->scope();
         $this->settings->put($scope, ProxyCliSettings::Enabled, '1');
@@ -88,7 +80,6 @@ final readonly class ProxyCliState
         $this->settings->put($scope, ProxyCliSettings::CliproxyManagementKey, $managementKey, SettingValueProtection::Secret);
         $this->settings->put($scope, ProxyCliSettings::ReadToken, $readToken, SettingValueProtection::Secret);
         $this->settings->put($scope, ProxyCliSettings::ControlToken, $controlToken, SettingValueProtection::Secret);
-        $this->settings->put($scope, ProxyCliSettings::ProcessPort, (string) $port);
     }
 
     public function disable(): void

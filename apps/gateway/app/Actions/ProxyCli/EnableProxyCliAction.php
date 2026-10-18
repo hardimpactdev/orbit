@@ -52,12 +52,11 @@ final readonly class EnableProxyCliAction
             $data->cliproxyManagementKey,
             $readToken,
             $controlToken,
-            $this->state->processPort(),
         );
         // Publish first: a takeover moves the name onto the collector site, which waits for the collector while
         // the runtime converge restarts it. The Route's site would fail those requests instead.
-        $this->publication->converge($node, $this->state->processPort(), takeover: $takeover);
-        $this->runtime->converge($node, $this->environment->build($connection), $this->state->processPort());
+        $this->publication->converge($node, takeover: $takeover);
+        $this->runtime->converge($node, $this->environment->build($connection));
 
         return new ProxyCliStatusData(
             true,

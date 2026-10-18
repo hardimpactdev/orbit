@@ -19,6 +19,4 @@ final readonly class ProxyCliSettings
     public const string ReadToken = 'proxycli.read_token';
 
     public const string ControlToken = 'proxycli.control_token';
-
-    public const string ProcessPort = 'proxycli.process_port';
 }

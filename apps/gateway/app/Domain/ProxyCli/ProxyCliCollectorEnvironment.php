@@ -23,7 +23,7 @@ final readonly class ProxyCliCollectorEnvironment
             'PROXYCLI_CACHE_PORT' => (string) $connection->port,
             'PROXYCLI_CACHE_USERNAME' => $connection->username ?? '',
             'PROXYCLI_CACHE_PASSWORD' => $connection->password ?? '',
-            'PROXYCLI_PORT' => (string) $this->state->processPort(),
+            'PROXYCLI_PORT' => (string) ProxyCliProcess::PORT,
         ];
     }
 }

@@ -28,6 +28,8 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Models\Activity;
@@ -775,11 +777,11 @@ it('refuses removing the selected cache until teardown even with the extension s
     $this->assertModelMissing($connection);
 })->with([true, false]);
 
-it('uses the stored collector port for setup and connection reconvergence', function (): void {
+it('uses one fixed port for setup, takeover, publication, and connection reconvergence', function (): void {
     $gateway = proxycli_gateway();
     $node = proxycli_node();
     $connection = proxycli_valkey($node);
-    app(ProxyCliState::class)->enable($node->id, $connection->slug, 'http://127.0.0.1:8317', 'management', 'read', 'control', 8899);
+    $route = proxycli_hostname_route($node, 'http://127.0.0.1:8787');
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/proxycli', [
             'node_id' => $node->id, 'cache_connection' => $connection->slug,
@@ -787,14 +789,20 @@ it('uses the stored collector port for setup and connection reconvergence', func
         ])->assertCreated();
     $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
     $environment = $process->runtime_config['environment'];
-    expect($environment['PROXYCLI_PORT'])->toBe('8899')
-        ->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8899:8899/tcp']);
+    expect($environment['PROXYCLI_PORT'])->toBe('8787')
+        ->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp'])
+        ->and(app(RecordingProxyCliPublicationManager::class)->takeoverRouteId)->toBe($route->id);
+    $this->assertDatabaseMissing('settings', ['scope_type' => 'gateway', 'scope_id' => 0, 'key' => 'proxycli.process_port']);
+    new CaddySiteCertificates()->record($node->id, ProxyCliCaddySiteSource::CertificateSlug);
+    $sites = app(ProxyCliCaddySiteSource::class)->sites($node);
+    expect($sites)->toHaveCount(1)
+        ->and($sites[0]->body)->toContain('reverse_proxy 127.0.0.1:8787');
 
     $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rotated'])->assertOk();
 
     expect($process->refresh()->runtime_config['environment'])->toBe([
         ...$environment, 'PROXYCLI_CACHE_PASSWORD' => 'rotated',
-    ])->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8899:8899/tcp']);
+    ])->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp']);
 });
 
 it('does not reconverge a connection update that its outer transaction rolls back', function (): void {
