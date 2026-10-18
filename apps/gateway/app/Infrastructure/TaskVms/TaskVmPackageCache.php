@@ -29,7 +29,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
 
     /**
      * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
-     * @return array<string, string>
+     * @return array{hashes: array<string, string>, failures: array<string, string>}
      */
     public function fill(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken = null): array
     {
@@ -38,17 +38,24 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
             throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
         }
         $result = $this->host($node, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken]);
-        $hashes = IncusHost::json('package cache', $result);
+        $response = IncusHost::json('package cache', $result);
+        $hashes = $response['hashes'] ?? null;
+        $failures = $response['failures'] ?? null;
+        if (! is_array($hashes) || ! is_array($failures) || array_diff(array_keys($hashes + $failures), array_column($artifacts, 'key')) !== []) {
+            throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned an invalid artifact result.');
+        }
         foreach ($artifacts as $artifact) {
-            if (! array_key_exists($artifact['key'], $hashes) && ($githubToken !== null || $artifact['manager'] !== 'composer')) {
-                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
-            }
-            if (array_key_exists($artifact['key'], $hashes) && (! is_string($hashes[$artifact['key']]) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hashes[$artifact['key']]) !== 1)) {
-                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
+            $key = $artifact['key'];
+            $hash = $hashes[$key] ?? null;
+            $failure = $failures[$key] ?? null;
+            if (array_key_exists($key, $hashes) === array_key_exists($key, $failures)
+                || (array_key_exists($key, $hashes) && (! is_string($hash) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hash) !== 1))
+                || (array_key_exists($key, $failures) && (! is_string($failure) || preg_match('/\A[A-Za-z]+\z/D', $failure) !== 1))) {
+                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash or artifact failure.');
             }
         }
 
-        return array_filter($hashes, is_string(...));
+        return ['hashes' => array_filter($hashes, is_string(...)), 'failures' => array_filter($failures, is_string(...))];
     }
 
     /** Attach at workspace creation, and keep all writes on the workspace disk. */

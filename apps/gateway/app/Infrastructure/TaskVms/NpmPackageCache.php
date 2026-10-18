@@ -58,7 +58,11 @@ final readonly class NpmPackageCache
                 || ! is_string($url) || ! str_starts_with($url, 'https://registry.npmjs.org/')) {
                 continue;
             }
-            if (! is_string($integrity) || preg_match('/\A(?:sha512|sha256|sha1)-[A-Za-z0-9+\/]+=*\z/D', $integrity) !== 1) {
+            if (! is_string($integrity) || preg_match('/\A(sha512|sha256|sha1)-([A-Za-z0-9+\/]+=*)\z/D', $integrity, $checksum) !== 1) {
+                continue;
+            }
+            $digest = base64_decode($checksum[2], true);
+            if ($digest === false || base64_encode($digest) !== $checksum[2] || strlen($digest) !== strlen(hash($checksum[1], '', true))) {
                 continue;
             }
             if ($url !== $this->url($name, $version)) {

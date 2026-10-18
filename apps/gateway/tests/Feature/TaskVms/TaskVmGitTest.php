@@ -346,5 +346,5 @@ it('keeps source fetch usable during a package queue outage and retries dispatch
     $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
 
     Queue::assertPushed(FillTaskVmPackageCache::class, 1);
-    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeFalse();
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeTrue();
 });

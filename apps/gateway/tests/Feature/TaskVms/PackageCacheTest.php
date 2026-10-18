@@ -14,7 +14,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
 use App\Infrastructure\TaskVms\IncusHost;
-use App\Infrastructure\TaskVms\NpmPackageCache;
 use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
 use App\Models\Node;
@@ -26,6 +25,7 @@ use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -64,6 +64,7 @@ it('queues only changed default-branch lock blobs and includes monorepo locks an
     $first = package_cache_commit($root);
 
     $observe->execute($project, $root.'/.git', $first);
+    PackageCacheSnapshot::query()->whereKey($project->id)->update(['fill_pending' => false]);
     file_put_contents($root.'/README', 'code only');
     $observe->execute($project, $root.'/.git', package_cache_commit($root));
     $observe->execute($project, $root.'/.git', package_cache_git($root, ['rev-parse', 'HEAD']));
@@ -78,7 +79,7 @@ it('queues only changed default-branch lock blobs and includes monorepo locks an
     expect(array_keys(PackageCacheSnapshot::query()->findOrFail($project->id)->blobs))->toBe(['composer.lock']);
 });
 
-it('reconciles lock selection at the same commit and excludes standalone fixture locks', function (): void {
+it('selects only locks with sibling manifests and removes selection when a manifest is deleted', function (): void {
     $root = TestOrbitHome::scratch('package-cache-manifests');
     mkdir($root.'/packages/php-sdk', 0700, true);
     mkdir($root.'/apps/api/tests/Fixtures', 0700, true);
@@ -91,13 +92,8 @@ it('reconciles lock selection at the same commit and excludes standalone fixture
     file_put_contents($root.'/packages/php-sdk/composer.lock', $lock);
     copy(base_path('tests/Fixtures/Dependencies/Pnpm/pnpm-lock.yaml'), $root.'/apps/api/tests/Fixtures/pnpm-lock.yaml');
     $commit = package_cache_commit($root);
-    $snapshot = PackageCacheSnapshot::query()->create([
-        'project_id' => $project->id, 'commit' => $commit, 'fill_pending' => false,
-        'blobs' => ['apps/api/tests/Fixtures/pnpm-lock.yaml' => package_cache_git($root, ['rev-parse', 'HEAD:apps/api/tests/Fixtures/pnpm-lock.yaml'])],
-        'artifacts' => app(NpmPackageCache::class)->read('pnpm-lock.yaml', file_get_contents($root.'/apps/api/tests/Fixtures/pnpm-lock.yaml')),
-    ]);
-
     app(ObservePackageCacheAction::class)->execute($project, $root.'/.git', $commit);
+    $snapshot = PackageCacheSnapshot::query()->findOrFail($project->id);
 
     expect(array_keys($snapshot->fresh()->blobs))->toBe(['packages/php-sdk/composer.lock']);
     expect($snapshot->fresh()->artifacts)->toBe((new ComposerPackageCache)->read($lock));
@@ -108,6 +104,21 @@ it('reconciles lock selection at the same commit and excludes standalone fixture
 
     expect($snapshot->fresh()->artifacts)->toBe([]);
     expect($snapshot->fresh()->blobs)->toBe([]);
+});
+
+it('retries a pending fill at the same commit without reading the tree and keeps it pending', function (): void {
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'commit' => str_repeat('a', 40), 'blobs' => [], 'artifacts' => [], 'fill_pending' => true]);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
+    Queue::fake([FillTaskVmPackageCache::class]);
+
+    app(ObservePackageCacheAction::class)->execute($project, '/nonexistent-mirror', $snapshot->commit);
+
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
+    Queue::assertPushed(FillTaskVmPackageCache::class, 1);
+    $snapshot->update(['fill_pending' => false]);
+    app(ObservePackageCacheAction::class)->execute($project, '/nonexistent-mirror', $snapshot->commit);
+    Queue::assertPushed(FillTaskVmPackageCache::class, 1);
 });
 
 it('coalesces pending fills by host and permits a successor once processing starts', function (): void {
@@ -204,7 +215,7 @@ it('attaches a host-enforced read-only directory and refuses a writable existing
     expect(fn () => $cache->prepare($vm, $project))->toThrow(TaskVmException::class, 'not the expected read-only');
 });
 
-it('publishes every Projects archive version only after a successful fill and skips a superseded snapshot', function (): void {
+it('publishes verified Project usage only after a successful fill and skips a superseded snapshot', function (): void {
     Http::preventStrayRequests();
     GitHubTestSupport::storeApp();
     Http::fake([
@@ -219,8 +230,6 @@ it('publishes every Projects archive version only after a successful fill and sk
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Shop', 'slug' => 'shop']);
     $artifact = (new ComposerPackageCache)->read('{"packages":[{"name":"acme/demo","version":"1.0.0","dist":{"type":"zip","url":"https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40).'"}}]}')[0];
     $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'commit' => str_repeat('a', 40), 'blobs' => ['composer.lock' => str_repeat('a', 40)], 'artifacts' => [$artifact]]);
-    $otherArtifact = (new ComposerPackageCache)->read('{"packages":[{"name":"acme/demo","version":"2.0.0","dist":{"type":"zip","url":"https://api.github.com/repos/acme/demo/zipball/'.str_repeat('c', 40).'"}}]}')[0];
-    PackageCacheSnapshot::query()->whereKey($uncovered->id)->update(['artifacts' => [$otherArtifact]]);
     $ssh = new class implements SshExecutor
     {
         public bool $fail = false;
@@ -242,26 +251,25 @@ it('publishes every Projects archive version only after a successful fill and sk
             }
             ($this->duringFill ?? static function (): void {})();
 
-            return new CommandResult($this->fail ? 1 : 0, json_encode($hashes, JSON_THROW_ON_ERROR), '', 1, false);
+            return new CommandResult($this->fail ? 1 : 0, json_encode(['hashes' => $hashes, 'failures' => []], JSON_THROW_ON_ERROR), '', 1, false);
         }
     };
     $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
 
     $fill->execute($node->id);
 
-    expect(PackageCacheEntry::query()->orderBy('version')->pluck('version')->all())->toBe(['1.0.0', '2.0.0']);
-    expect(PackageCacheEntry::query()->pluck('key')->all())->toEqualCanonicalizing([$artifact['key'], $otherArtifact['key']]);
-    expect(PackageCacheEntry::query()->distinct()->pluck('integrity')->all())->toBe(['sha256-'.str_repeat('b', 64)]);
+    expect(PackageCacheEntry::query()->sole()->integrity)->toBe('sha256-'.str_repeat('b', 64));
     $ssh->fail = true;
     expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class);
-    expect(PackageCacheEntry::query()->count())->toBe(2);
+    expect(PackageCacheEntry::query()->count())->toBe(1);
     $ssh->fail = false;
-    $ssh->duringFill = fn () => $snapshot->update(['blobs' => [], 'artifacts' => []]);
-    $fill->execute($node->id);
-    expect(PackageCacheEntry::query()->count())->toBe(2);
-    $ssh->duringFill = null;
+    $ssh->duringFill = fn () => $snapshot->update(['blobs' => [], 'artifacts' => [], 'fill_pending' => true]);
     $fill->execute($node->id);
     expect(PackageCacheEntry::query()->count())->toBe(1);
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
+    $ssh->duringFill = null;
+    $fill->execute($node->id);
+    expect(PackageCacheEntry::query()->count())->toBe(0);
 });
 
 it('publishes available cache artifacts without App coverage and rejects invalid returned hashes', function (): void {
@@ -273,7 +281,7 @@ it('publishes available cache artifacts without App coverage and rejects invalid
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/uncovered.git', 'name' => 'Uncovered', 'slug' => 'uncovered']);
     PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => [
         ['key' => 'composer-miss', 'manager' => 'composer', 'package' => 'acme/demo', 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => null],
-        ['key' => 'npm-hit', 'manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'integrity' => 'sha512-ZGVtbw=='],
+        ['key' => 'npm-hit', 'manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'integrity' => 'sha512-'.base64_encode(hash('sha512', 'archive', true))],
     ]]);
     $ssh = new class implements SshExecutor
     {
@@ -288,15 +296,130 @@ it('publishes available cache artifacts without App coverage and rejects invalid
                 $hashes['composer-miss'] = null;
             }
 
-            return new CommandResult(0, json_encode($hashes, JSON_THROW_ON_ERROR), '', 1, false);
+            return new CommandResult(0, json_encode(['hashes' => $hashes, 'failures' => ['composer-miss' => 'GitHubAuthenticationUnavailable']], JSON_THROW_ON_ERROR), '', 1, false);
         }
     };
     $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
 
-    $fill->execute($node->id);
+    expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class, 'Some package cache artifacts failed');
 
     expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
     $ssh->invalid = true;
     expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class, 'no verified archive hash');
     expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
+});
+
+it('records partial fills per Project and keeps them pending until every host succeeds', function (): void {
+    Log::spy();
+    $first = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'first', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $second = Node::query()->create(['public_ssh_host' => '192.0.2.8', 'name' => 'second', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($first->id), TaskVmSettingsBuilder::host($second->id)]]);
+    $snapshots = [];
+    foreach (['broken', 'healthy'] as $name) {
+        $project = Project::query()->create(['repository_url' => 'https://github.com/acme/'.$name.'.git', 'name' => $name, 'slug' => $name]);
+        $snapshots[$name] = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'fill_pending' => true, 'artifacts' => [
+            ['key' => $name, 'manager' => 'npm', 'package' => $name, 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/'.$name.'/-/'.$name.'-1.0.0.tgz', 'integrity' => 'sha256-'.base64_encode(hash('sha256', 'archive', true))],
+        ]]);
+    }
+    $ssh = new class implements SshExecutor
+    {
+        public bool $failArtifact = true;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(0, json_encode([
+                'hashes' => $this->failArtifact ? ['healthy' => 'sha256-'.str_repeat('a', 64)] : ['healthy' => 'sha256-'.str_repeat('a', 64), 'broken' => 'sha256-'.str_repeat('b', 64)],
+                'failures' => $this->failArtifact ? ['broken' => 'HTTPError'] : [],
+            ], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+    $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
+
+    expect(fn () => $fill->execute($first->id))->toThrow(TaskVmException::class, 'Some package cache artifacts failed');
+
+    Log::shouldHaveReceived('warning')->once()->with('Package cache artifact failed.', ['host_node_id' => $first->id, 'key' => 'broken', 'failure' => 'HTTPError']);
+    expect(PackageCacheEntry::query()->sole()->package)->toBe('healthy');
+    expect($snapshots['healthy']->fresh()->fill_pending)->toBeTrue();
+    expect($snapshots['broken']->fresh()->fill_pending)->toBeTrue();
+    expect(fn () => $fill->execute($second->id))->toThrow(TaskVmException::class);
+    expect($snapshots['healthy']->fresh()->fill_pending)->toBeFalse();
+    expect($snapshots['broken']->fresh()->fill_pending)->toBeTrue();
+    $ssh->failArtifact = false;
+    $fill->execute($first->id);
+    expect($snapshots['broken']->fresh()->fill_pending)->toBeTrue();
+    $fill->execute($second->id);
+    expect($snapshots['broken']->fresh()->fill_pending)->toBeFalse();
+    expect(PackageCacheEntry::query()->where('project_id', $snapshots['broken']->project_id)->pluck('host_node_id')->all())->toEqualCanonicalizing([$first->id, $second->id]);
+});
+
+it('isolates conflicting archive checksums without blocking another Project', function (): void {
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    foreach (['first', 'second', 'healthy'] as $name) {
+        $project = Project::query()->create(['repository_url' => 'https://github.com/acme/'.$name.'.git', 'name' => $name, 'slug' => $name]);
+        PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'fill_pending' => true, 'artifacts' => [
+            ['key' => $name === 'healthy' ? 'healthy' : 'conflict', 'manager' => 'composer', 'package' => 'acme/'.$name, 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => 'sha1-'.hash('sha1', $name)],
+        ]]);
+    }
+    $ssh = new class implements SshExecutor
+    {
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+            expect(array_column($payload['artifacts'], 'key'))->toBe(['healthy']);
+
+            return new CommandResult(0, json_encode(['hashes' => ['healthy' => 'sha256-'.str_repeat('a', 64)], 'failures' => []], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+
+    expect(fn () => (new FillPackageCacheAction($settings, package_cache_transport($ssh)))->execute($node->id))->toThrow(TaskVmException::class);
+
+    expect(PackageCacheEntry::query()->sole()->package)->toBe('acme/healthy');
+    expect(PackageCacheSnapshot::query()->orderBy('project_id')->pluck('fill_pending')->all())->toBe([true, true, false]);
+});
+
+it('requires every host to verify a changed Composer checksum even when its archive key stays the same', function (): void {
+    $root = TestOrbitHome::scratch('package-cache-checksum-change');
+    mkdir($root, 0700, true);
+    package_cache_git($root, ['init', '-b', 'main']);
+    file_put_contents($root.'/composer.json', '{}');
+    $lock = ['packages' => [['name' => 'acme/demo', 'version' => '1.0.0', 'dist' => ['type' => 'zip', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'shasum' => str_repeat('a', 40)]]]];
+    file_put_contents($root.'/composer.lock', json_encode($lock, JSON_THROW_ON_ERROR));
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    $first = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'first', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $second = Node::query()->create(['public_ssh_host' => '192.0.2.8', 'name' => 'second', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($first->id), TaskVmSettingsBuilder::host($second->id)]]);
+    Queue::fake([FillTaskVmPackageCache::class]);
+    $observe = app(ObservePackageCacheAction::class);
+    $observe->execute($project, $root.'/.git', package_cache_commit($root));
+    $snapshot = PackageCacheSnapshot::query()->findOrFail($project->id);
+    $key = $snapshot->artifacts[0]['key'];
+    $ssh = new class implements SshExecutor
+    {
+        public bool $fail = false;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+
+            return new CommandResult($this->fail ? 1 : 0, json_encode(['hashes' => [$payload['artifacts'][0]['key'] => 'sha256-'.str_repeat('b', 64)], 'failures' => []], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+    $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
+    $fill->execute($first->id);
+    $fill->execute($second->id);
+    expect($snapshot->fresh()->fill_pending)->toBeFalse();
+    expect(PackageCacheEntry::query()->count())->toBe(2);
+    $lock['packages'][0]['dist']['shasum'] = str_repeat('c', 40);
+    file_put_contents($root.'/composer.lock', json_encode($lock, JSON_THROW_ON_ERROR));
+
+    $observe->execute($project, $root.'/.git', package_cache_commit($root));
+
+    expect($snapshot->fresh()->artifacts[0]['key'])->toBe($key);
+    expect(PackageCacheEntry::query()->count())->toBe(0);
+    $fill->execute($first->id);
+    $ssh->fail = true;
+    expect(fn () => $fill->execute($second->id))->toThrow(TaskVmException::class);
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
+    expect(PackageCacheEntry::query()->sole()->host_node_id)->toBe($first->id);
 });

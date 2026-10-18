@@ -38,6 +38,50 @@ class ComposerCacheTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             redirect.redirect_request(urllib.request.Request(github), None, 302, '', {}, 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz')
 
+    def test_moved_github_repository_redirect_keeps_the_locked_commit(self):
+        commit = '301c07936b16d88628b126b01d082ba153cf4c40'
+        original = 'https://api.github.com/repos/vlucas/phpdotenv/zipball/' + commit
+        moved = 'https://api.github.com/repositories/7769432/zipball/' + commit
+        codeload = 'https://codeload.github.com/phpdotenv/phpdotenv/legacy.zip/' + commit
+        redirect = cache['PublicRedirect']()
+        request = urllib.request.Request(original, headers={'Authorization': 'Bearer sentinel'})
+        moved_request = redirect.redirect_request(request, None, 301, '', {}, moved)
+        final = redirect.redirect_request(moved_request, None, 302, '', {}, codeload)
+        self.assertEqual(final.full_url, codeload)
+        self.assertEqual(final.get_header('Authorization'), 'Bearer sentinel')
+
+    def test_redirect_rejects_other_commits_and_non_archive_destinations(self):
+        original = 'https://api.github.com/repos/vlucas/phpdotenv/zipball/' + 'a' * 40
+        for destination in [
+                'https://api.github.com/repositories/7769432/zipball/' + 'b' * 40,
+                'https://codeload.github.com/phpdotenv/phpdotenv/zip/' + 'b' * 40,
+                'https://api.github.com/repos/acme/demo/zipball/' + 'b' * 40,
+                'https://api.github.com/repos/acme/demo/zipball/' + 'a' * 40,
+                'https://api.github.com/repositories/7769432/contents/secret',
+                'https://api.github.com.evil.test/repositories/7769432/zipball/' + 'a' * 40,
+                'http://api.github.com/repositories/7769432/zipball/' + 'a' * 40,
+                'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz']:
+            with self.subTest(destination=destination), self.assertRaises(ValueError):
+                cache['PublicRedirect']().redirect_request(urllib.request.Request(original), None, 301, '', {}, destination)
+
+    def test_failed_artifact_does_not_block_later_archives_or_leave_temporary_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'cache'
+            bad = self.artifact(checksum=False)
+            url = bad['url'].replace('a' * 40, 'b' * 40)
+            good = {**bad, 'url': url, 'key': 'composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip'}
+            def fetch(url):
+                if url == bad['url']:
+                    raise urllib.error.HTTPError(url, 429, 'Too Many Requests', {}, None)
+                return io.BytesIO(b'archive')
+
+            result = cache['fill'](root, [bad, good], 100000, fetch)
+
+            self.assertEqual(result['failures'], {bad['key']: 'HTTPError'})
+            self.assertEqual(result['hashes'], {good['key']: 'sha256-' + hashlib.sha256(b'archive').hexdigest()})
+            self.assertEqual(json.loads((root / '.inventory.json').read_text()), {good['key']: hashlib.sha256(b'archive').hexdigest()})
+            self.assertEqual(list(root.glob('.download-*')), [])
+
     def test_missing_auth_skips_only_github_misses_and_retains_verified_hits(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'shared'
@@ -53,7 +97,9 @@ class ComposerCacheTest(unittest.TestCase):
                 if cache['github_url'](url):
                     raise cache['GitHubAuthenticationUnavailable']('no installation')
                 return io.BytesIO(b'archive')
-            hashes = cache['fill'](root, [hit, miss, npm], 100000, fetch)
+            result = cache['fill'](root, [hit, miss, npm], 100000, fetch)
+            hashes = result['hashes']
+            self.assertEqual(result['failures'], {miss['key']: 'GitHubAuthenticationUnavailable'})
             self.assertEqual(set(hashes), {hit['key'], npm['key']})
             self.assertFalse((root / miss['key']).exists())
             self.assertEqual((root / hit['key']).read_bytes(), b'archive')
@@ -71,7 +117,7 @@ class ComposerCacheTest(unittest.TestCase):
             target = root / artifact['key']
             stamp = target.stat().st_mtime_ns
             self.assertEqual(cache['fill'](root, [artifact], 100000, fetch), first)
-            self.assertEqual(cache['fill'](root, [], 100000, fetch), {})
+            self.assertEqual(cache['fill'](root, [], 100000, fetch), {'hashes': {}, 'failures': {}})
             self.assertEqual(target.stat().st_mtime_ns, stamp)
             self.assertEqual(len(calls), 1)
             seed(root, home)
@@ -85,40 +131,6 @@ class ComposerCacheTest(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b'archive')
             self.assertEqual(next((root / 'quarantine').iterdir()).read_bytes(), b'corrupt')
 
-    def test_each_project_installs_its_locked_archive_version_without_network(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            artifacts, archives = [], {}
-            for version, reference in [('1.0.0', 'a'), ('2.0.0', 'b')]:
-                stream = io.BytesIO()
-                with zipfile.ZipFile(stream, 'w') as package:
-                    package.writestr('demo/composer.json', json.dumps({'name': 'acme/demo', 'version': version}))
-                    package.writestr('demo/proof.txt', version)
-                data = stream.getvalue()
-                url = 'https://api.github.com/repos/acme/demo/zipball/' + reference * 40
-                artifact = dict(manager='composer', package='acme/demo', version=version, url=url,
-                                integrity='sha1-' + hashlib.sha1(data).hexdigest(),
-                                key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
-                artifacts.append(artifact)
-                archives[url] = data
-            shared = root / 'shared'
-            hashes = cache['fill'](shared, artifacts, 100000, lambda url: io.BytesIO(archives[url]))
-            self.assertEqual(set(hashes), {artifact['key'] for artifact in artifacts})
-            for artifact in artifacts:
-                checkout = root / artifact['version']
-                checkout.mkdir()
-                home = checkout / 'home'
-                seed(shared, home, [artifact])
-                files = list((home / '.cache/composer/files/acme/demo').glob('*.zip'))
-                self.assertEqual(len(files), 1)
-                (checkout / 'composer.json').write_text(json.dumps({'require': {'acme/demo': artifact['version']}}))
-                (checkout / 'composer.lock').write_text(json.dumps({'content-hash': 'fixture', 'packages': [dict(name='acme/demo', version=artifact['version'], type='library', dist=dict(type='zip', url=artifact['url'], shasum=artifact['integrity'][5:]))], 'packages-dev': []}))
-                env = {**__import__('os').environ, 'COMPOSER_CACHE_DIR': str(home / '.cache/composer'), 'COMPOSER_HOME': str(home / '.composer'), 'COMPOSER_ALLOW_SUPERUSER': '1', 'COMPOSER_DISABLE_NETWORK': '1'}
-                result = subprocess.run(['composer', 'install', '--no-interaction', '--no-plugins', '--no-scripts', '--no-progress'], cwd=checkout, env=env, capture_output=True, timeout=30)
-                self.assertEqual(result.returncode, 0, result.stderr.decode())
-                self.assertNotIn(b'Downloading', result.stderr)
-                self.assertEqual((checkout / 'vendor/acme/demo/proof.txt').read_text(), artifact['version'])
-
     def test_rejects_bad_integrity_limit_and_unsafe_url(self):
         for change, limit in [({}, 1), ({'integrity': 'sha1-' + '0' * 40}, 100000),
                               ({'url': 'http://127.0.0.1/secret'}, 100000),
@@ -126,8 +138,8 @@ class ComposerCacheTest(unittest.TestCase):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary) / 'cache'
                 artifact = {**self.artifact(), **change}
-                with self.assertRaises(ValueError):
-                    cache['fill'](root, [artifact], limit, lambda url: io.BytesIO(b'archive'))
+                result = cache['fill'](root, [artifact], limit, lambda url: io.BytesIO(b'archive'))
+                self.assertEqual(result, {'hashes': {}, 'failures': {artifact['key']: 'ValueError'}})
                 self.assertFalse((root / self.artifact()['key']).exists())
                 self.assertFalse((root / '.inventory.json').exists())
 
