@@ -185,7 +185,7 @@ These tick steps break or risk the bound today. Each one moves:
 | Turn preparation: the fetch before a turn, the turn file, and the review packet diff | About 1 s per SSH call at the p99, several per turn | A workspace step job, which stores the final message on the turn request |
 | Receipt read and clear, workspace snapshots, `hasCommitsSince`, and the settle metrics diff | About 1 s per SSH call at the p99 | A workspace step job |
 | The approval commit (in the verdict lease) | Verdict leases: p90 2 s | A workspace step job |
-| The `approval:` lease: fetch, final-review main merge, pull request read, pull request open, and reviewer requests | One lease of 248 s | The fetch to a workspace step job. The main merge is deleted by ADR 0223. The GitHub calls to the GitHub job. The push is already `PublishTaskVmCommit` |
+| The `approval:` lease: fetch, final-review main merge, pull request read, pull request open, and reviewer requests | One lease of 248 s | The fetch: a workspace step job. The main merge: deleted by ADR 0223. The GitHub calls and the push: the GitHub job and `PublishTaskVmCommit` |
 | Check start and topology start | About 1 s per SSH call | A workspace step job |
 | Check and topology status reads | About 1 s per SSH call, each tick | A status job, which needs no holder |
 | Baseline-retry fetch and reset, and the resume fast-forward (`TaskSettling.php:1166`) | About 1 s per SSH call | A workspace step job |
