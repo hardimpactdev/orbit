@@ -7,6 +7,7 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\OrphanNetworkSweep;
+use App\E2E\RouterLanFirewallFixture;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
@@ -16,12 +17,18 @@ use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologyTarget;
+use App\E2E\Value\VerificationReport;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
+use Symfony\Component\Process\Process;
 use Tests\Support\FakeIncus;
 
 /** A bootstrapped checkout on the issue's branch, with the real guest scripts. */
@@ -132,6 +139,45 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $te
 }
 
 describe('TopologyAcquirer', function () {
+    it('rechecks fresh Incus ownership and lease before every fixture guest operation', function (string $change) {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree] = acquirerFixture();
+        new Process(['git', 'branch', '-m', 'task-1791'], $worktree)->mustRun();
+        $request = new TopologyRequest(RouterLanFirewallFixture::ISSUE, $worktree);
+        $recipe = TopologyRecipe::compose(['app-dev', 'app-prod']);
+        $target = TopologyTarget::for($request->issue, new AttemptId(RouterLanFirewallFixture::ATTEMPT), $recipe);
+        $topology = new TopologyRecord(TopologyConstructionInputs::create($target, 1), new SourceState(str_repeat('a', 40), str_repeat('a', 40)), new VerificationReport(true, ['nodes.registered' => verificationProbeFixture()]));
+        $state = IssueState::forWorktree($request->issue, $worktree);
+        $state->writeAttempt($topology->attempt, new OperationId(str_repeat('c', 32)), $recipe);
+        $state->writeTopology($topology);
+        $state->writeMountToken();
+        foreach ($topology->instances as $instance) {
+            $incus->instances[$instance] = ['type' => 'virtual-machine', 'status' => 'Running', 'config' => [
+                'user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => $request->issue,
+                'user.orbit.e2e.attempt' => $topology->attempt->value,
+            ], 'devices' => ['root' => ['type' => 'disk', 'pool' => IncusHost::POOL, 'path' => '/'], 'eth0' => ['type' => 'nic', 'network' => $topology->network]]];
+        }
+        $incus->respond(function (string $instance, array $argv) use ($incus, $state, $recipe, $change): array {
+            if ($change === 'owner') {
+                $incus->instances[$instance]['config']['user.orbit.e2e.attempt'] = str_repeat('b', 32);
+            } elseif ($change === 'lease') {
+                $state->writeAttempt(new AttemptId(RouterLanFirewallFixture::ATTEMPT), new OperationId(str_repeat('b', 32)), $recipe);
+            } else {
+                $state->writeMountToken();
+            }
+
+            return [json_encode(['nodes' => [
+                ['id' => 2, 'name' => 'app-dev', 'status' => 'active', 'roles' => ['router'], 'cluster_id' => 1, 'lan_ip' => '10.232.1.11'],
+                ['id' => 3, 'name' => 'app-prod', 'status' => 'active', 'roles' => [], 'cluster_id' => 1, 'lan_ip' => '10.232.1.12'],
+                ['id' => 4, 'name' => 'operator', 'status' => 'active', 'roles' => [], 'cluster_id' => null],
+            ]], JSON_THROW_ON_ERROR), '', 0];
+        });
+
+        expect(fn () => $acquirer->firewallFixture($request, 'prepare', static function (): void {}))
+            ->toThrow(RuntimeException::class, $change === 'owner' ? 'identity does not match' : 'lease or mount identity changed');
+        expect($incus->execs)->toHaveCount(1)
+            ->and($incus->execs[0]['argv'])->toContain('runuser', 'node:list');
+    })->with(['owner', 'lease', 'mount']);
+
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);

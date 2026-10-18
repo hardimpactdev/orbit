@@ -281,12 +281,14 @@
             "concepts": [
                 "Access grant",
                 "Cluster",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Placement",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": [
                 "0219"
@@ -2172,7 +2174,8 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": [
                 "0222"

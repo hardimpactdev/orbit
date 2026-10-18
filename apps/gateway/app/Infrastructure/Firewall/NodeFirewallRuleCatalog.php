@@ -229,19 +229,25 @@ final readonly class NodeFirewallRuleCatalog
             return [];
         }
 
-        return array_map(
-            fn (Node $source): UfwManagedRule => $this->routerLanIngressRule(
-                (string) $source->lan_ip,
-                $destination,
-                $source->id,
-            ),
-            $policy->eligibleSources($node, $nodeOverrides, $clusterOverrides),
-        );
+        $rules = [];
+
+        foreach ($policy->eligibleSources($node, $nodeOverrides, $clusterOverrides) as $source) {
+            foreach (array_keys(RouterLanIngressPolicy::Families) as $prefix) {
+                $rules[] = $this->routerLanIngressRule((string) $source->lan_ip, $destination, $source->id, $prefix);
+            }
+        }
+
+        return $rules;
     }
 
-    public function routerLanIngressRule(string $source, string $destination, int $sourceNodeId): UfwManagedRule
-    {
-        $comment = new RouterLanIngressPolicy()->commentFor($sourceNodeId);
+    public function routerLanIngressRule(
+        string $source,
+        string $destination,
+        int $sourceNodeId,
+        string $prefix = RouterLanIngressPolicy::CommentPrefix,
+    ): UfwManagedRule {
+        $comment = new RouterLanIngressPolicy()->commentFor($sourceNodeId, $prefix);
+        $family = RouterLanIngressPolicy::Families[$prefix];
 
         return new UfwManagedRule(
             new UfwRuleShape(
@@ -250,8 +256,8 @@ final readonly class NodeFirewallRuleCatalog
                 direction: 'in',
                 source: $source,
                 destination: $destination,
-                port: '443',
-                protocol: 'tcp',
+                port: $family['port'],
+                protocol: $family['protocol'],
                 inInterface: null,
                 outInterface: null,
                 family: 'v4',
@@ -262,13 +268,13 @@ final readonly class NodeFirewallRuleCatalog
                 'allow',
                 'in',
                 'proto',
-                'tcp',
+                $family['protocol'],
                 'from',
                 $source,
                 'to',
                 $destination,
                 'port',
-                '443',
+                $family['port'],
                 'comment',
                 $comment,
             ],
