@@ -1040,7 +1040,7 @@ For a delta re-review, the retrieval command stages the candidate in a temporary
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
-The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. The implementer blocks only when ownership is unclear, the work needs live or shared resources beyond the task, access is missing, or a product decision needs the operator. The prompt says that the reviewer answers a blocked turn first. It gives no consult limits or causes, because the engine enforces them. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
+The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. The implementer blocks only when ownership is unclear, the work needs live or shared resources beyond the task, access is missing, or a product decision needs the operator. The prompt says that the reviewer answers a blocked turn first. It gives no consult causes or limits, because the reviewer sets the cause and the engine enforces the limits. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
 The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`. It does not edit or commit the code.
 

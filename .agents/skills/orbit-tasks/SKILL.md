@@ -21,7 +21,7 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 ### Documentation first
 
-Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit> --paths <planned-path>` for every planned path, including paths that do not exist yet; the start commit is the merge base with `origin/main`. The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask.
+Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit>` once, with one `--paths` for each planned path, including paths that do not exist yet; the start commit is the merge base with `origin/main`. The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask.
 
 Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
@@ -33,7 +33,7 @@ A subtask that changes the web UI gets a `review` deliverable for the phone and 
 
 ### Bugs
 
-The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. `pest --parallel` takes one path, so give it one test path, or one path plus `--filter`:
+The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. If the command runs `pest --parallel`, give it one test path, with `--filter` if needed, because ParaTest takes only one path:
 
 ```json
 {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
@@ -75,6 +75,6 @@ Create the group in Backlog with `tasks-create` for the Orbit Project, and its s
 
 ## Review a subtask
 
-Check the risk that the brief names first, then apply the quality bar.
+Check the risk that the brief names first. Then check the change against the quality bar; the blocking rule in the review prompt decides whether a finding blocks.
 
-The final review decides each open follow-up. A fixup fixes it, or the pull request summary records it as a limitation or as work for a later group.
+Follow-ups never block. The final review lists the open follow-ups under `Follow-ups` in its approval. When it opens the pull request, it puts any limitation a user must know in `--pr-summary`. The operator decides which follow-ups become a later group.
