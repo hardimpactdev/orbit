@@ -692,7 +692,7 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
             ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
-            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(0)
+            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(5)
             ->and(Task::topLevel()->where('assistance_reason', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')->count())->toBe(5);
         Exceptions::assertReportedCount(5);
 
@@ -763,12 +763,12 @@ describe('the abandoned workspace sweep', function (): void {
         $group = claim_hol_group($project, 'Attached');
         $workspace = claim_hol_workspace($project, $group, 'source_resolved');
         $group->taskable()->associate($workspace);
-        $group->forceFill([
+        test_update_task($group, [
             'status' => TaskGroupStatus::Cancelled,
             'reserved_at' => now()->subSeconds(30),
             'assistance_requested' => true,
             'assistance_reason' => RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.',
-        ])->save();
+        ]);
         $removed = claim_hol_recording_remover();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
@@ -784,12 +784,12 @@ describe('the abandoned workspace sweep', function (): void {
         $group = claim_hol_group($project, 'Merged');
         $workspace = claim_hol_workspace($project, $group, 'source_resolved');
         $group->taskable()->associate($workspace);
-        $group->forceFill([
+        test_update_task($group, [
             'status' => TaskGroupStatus::Settling,
             'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
             'assistance_requested' => true,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
-        ])->save();
+        ]);
         $removed = claim_hol_recording_remover();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)

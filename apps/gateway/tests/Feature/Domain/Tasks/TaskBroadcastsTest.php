@@ -104,7 +104,7 @@ describe('task broadcasts', function (): void {
         test_update_task($group->tasks[1], ['assistance_requested' => true, 'assistance_reason' => 'Private reason']);
         app(TaskBroadcasts::class)->flush();
 
-        $events = live_broadcasts();
+        $events = live_broadcasts(RecordEventType::TaskGroupUpdated);
         expect($events)->toHaveCount(1)
             ->and($events[0]->type)->toBe(RecordEventType::TaskGroupUpdated)
             ->and($events[0]->data)->toBe(['id' => $group->id, 'status' => 'reviewing', 'lines_added' => null, 'lines_deleted' => null, 'line_diff' => null])

@@ -159,7 +159,7 @@ it('allows a concurrent SQLite writer during a blocked remote correction fetch a
         $receipt = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'author' => 'implementer', 'body' => 'Ready.', 'posted_at' => now(), 'completion_attempt' => 2]);
         $task->update(['completion_handoff_comment_id' => $receipt->id]);
         TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $receipt->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed, 'failed_step' => 'invalid_deliverable', 'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('b', 40), 'tree_before' => str_repeat('d', 40), 'started_at' => now(), 'finished_at' => now()]);
-        $otherGroup = $group->replicate(['taskable_type', 'taskable_id']);
+        $otherGroup = $group->replicate(['taskable_type', 'taskable_id', ...\App\Domain\Tasks\TaskAssistance::Fields]);
         $otherGroup->save();
         $runner = new class($writer, $task->id, $change, $otherGroup->id) implements ProcessRunner
         {

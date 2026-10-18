@@ -512,12 +512,12 @@ it('credits a waiter admitted after review even when its request predates the ad
 
 it('adopts pre-lease ownership from another group using the same Instance before admitting new work', function (bool $remoteCheck): void {
     $first = tick_group();
-    $other = $first->replicate(['taskable_id', 'taskable_type']);
+    $other = $first->replicate(['taskable_id', 'taskable_type', ...\App\Domain\Tasks\TaskAssistance::Fields]);
     $other->save();
     // Corrupt pre-owner attachment: the current model correctly refuses this write.
     DB::table('tasks')->where('id', $other->id)->update(['taskable_id' => $first->taskable_id, 'taskable_type' => $first->getRawOriginal('taskable_type')]);
     $other->refresh();
-    $subtask = $first->tasks->first()->replicate();
+    $subtask = $first->tasks->first()->replicate(\App\Domain\Tasks\TaskAssistance::Fields);
     $subtask->parent_id = $other->id;
     $subtask->save();
     $other->unsetRelations();

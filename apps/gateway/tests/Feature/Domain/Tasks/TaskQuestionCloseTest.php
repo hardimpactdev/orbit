@@ -95,8 +95,8 @@ describe('closing a question', function (): void {
         $subtask = question_close_subtask($group);
         $resolution = question_close_resolution($subtask);
         $question = question_close_question($subtask, QuestionStatus::Escalated, $resolution->id);
-        test_update_task($group, ['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
-        test_update_task($subtask, ['assistance_requested' => false, 'assistance_kind' => AssistanceKind::Direction, 'assistance_reason' => 'Which mirror?']);
+        test_update_task($group, ['assistance_requested' => false, 'assistance_reason' => 'Which mirror?']);
+        test_update_task($subtask, ['assistance_requested' => false, 'assistance_reason' => 'Which mirror?']);
 
         $closed = app(CloseTaskQuestionAction::class)->execute($question, $status, '  Answered in resolution 2803.  ');
 
@@ -112,7 +112,7 @@ describe('closing a question', function (): void {
             ->and(Activity::query()->where('description', 'question closed')->sole()->properties['question_id'] ?? null)->toBe($question->id);
         foreach ([$group->fresh(), $subtask->fresh()] as $task) {
             expect($task?->assistance_requested)->toBeFalse()
-                ->and($task?->assistance_kind)->toBe(AssistanceKind::Direction)
+                ->and($task?->assistance_kind)->toBeNull()
                 ->and($task?->assistance_reason)->toBe('Which mirror?');
         }
         expect($subtask->fresh()?->questions)->toBe(2)
