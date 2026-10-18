@@ -7,6 +7,8 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ScheduleInspectionData;
 use App\Domain\Doctor\ScheduleStateInspector;
@@ -190,6 +192,9 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
 
     public int $inspections = 0;
 
+    /** @var list<string> */
+    public array $knownIds = [];
+
     public int $orphanScans = 0;
 
     public bool $orphanScanFails = false;
@@ -209,6 +214,7 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
     public function orphanIds(Node $node, array $knownIds): array
     {
         $this->orphanScans++;
+        $this->knownIds = $knownIds;
 
         if ($this->orphanScanFails) {
             throw new DoctorInspectionException;
@@ -217,3 +223,21 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
         return $this->orphans;
     }
 }
+
+it('passes all known intents to the standalone inventory without inspecting them again', function (): void {
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true), resources: new DoctorResources(DoctorResourceKind::Inventory)));
+
+    expect($this->inspector->knownIds)->toBe([$this->schedule->id])
+        ->and($this->inspector->inspections)->toBe(0)
+        ->and($this->inspector->orphanScans)->toBe(1)
+        ->and($report->issues)->toBeEmpty();
+});
+
+it('does not scan inventory after a Node observation already proved it unreachable', function (): void {
+    $this->inspector->orphanScanFails = true;
+
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(false, null, null, null), resources: new DoctorResources(DoctorResourceKind::Inventory)));
+
+    expect($this->inspector->orphanScans)->toBe(0);
+    expect($report->issues)->toBeEmpty();
+});

@@ -93,7 +93,7 @@ final readonly class UpCloudTaskVmImageBuilder
             $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
             $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
             $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
-            foreach (['packages', 'javascript', 'rust', 'agent', 'pi'] as $phase) {
+            foreach (RecipeImagePrograms::Phases as $phase) {
                 $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
             }
             $this->stage($progress, 'recipe-marker', fn () => $this->checked($builder, $shell->asRoot(

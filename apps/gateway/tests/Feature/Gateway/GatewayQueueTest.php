@@ -14,6 +14,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Jobs\Problems\CollectProblemSignals;
+use App\Jobs\Problems\PruneProblemBatches;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -96,21 +98,37 @@ describe('the schedule', function (): void {
             ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
     });
 
-    it('runs problem collection and filing itself, with their overlap locks, while the Gateway queue is set', function (): void {
+    it('queues collection without running Doctor in the scheduler', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $collect = gateway_queue_event('problems:collect');
+        expect($collect)->not->toBeInstanceOf(CallbackEvent::class);
+        expect($collect->expression)->toBe('*/10 * * * *');
+
+        Artisan::call('problems:collect');
+
+        $row = DB::table('jobs')->sole();
+        $job = unserialize(json_decode($row->payload, true)['data']['command']);
+        expect($row->queue)->toBe(GatewayQueue::Problems->value)
+            ->and($job)->toBeInstanceOf(CollectProblemSignals::class)
+            ->and([$job->timeout, $job->connection])->toBe([13, GatewayQueue::Connection]);
+    });
+
+    it('refuses fleet collection dispatch without a queue instead of running it inline', function (): void {
+        config(['orbit.gateway_queue.connection' => '']);
+
+        expect(fn () => Artisan::call('problems:collect'))
+            ->toThrow(RuntimeException::class, 'ORBIT_GATEWAY_QUEUE_CONNECTION is empty');
+    });
+
+    it('keeps Horizon observation and filing outside Horizon', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $horizon = gateway_queue_event('problems:horizon');
         $file = gateway_queue_event('problems:file');
 
-        expect($collect)->not->toBeInstanceOf(CallbackEvent::class)
-            ->and($collect->command)->toEndWith("'artisan' problems:collect")
-            ->and([$collect->expression, $collect->withoutOverlapping, $collect->expiresAt])->toBe(['*/10 * * * *', true, 15])
+        expect($horizon)->toBeInstanceOf(CallbackEvent::class)
+            ->and([$horizon->expression, $horizon->withoutOverlapping])->toBe(['*/10 * * * *', false])
             ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
-            ->and($file->command)->toEndWith("'artisan' problems:file")
             ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
-
-        $collect->run(app());
-
-        expect(DB::table('jobs')->count())->toBe(0);
     });
 
     it('lists tasks:tick under its own name, as the release smoke reads it', function (): void {
@@ -182,7 +200,8 @@ describe('Horizon', function (): void {
     it('works tasks with three processes, builds with two and task-vms with one, below the connection retry_after', function (): void {
         expect(config('horizon.use'))->toBe(GatewayQueue::Connection)
             ->and(config('horizon.fast_termination'))->toBeFalse()
-            ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
+            ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks', 'problems'], 3, 3])
+            ->and(config('horizon.defaults.tasks.balance'))->toBeFalse()
             ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds', 'builds-optional'], 2, 2])
             ->and(config('horizon.waits.gateway:builds-optional'))->toBe(3600)
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
@@ -316,4 +335,18 @@ describe(GatewayHorizon::class, function (): void {
             ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse()
             ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
     });
+});
+
+it('queues batch pruning and invokes the native command with structured options', function (): void {
+    config(['orbit.gateway_queue.connection' => 'services-valkey']);
+    $event = gateway_queue_event(PruneProblemBatches::class);
+    expect($event->expression)->toBe('0 0 * * *');
+    $event->run(app());
+    $row = DB::table('jobs')->sole();
+    $job = unserialize(json_decode($row->payload, true)['data']['command']);
+    expect($job)->toBeInstanceOf(PruneProblemBatches::class)
+        ->and($job->timeout)->toBe(13)->and($row->queue)->toBe('problems');
+    Artisan::shouldReceive('call')->once()->with('queue:prune-batches', ['--hours' => 24, '--unfinished' => 24, '--cancelled' => 24])->andReturn(0);
+
+    $job->handle();
 });

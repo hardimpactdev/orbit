@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -551,6 +552,11 @@ final class MaterializerToolManagerFake implements ToolManager
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string
     {
         return null;
+    }
+
+    public function installedInventory(Node $node): InstalledToolInventory
+    {
+        return new InstalledToolInventory([]);
     }
 
     public function installedVersion(Node $node, string $package): ?string

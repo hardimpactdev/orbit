@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -500,76 +501,40 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         return $this->decodeJsonString($result, 'candidate-version');
     }
 
-    public function installedVersion(Node $node, string $package): ?string
+    public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardNode($node);
-        $this->guardPackage($package);
-
-        $result = $this->commands->execute($node, $this->vpArguments($node, 'list', '-g', $package, '--json'));
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'installed-version',
-            message: 'The VP installed version probe failed.',
-        );
-
+        $result = $this->commands->execute($node, $this->vpArguments($node, 'list', '-g', '--json'), maxOutputBytes: 1_048_576);
+        $this->guardSuccessfulResult($result, 'installed-version', 'The VP installed inventory probe failed.');
         $decoded = json_decode($result->stdout);
-
         if (! is_array($decoded)) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The VP installed version probe returned malformed output.',
-                result: $result,
-            );
+            throw new ToolManagerException('installed-version', 'The VP installed inventory was malformed.', $result);
         }
-
-        if ($decoded === []) {
-            return null;
-        }
-
-        $matchedVersion = null;
-
+        $versions = [];
+        $unverifiable = [];
         foreach ($decoded as $entry) {
-            if (! is_object($entry)) {
-                throw new ToolManagerException(
-                    step: 'installed-version',
-                    message: 'The VP installed version probe returned malformed output.',
-                    result: $result,
-                );
+            if (! is_object($entry) || ! is_string($entry->name ?? null)) {
+                throw new ToolManagerException('installed-version', 'The VP installed inventory was malformed.', $result);
             }
-
-            $name = $entry->name ?? null;
-            $version = $entry->version ?? null;
-
-            if (
-                ! is_string($name)
-                || ! is_string($version)
-                || ! $this->isSafeString($name)
-                || ! $this->isSafeString($version)
-            ) {
-                throw new ToolManagerException(
-                    step: 'installed-version',
-                    message: 'The VP installed version probe returned malformed output.',
-                    result: $result,
-                );
-            }
-
-            if ($name !== $package) {
+            if (! $this->validatePackage($entry->name)) {
                 continue;
             }
+            if (! is_string($entry->version ?? null) || ! $this->isSafeString($entry->version)) {
+                $unverifiable[] = $entry->name;
 
-            if ($matchedVersion !== null) {
-                throw new ToolManagerException(
-                    step: 'installed-version',
-                    message: 'The VP installed version probe returned ambiguous output.',
-                    result: $result,
-                );
+                continue;
             }
-
-            $matchedVersion = $version;
+            $versions[$entry->name][] = $entry->version;
         }
 
-        return $matchedVersion;
+        return new InstalledToolInventory($versions, $result, $unverifiable);
+    }
+
+    public function installedVersion(Node $node, string $package): ?string
+    {
+        $this->guardPackage($package);
+
+        return $this->installedInventory($node)->versionFor($package);
     }
 
     public function normalizeVersion(string $rawVersion): ?string

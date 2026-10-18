@@ -12,6 +12,8 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
@@ -25,6 +27,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
 use App\Models\RouteRemovalResidue;
+use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
@@ -42,9 +45,18 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Node;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return [new DoctorResources(DoctorResourceKind::Rows, [$node->id])];
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $node = $context->node;
+        if ($context->select(new Collection([$node]))->isEmpty()) {
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 0, []);
+        }
         $inspection = $context->inspection;
         $issues = [];
         if ($node->status !== LifecycleStatus::Active) {

@@ -166,6 +166,8 @@ Homebrew can omit an installed formula or cask from `info` and still exit 0, inc
 
 A name present in `info` but absent from `list` makes that manager `incomplete`. A failed, malformed, or truncated name list also makes that manager `incomplete`. The scan does not report the `info` packages alone.
 
+When it checks installed packages, the Gateway skips Vite+ global names it cannot manage. An unreadable version affects only its named package. Other registered Tools stay verifiable.
+
 Vite+ reports each global root under the name it stored. A stored name that Orbit cannot manage, including a legacy npm name with capitals such as `JSONStream`, stays in that list. Its adoption is `unsupported`, its block is `unsupported_source`, and it is not registered. The `vp` scan is `incomplete` when a name is not a string, is empty, is longer than 255 characters, contains a control character, or appears twice. Those cases are not an inventory.
 
 Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `incomplete`, `absent`, `unsupported`, or `conflicting` does not fail the HTTP request.
@@ -276,6 +278,8 @@ A caller sends only the Node, the manager, the package name, and an optional ver
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
+When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser.
+
 A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
 The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range records the Tool as `failed` with `tool.version_constraint_blocked` (HTTP 422, outcome `blocked_by_constraint`) and installs nothing. Remove that row, or retry with a constraint the candidate satisfies. The Gateway never searches for another matching version and never downgrades. When the candidate is not SemVer, the same failed row is kept and the code is `tool.candidate_version_unparseable`. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
@@ -338,7 +342,7 @@ When the official cask is gone, Homebrew says `homebrew/cask/<token>` is unavail
 
 Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed` and `list --cask -1`. A cask that `list` names and `info` omits stays in discovery with `unsupported_source`.
 
-The installed-version read uses `list --versions --cask` with the plain token. Homebrew prints the token and version when the cask is installed. When it is absent, that command exits 1 and prints nothing. A silent exit 1 is not absence by itself. The Gateway then reads `info --json=v2 --cask --installed`. It reports no installed version only when that token is missing, or when the entry's tap is not `homebrew/cask`.
+The installed-version read uses `info --json=v2 --cask --installed`. Only an entry from `homebrew/cask` counts as the official Tool. A same-token cask from another tap does not count. An unreadable installed version affects only that cask.
 
 The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
 

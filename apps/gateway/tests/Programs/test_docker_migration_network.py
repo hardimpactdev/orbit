@@ -75,11 +75,14 @@ class DockerMigrationNetworkTest(unittest.TestCase):
     def start_daemon(self, data):
         self.stop_daemon()
         self.log = (self.root / (data.name + '.log')).open('a')
-        config = self.root / 'daemon.json'
-        config.write_text('{}')
+        fresh = data == self.root / 'engine'
+        config = self.root / ('daemon.json' if fresh else 'original-daemon.json')
+        if not fresh:
+            config.write_text(json.dumps({'data-root': str(data), 'log-driver': 'json-file'}))
+        root_options = ['--data-root=' + str(data)] if fresh else []
         self.daemon = subprocess.Popen(
             ['dockerd', '--config-file=' + str(config), '--host=unix://' + str(self.root / 'docker.sock'),
-             '--data-root=' + str(data), '--exec-root=' + str(self.root / 'exec'),
+             *root_options, '--exec-root=' + str(self.root / 'exec'),
              '--pidfile=' + str(self.root / 'docker.pid'), '--bridge=none', '--iptables=false',
              '--ip6tables=false', '--ip-forward=false', '--ip-masq=false', '--storage-driver=vfs'],
             stdout=self.log, stderr=self.log, start_new_session=True)
@@ -99,8 +102,12 @@ class DockerMigrationNetworkTest(unittest.TestCase):
             connection.sock.connect(str(self.root / 'docker.sock'))
 
         def service(argv, **kwargs):
+            if argv[:2] == ['systemctl', 'show']:
+                return subprocess.CompletedProcess(argv, 0, 'loaded', '')
             if argv[:2] == ['systemctl', 'stop']:
                 self.stop_daemon()
+            elif argv == ['systemctl', 'mask', 'containerd.service']:
+                pass  # The namespace has no system containerd service or host systemd access.
             elif argv[:2] == ['systemctl', 'start']:
                 self.start_daemon(self.root / 'engine')
             elif argv != ['systemctl', 'daemon-reload']:
@@ -118,7 +125,8 @@ class DockerMigrationNetworkTest(unittest.TestCase):
             network = module.api('GET', '/networks/' + created['Id'])
             bridge = 'br-' + network['Id'][:12]
             original_index = json.loads(self.command('ip', '-j', 'link', 'show', bridge).stdout)[0]['ifindex']
-            state = {'volumes': [], 'networks': [network]}
+            state = {'volumes': [], 'networks': [network],
+                     'daemon': (self.root / 'original-daemon.json').read_bytes().hex()}
             self.stop_daemon()
             self.assertEqual(json.loads(self.command('ip', '-j', 'link', 'show', bridge).stdout)[0]['ifindex'], original_index)
             self.assertIn(bridge, self.command('ip', 'route', 'show', '172.30.0.0/24').stdout)
@@ -154,6 +162,10 @@ class DockerMigrationNetworkTest(unittest.TestCase):
             finally:
                 peer.terminate()
                 peer.wait(timeout=5)
+            self.assertEqual(module.api('GET', '/info')['DockerRootDir'], str(self.root / 'engine'))
+            self.start_daemon(self.root / 'original')
+            self.assertEqual(module.api('GET', '/info')['DockerRootDir'], str(self.root / 'original'))
+            self.assertEqual(module.api('GET', '/networks/app-network')['Id'], network['Id'])
 
 
 if __name__ == '__main__':

@@ -110,7 +110,7 @@ describe(AptToolManager::class, function (): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 3.0.3 (amd64)\nSupported modules:\n"),
             apt_result("jq:\n  Candidate: 1:2.4.3-1ubuntu2\n"),
-            apt_result("install ok installed\n1:2.4.3-1ubuntu2\n"),
+            apt_result("jq\tinstall ok installed\t1:2.4.3-1ubuntu2\n"),
             apt_result(),
             apt_result(),
             apt_result("Remv jq [1.7.1-3ubuntu0.26.04.1]\n"),
@@ -134,7 +134,7 @@ describe(AptToolManager::class, function (): void {
         expect($ssh->arguments())->toBe([
             ['apt-get', '--version'],
             ['apt-cache', 'policy', '--', 'jq'],
-            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
+            ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
             ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
             ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
             ['apt-get', '--simulate', 'remove', '--', 'jq'],
@@ -168,27 +168,27 @@ describe(AptToolManager::class, function (): void {
 
     it('returns null for the exact not-installed status', function (): void {
         [$manager, $ssh] = apt_tool_manager([
-            apt_result("unknown ok not-installed\n"),
+            apt_result("jq\tunknown ok not-installed\t\n"),
         ]);
 
         $version = $manager->installedVersion(apt_tool_node(), 'jq');
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
+            ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
         ]);
     });
 
     it('returns null for an exact removed dpkg status with a retained version', function (string $status): void {
         [$manager, $ssh] = apt_tool_manager([
-            apt_result("{$status}\n1:2.4.3-1ubuntu2\n"),
+            apt_result("jq\t{$status}\t1:2.4.3-1ubuntu2\n"),
         ]);
 
         $version = $manager->installedVersion(apt_tool_node(), 'jq');
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
+            ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
         ]);
     })->with([
         'deinstall with retained configuration' => ['deinstall ok config-files'],
@@ -197,19 +197,16 @@ describe(AptToolManager::class, function (): void {
         'purge with an absent package' => ['purge ok not-installed'],
     ]);
 
-    it('returns null for the exact dpkg no-record miss', function (): void {
+    it('returns null for a package missing from the installed inventory', function (): void {
         [$manager, $ssh] = apt_tool_manager([
-            apt_result(
-                exitCode: 1,
-                stderr: "dpkg-query: no packages found matching tree\n",
-            ),
+            apt_result("jq\tinstall ok installed\t1.7.1\n"),
         ]);
 
         $version = $manager->installedVersion(apt_tool_node(), 'tree');
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'tree'],
+            ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
         ]);
     });
 
@@ -293,11 +290,11 @@ describe(AptToolManager::class, function (): void {
             'ssh',
         ],
         'truncated' => [apt_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
-        'missing version' => [apt_result("install ok installed\n"), 'installed-version'],
-        'duplicate version' => [apt_result("install ok installed\n1.0.0\n2.0.0\n"), 'installed-version'],
-        'unrecognized status' => [apt_result("hold ok installed\n1.0.0\n"), 'installed-version'],
-        'control bearing' => [apt_result("install ok installed\n1.0\0hidden\n"), 'installed-version'],
-        'oversized' => [apt_result("install ok installed\n".str_repeat('1', times: 256)."\n"), 'installed-version'],
+        'missing version' => [apt_result("jq\tinstall ok installed\n"), 'installed-version'],
+        'duplicate version' => [apt_result("jq\tinstall ok installed\t1.0.0\njq\tinstall ok installed\t2.0.0\n"), 'installed-version'],
+        'unrecognized status' => [apt_result("jq\thold ok installed\t1.0.0\n"), 'installed-version'],
+        'control bearing' => [apt_result("jq\tinstall ok installed\t1.0\0hidden\n"), 'installed-version'],
+        'oversized' => [apt_result("jq\tinstall ok installed\t".str_repeat('1', times: 256)."\n"), 'installed-version'],
     ]);
 
     it('fails closed and sanitizes failed mutations', function (
@@ -394,9 +391,9 @@ describe(AptToolManager::class, function (): void {
     it('adopts an ordinary apt package and refuses a bootstrap package without installing', function (): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 2.8.3 (amd64)\n"),
-            apt_result("install ok installed\n28.0.0\n"),
+            apt_result("docker.io\tinstall ok installed\t28.0.0\n"),
             apt_result("apt 2.8.3 (amd64)\n"),
-            apt_result("install ok installed\n1.7.1\n"),
+            apt_result("jq\tinstall ok installed\t1.7.1\n"),
         ]);
         $node = apt_tool_node();
 
@@ -429,7 +426,7 @@ describe(AptToolManager::class, function (): void {
     it('blocks adoption of installed recipe PHP and Git packages as protected', function (string $package): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 2.8.3 (amd64)\n"),
-            apt_result("install ok installed\n8.5.11-1\n"),
+            apt_result("{$package}\tinstall ok installed\t8.5.11-1\n"),
         ]);
 
         expect($manager->inspectForAdoption(apt_tool_node(), $package))
@@ -440,7 +437,7 @@ describe(AptToolManager::class, function (): void {
     it('treats a missing apt package as absent during adoption', function (): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 2.8.3 (amd64)\n"),
-            apt_result(exitCode: 1, stderr: "dpkg-query: no packages found matching jq\n"),
+            apt_result(),
         ]);
 
         expect($manager->inspectForAdoption(apt_tool_node(), 'jq'))

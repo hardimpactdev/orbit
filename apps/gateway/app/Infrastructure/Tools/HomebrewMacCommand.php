@@ -139,6 +139,13 @@ final readonly class HomebrewMacCommand
 
     public function __construct(private RemoteToolCommandRunner $commands) {}
 
+    public function installedInventory(Node $node, bool $casks): CommandResult
+    {
+        $arguments = $casks ? ['info', '--json=v2', '--cask', '--installed'] : ['list', '--versions', '--formula'];
+
+        return $this->commands->execute($node, $this->brew($node, false, $arguments), maxOutputBytes: 1_048_576);
+    }
+
     public function resolvePrefix(Node $node): string
     {
         return $this->resolveScope($node)->prefix;

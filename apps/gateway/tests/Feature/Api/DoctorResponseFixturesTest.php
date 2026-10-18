@@ -80,7 +80,7 @@ describe('doctor discovery fixtures', function (): void {
         $sha = str_repeat('cd', 32);
         $toolsBefore = Tool::query()->count();
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
-            doctor_fixture_result('', 1),
+            doctor_fixture_result(''),
             doctor_fixture_result("/home/linuxbrew/.linuxbrew\n"),
             doctor_fixture_result("x86_64\n"),
             doctor_fixture_result(doctor_fixture_json([

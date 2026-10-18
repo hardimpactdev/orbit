@@ -13,8 +13,11 @@ enum GatewayQueue: string
     /** The Redis queue connection of every Gateway job. */
     public const string Connection = 'gateway';
 
-    /** Short jobs that may run side by side: the scheduled commands and the publish of an approved commit. */
+    /** Scheduled commands and approved-commit publication. */
     case Tasks = 'tasks';
+
+    /** Bounded problem collection, below tasks in the same supervisor. */
+    case Problems = 'problems';
 
     /** Task VM provision to destroy, the pool refill, and the host sweep, one at a time and in order. */
     case TaskVms = 'task-vms';

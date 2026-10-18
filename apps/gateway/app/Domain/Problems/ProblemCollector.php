@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Problems;
 
-use App\Actions\Doctor\RunDoctorAction;
+use App\Actions\Doctor\ProcessDoctorProbe;
+use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Logs\LogRedactor;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\StoredInteger;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Activity;
+use App\Models\Node;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
+use App\Models\Process;
 use App\Models\Task;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +31,8 @@ use Throwable;
 final readonly class ProblemCollector
 {
     public function __construct(
-        private RunDoctorAction $doctor,
+        private ProcessDoctorProbe $processDoctor,
+        private NodeAccessAuthorizer $nodes,
         private GatewayLogLocator $logs,
         private GatewayLogReader $reader,
         private ProblemLogParser $parser,
@@ -43,12 +49,6 @@ final readonly class ProblemCollector
         }
 
         $failures = [];
-
-        try {
-            $this->collectDoctor();
-        } catch (Throwable $exception) {
-            $failures[] = $exception;
-        }
 
         try {
             $this->collectActivity();
@@ -71,6 +71,33 @@ final readonly class ProblemCollector
         return $failures;
     }
 
+    /** Record Horizon health even when its queue workers cannot collect the fleet. */
+    public function collectHorizon(): void
+    {
+        $id = $this->nodes->activeGatewayId();
+        $gateway = $id === null ? null : Node::query()->find($id);
+        if (! $gateway instanceof Node) {
+            return;
+        }
+        $process = GatewayHorizon::find($gateway);
+
+        if (! $process instanceof Process) {
+            return;
+        }
+
+        $issue = $this->processDoctor->inspectProcess($process);
+
+        if ($issue === null) {
+            return;
+        }
+
+        DB::transaction(fn () => $this->record(
+            $this->doctorFingerprint($issue),
+            ProblemSource::Doctor,
+            ['expected' => $issue->expected, 'observed' => $issue->observed, 'summary' => $issue->summary],
+        ));
+    }
+
     /**
      * Records one pushed release alert under `release|{key}`. Stored is false when the fingerprint is suppressed.
      *
@@ -90,46 +117,17 @@ final readonly class ProblemCollector
         return ['fingerprint' => $fingerprint, 'stored' => true];
     }
 
-    private function collectDoctor(): void
+    public function recordDoctor(DoctorReportData $report): void
     {
-        $issues = $this->doctorIssues($this->doctor->executeForFleet());
-
+        $issues = $this->doctorIssues($report);
         DB::transaction(function () use ($issues): void {
-            $state = $this->lockedState();
-            $resume = $state->doctor_resume_key;
-            $pending = [];
-
             foreach ($issues as $issue) {
-                if (is_string($resume) && $resume !== '' && strcmp($issue['fingerprint'], $resume) <= 0) {
-                    continue;
-                }
-
-                $pending[] = $issue;
-            }
-
-            $batch = [];
-
-            foreach ($pending as $issue) {
-                $last = $batch === [] ? null : array_last($batch)['fingerprint'];
-
-                if (count($batch) >= 200 && $issue['fingerprint'] !== $last) {
-                    break;
-                }
-
-                $batch[] = $issue;
-            }
-
-            foreach ($batch as $issue) {
                 $this->record($issue['fingerprint'], ProblemSource::Doctor, [
                     'expected' => $issue['expected'],
                     'observed' => $issue['observed'],
                     'summary' => $issue['summary'],
                 ]);
             }
-
-            $lastFingerprint = $batch === [] ? null : array_last($batch)['fingerprint'];
-            $state->doctor_resume_key = count($batch) < count($pending) ? $lastFingerprint : null;
-            $state->save();
         });
     }
 
@@ -328,13 +326,8 @@ final readonly class ProblemCollector
                         continue;
                     }
 
-                    $resource = $issue->resourceId;
-                    $segment = $resource === null || $resource === '' ? 'none' : (string) $resource;
                     $issues[] = [
-                        'fingerprint' => $this->fingerprint(
-                            ProblemSource::Doctor,
-                            $issue->code.'|'.$issue->resourceType.'|'.$segment,
-                        ),
+                        'fingerprint' => $this->doctorFingerprint($issue),
                         'expected' => $issue->expected,
                         'observed' => $issue->observed,
                         'summary' => $issue->summary,
@@ -346,6 +339,14 @@ final readonly class ProblemCollector
         usort($issues, static fn (array $left, array $right): int => strcmp($left['fingerprint'], $right['fingerprint']));
 
         return $issues;
+    }
+
+    private function doctorFingerprint(DoctorIssueData $issue): string
+    {
+        $resource = $issue->resourceId;
+        $segment = $resource === null || $resource === '' ? 'none' : (string) $resource;
+
+        return $this->fingerprint(ProblemSource::Doctor, $issue->code.'|'.$issue->resourceType.'|'.$segment);
     }
 
     private function isServerClass(Activity $activity): bool
