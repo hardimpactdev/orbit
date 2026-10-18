@@ -7,7 +7,6 @@ use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CloseTaskQuestionAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskCommentType;

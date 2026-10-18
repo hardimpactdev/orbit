@@ -15,6 +15,7 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -35,6 +36,9 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
+use App\Models\Task;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -431,22 +435,22 @@ function test_assistance_attributes(AssistanceKind $kind, ?string $question, str
 }
 
 /** Seed current task assistance through the same writer as production. */
-function test_update_task(\App\Models\Task|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\Relation $task, array $attributes): bool
+function test_update_task(Task|Builder|Relation $task, array $attributes): bool
 {
-    if (! $task instanceof \App\Models\Task) {
+    if (! $task instanceof Task) {
         foreach ($task->get() as $record) {
             test_update_task($record, $attributes);
         }
 
         return true;
     }
-    $assistance = array_intersect_key($attributes, array_flip(\App\Domain\Tasks\TaskAssistance::Fields));
+    $assistance = array_intersect_key($attributes, array_flip(TaskAssistance::Fields));
     $task->update(array_diff_key($attributes, $assistance));
     if ($assistance !== []) {
         $requested = $assistance['assistance_requested'] ?? $task->assistance_requested;
         $kind = $requested ? ($assistance['assistance_kind'] ?? $task->assistance_kind ?? AssistanceKind::Failure) : null;
         $kind = is_string($kind) ? AssistanceKind::from($kind) : $kind;
-        \App\Domain\Tasks\TaskAssistance::apply($task, $kind,
+        TaskAssistance::apply($task, $kind,
             $assistance['assistance_question'] ?? $task->assistance_question,
             $assistance['assistance_reason'] ?? $task->assistance_reason,
             replaceFailure: true, replaceDirection: true);
@@ -456,9 +460,9 @@ function test_update_task(\App\Models\Task|\Illuminate\Database\Eloquent\Builder
 }
 
 /** Create first, then request assistance against the stored task. */
-function test_create_task(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\Relation $query, array $attributes): \App\Models\Task
+function test_create_task(Builder|Relation $query, array $attributes): Task
 {
-    $assistance = array_intersect_key($attributes, array_flip(\App\Domain\Tasks\TaskAssistance::Fields));
+    $assistance = array_intersect_key($attributes, array_flip(TaskAssistance::Fields));
     $task = $query->create(array_diff_key($attributes, $assistance));
     test_update_task($task, $assistance);
 

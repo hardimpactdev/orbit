@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\LifecycleStatus;
@@ -86,7 +87,7 @@ describe('task broadcasts', function (): void {
         app(TaskBroadcasts::class)->flush();
         Event::fake([RecordBroadcast::class]);
 
-        app(\App\Actions\Tasks\CancelTaskGroupAction::class)->execute($group);
+        app(CancelTaskGroupAction::class)->execute($group);
         app(TaskBroadcasts::class)->flush();
 
         $events = live_broadcasts(RecordEventType::TaskGroupUpdated);

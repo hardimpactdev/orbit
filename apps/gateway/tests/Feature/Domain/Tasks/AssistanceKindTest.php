@@ -6,11 +6,15 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Models\Activity;
+use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskComment;
 use Illuminate\Support\Facades\DB;
 
 function assistance_kind_group(): Task
@@ -219,7 +223,6 @@ it('does not clear a reopened request when an ended model saves unrelated fields
         ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(0);
 });
 
-
 it('does not invent a clear event for reason-only reservation notes', function (): void {
     $group = assistance_kind_group();
     TaskAssistance::apply($group, reason: 'The group stayed reserved too long.');
@@ -251,22 +254,21 @@ it('refuses direct model changes to assistance', function (array $attributes): v
     'reason' => [['assistance_reason' => 'The check failed.']],
 ]);
 
-
 it('links resolution clears to their comment author and HTTP request', function (): void {
     $group = assistance_kind_group();
     $task = $group->tasks->sole();
-    $reason = (new \App\Domain\Tasks\TaskTopologyFailedException('Preparation failed.'))->getMessage();
+    $reason = (new TaskTopologyFailedException('Preparation failed.'))->getMessage();
     TaskAssistance::apply($task, AssistanceKind::Failure, reason: $reason);
     TaskAssistance::apply($group, AssistanceKind::Failure, reason: $reason);
-    $gateway = \App\Models\Node::query()->create(['name' => 'assistance-http', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.81', 'public_ssh_host' => '192.0.2.81']);
+    $gateway = Node::query()->create(['name' => 'assistance-http', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.81', 'public_ssh_host' => '192.0.2.81']);
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
-    app(\App\Domain\Tasks\TaskExtensionState::class)->enable();
+    app(TaskExtensionState::class)->enable();
     $requestId = 'bb94949e-6a5f-419c-872a-14fa89f5cc61';
 
     $response = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Try again.', 'author' => 'operator'])->assertCreated();
 
-    $comment = \App\Models\TaskComment::query()->findOrFail($response->json('data.id'));
+    $comment = TaskComment::query()->findOrFail($response->json('data.id'));
     $entries = Activity::query()->where('description', 'assistance cleared')->whereIn('subject_id', [$group->id, $task->id])->get();
     expect($entries)->toHaveCount(2);
     foreach ($entries as $entry) {

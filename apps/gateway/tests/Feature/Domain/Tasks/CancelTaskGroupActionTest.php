@@ -22,6 +22,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -238,7 +239,7 @@ it('cancels an unreachable Node without pushing and the sweep retries removal', 
         ->and($running->fresh()?->status)->toBe(TaskStatus::Cancelled)
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 
-    expect(\App\Models\Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())->toBe(['assistance requested']);
+    expect(Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())->toBe(['assistance requested']);
 
     $again = app(CancelTaskGroupAction::class)->execute($cancelled);
 

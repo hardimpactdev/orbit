@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWait;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -480,7 +481,7 @@ describe('the stale reservation sweep', function (): void {
 
         expect($stranded->fresh()?->status)->toBe(TaskGroupStatus::Running)
             ->and($stranded->fresh()?->assistance_reason)->toBeNull()
-            ->and(\App\Models\Activity::query()->where('subject_id', $stranded->id)->whereIn('description', ['assistance requested', 'assistance changed', 'assistance cleared'])->count())->toBe(0);
+            ->and(Activity::query()->where('subject_id', $stranded->id)->whereIn('description', ['assistance requested', 'assistance changed', 'assistance cleared'])->count())->toBe(0);
     });
 
     it('preserves operator direction while releasing an expired reservation', function (): void {

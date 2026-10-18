@@ -50,6 +50,7 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\JevDecision;
@@ -2558,7 +2559,7 @@ it('uses group-only observation assistance for a consult outage and clears it on
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->agent_unavailable_since)->toBeNull()
         ->and($group->fresh()?->agent_unavailable_notified_at)->toBeNull();
-    expect(\App\Models\Activity::query()->where('subject_id', $group->id)->whereIn('description', ['assistance requested', 'assistance cleared'])->pluck('description')->all())
+    expect(Activity::query()->where('subject_id', $group->id)->whereIn('description', ['assistance requested', 'assistance cleared'])->pluck('description')->all())
         ->toBe(['assistance requested', 'assistance cleared']);
 });
 
