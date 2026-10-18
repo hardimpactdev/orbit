@@ -1149,8 +1149,11 @@
             "title": "ADR 0224: Give each task group one workspace holder and one sender",
             "kind": "decision",
             "components": [
+                "apps/cli",
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Activity",
@@ -1170,6 +1173,8 @@
                 "0200",
                 "0210",
                 "0211",
+                "0212",
+                "0218",
                 "0224"
             ]
         },

@@ -220,7 +220,7 @@ Orbit counts a race only when it occurs in testing, deploying, or production.
 - A second Gateway host does not exist.
 - A lost Pi runtime with a live turn did not occur in 1,321 leases.
 
-A race that later occurs gets its own decision with its data.
+When another race occurs, it gets its own decision with its data.
 
 ### Group 1758 and group 1731
 
