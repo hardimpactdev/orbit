@@ -23,6 +23,9 @@ usage: bin/e2e-topology <action> ISSUE [...]
   sync    ISSUE [--quick]         migrate the Gateway and re-verify the mounted source identity;
                                   --quick skips readiness verification and keeps the recorded binding
   web     ISSUE                   foreground web dev session in the operator; publishes on host loopback
+  firewall-fixture ISSUE OPERATION --record=LABEL
+                                  fixed TASK-1791 Router LAN acceptance control; prepare, overlap, narrow,
+                                  probe, rollback, restore or inspect (no arbitrary privileged command)
   verify  ISSUE                   verify the topology
   status  ISSUE                   report the topology from <worktree>/.e2e/
   release ISSUE                   release the topology
@@ -37,7 +40,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|spawn|logs|kill|sync|web|verify|status|release)
+    acquire|shell|exec|spawn|logs|kill|sync|web|firewall-fixture|verify|status|release)
         # exec keeps the public PID for the foreground PHP owner, including TERM/HUP ownership.
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;

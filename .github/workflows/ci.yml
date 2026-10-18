@@ -848,6 +848,16 @@ jobs:
         if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target aarch64-unknown-linux-musl
 
+      # Keep this after the builds so a version bump can prove its binaries before tagging.
+      # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      - name: Check agent release delivery
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m unittest discover -s tools -p 'test_check_agent_release.py'
+          python3 tools/check_agent_release.py
+
   desktop:
     name: Desktop app
     runs-on: ubuntu-26.04

@@ -4,20 +4,25 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Actions\ProxyCli\ReconvergeProxyCliConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionProfile;
+use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateDatabaseConnectionAction
 {
-    public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
+    /** @param iterable<DatabaseConnectionUpdateHook> $hooks */
+    public function __construct(
+        #[Tag(DatabaseConnectionUpdateHook::class)] private iterable $hooks,
+        private RecordEventBroadcaster $broadcaster,
+    ) {}
 
     public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): DatabaseConnection
     {
@@ -45,19 +50,25 @@ final readonly class UpdateDatabaseConnectionAction
                 }
             }
 
-            app(ReconvergeProxyCliConnectionAction::class)->validate($proposed);
+            foreach ($this->hooks as $hook) {
+                $hook->validate($proposed);
+            }
             $locked->update($attributes);
 
             return $locked->refresh();
         });
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::DatabaseUpdated,
-            $result->id,
-            DatabaseConnectionData::fromModel($result)->toArray(),
-        );
+        DB::afterCommit(function () use ($result): void {
+            $this->broadcaster->broadcast(
+                RecordEventType::DatabaseUpdated,
+                $result->id,
+                DatabaseConnectionData::fromModel($result)->toArray(),
+            );
 
-        app(ReconvergeProxyCliConnectionAction::class)->execute($result);
+            foreach ($this->hooks as $hook) {
+                $hook->afterCommit($result);
+            }
+        });
 
         return $result;
     }

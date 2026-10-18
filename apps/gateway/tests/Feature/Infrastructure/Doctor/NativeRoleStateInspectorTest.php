@@ -297,6 +297,64 @@ function role_state_inspector(RoleInspectorSshExecutor $ssh): NativeRoleStateIns
     );
 }
 
+it('reports ineligible or unreadable Router LAN rules even with no desired members', function (string $family, string $protocol, string $port, bool $broad, bool $empty): void {
+    [$router, $member] = router_lan_topology();
+    if ($empty) {
+        $member->update(['cluster_id' => null]);
+    }
+    $lines = ['Status: active'];
+    if (! $empty) {
+        foreach ([['https', 'tcp', '443'], ['dns-udp', 'udp', '53'], ['dns-tcp', 'tcp', '53']] as $index => [$name, $proto, $target]) {
+            $lines[] = '[ '.($index + 1)."] 10.20.0.10 {$target}/{$proto} ALLOW IN 10.20.0.11 # orbit:router-lan-{$name}:{$member->id}";
+        }
+    }
+    $target = ($broad ? '' : '10.20.0.10 ').$port.($protocol === 'any' ? '' : '/'.$protocol);
+    $lines[] = "[ 9] {$target} ALLOW IN 10.20.0.99 # orbit:router-lan-{$family}:999";
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"), role_inspector_result("1\n"),
+        role_inspector_result(implode("\n", $lines)."\n"), role_inspector_result("v2.11.4\n"),
+    ]);
+    $role = $router->roles()->firstOrFail();
+
+    expect(role_state_inspector($ssh)->inspect($role)->firewallProjectionMatches)->toBeFalse();
+    expect(array_filter($ssh->calls, static fn (array $call): bool => $call['command']->arguments === ['sudo', 'ufw', 'status', 'numbered']))->toHaveCount(1);
+})->with([
+    'HTTPS explicit protocol' => ['https', 'tcp', '443', false],
+    'UDP explicit protocol' => ['dns-udp', 'udp', '53', false],
+    'TCP explicit protocol' => ['dns-tcp', 'tcp', '53', false],
+    'HTTPS port only' => ['https', 'any', '443', false],
+    'UDP port only' => ['dns-udp', 'any', '53', false],
+    'TCP port only' => ['dns-tcp', 'any', '53', false],
+    'HTTPS broad port' => ['https', 'any', '443', true],
+    'UDP broad port' => ['dns-udp', 'any', '53', true],
+    'TCP broad port' => ['dns-tcp', 'any', '53', true],
+    'HTTPS range' => ['https', 'any', '440:443', true],
+    'UDP range' => ['dns-udp', 'any', '50:53', true],
+    'TCP range' => ['dns-tcp', 'any', '50:53', true],
+    'HTTPS unreadable' => ['https', 'any', 'OpenSSH', true],
+    'UDP unreadable' => ['dns-udp', 'any', 'OpenSSH', true],
+    'TCP unreadable' => ['dns-tcp', 'any', 'OpenSSH', true],
+])->with(['populated desired' => false, 'empty desired' => true]);
+
+it('accepts the exact Router families and ignores other rules but rejects IPv6 residue', function (bool $ipv6): void {
+    [$router, $member] = router_lan_topology();
+    $output = "Status: active\n";
+    foreach ([['https', 'tcp', '443'], ['dns-udp', 'udp', '53'], ['dns-tcp', 'tcp', '53']] as $index => [$name, $proto, $port]) {
+        $output .= '[ '.($index + 1)."] 10.20.0.10 {$port}/{$proto} ALLOW IN 10.20.0.11 # orbit:router-lan-{$name}:{$member->id}\n";
+    }
+    $output .= "[ 7] OpenSSH ALLOW IN Anywhere # orbit:router-lan-https-operator\n";
+    $output .= "[ 8] 53/udp ALLOW IN 10.20.0.98 # orbit:router-lan-dns-udp-operator\n";
+    if ($ipv6) {
+        $output .= "[ 9] 53/udp (v6) ALLOW IN Anywhere (v6) # orbit:router-lan-dns-udp:999\n";
+    }
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"), role_inspector_result("1\n"),
+        role_inspector_result($output), role_inspector_result("v2.11.4\n"),
+    ]);
+
+    expect(role_state_inspector($ssh)->inspect($router->roles()->firstOrFail())->firewallProjectionMatches)->toBe(! $ipv6);
+})->with([false, true]);
+
 function role_inspector_assignment(RoleName $role): NodeRole
 {
     $node = new Node([

@@ -6,6 +6,7 @@ import struct
 from pathlib import Path
 import time
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('collector', Path(__file__).resolve().parents[4] / 'resources/proxycli/server.py')
 m = importlib.util.module_from_spec(spec)
@@ -17,6 +18,20 @@ class Cache:
     def set(self, key, value, seconds=None): self.values[key] = value
     def acquire(self, *args): return True
     def release(self, *args): pass
+
+class StartupTests(unittest.TestCase):
+    def test_requires_gateway_listener_port_before_starting(self):
+        with patch.dict(m.os.environ, {}, clear=True), patch.object(m.threading, 'Thread') as worker, patch.object(m, 'ThreadingHTTPServer') as server:
+            with self.assertRaisesRegex(KeyError, 'PROXYCLI_PORT'):
+                m.main()
+            worker.assert_not_called()
+            server.assert_not_called()
+
+    def test_listens_on_gateway_environment_port(self):
+        with patch.dict(m.os.environ, {'PROXYCLI_PORT': '9345'}, clear=True), patch.object(m.threading, 'Thread'), patch.object(m, 'ThreadingHTTPServer') as server:
+            m.main()
+            server.assert_called_once_with(('127.0.0.1', 9345), m.Handler)
+            server.return_value.serve_forever.assert_called_once_with()
 
 class CollectorTests(unittest.TestCase):
     def setUp(self):

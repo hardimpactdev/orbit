@@ -6,7 +6,6 @@ namespace App\Infrastructure\ProxyCli;
 
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
-use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
@@ -35,7 +34,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
-    public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
+    public function converge(Node $node, ?Route $takeover = null): void
     {
         $address = $this->address($node);
         $this->ensureCaddy($node, $address);
@@ -59,7 +58,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         }
 
         $routes = $this->takeover ?? app(ProxyCliRouteTakeover::class);
-        $routes->publish($takeover, $node, fn () => $this->build($node), $port);
+        $routes->publish($takeover, $node, fn () => $this->build($node));
         $this->dns->converge($node);
         $routes->remove($takeover);
     }

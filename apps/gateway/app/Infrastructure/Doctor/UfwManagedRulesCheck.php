@@ -9,6 +9,7 @@ use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Processes\CommandResult;
+use InvalidArgumentException;
 
 /**
  * Compares `ufw status numbered` output with managed rules for a Doctor probe. An inactive firewall
@@ -20,8 +21,11 @@ final readonly class UfwManagedRulesCheck
         private UfwStatusParser $parser = new UfwStatusParser,
     ) {}
 
-    /** @param list<UfwManagedRule> $rules */
-    public function matches(CommandResult $result, array $rules): bool
+    /**
+     * @param  list<UfwManagedRule>  $rules
+     * @param  list<string>  $exclusiveFamilies  Families that must not contain unintended rules.
+     */
+    public function matches(CommandResult $result, array $rules, array $exclusiveFamilies = []): bool
     {
         if (! $result->succeeded() || $result->truncated) {
             throw new DoctorInspectionException;
@@ -33,6 +37,20 @@ final readonly class UfwManagedRulesCheck
 
         if (preg_match('/\AStatus:\s+active\s*$/mi', $result->stdout) !== 1) {
             throw new DoctorInspectionException;
+        }
+
+        foreach ($exclusiveFamilies as $prefix) {
+            try {
+                $observedRules = $this->parser->familyShapes($result->stdout, $prefix, includeIpv6: true);
+            } catch (InvalidArgumentException) {
+                return false;
+            }
+
+            foreach ($observedRules as $observed) {
+                if (! array_any($rules, static fn (UfwManagedRule $rule): bool => $rule->shape->matches($observed))) {
+                    return false;
+                }
+            }
         }
 
         return array_all(

@@ -110,7 +110,7 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
             ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
-            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.2')
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.3')
             ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
             ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
             ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
