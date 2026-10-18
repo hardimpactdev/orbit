@@ -7,13 +7,14 @@ covers:
   - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,lib/production-shared-paths.sh,instances/refresh-environment-config.py}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
-  - apps/gateway/tests/Unit/Architecture/InlineRemoteScriptTest.php
+  - bin/node-scripts-ratchet
+  - tools/test_node_scripts_ratchet.py
   - bin/remote-programs-check
 ---
 
 # Remote programs
 
-A remote program is a file that the Gateway runs on a Node to inspect or change it. Each program has a stable name, a documented input, and a result with a named outcome. The Gateway sends the program with every call, so nothing is installed on the Node. [ADR 0211](/decisions/0211-ship-node-changes-as-remote-programs) moves the Gateway's inline scripts into this form, one area at a time.
+A remote program is a file that the Gateway runs on a Node to inspect or change it. Each program has a stable name, a documented input, and a result with a named outcome. The Gateway sends the program with every call, so nothing is installed on the Node. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) supersedes ADR 0211. New Node behavior uses named Rust agent commands. Existing programs stay only until their area migrates after ADR 0224.
 
 ## Program files
 
@@ -104,7 +105,9 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 
 ## Inline scripts
 
-`tests/Unit/Architecture/InlineRemoteScriptTest.php` lists every file under `apps/gateway/app` and `apps/gateway/extensions` that still holds a nowdoc or heredoc labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. A file outside the list fails the test. A listed file without such a script fails too, so a migration removes its file from the list. The list only shrinks. Caddy, configuration, and text templates are configuration, not programs, and are out of scope.
+`bin/node-scripts-ratchet --base origin/main` counts the remaining scripts against a target Git revision. It scans PHP under `apps/gateway/app` and `apps/gateway/extensions` for nowdocs and heredocs labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. It also scans all of `apps/gateway/resources` for `.sh`, `.py`, and extensionless Bash or Python shebang files, including libraries and fragments. Each file's count may only fall. A new script location fails even when another file is deleted. Configuration and text templates stay outside the count.
+
+The `Remote programs` CI job runs this guard and its regression tests before program lint. A pull request compares with its target branch SHA; a main push compares with its previous SHA. Scheduled and manual checks compare with the previous commit. There is no count file to raise or exception list to edit. New Node code goes into the Rust agent, including when it would replace a script with another script file.
 
 The existing production deployment program loads `lib/production-shared-paths.sh` to prepare [shared directories](/reference/deployments#shared-paths). This Bash library takes explicit arguments and runs within the existing deployment command while that command awaits migration. Shellcheck and the deployment filesystem tests check it.
 
@@ -132,4 +135,4 @@ These programs run on Nodes now. Each one replaced an inline script, except `dat
 
 ## Why it works this way
 
-The decision is still in progress. [ADR 0211](/decisions/0211-ship-node-changes-as-remote-programs) holds its reasons and rejected alternatives until the remaining inline scripts move.
+[ADR 0211](/decisions/0211-ship-node-changes-as-remote-programs) records why these programs were extracted. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) supersedes that end state and owns the migration to Rust.

@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Count remaining Gateway scripts and refuse growth relative to a Git base (ADR 0225)."""
+import argparse
+import io
+import re
+import subprocess
+import tarfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCOPES = ('apps/gateway/app', 'apps/gateway/extensions', 'apps/gateway/resources')
+INLINE = re.compile(r"<<<[ \t]*(['\"]?)(?:BASH|PY|PYTHON|SH|SHELL|AWK)\1[ \t]*$", re.MULTILINE)
+
+
+def inventory(files):
+    counts = {'inline': {}, 'resource': {}}
+    for name, content in files:
+        if name.startswith(SCOPES[2] + '/'):
+            path = Path(name)
+            first = content.split(b'\n', 1)[0]
+            if path.suffix in ('.sh', '.py') or (
+                not path.suffix and first.startswith(b'#!') and (b'bash' in first or b'python' in first)
+            ):
+                counts['resource'][name] = 1
+        elif name.endswith('.php'):
+            count = len(INLINE.findall(content.decode('utf-8')))
+            if count:
+                counts['inline'][name] = count
+    return counts
+
+
+def checkout_files():
+    for scope in SCOPES:
+        for path in sorted((ROOT / scope).rglob('*')):
+            if path.is_file() and not path.is_symlink() and 'node_modules' not in path.parts:
+                yield path.relative_to(ROOT).as_posix(), path.read_bytes()
+
+
+def base_files(base):
+    archive = subprocess.run(
+        ['git', 'archive', '--format=tar', base, *SCOPES], cwd=ROOT, check=True, capture_output=True,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
+        for entry in tree:
+            if entry.isfile():
+                yield entry.name, tree.extractfile(entry).read()
+
+
+def growth(before, after):
+    return [
+        f'{kind}: {path}: {before[kind].get(path, 0)} -> {count}'
+        for kind in before
+        for path, count in sorted(after[kind].items())
+        if count > before[kind].get(path, 0)
+    ]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base', required=True, help='Target Git revision; CI supplies its base SHA.')
+    args = parser.parse_args()
+    before = inventory(base_files(args.base))
+    after = inventory(checkout_files())
+    for kind in before:
+        print(f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}', flush=True)
+    findings = growth(before, after)
+    for finding in findings:
+        print(finding)
+    if findings:
+        raise SystemExit('Gateway scripts may only decrease. Use a named Rust agent command.')
+
+
+if __name__ == '__main__':
+    main()

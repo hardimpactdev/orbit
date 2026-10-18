@@ -927,7 +927,8 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0211"
+                "0211",
+                "0225"
             ]
         },
         {
@@ -1242,6 +1243,39 @@
             ]
         },
         {
+            "path": "docs/decisions/0225-make-node-changes-through-agent-commands.md",
+            "title": "ADR 0225: Make Node changes through agent commands",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0210",
+                "0211",
+                "0218",
+                "0224",
+                "0225"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1304,7 +1338,8 @@
                 "0221",
                 "0222",
                 "0223",
-                "0224"
+                "0224",
+                "0225"
             ]
         },
         {
@@ -2739,7 +2774,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0211"
+                "0211",
+                "0225"
             ]
         },
         {
