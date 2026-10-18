@@ -325,7 +325,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 'Merge' => $group->reviewAndMerge->mergeStatus === null ? null : $group->reviewAndMerge->mergeStatus.($group->reviewAndMerge->mergeReason === null ? '' : ': '.$group->reviewAndMerge->mergeReason),
                 ...($group->reviewAndMerge->mergedSha === null ? [] : ['Merged commit' => $group->reviewAndMerge->mergedSha]),
             ]),
-            'Notify Coder' => $group->notifyCoder,
             'Implementer model' => $group->implementerModel,
             'Reviewer model' => $group->reviewerModel,
             'Tokens' => self::tokens($group->tokens),

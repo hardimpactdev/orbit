@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskExtensionState;
@@ -260,7 +259,6 @@ describe('once-only GitHub review consumption', function (): void {
         app(TaskScheduler::class)->tick();
         $group->tasks()->whereNotNull('fixup_problem')->sole()->delete();
         $source->observation = Fixtures::observation([Fixtures::review()]);
-        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once();
         app(TaskScheduler::class)->tick();
         $reason = $group->fresh()->assistance_reason;
         expect($reason)->toContain('acme/orbit PR #42 review #101 is missing')

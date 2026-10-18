@@ -15,7 +15,6 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -661,7 +660,7 @@ it('refuses pending correction recovery for either real ended PR reason on sched
     app(RequestEndedPullRequestAssistanceAction::class)->execute($group);
     $reason = $group->fresh()?->assistance_reason;
     expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
-    ($held === 'task' ? $group : $task)->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
+    ($held === 'task' ? $group : $task)->update(test_assistance_attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
     $taskReason = $task->fresh()?->assistance_reason;
     $groupReason = $group->fresh()?->assistance_reason;
     app(TaskExtensionState::class)->enable();

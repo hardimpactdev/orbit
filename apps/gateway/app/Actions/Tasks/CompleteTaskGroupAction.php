@@ -150,13 +150,11 @@ final readonly class CompleteTaskGroupAction
                             'status' => TaskStatus::Cancelled,
                             'settled_at' => now(),
                             'completion_summary' => 'Cancelled by operator.',
-                            'assistance_requested' => false,
                         ]);
                     }
                     $locked->update([
                         'status' => TaskGroupStatus::Completed,
                         'settled_at' => $locked->settled_at ?? now(),
-                        'assistance_requested' => false,
                     ]);
 
                     return true;

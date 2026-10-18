@@ -20,7 +20,6 @@ final class CreateTaskGroupData extends Data
         public string $title,
         public string $brief,
         public TaskGroupStatus $status,
-        public bool $notifyCoder,
         public array $tasks,
         public bool $preview = false,
     ) {}

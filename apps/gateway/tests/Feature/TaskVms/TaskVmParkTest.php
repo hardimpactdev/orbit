@@ -12,7 +12,6 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
@@ -222,7 +221,6 @@ describe('park', function (): void {
     it('keeps a VM parked with the error when it cannot be stopped', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
         Log::spy();
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
@@ -527,7 +525,6 @@ describe('park failure races', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
         TaskAssistance::apply($group, $kind, $kind === AssistanceKind::Direction ? 'Which branch?' : null, 'Original request.');
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
         $job = new ParkTaskVm($vm->id);
 
         $job->failed(new RuntimeException('stop failed'));

@@ -78,7 +78,7 @@ A preset owns the runtime, command, working directory, and environment, and refu
 `--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
 
 ```bash
-orbit process:create assets --instance=commander.test --preset=vp-dev --start
+orbit process:create assets --instance=orbit.test --preset=vp-dev --start
 ```
 
 Install a Vite development server on an Instance and start it:

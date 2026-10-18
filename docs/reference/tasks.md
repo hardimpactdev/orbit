@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -62,7 +62,6 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
-| `notify_coder` | task | Whether settle posts the [Coder webhook](#coder-settle-webhook) |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
 
@@ -119,7 +118,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`, and `notify_coder`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -837,7 +836,9 @@ Closing a question never delivers a resolution, never sets or clears assistance,
 
 ### Assistance and resolution
 
-A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. Orbit posts the Coder `task_group.assistance_requested` webhook once. When the kind is `direction`, it also posts that event to [OpsBot](#opsbot-direction-webhook) so OpsBot wakes immediately. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
+A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. 
+
+Every change to assistance goes through `TaskAssistance::apply`. It writes one Activity entry with the task id, kind, question, and reason in the same transaction as the change. Repeating the same request writes no new entry. Clearing assistance writes one `assistance cleared` entry; the earlier request remains in Activity. `tasks:status` lists every task that still asks for assistance. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
 
 #### Direction requests
 
@@ -1260,7 +1261,7 @@ The fresh implementer, Project check, fresh internal reviewer, commit, and push 
 
 Only a fresh exact-head request can create another automatic fixup, subject to the same caps. Outside a review-and-merge Project, only the designated final reviewer's fresh exact-head approval can satisfy Orbit's repository merge workflow, which runs outside the Gateway. In a review-and-merge Project, an effective trusted request for changes blocks [the merge](#merge-on-green) until that account approves or the review is dismissed.
 
-When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Coder is notified only when that reason changes.
+When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Activity records the request when that reason changes.
 
 A `todo` subtask on a `settling` task, a fixup or an operator's subtask, returns the task to `running`. This works when the pull request is open, and when the task has no `pr_url`. Another assistance cause keeps the task `settling`.
 
@@ -1489,26 +1490,6 @@ The read waits at most 5 seconds for the Pi server. The Gateway accepts at most 
 
 The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or sends more than 16 MiB, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
-## Coder settle webhook
-
-The Gateway posts signed events to Coder when `ORBIT_CODER_WEBHOOK_URL` and `ORBIT_CODER_WEBHOOK_SECRET` are both set. A refused or failed post changes nothing in Orbit.
-
-| Event | When | Body adds |
-| --- | --- | --- |
-| `task_group.settled` | A task with `notify_coder` first reaches `settling` with a pull request | `tokens`, `line_diff`, `duration_ms`, `questions`, `escalations`, `pull_request_url` |
-| `task_group.assistance_requested` | A task or subtask starts asking for assistance | `kind`, `question`, `reason` |
-| `task_group.escalated` | A thread stays unobservable past the grace period | `reason`, `confidence`, `thread_id`, `observation` |
-
-Every body holds `event`, `task_group_id`, and `title`. The Gateway signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends the headers `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`.
-
-## OpsBot direction webhook
-
-The Gateway posts one JSON object to OpsBot when a task or subtask starts asking for assistance of kind `direction` and both `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are set. There is no scheduled poll. A refused or failed post changes nothing in Orbit. If the URL or secret is unset, the Gateway skips that POST and leaves the rest of the task flow unchanged.
-
-The body is `event` `task_group.assistance_requested`, `task_group_id`, `title`, `kind`, `question`, and `reason`. The Gateway sends `Content-Type: application/json`, `Authorization: Bearer {secret}`, and `X-Automation-Key` set to the same secret.
-
-Settle, escalate, and assistance that is not `direction` stay on the [Coder webhook](#coder-settle-webhook) only. They do not go to OpsBot.
-
 ## Cancel a stuck task
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
@@ -1587,8 +1568,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
-| `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
-| `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
@@ -1737,14 +1716,6 @@ The operator's answer goes through the reviewer, so the reviewer translates it i
 Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
 
 The existing `task_group.assistance_requested` webhook carries the kind and question. A separate `task_group.direction_requested` event was rejected because receivers would need a second subscription for the same assistance flag. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
-
-### Direction wakes OpsBot immediately
-
-A direction request needs a person now. A scheduled poll would leave the task waiting until the next check. The Gateway already posts assistance once on the Coder path, so it posts that same event to OpsBot at that moment.
-
-OpsBot is not a second Coder. Settle and escalate stay on the HMAC-signed Coder webhook. A failure is something the operator can find on the board; it does not wake OpsBot. Sending every assistance kind would page the operator for disk-full and push failures.
-
-OpsBot's contract is Bearer plus `X-Automation-Key`, not Orbit's HMAC headers. Reusing the Coder signature would fail at OpsBot. A missing URL or secret skips the post so a Gateway without OpsBot still runs tasks.
 
 ### Questions are records, not parsed comments
 

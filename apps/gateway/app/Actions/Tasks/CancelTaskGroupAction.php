@@ -73,11 +73,11 @@ final readonly class CancelTaskGroupAction
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
                 if (! ($locked->assistance_requested && $locked->assistance_kind === AssistanceKind::Direction)) {
-                    $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
+                    TaskAssistance::apply($locked, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.', replaceFailure: true, replaceDirection: true);
                 }
             } else {
                 $locked->taskable()->dissociate();
-                $locked->assistance_requested = false;
+                TaskAssistance::apply($locked, reason: $locked->assistance_reason);
             }
             $locked->status = TaskGroupStatus::Cancelled;
             $locked->save();
@@ -102,19 +102,14 @@ final readonly class CancelTaskGroupAction
             }
         }
 
-        $group->tasks()
-            ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
-            ->update([
-                'status' => TaskStatus::Cancelled,
-                'settled_at' => now(),
-                'assistance_requested' => false,
-            ]);
-        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        // Removal success clears the assistance flag and keeps the last reason. A cancelled task keeps the reason and does not ask.
-        if (! $cancelled->assistance_requested) {
-            $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
-            $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
+        foreach ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->get() as $task) {
+            $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
         }
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+        foreach ($group->tasks()->where('assistance_requested', true)->get() as $task) {
+            TaskAssistance::apply($task, reason: $task->assistance_reason);
+        }
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
 
         return $cancelled;
     }

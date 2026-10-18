@@ -9,7 +9,6 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -17,7 +16,6 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
-use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -30,7 +28,6 @@ use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
-use Tests\Support\NullCoderSettleNotifier;
 use Tests\Support\NullTaskWorkspaceDiffReader;
 
 beforeEach(function (): void {
@@ -96,7 +93,7 @@ it('creates and resumes conversations through a second driver without T3', funct
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     $observer = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader);
     $observation = $observer->observe($group, $group->tasks()->firstOrFail());
-    new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 1.0, 'Continue.'));
+    new TaskSessionActor($registry)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 1.0, 'Continue.'));
 
     expect($task->implementerThread->driver)->toBe('example')
         ->and($driver->calls[2])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-2'])
@@ -107,7 +104,7 @@ it('routes typed pending requests through the selected driver', function (): voi
     [$group, , $driver, $registry] = driver_group();
     $driver->observation = new AgentObservation(AgentThreadState::AskingForInput, [new AgentInputRequest('request-1', 'approval', ['command' => 'run tests'])]);
     $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
-    new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.'));
+    new TaskSessionActor($registry)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.'));
 
     expect($driver->calls[2])->toMatchArray(['operation' => 'respond', 'request' => 'request-1', 'answers' => ['approve' => true]]);
 });
@@ -132,7 +129,6 @@ it('retains state and metrics on an unavailable observation and waits without cl
     $result = new AgentThreadObserver($registry)->observe($thread);
     Classification::fake()->preventStrayClassifications();
     app(TaskExtensionState::class)->enable();
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($result)->toBeNull()
@@ -196,7 +192,6 @@ it('routes an attached conversation without a legacy pointer', function (): void
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     app(TaskExtensionState::class)->enable();
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -213,7 +208,7 @@ it('rejects a drain when the requested input is no longer available', function (
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
     $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
 
-    expect(fn () => new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))
+    expect(fn () => new TaskSessionActor($registry)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))
         ->toThrow(AgentDriverException::class, 'No matching agent input request');
     expect($driver->calls)->toHaveCount(2);
 });
@@ -223,20 +218,6 @@ it('alerts once after a continuous observation outage and rearms after recovery'
     [$group, , $driver] = driver_group();
     config()->set('orbit.tasks.observation_grace_seconds', 120);
     app(TaskExtensionState::class)->enable();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public int $alerts = 0;
-
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->alerts++;
-        }
-
-        public function assistance(Task $group, string $reason): void {}
-    };
-    app()->instance(CoderSettleNotifier::class, $notifier);
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
@@ -244,10 +225,9 @@ it('alerts once after a continuous observation outage and rearms after recovery'
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
     Classification::assertNothingClassified();
     $this->travel(1)->seconds();
-    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::RequestAssistance);
     $this->travel(10)->minutes();
-    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop)
-        ->and($notifier->alerts)->toBe(1);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
 
     $driver->observation = new AgentObservation(AgentThreadState::Working);
     $scheduler->tick();
@@ -256,8 +236,7 @@ it('alerts once after a continuous observation outage and rearms after recovery'
     $driver->observation = null;
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
     $this->travel(120)->seconds();
-    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($notifier->alerts)->toBe(2);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::RequestAssistance);
 });
 
 it('keeps unknown activity separate from failed transport', function (): void {

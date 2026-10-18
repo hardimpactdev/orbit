@@ -8,12 +8,10 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
+use App\Models\Activity;
 use App\Models\Project;
 use App\Models\Task;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 function assistance_kind_group(): Task
 {
@@ -64,8 +62,8 @@ it('stores an operator assistance comment as a direction request', function (): 
 it('replaces an open failure with the operator direction request', function (): void {
     $group = assistance_kind_group();
     $task = $group->tasks->sole();
-    $task->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
-    $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
+    $task->update(test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
+    $group->update(test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
     $question = 'May I add the missing credential?';
 
     app(StoreTaskCommentAction::class)->execute($task, [
@@ -85,8 +83,8 @@ it('does not let a failure replace an open direction request', function (): void
     $task = $group->tasks->sole();
     $question = 'Which database should this subtask use?';
     $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
-    $task->update(TaskAssistance::attributes(AssistanceKind::Direction, $question, $reason));
-    $group->update(TaskAssistance::attributes(AssistanceKind::Direction, $question, $reason));
+    $task->update(test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
+    $group->update(test_assistance_attributes(AssistanceKind::Direction, $question, $reason));
 
     expect(TaskAssistance::apply($task, AssistanceKind::Failure, null, 'The implementer thread failed.'))->toBeFalse()
         ->and(TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Workspace removal failed: disk full', replaceFailure: true))->toBeFalse();
@@ -137,33 +135,92 @@ it('keeps the reason without asking when a stale assistance writer targets an en
         ->and($stale->assistance_reason)->toBe($reason);
 })->with(['group', 'subtask'])->with(['completed', 'cancelled'])->with([AssistanceKind::Direction, AssistanceKind::Failure]);
 
-it('posts the assistance kind and question on the Coder webhook', function (AssistanceKind $kind, ?string $question, string $reason): void {
-    $this->freezeTime();
-    Http::preventStrayRequests();
-    Http::fake([
-        'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
-    ]);
-    config()->set('orbit.tasks.coder_webhook_url', 'https://coder.example.test/hooks/settle');
-    config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
+it('records each assistance change once in Activity', function (): void {
     $group = assistance_kind_group();
-    $group->update(TaskAssistance::attributes($kind, $question, $reason));
+    $reason = 'The task VM could not prepare its topology.';
 
-    app(HttpCoderSettleNotifier::class)->assistance($group->fresh() ?? $group, $reason);
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
 
-    Http::assertSent(function (Request $request) use ($group, $kind, $question, $reason): bool {
-        $body = $request->body();
-        $timestamp = (string) now()->timestamp;
+    $entries = Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)
+        ->where('description', 'assistance requested')->get();
+    expect($entries)->toHaveCount(1)
+        ->and($entries->sole()->properties?->get('kind'))->toBe('failure')
+        ->and($entries->sole()->properties?->get('reason'))->toBe($reason)
+        ->and($entries->sole()->properties?->get('task_group_id'))->toBe($group->id);
+});
 
-        return $request->data() === [
-            'event' => 'task_group.assistance_requested',
-            'task_group_id' => $group->id,
-            'title' => $group->title,
-            'kind' => $kind->value,
-            'question' => $question,
-            'reason' => $reason,
-        ] && $request->hasHeader('X-Orbit-Signature', 'sha256='.hash_hmac('sha256', $timestamp.'.'.$body, 'coder-secret'));
+it('records resolution and keeps the earlier request in Activity', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Which mirror?');
+
+    TaskAssistance::apply($group);
+    TaskAssistance::apply($group);
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_reason)->toBeNull()
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->count())->toBe(1)
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(1);
+});
+
+it('rolls back assistance and its Activity entry together', function (): void {
+    $group = assistance_kind_group();
+    try {
+        DB::transaction(function () use ($group): void {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The check failed.');
+            throw new RuntimeException('Roll back the request.');
+        });
+    } catch (RuntimeException) {
+    }
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->count())->toBe(0);
+});
+
+it('records lifecycle clears through the assistance rule and retains the last reason', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Workspace removal failed.');
+
+    $group->update(['status' => TaskGroupStatus::Cancelled]);
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_reason)->toBe('Workspace removal failed.')
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(1);
+});
+
+
+it('rolls back an ended status when its assistance Activity cannot be stored', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Workspace removal failed.');
+    Activity::creating(static function (Activity $entry) use ($group): void {
+        if ($entry->subject_id === $group->id && $entry->description === 'assistance cleared') {
+            throw new RuntimeException('Activity storage failed.');
+        }
     });
-})->with([
-    'direction' => [AssistanceKind::Direction, 'Which database should this subtask use?', 'Which database should this subtask use?'],
-    'failure' => [AssistanceKind::Failure, null, 'The implementer thread failed.'],
-]);
+
+    expect(fn () => $group->update(['status' => TaskGroupStatus::Cancelled]))->toThrow(RuntimeException::class, 'Activity storage failed.');
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue();
+});
+
+it('redacts assistance text before storing it in Activity', function (): void {
+    $group = assistance_kind_group();
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Use token=secret-value?', 'Failed with password=secret-value');
+
+    $entry = Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->sole();
+    expect(json_encode($entry->properties, JSON_THROW_ON_ERROR))->not->toContain('secret-value');
+});
+
+it('does not clear a reopened request when an ended model saves unrelated fields', function (): void {
+    $group = assistance_kind_group();
+    $group->update(['status' => TaskGroupStatus::Cancelled]);
+    $stale = $group->fresh();
+    DB::table('tasks')->where('id', $group->id)->update(['status' => TaskGroupStatus::Running->value]);
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+
+    $stale->update(['title' => 'Updated title']);
+
+    expect($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_reason)->toBe('Choose the mirror.')
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(0);
+});

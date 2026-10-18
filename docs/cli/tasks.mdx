@@ -91,7 +91,7 @@ Show one task as a detail tree, followed by its brief and a table of its subtask
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 The tree shows **VM power** when the task's `vm_power` is not `null`. JSON includes `vm_power` when power is known: `running`, `stopped`, or `destroyed`; it omits the field when the API reports `null`. [VM power](/reference/compute-drivers#vm-power) describes how those values map to the task VM's state, separately from task status.
 
@@ -104,7 +104,7 @@ A task of a review-and-merge Project, or one that reviews an incoming pull reque
 Create a task. It starts in `backlog` unless you ask for `todo`.
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--preview] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--preview] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -114,7 +114,6 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the task. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
-| `--notify-coder` | off | Post the Coder settle webhook when the task settles. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 
 
@@ -280,7 +279,7 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 
 ## orbit tasks:comment:create
 
-Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and notifies Coder once. A `resolution` comment clears the flag. It goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
+Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and records the request in Activity. A `resolution` comment clears the flag. It goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
 
 ```bash
 orbit tasks:comment:create [group] [subtask] [--type=TYPE] [--body=TEXT] [--author=NAME] [--agent-thread=ID] [--json]

@@ -31,8 +31,6 @@ Cancelling task group...
 │
 ├  Pull request        —
 │
-├  Notify Coder        no
-│
 ├  Implementer model   gpt-5.6-luna
 │
 ├  Reviewer model      gpt-5.6-luna

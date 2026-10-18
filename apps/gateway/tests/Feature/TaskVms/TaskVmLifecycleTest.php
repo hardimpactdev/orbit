@@ -35,7 +35,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -1134,7 +1133,6 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         $vm = tvm_life_vm($group, TaskVmState::Failed);
         $vm->update(['error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
         app(TaskExtensionState::class)->enable();
-        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once();
         $reason = "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.";
 
         foreach ([1, 2] as $claim) {
@@ -1218,7 +1216,6 @@ describe('failed VM claims', function (): void {
         $group = tvm_life_group($status);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
         $reason = TaskVmFailedException::stoppedReason('task_vm.vm_missing', 'The VM is gone.');
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
 
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Ready], 'task_vm.vm_missing', 'The VM is gone.', $reason))->toBeTrue();
 
@@ -1226,14 +1223,12 @@ describe('failed VM claims', function (): void {
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
 
-    it('notifies Coder once when the failure action asks before the next claim', function (): void {
+    it('records assistance once when the failure action asks before the next claim', function (): void {
         Queue::fake();
         $group = tvm_life_group(TaskGroupStatus::Todo);
         $vm = tvm_life_vm($group, TaskVmState::Provisioning);
         app(TaskExtensionState::class)->enable();
         $reason = TaskVmFailedException::reason($vm->name, 'task_vm.bootstrap_failed', 'Cloud-init failed.');
-        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()
-            ->withArgs(fn (Task $asked, string $actual): bool => $asked->id === $group->id && $actual === $reason);
 
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeTrue();
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeFalse();

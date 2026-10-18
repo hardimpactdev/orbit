@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -321,9 +320,6 @@ it('cancels a todo subtask of a running group without starting anything', functi
 });
 
 it('settles after cancelling the only todo subtask of a running group without assistance', function (): void {
-    $notifier = Mockery::mock(CoderSettleNotifier::class);
-    $notifier->shouldNotReceive('assistance');
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $group = backlog_group($this, ['Todo']);
     Task::topLevel()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
@@ -348,9 +344,6 @@ it('does not check merged pull request assistance when cancelling todo in a retu
     $watcher->shouldNotReceive('health');
     $watcher->shouldNotReceive('status');
     app()->instance(TaskPullRequestWatcher::class, $watcher);
-    $notifier = Mockery::mock(CoderSettleNotifier::class);
-    $notifier->shouldNotReceive('assistance');
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $group = backlog_group($this, ['Todo']);
     $task = Task::query()->findOrFail($group['tasks'][0]['id']);

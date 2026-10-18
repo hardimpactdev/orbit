@@ -480,6 +480,19 @@ describe('the stale reservation sweep', function (): void {
             ->and($stranded->fresh()?->assistance_reason)->toBeNull();
     });
 
+    it('preserves operator direction while releasing an expired reservation', function (): void {
+        claim_hol_enable();
+        $group = claim_hol_group(claim_hol_app(), 'Waiting for direction');
+        $group->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3601)])->save();
+        \App\Domain\Tasks\TaskAssistance::apply($group, \App\Domain\Tasks\AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+
+        expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->assistance_question)->toBe('Which mirror?')
+            ->and(app(TaskScheduler::class)->claimNext())->toBeNull();
+    });
+
     it('leaves a group reserved within the bound', function (): void {
         $this->freezeTime();
         claim_hol_enable();

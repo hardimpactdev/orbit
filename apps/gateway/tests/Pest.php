@@ -14,6 +14,7 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -420,4 +421,11 @@ function router_lan_node(
         'lan_ip' => $lanIp,
         'wireguard_public_key' => $publicKey,
     ]);
+}
+
+/** @return array<string, mixed> */
+function test_assistance_attributes(AssistanceKind $kind, ?string $question, string $reason): array
+{
+    return ['assistance_requested' => true, 'assistance_kind' => $kind,
+        'assistance_question' => $kind === AssistanceKind::Direction ? $question : null, 'assistance_reason' => $reason];
 }

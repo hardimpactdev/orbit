@@ -70,7 +70,7 @@ function tasks_gateway(): Node
     return $gateway;
 }
 
-function tasks_app(string $slug = 'commander-demo'): Project
+function tasks_app(string $slug = 'tasks-demo'): Project
 {
     return Project::query()->create([
         'name' => $slug,
@@ -248,21 +248,6 @@ it('reports when the last tasks tick started its work on tasks status', function
         ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
 });
 
-it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
-    tasks_gateway();
-    enable_tasks();
-    $project = tasks_app('notify-alias');
-
-    $this->postJson('/api/v1/task-groups', [
-        'project_id' => $project->id,
-        'title' => 'Notify alias',
-        'brief' => 'Commander callers send notify_on_settle.',
-        'notify_on_settle' => true,
-    ])
-        ->assertCreated()
-        ->assertJsonPath('data.notify_coder', true);
-});
-
 it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
     tasks_gateway();
     $project = tasks_app();
@@ -355,9 +340,8 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
 
     $created = $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id,
-        'title' => 'Absorb Commander',
+        'title' => 'Build Tasks',
         'brief' => 'Persist groups. Accept when create and list work.',
-        'notify_coder' => true,
         'tasks' => [
             ['title' => 'ADR', 'brief' => 'Write the decision. Accept when reviewers can follow it.'],
             ['title' => 'Models', 'brief' => 'Store Task and Task. Accept when migrations run.'],
@@ -366,10 +350,9 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
 
     $created
         ->assertCreated()
-        ->assertJsonPath('data.title', 'Absorb Commander')
-        ->assertJsonPath('data.project', 'commander-demo')
+        ->assertJsonPath('data.title', 'Build Tasks')
+        ->assertJsonPath('data.project', 'tasks-demo')
         ->assertJsonPath('data.status', 'backlog')
-        ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.reviewer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.taskable_type', null)
@@ -1351,3 +1334,15 @@ it('accepts at plan time exactly the command paths that the handoff check accept
     expect(array_combine($paths, $plan))->toBe(array_combine($paths, $handoff));
     TestOrbitHome::clearScratch();
 });
+
+
+it('refuses retired notification inputs when creating a task', function (string $field): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Build Tasks', 'brief' => 'Keep the task contract small.', $field => true,
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(Task::topLevel()->count())->toBe(0);
+})->with(['notify_coder', 'notify_on_settle']);

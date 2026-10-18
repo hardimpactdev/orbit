@@ -34,7 +34,6 @@ final readonly class TaskSettling
         private TaskPullRequestWatcher $pullRequestWatcher,
         private TaskPullRequestUpdater $pullRequestUpdater,
         private CompleteTaskGroupAction $completeGroup,
-        private CoderSettleNotifier $coder,
         private BriefCoverageLabeler $coverageLabeler,
         private TaskPullRequestPublisher $publisher,
         private TaskBroadcasts $broadcasts,
@@ -233,7 +232,7 @@ final readonly class TaskSettling
 
         try {
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                $group->update(TaskAssistance::cleared());
+                TaskAssistance::apply($group);
             }
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
@@ -564,10 +563,6 @@ final readonly class TaskSettling
 
         $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
 
-        if ($settled->notify_coder && ! $returning) {
-            $this->coder->notify($settled);
-        }
-
         return $settled->fresh(['tasks', 'project', 'taskable']) ?? $settled;
     }
 
@@ -727,9 +722,7 @@ final readonly class TaskSettling
     {
         if ($this->reviewFeedback->change($group, [$source => $reason])) {
             $this->broadcasts->groupChanged($group->id);
-            if ($group->assistance_requested && is_string($group->assistance_reason)) {
-                $this->coder->assistance($group, $group->assistance_reason);
-            }
+
         }
     }
 
@@ -1262,9 +1255,7 @@ final readonly class TaskSettling
     private function requestMissingPullRequest(Task $group): void
     {
         $reason = TaskScheduler::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-            $this->coder->assistance($group, $reason);
-        }
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool
@@ -1289,7 +1280,7 @@ final readonly class TaskSettling
             && ! TaskFinalReview::isResumableReason($group->assistance_reason)) {
             return;
         }
-        $group->fill(TaskAssistance::cleared());
+        TaskAssistance::apply($group);
     }
 
     /**
@@ -1303,7 +1294,7 @@ final readonly class TaskSettling
 
         if ($health->problems === []) {
             if ($ownRequest) {
-                $group->update(TaskAssistance::cleared());
+                TaskAssistance::apply($group);
             }
 
             return;
@@ -1314,9 +1305,7 @@ final readonly class TaskSettling
             return;
         }
 
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest)) {
-            $this->coder->assistance($group, $reason);
-        }
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest);
     }
 
     private function markSubtaskCancelled(Task $task): ?string
@@ -1326,11 +1315,12 @@ final readonly class TaskSettling
             ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
 
         $assistanceReason = $task->assistance_reason;
+        TaskAssistance::apply($task);
         $task->update([
             'status' => TaskStatus::Cancelled,
             'settled_at' => now(),
             'completion_summary' => 'Cancelled by operator.',
-            ...TaskAssistance::cleared(),
+
         ]);
 
         return $assistanceReason;
@@ -1348,7 +1338,7 @@ final readonly class TaskSettling
             ->where('assistance_requested', true)
             ->exists();
         if (! $otherAssistance) {
-            $group->fill(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
     }
 

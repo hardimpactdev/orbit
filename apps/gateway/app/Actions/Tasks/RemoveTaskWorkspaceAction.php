@@ -182,6 +182,6 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        $group->update(TaskAssistance::cleared());
+        TaskAssistance::apply($group);
     }
 }

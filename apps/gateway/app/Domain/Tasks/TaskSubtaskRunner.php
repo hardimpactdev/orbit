@@ -847,11 +847,12 @@ final readonly class TaskSubtaskRunner
                 || $locked->status !== TaskStatus::Running || $this->implementerTurnStarted($locked)) {
                 return null;
             }
+            TaskAssistance::apply($locked);
             $locked->update([
                 'status' => TaskStatus::Cancelled,
                 'settled_at' => now(),
                 'completion_summary' => $reason,
-                ...TaskAssistance::cleared(),
+
             ]);
             $lockedGroup->update(['status' => TaskGroupStatus::Settling]);
 
@@ -1163,7 +1164,7 @@ final readonly class TaskSubtaskRunner
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
             }
 
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+            if ($decision->action === TaskSessionNextAction::RequestAssistance) {
                 if (! $observation->available) {
                     $this->actor->execute($group, $observation, $decision);
                     $decisions[] = $decision;

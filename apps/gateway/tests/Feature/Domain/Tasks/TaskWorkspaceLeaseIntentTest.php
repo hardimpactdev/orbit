@@ -8,7 +8,6 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -25,7 +24,7 @@ it('withdraws an obsolete queued verdict when an operator resolution starts a ne
     $task = $group->tasks()->firstOrFail();
     $reviewer = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
     $reviewer->update(['task_id' => $task->id]);
-    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $failure = test_assistance_attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
     $group->update([...$failure, 'status' => TaskGroupStatus::Reviewing]);
     $task->update([
         ...$failure, 'status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt,

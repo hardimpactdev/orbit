@@ -71,8 +71,8 @@ describe('task transport', function (): void {
     it('sends create fields and omits only absent optional values', function (): void {
         expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', false, tasks: [new SubtaskInput('One', 'First.')])->body()->all())
-            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","notify_coder":false,"tasks":[{"title":"One","brief":"First."}]}')
+            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', tasks: [new SubtaskInput('One', 'First.')])->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."}]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', tasks: [])->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief","tasks":[]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))

@@ -22,7 +22,6 @@ final readonly class TaskReviewOutcome
         private AgentSpawner $spawner,
         private TaskWorkspaceStateReader $workspace,
         private TaskPullRequestWatcher $pullRequestWatcher,
-        private CoderSettleNotifier $coder,
         private TaskSessionActor $actor,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
@@ -410,9 +409,7 @@ final readonly class TaskReviewOutcome
             return TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
         });
         TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => null, 'reason' => $reason]);
-        if ($stopped) {
-            $this->coder->assistance($group, $reason);
-        }
+
     }
 
     /**

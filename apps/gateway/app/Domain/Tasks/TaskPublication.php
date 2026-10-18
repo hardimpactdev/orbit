@@ -21,7 +21,6 @@ final readonly class TaskPublication
     public function __construct(
         private TaskSubtaskRunner $runner,
         private TaskPullRequestWatcher $pullRequestWatcher,
-        private CoderSettleNotifier $coder,
         private TaskPullRequestPublisher $publisher,
         private TaskBroadcasts $broadcasts,
         private TaskBaseBranchFetcher $bases,
@@ -260,7 +259,7 @@ final readonly class TaskPublication
         if ($group->assistance_requested && TaskFinalReview::isUnreviewedHeadReason($group->assistance_reason)
             && is_string($head) && TaskFinalReview::isReviewed($group, $head)) {
             // The head is reviewed again, so the request that held the merge no longer applies.
-            $group->update(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
         if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) || $group->assistance_requested
             || $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))
@@ -281,9 +280,7 @@ final readonly class TaskPublication
             }
             $reason = TaskFinalReview::UnreviewedHeadPrefix.'someone other than Orbit pushed '.$head.' to '.TaskRemoteBranch::for($group).'. Orbit does not merge it. Append a subtask so Orbit reviews and pushes the branch again, or complete the task.';
             $this->recordMerge($group, TaskMergeStatus::Refused, $reason);
-            if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-                $this->coder->assistance($group, $reason);
-            }
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
 
             return;
         }
@@ -467,9 +464,10 @@ final readonly class TaskPublication
         $resolution->update(['review_attempt' => $task->review_attempt]);
         TaskQuestions::attachResolution($task, $resolution);
         $reason = $task->assistance_reason;
-        $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0, 'resolution_delivered_comment_id' => $resolution->id]);
+        TaskAssistance::apply($task);
+        $task->update(['communication_failures' => 0, 'resolution_delivered_comment_id' => $resolution->id]);
         if ($group->assistance_reason === $reason && ! $group->tasks()->where('assistance_requested', true)->exists()) {
-            $group->update(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
         Cache::forget($this->publicationBackoffKey($task));
 
@@ -597,9 +595,7 @@ final readonly class TaskPublication
     {
         if (TaskFinalReview::fixupsInWindow($group->tasks) >= TaskFinalReview::FixupLimit) {
             $reason = TaskFinalReview::FixupCapPrefix.($gate instanceof TaskCheck ? 'Fixing the main merge Project gate' : 'Merging '.$base).' needs an agent fixup, and Orbit already appended '.TaskFinalReview::FixupLimit.' final-review fixups in this window. Append a subtask with tasks:subtask:create, or complete the task.';
-            if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-                $this->coder->assistance($group, $reason);
-            }
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
 
             return;
         }
@@ -768,9 +764,7 @@ final readonly class TaskPublication
         }
 
         $reason = TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit.' reached task-'.$group->id.' after '.$group->pr_url.' merged at '.$health->headSha.'. Open a pull request for task-'.$group->id.', or complete the group.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true)) {
-            $this->coder->assistance($group, $reason);
-        }
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
 
         // A direction request keeps its question, but the missed approval still protects the workspace.
         return true;
@@ -790,10 +784,10 @@ final readonly class TaskPublication
         $task->refresh();
         $group->refresh();
         if (is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, TaskScheduler::PublicationFailedPrefix)) {
-            $task->update(TaskAssistance::cleared());
+            TaskAssistance::apply($task);
         }
         if (is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, TaskScheduler::PublicationFailedPrefix)) {
-            $group->update(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
     }
 
