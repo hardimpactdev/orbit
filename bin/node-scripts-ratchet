@@ -15,6 +15,10 @@ DATA_LABELS = frozenset({
 })
 SCRIPT_EXTENSIONS = frozenset({'.sh', '.bash', '.zsh', '.fish', '.py', '.pl', '.rb', '.ps1',
     '.lua', '.awk', '.js', '.mjs', '.cjs'})
+# Resource names do not select whether a file is executable. Only these data types are exempt.
+DATA_SUFFIXES = ('.json', '.xml', '.md', '.blade.php', '.pem', '.crt', '.cer')
+# This PHP runs in the Gateway's own FPM pool, like Artisan, not as a Node program.
+OPCACHE_RESET = SCOPE + '/resources/fpm/opcache-reset.php'
 HEREDOC = re.compile(r"<<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*$", re.MULTILINE)
 # PHP argv literals, including options between python3 and -c. Heredoc bodies are masked first.
 ARGV_SCRIPT = re.compile(
@@ -47,19 +51,18 @@ def inventory(files):
     counts = {'inline': {}, 'files': {}}
     for name, content in files:
         path = Path(name)
+        if 'vendor' in path.parts or 'node_modules' in path.parts:
+            continue
         in_resources = 'resources' in path.parts
+        is_data = name.endswith(DATA_SUFFIXES) or (path.name == '.gitkeep' and not content.strip())
         is_script = (
-            path.suffix in SCRIPT_EXTENSIONS
+            (in_resources and not is_data)
+            or path.suffix in SCRIPT_EXTENSIONS
             or content.startswith(b'#!')
-            or (in_resources and not name.endswith('.blade.php') and (
-                path.suffix == '.php' or content.lstrip().startswith(b'<?php')
-            ))
         )
-        if is_script:
+        if is_script and name != OPCACHE_RESET:
             counts['files'][name] = 1
-        elif path.suffix == '.php' and (
-            name.startswith((SCOPE + '/app/', SCOPE + '/extensions/'))
-        ):
+        if path.suffix == '.php' and 'tests' not in path.parts:
             count = inline_count(content.decode('utf-8'))
             if count:
                 counts['inline'][name] = count
@@ -72,7 +75,9 @@ def checkout_files():
     ).decode().split('\0')
     for name in sorted(set(names) - {''}):
         path = ROOT / name
-        if path.is_file() and not path.is_symlink():
+        if path.is_symlink():
+            yield name, path.readlink().as_posix().encode()
+        elif path.is_file():
             yield name, path.read_bytes()
 
 
@@ -82,7 +87,9 @@ def base_files(base):
     ).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
         for entry in tree:
-            if entry.isfile():
+            if entry.issym():
+                yield entry.name, entry.linkname.encode()
+            elif entry.isfile():
                 yield entry.name, tree.extractfile(entry).read()
 
 

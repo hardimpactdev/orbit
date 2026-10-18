@@ -65,6 +65,52 @@ class ScriptRatchetTest(unittest.TestCase):
         })
         self.assertEqual(RATCHET.growth(before, after), [])
 
+    def test_counts_heredocs_in_config_and_routes(self):
+        for directory in ['config', 'routes']:
+            with self.subTest(directory=directory):
+                counts = self.scan({f'apps/gateway/{directory}/probe.php': "<<<'BASH'\ntrue\nBASH;\n"})
+                self.assertEqual(sum(counts['inline'].values()), 1)
+
+    def test_php_move_to_database_is_neutral(self):
+        source = "<<<'BASH'\ntrue\nBASH;\n" * 8
+        before = self.scan({'apps/gateway/app/RemoteVitePortRuntime.php': source})
+        after = self.scan({'apps/gateway/database/RemoteVitePortRuntime.php': source})
+        self.assertEqual(sum(after['inline'].values()), 8)
+        self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_resource_rename_to_text_without_shebang_is_neutral(self):
+        before = self.scan({'apps/gateway/resources/task-vms/hub.sh': '#!/bin/sh\ntrue'})
+        after = self.scan({'apps/gateway/resources/task-vms/hub.txt': 'true'})
+        self.assertEqual(sum(after['files'].values()), 1)
+        self.assertEqual(sum(before['files'].values()), sum(after['files'].values()))
+        self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_resource_rename_to_stub_is_neutral(self):
+        before = self.scan({'apps/gateway/resources/remote/lib/recipe.py': 'pass'})
+        after = self.scan({'apps/gateway/resources/remote/lib/recipe.stub': 'pass'})
+        self.assertEqual(sum(after['files'].values()), 1)
+        self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_extension_resources_count_unknown_file_types(self):
+        counts = self.scan({
+            'apps/gateway/extensions/tasks/resources/run.stub': 'program',
+            'apps/gateway/extensions/tasks/resources/config.json': '{}',
+            'apps/gateway/resources/views/.gitkeep': '\n',
+            'apps/gateway/resources/views/not-empty/.gitkeep': 'program',
+        })
+        self.assertEqual(sum(counts['files'].values()), 2)
+
+    def test_excludes_control_plane_opcache_and_dependency_and_test_inline_code(self):
+        counts = self.scan({
+            'apps/gateway/resources/fpm/opcache-reset.php': '<?php opcache_reset();',
+            'apps/gateway/tests/Fixture.php': "<<<'BASH'\ntrue\nBASH;\n",
+            'apps/gateway/vendor/package/resources/probe.stub': 'program',
+        })
+        self.assertEqual(counts, {'inline': {}, 'files': {}})
+
+    def test_comments_count_interpreter_calls(self):
+        self.assertEqual(RATCHET.inline_count('// never use sh -c'), 1)
+
     def test_only_total_growth_fails_and_categories_cannot_offset_each_other(self):
         before = self.scan({'apps/gateway/app/A.php': "['sh', '-c', 'true'];"})
         after = self.scan({'apps/gateway/app/B.php': "['sh', '-c', 'true']; ['bash', '-c', 'true'];"})

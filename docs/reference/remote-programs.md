@@ -105,11 +105,17 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 
 ## Inline scripts
 
-`bin/node-scripts-ratchet --base HEAD^1` compares the remaining script totals with a Git revision. It counts every heredoc and nowdoc in Gateway application and extension PHP except the fixed data labels in the checker. Unknown labels count. Literal `sh -c`, `bash -c`, and `python3 -c` calls count too, including combined flags. A heredoc body counts once.
+`bin/node-scripts-ratchet --base HEAD^1` compares the remaining script totals with a Git revision. It counts every heredoc and nowdoc in all Gateway PHP except test and dependency directories, with the fixed data labels in the checker excluded. Unknown labels count. Literal `sh -c`, `bash -c`, and `python3 -c` calls count too, including combined flags. A heredoc body counts once. The matcher also counts interpreter calls in comments: `// never use sh -c` raises the inline total.
 
-The file scan covers the whole Gateway, extensions included. It counts interpreter file extensions, every shebang, and PHP programs under any `resources/` directory. Extensionless PHP such as `tasks/composer` counts; Blade templates stay data. The scan also covers the Gateway's Artisan entry point and test support. Those files remain outside the Node migration, while their total still cannot grow.
+### Files
 
-The `Remote programs` CI job runs the guard and its regression tests before program lint. Inline and file totals cannot rise or offset each other. Moving an inline script between files, or moving a resource into an extension, is neutral. Deleting a script lowers the next comparison. A pull request compares its merge ref with its first parent, `HEAD^1`; a main push compares with its previous SHA. Scheduled and manual checks use `HEAD^1`. There is no editable count ceiling or per-path exception list. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) owns the migration and the remaining execution boundary.
+The file scan covers the whole Gateway, extensions included. Under any `resources/` directory it counts every file except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Unknown types count, so renaming a script to `.txt` or `.stub` is neutral. Outside resources, interpreter file extensions and every shebang count. Dependency directories are excluded.
+
+The fixed `resources/fpm/opcache-reset.php` adapter is excluded. It runs Gateway PHP in the Gateway's own pool, like Artisan, and is outside Node execution. The handoff keeps the [idle check and socket reset](/reference/gateway-recovery#runtime-handoff). Artisan and test support are still counted by the file guard but remain outside the Node migration.
+
+### CI comparison
+
+The `Remote programs` CI job runs the guard and its regression tests before program lint. Inline and file totals cannot rise or offset each other. Moving an inline script between files, or moving a resource into an extension, is neutral. Deleting a script lowers the next comparison. A pull request compares its merge ref with its first parent, `HEAD^1`; a main push compares with its previous SHA. Scheduled and manual checks use `HEAD^1`. There is no editable count ceiling or per-script budget. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) owns the migration and the remaining execution boundary.
 
 The existing production deployment program loads `lib/production-shared-paths.sh` to prepare [shared directories](/reference/deployments#shared-paths). This Bash library takes explicit arguments and runs within the existing deployment command while that command awaits migration. Shellcheck and the deployment filesystem tests check it.
 

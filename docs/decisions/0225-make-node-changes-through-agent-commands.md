@@ -18,11 +18,9 @@ Principle: [One way, one name](/mission#principles). Each Node action has one Ru
 
 ## Context
 
-At `main` commit `353ef196c9ce76a5f4988ac32b1c29edbdb0142c`, the revised guard counts 272 inline scripts across the Gateway.
+At `main` commit `353ef196c9ce76a5f4988ac32b1c29edbdb0142c`, the guard counts 272 inline scripts across the Gateway.
 
-It also counts 76 script files. Fifty are Node resources. The other 26 are the Gateway's Artisan entry point and test support.
-
-The supplied starting inventory counted four heredoc forms: 205 occurrences in 97 files. The previous guard counted six labels: 209 occurrences across core and extensions. Both missed other labels and one-line interpreter calls. The broader count above replaces them. It also includes the PHP resources, Bash files, shebangs, and extension resources that the earlier 46-file inventory missed.
+It also counts 75 files. Forty-nine are Node resources. The other 26 are the Gateway's Artisan entry point and test support. The OPcache adapter runs in the Gateway's own pool and is excluded.
 
 ### Current execution
 
@@ -65,9 +63,13 @@ An operation step calls the agent synchronously from its Horizon job. The agent 
 
 Cancellation keeps the operation rule: finish the running step, start no further step, and record cancellation. Losing the API client does not stop the queued job. The runner sends a mutation once and does not retry it.
 
-A command holds an exclusive OS lock for its target on the Node. The key is the canonical target that the Gateway operation locks, not the command name. A resumed step uses the same key. Commands on different targets can run together. Nested actions within one command are Rust calls under the held lock, not another invocation that takes the lock again.
+Read-only commands take no target or resource lock. Doctor checks, logs, queue reads, and metrics can run during a deploy. A mutating command holds an exclusive OS lock for its canonical target on the Node. It also declares the shared resources it changes. This preserves locks such as `CaddyPublicationLock` at `/run/lock/orbit/caddy.lock`, shared by Instance deploys on that Node.
 
-On `SIGHUP`, `SIGTERM`, a broken output pipe, or its deadline, the command stops its child process group and waits for it to exit before releasing the target lock. Mutating children retain the lock descriptor for their lifetime, so killing the supervisor cannot release it while a child still changes the target. A command that remains alive after SSH drops keeps its lock and remains bounded by its own deadline. Recovery waits for that lock within its remaining deadline; it never runs beside an orphan. A lost result does not prove that no change occurred.
+Locks always follow one order: target, resource names in sorted order, then update. A resumed step uses the same keys. Different targets can run together when they share no resource. Nested actions are Rust calls under the held locks, not another invocation that takes them again.
+
+Lock descriptors use close-on-exec. Project code cannot inherit or retain them. On Linux, each mutation runs in a transient systemd service with `KillMode=control-group` and a runtime bound. Its supervisor holds the locks. A daemon or `setsid` child stays in that cgroup. A successor must wait for the previous service to be empty before changing the target.
+
+On `SIGHUP`, `SIGTERM`, a broken output pipe, or its deadline, the supervisor stops all children and waits before releasing its locks. A Linux supervisor that dies also ends its service and children. A command that remains alive after SSH drops remains bounded by its own deadline. macOS uses a user process group; after a lost mutation result, its operation fails for inspection rather than resuming automatically. A lost result never proves that no change occurred.
 
 The Gateway then follows existing operation recovery. It repeats only a resumable step, whose command converges from observed state. Other steps fail for inspection. There is no agent task table, receipt ledger, or claim of exactly-once execution. [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender#supervision-only-for-detached-checks-and-topologies) keeps detached checks and topologies under their existing run ID, unit, and result. Their supervision is not a generic command runner.
 
@@ -89,17 +91,21 @@ The foundation gates Linux-only dependencies and modules with Rust target condit
 
 Ordinary commands do not hold the self-update lock, in either shared or exclusive mode. They run from an open executable. Atomic replacement leaves that executable valid until the command exits. Updating the observer does not stop a command process. A long deploy therefore does not make self-update busy.
 
-Only installation and CLI replacement take the update lock, exclusively. Self-update and the Gateway handoff wait at most 120 seconds; convergence waits at most 300 seconds. A caller's remaining deadline can shorten that wait. Expiry returns the existing busy error and changes nothing. macOS uses the account's `$ORBIT_HOME/self-update.lock`; Linux keeps `/run/lock/orbit-self-update.lock`.
+Installation, CLI replacement, and the final recipe verification take the update lock, exclusively. Self-update and the Gateway handoff wait at most 120 seconds; convergence waits at most 300 seconds. A caller's remaining deadline can shorten that wait. Expiry returns the existing busy error and changes nothing. macOS uses the account's `$ORBIT_HOME/self-update.lock`; Linux keeps `/run/lock/orbit-self-update.lock`.
 
-Footprint and recipe convergence stop holding an outer update lock. When they install the agent, they call the installer inside the same Rust process. The installer takes the update lock once. Self-update calls that same locked implementation for its agent step and takes the lock for its CLI swap. It never holds a lock and invokes another process that reacquires it. Target locks remain separate and always precede the update lock when both are needed.
+Footprint and recipe convergence do not hold the update lock across unrelated work. Each CLI or agent replacement calls the locked installer in the same Rust process. Self-update uses that implementation too. Nested installer calls use the held lock; they never start a process that reacquires it.
+
+Recipe convergence takes the update lock again for its final fleet verification. It checks the installed agent digest and CLI version against the requested delivery while holding that lock. Only a passing result supplies the recipe identity that the Gateway records. This preserves the guarantee in [Self update](/reference/self-update#limits): replacement cannot overlap installation or the final version checks. Earlier observations cannot mark a Node current. A subsequent update can cause drift, as it can after any completed convergence.
 
 ### Build and test before publishing
 
-The foundation changes CI before an area moves. CI builds the agent from the exact PR source, including extension modules. It writes a manifest with the source commit, platform artifacts, and SHA-256 values. The isolated integration environment installs those artifacts with that manifest. Review fixes get another CI build; they do not need a release tag. The published-release check in `tools/check_agent_release.py` becomes a production delivery check, not a prerequisite for testing PR code.
+The foundation changes CI before an area moves. It also updates `apps/agent/scripts/check-release-tag.sh` to require `agent-v<full commit SHA>` and to verify that SHA against the manifest and tested commit, replacing its current Cargo semver check. CI builds the agent from the exact PR source, including extension modules. It writes a manifest with the source commit, platform artifacts, and SHA-256 values. The isolated integration environment installs those artifacts with that manifest. Review fixes get another CI build; they do not need a release tag. The published-release check in `tools/check_agent_release.py` becomes a production delivery check, not a prerequisite for testing PR code.
 
-After the change merges, main CI builds and tests the merged source. Once its required checks pass, the release workflow tags that commit as `agent-v<commit>` and publishes those same tested artifacts and checksums. It does not rebuild after the tag. Only the release workflow pushes agent tags; task agents do not push them. A maintainer can rerun that workflow for the same commit and immutable artifacts.
+Before the first push, a task group builds the agent from its own worktree, including its uncommitted changes. It writes the same manifest format with the base commit, worktree content digest, and artifact hashes. The topology setup stages those artifacts and calls `agent.install` through the normal adapters before running acceptance. Each Node uses the manifest's exact binary pin. These artifacts stay inside that topology and are never published as a release.
 
-The Gateway release takes its exact pins from that delivery manifest, which also supplies recipe and desired-fleet-state pins. This replaces the hard-coded agent hashes in the recipe and `NodeAgentFootprint`. There is no follow-up source commit to insert hashes after merge. A Gateway change that leaves agent build inputs unchanged can keep the existing delivery. A production release that needs new agent code waits for its published artifacts before deployment.
+After the change merges, main CI builds and tests the merged source. Once its required checks pass, the release workflow tags that commit as `agent-v<commit>` and publishes those same tested artifacts and checksums. It does not rebuild after the tag. A tag ruleset for `agent-v*` restricts creation, update, and deletion. Only the dedicated release App can bypass it. Its credential is available only to the protected release environment, which accepts the release workflow on main. Task agents and maintainer profiles have no bypass. The foundation installs this rule before enabling automatic publication. A maintainer can rerun the workflow for the same commit and immutable artifacts.
+
+The Gateway release takes its exact pins from that delivery manifest, which also supplies recipe and desired-fleet-state pins. This replaces the hard-coded agent hashes in the recipe and `NodeAgentFootprint`. The recipe identity hashes the resolved recipe together with the delivered agent digest for its platform. Images, topology seeds, and Node convergence use that complete identity. An image with an older agent cannot be current. There is no follow-up source commit to insert hashes after merge. A Gateway change that leaves agent build inputs unchanged can keep the existing delivery. A production release that needs new agent code waits for its published artifacts before deployment.
 
 ### Release and fleet rollout
 
@@ -117,31 +123,33 @@ Rust uses filesystem and OS APIs directly where practical. Commands own fixed ex
 
 ### Extension ownership and scope
 
-Each extension owns its Node code under `apps/gateway/extensions/<name>/agent/`. Documents commands use the `documents.*` prefix, AI router commands `ai-router.*`, and Tasks commands `tasks.*`. These Rust modules compile into the one agent binary. Core holds only their composition and dispatch registration. It holds no extension behavior. Deleting an extension removes its directory, composition references, and tests in the same change. There is no dynamic plug-in loader or second runner. This extends the source boundary of [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) to Node code.
+Each extension owns its Node code under `apps/gateway/extensions/<name>/agent/`. Documents commands use the `documents.*` prefix, AI router commands `ai-router.*`, and Tasks commands `tasks.*`. These Rust modules compile into the one agent binary. Core has one Cargo path dependency and one registration line per extension, like the one provider line in ADR 0210. A foundation check rejects extension crate names or module references elsewhere in agent core. Core holds no extension behavior. Deleting an extension removes its directory, composition references, and tests in the same change. There is no dynamic plug-in loader or second runner. This extends the source boundary of [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) to Node code.
 
 The Gateway keeps API validation, authorization, database intent, operations, schedules, and extension switches. Providers keep external API calls. Project-owned hooks, setup lists, Process commands, and checks remain project code. A named command runs them as the owner under their existing limits. They do not select a root action or implement Gateway behavior.
 
-Each resource that the Gateway runs on a Node becomes Rust code or is deleted. Libraries become modules. The AI router collector and FPM exporter become named service commands under their existing supervision and ports. The PHP `scripts/horizon-queue.php` and `tasks/composer` move too. `private-dns/serve.php` is deleted by [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router); if that deletion has not landed, the DNS group must deliver it before closing. The Gateway's `fpm/opcache-reset.php` adapter is deleted when its handoff uses a service restart to clear that pool's opcache. No PHP program is retained as a Node runner.
+Each resource that the Gateway runs on a Node becomes Rust code or is deleted. Libraries become modules. The AI router collector and FPM exporter become named service commands under their existing supervision and ports. The PHP `scripts/horizon-queue.php` and `tasks/composer` move too. `private-dns/serve.php` is deleted by [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router); if that deletion has not landed, the DNS group must deliver it before closing. No PHP program remains as a Node runner.
 
-Static configuration, templates, and certificates stay data. The Gateway's Artisan entry point and test fixtures stay control-plane or test code. They are counted by the broad file guard but are not Node programs to port. Python program tests disappear as Rust tests replace them.
+The Gateway keeps `resources/fpm/opcache-reset.php`, like its Artisan entry point. It runs Gateway PHP in the Gateway's own pool; it is control-plane code, outside Node execution and the resource count. All pools share one OPcache. The handoff keeps the idle check and socket reset in [Gateway recovery](/reference/gateway-recovery#runtime-handoff). It never restarts or reloads PHP-FPM to clear OPcache.
+
+Static configuration, templates, and certificates stay data. Artisan and test fixtures remain control-plane or test code. The broad file guard counts them, but they are not Node programs to port. Python program tests disappear as Rust tests replace them.
 
 ### The ratchet starts at this merge
 
-`bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in Gateway application and extension PHP, except a fixed list of data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, and `python3 -c` calls, including combined flags and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
+`bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in all Gateway PHP outside test and dependency directories. It excludes only these fixed data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, and `python3 -c` calls, including combined flags and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
 
-The file scan covers the whole Gateway, including extensions and test support. It counts shell and interpreter file extensions, every shebang, and PHP programs under any `resources/` directory. This includes extensionless PHP such as `tasks/composer`. Blade templates remain data. The checker contains the exact extension list. Git-tracked files and new unignored files are scanned; dependencies are not brought into the inventory.
+The file scan covers the whole Gateway, including extensions and test support. It counts every file under any `resources/` directory except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Unknown types count, including `.txt` and `.stub`. The fixed OPcache adapter is excluded for the control-plane reason above. Outside resources, interpreter file extensions and every shebang count. Git-tracked files and new unignored files are scanned; dependency directories are excluded.
 
-Inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-path exception list.
+Inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-script budget.
 
-The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and test support; that count still cannot rise.
+The matcher also counts interpreter calls in comments. The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and test support; that count still cannot rise.
 
 ### Tests and migration groups
 
-Rust unit tests replace `tests/Programs` as each program moves. They exercise real command logic, typed errors, repeated execution, and refusal before mutation in temporary directories. Shared JSON fixtures test the PHP and Rust contract. Integration tests exercise installation, exact-hash refusal, target locks, transport loss with live children, update during a long command, and nested recipe installation. Linux, macOS, Incus, and UpCloud adapters each get their real-path acceptance test.
+Rust unit tests replace `tests/Programs` as each program moves. They exercise real command logic, typed errors, repeated execution, and refusal before mutation in temporary directories. Shared JSON fixtures test the PHP and Rust contract. Integration tests exercise installation, exact-hash refusal, target locks, transport loss with live children, daemon and `setsid` children, concurrent reads, shared resource locks, update during a long command, and nested recipe installation. A recipe test changes the delivered agent digest and requires a new image identity. Another races self-update with final verification and refuses to record a mismatched identity. Linux, macOS, Incus, and UpCloud adapters each get their real-path acceptance test.
 
-No runtime migration starts before ADR 0224 is built. One foundation group delivers the runner, installer, platform gates, CI build path, and contract fixtures. Then a small Documents group proves the pattern. Remaining groups run largest first. The former 113-script row is split into removal, registration, dependencies, runtime, deploy, data, networking, Vite, Projects, and hibernation groups. Each is a separate task group.
+No runtime migration starts before ADR 0224 is built. One foundation group delivers the runner, installer, platform gates, CI and topology build paths, release tag guard and ruleset, extension composition check, and contract fixtures. Then a small Documents group proves the pattern. Remaining groups run largest first. The former 113-script row is split into removal, registration, dependencies, runtime, deploy, data, networking, Vite, Projects, hibernation, and Production source lifecycle groups. Each is a separate task group.
 
-The table counts the 272 inline scripts and 50 Node resource files at the context commit. Shared libraries appear once. It excludes the 26 control-plane and test-support files from migration work. Groups preserve the extension moves in ADRs 0210 and 0212; a move does not raise the ratchet. Delete code that ADRs 0219 and 0224 remove rather than porting it. Recount each area when its group is planned.
+The table counts the 272 inline scripts and 49 Node resource files at the context commit. Shared libraries appear once. It excludes the 26 control-plane and test-support files from migration work. Groups preserve the extension moves in ADRs 0210 and 0212; a move does not raise the ratchet. Delete code that ADRs 0219 and 0224 remove rather than porting it. Recount each area when its group is planned.
 
 | Step | Area | Inline | Node files | Total |
 | --- | --- | --- | --- | --- |
@@ -155,8 +163,8 @@ The table counts the 272 inline scripts and 50 Node resource files at the contex
 | 8 | Development source removal | 6 | 9 | 15 |
 | 9 | Tools | 9 | 5 | 14 |
 | 10 | Development networking and PHP | 13 | 0 | 13 |
-| 11 | Gateway and releases | 11 | 2 | 13 |
-| 12 | Instance registration and checkout | 13 | 0 | 13 |
+| 11 | Instance registration and checkout | 13 | 0 | 13 |
+| 12 | Gateway and releases | 11 | 1 | 12 |
 | 13 | Instance data, transfer, and logs | 11 | 1 | 12 |
 | 14 | Instance deploy | 12 | 0 | 12 |
 | 15 | Processes and Schedules | 12 | 0 | 12 |
@@ -190,7 +198,7 @@ Each group removes its scripts and replaces their tests in the same change. Its 
 - Agent builds include the Rust modules owned by extensions.
 - Production deployment waits for the tested agent artifacts it pins.
 - Fleet rollout can leave a Node unavailable for new commands until its update passes.
-- The Gateway FPM handoff restarts its pool instead of using a PHP opcache adapter.
+- The Gateway keeps its OPcache adapter and preserves requests in flight.
 - Runtime reference pages and guidance change with each migration group.
 
 ## Affects
