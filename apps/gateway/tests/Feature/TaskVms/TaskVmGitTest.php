@@ -298,15 +298,16 @@ describe('garbage collection', function (): void {
 it('queues a package fill only when an upstream default-branch lock moves in the mirror', function (): void {
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
     Queue::fake([FillTaskVmPackageCache::class]);
+    file_put_contents($this->root.'/upstream/composer.json', '{}');
     file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[]}');
-    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['add', 'composer.json', 'composer.lock']);
     tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'default lock']);
     tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main']);
     $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
     $main = $tips['main'];
     tvm_git($this->root.'/upstream', ['checkout', '--quiet', '-b', 'task-7']);
     file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[],"packages-dev":[]}');
-    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['add', 'composer.json', 'composer.lock']);
     tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'task lock']);
     tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'task-7']);
 
@@ -325,8 +326,9 @@ it('queues a package fill only when an upstream default-branch lock moves in the
 
 it('keeps source fetch usable during a package queue outage and retries dispatch on the next fetch', function (): void {
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
+    file_put_contents($this->root.'/upstream/composer.json', '{}');
     file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[]}');
-    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['add', 'composer.json', 'composer.lock']);
     tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'lock']);
     tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main']);
     $dispatcher = app(Dispatcher::class);
@@ -344,5 +346,5 @@ it('keeps source fetch usable during a package queue outage and retries dispatch
     $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
 
     Queue::assertPushed(FillTaskVmPackageCache::class, 1);
-    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeFalse();
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeTrue();
 });
