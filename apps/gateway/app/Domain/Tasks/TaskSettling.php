@@ -909,7 +909,9 @@ final readonly class TaskSettling
     /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
     public function progressBlockedByAssistance(Task $group): bool
     {
-        return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
+        return $group->assistance_requested
+            && ! self::isReviewFeedbackReason($group->assistance_reason)
+            && ! ($group->assistance_kind === AssistanceKind::Failure && $group->assistance_reason === TaskSubtaskRunner::ObservationUnavailableReason);
     }
 
     /**

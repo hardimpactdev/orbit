@@ -1335,7 +1335,6 @@ it('accepts at plan time exactly the command paths that the handoff check accept
     TestOrbitHome::clearScratch();
 });
 
-
 it('refuses retired notification inputs when creating a task', function (string $field): void {
     tasks_gateway();
     enable_tasks();

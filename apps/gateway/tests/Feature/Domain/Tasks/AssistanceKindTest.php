@@ -188,7 +188,6 @@ it('records lifecycle clears through the assistance rule and retains the last re
         ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance cleared')->count())->toBe(1);
 });
 
-
 it('rolls back an ended status when its assistance Activity cannot be stored', function (): void {
     $group = assistance_kind_group();
     TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Workspace removal failed.');
@@ -214,7 +213,7 @@ it('redacts assistance text before storing it in Activity', function (): void {
 it('does not clear a reopened request when an ended model saves unrelated fields', function (): void {
     $group = assistance_kind_group();
     $group->update(['status' => TaskGroupStatus::Cancelled]);
-    $stale = $group->fresh();
+    $stale = $group;
     DB::table('tasks')->where('id', $group->id)->update(['status' => TaskGroupStatus::Running->value]);
     TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
 

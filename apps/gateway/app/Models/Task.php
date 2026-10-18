@@ -720,7 +720,7 @@ final class Task extends Model
      */
     private function clearAssistanceWhenEnded(): void
     {
-        if (! $this->wasChanged('status') && ! $this->wasRecentlyCreated) {
+        if (! $this->isDirty('status')) {
             return;
         }
 
@@ -739,7 +739,7 @@ final class Task extends Model
             : in_array(TaskStatus::tryFrom($status), [TaskStatus::Completed, TaskStatus::Cancelled], true);
 
         if ($ended) {
-            TaskAssistance::apply($this, reason: $this->assistance_reason);
+            TaskAssistance::apply($this, reason: $this->fresh()?->assistance_reason);
         }
     }
 

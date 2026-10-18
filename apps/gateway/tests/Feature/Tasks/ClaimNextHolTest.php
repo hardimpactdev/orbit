@@ -8,8 +8,10 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -484,7 +486,7 @@ describe('the stale reservation sweep', function (): void {
         claim_hol_enable();
         $group = claim_hol_group(claim_hol_app(), 'Waiting for direction');
         $group->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3601)])->save();
-        \App\Domain\Tasks\TaskAssistance::apply($group, \App\Domain\Tasks\AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+        TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
 
         expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1)
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Todo)

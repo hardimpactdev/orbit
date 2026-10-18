@@ -9,6 +9,8 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -225,13 +227,15 @@ it('alerts once after a continuous observation outage and rearms after recovery'
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
     Classification::assertNothingClassified();
     $this->travel(1)->seconds();
-    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::RequestAssistance);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::RequestAssistance)
+        ->and($group->fresh()->assistance_requested)->toBeTrue();
     $this->travel(10)->minutes();
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
 
     $driver->observation = new AgentObservation(AgentThreadState::Working);
     $scheduler->tick();
-    expect($group->fresh()->agent_unavailable_since)->toBeNull()
+    expect($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->agent_unavailable_since)->toBeNull()
         ->and($group->fresh()->agent_unavailable_notified_at)->toBeNull();
     $driver->observation = null;
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
@@ -286,4 +290,16 @@ it('stores a token breakdown and keeps it when a later read omits the fields', f
     expect($thread->fresh()->input_tokens)->toBe(0)
         ->and($thread->fresh()->model_calls)->toBe(0)
         ->and($thread->fresh()->cached_input_tokens)->toBe(70);
+});
+
+it('keeps a direction request when observation recovers during that request', function (): void {
+    [$group] = driver_group();
+    $group->update(['agent_unavailable_since' => now()->subMinutes(5), 'agent_unavailable_notified_at' => now()]);
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+
+    app(TaskScheduler::class)->clearUnavailable($group);
+
+    expect($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_question)->toBe('Which mirror?')
+        ->and($group->fresh()->agent_unavailable_since)->toBeNull();
 });

@@ -1387,10 +1387,10 @@ it('retains an orphaned approval after interruption between settling and recordi
         expect($group->fresh()?->assistance_reason)->toBe('Another assistance cause.')
             ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
             ->and($group->fresh()?->assistance_question)->toBe('Which branch should retain the approval?');
-        expect(tick_assistance_reasons())->toBe([]);
+        expect(tick_assistance_reasons())->toBe(['Another assistance cause.']);
     } else {
         expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
-        expect(tick_assistance_reasons())->toBe([$group->fresh()?->assistance_reason]);
+        expect(tick_assistance_reasons())->toBe([...($otherAssistance ? ['Another assistance cause.'] : []), $group->fresh()?->assistance_reason]);
     }
     expect($agents->spawned)->toBe([]);
 })->with([

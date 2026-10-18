@@ -770,7 +770,7 @@ An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A 
 
 A failed read, send, commit, push, or script install is a communication failure. The tick retries it and moves on to other subtasks. The fifth consecutive failure asks for assistance with the last error.
 
-When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it posts one `task_group.escalated` webhook for that outage. A successful observation resets the wait. A thread state from before the outage never advances a subtask.
+When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it requests assistance once for that outage and records it in Activity. Orbit keeps observing the thread. A successful observation clears that request and resets the wait. A thread state from before the outage never advances a subtask.
 
 Each observation also reports whether the workspace has commits since its starting commit. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
 

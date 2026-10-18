@@ -27,6 +27,8 @@ use Throwable;
 
 final readonly class TaskSubtaskRunner
 {
+    public const string ObservationUnavailableReason = 'Agent observation unavailable beyond the grace period.';
+
     private const int BASELINE_UNSTARTED_PID = 0;
 
     private const string INVALID_DELIVERABLE_STEP = 'invalid_deliverable';
@@ -1190,7 +1192,6 @@ final readonly class TaskSubtaskRunner
                 if ($task->communication_failures >= 5) {
                     $scheduler->requestAssistance($task, $group, $exception->getMessage());
                 }
-                $this->actor->execute($group, $observation, $decision);
             }
 
             $decisions[] = $decision;
@@ -1206,9 +1207,16 @@ final readonly class TaskSubtaskRunner
 
     public function clearUnavailable(Task $group): void
     {
-        Task::topLevel()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
-            'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
-        ]);
+        DB::transaction(function () use ($group): void {
+            $current = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
+            if ($current->assistance_kind === AssistanceKind::Failure && $current->assistance_reason === self::ObservationUnavailableReason) {
+                TaskAssistance::apply($current);
+            }
+            if ($current->agent_unavailable_since !== null) {
+                $current->update(['agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null]);
+            }
+            $group->refresh();
+        });
     }
 
     public function unavailableDecision(Task $group): TaskSessionDecision
@@ -1222,7 +1230,7 @@ final readonly class TaskSubtaskRunner
                 ->whereNull('agent_unavailable_notified_at')
                 ->update(['agent_unavailable_notified_at' => now()]);
             if ($claimed === 1) {
-                return TaskSessionDecision::escalate('Agent observation unavailable beyond the grace period.');
+                return TaskSessionDecision::escalate(self::ObservationUnavailableReason);
             }
         }
 

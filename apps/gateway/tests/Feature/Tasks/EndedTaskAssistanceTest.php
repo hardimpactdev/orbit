@@ -5,13 +5,15 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use Illuminate\Support\Facades\DB;
 
 it('stops asking for assistance when a flagged task is saved as completed or cancelled', function (string $level, string $status): void {
     $gateway = Node::query()->create([
@@ -67,8 +69,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
         ->and($subject->assistance_reason)->toBe($reason)
         ->and($subject->status->value)->toBe($status);
 
-    $subject->assistance_requested = true;
-    $subject->save();
+    TaskAssistance::apply($subject, AssistanceKind::Failure, null, $reason);
 
     expect($subject->fresh()?->assistance_requested)->toBeFalse()
         ->and($subject->fresh()?->assistance_reason)->toBe($reason);
@@ -93,7 +94,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
     'cancelled subtask' => ['subtask', 'cancelled'],
 ]);
 
-it('clears assistance in the same update that cancels the remaining subtasks', function (): void {
+it('audits assistance clears when cancelling the remaining subtasks', function (): void {
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create([
         'name' => 'Cancel remaining',
@@ -119,18 +120,9 @@ it('clears assistance in the same update that cancels the remaining subtasks', f
         'assistance_reason' => 'Still waiting.',
     ]);
 
-    $statements = [];
-    DB::listen(function (object $query) use (&$statements): void {
-        $statements[] = $query->sql;
-    });
-
     $cancelled = app(CancelTaskGroupAction::class)->execute($group->fresh() ?? $group);
 
-    $statusUpdate = collect($statements)->first(static fn (string $sql): bool => str_contains($sql, 'not in'));
-
-    expect($statusUpdate)->toBeString()
-        ->and($statusUpdate)->toContain('assistance_requested')
-        ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+    expect(Activity::query()->where('description', 'assistance cleared')->whereIn('subject_id', [$group->id, $open->id])->count())->toBe(2)->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->assistance_requested)->toBeFalse()
         ->and($cancelled->assistance_reason)->toBe('The group is blocked.')
         ->and($open->fresh()?->status)->toBe(TaskStatus::Cancelled)
@@ -258,13 +250,10 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
         $other->status = $endedStatus;
         $other->assistance_reason = 'Ended by the other writer.';
         $other->save();
-        $stale->update([
-            'assistance_requested' => true,
-            'assistance_reason' => 'Asked too late.',
-        ]);
+        TaskAssistance::apply($stale, AssistanceKind::Failure, null, 'Asked too late.');
 
         expect($stale->assistance_requested)->toBeFalse()
-            ->and($stale->status->value)->toBe('running')
+            ->and($stale->status->value)->toBe($status)
             ->and($stale->fresh()?->status->value)->toBe($status)
             ->and($stale->fresh()?->assistance_requested)->toBeFalse()
             ->and($stale->fresh()?->assistance_reason)->toBe('Asked too late.');
