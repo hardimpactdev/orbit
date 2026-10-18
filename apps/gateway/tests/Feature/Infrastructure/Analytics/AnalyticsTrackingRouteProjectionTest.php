@@ -7,6 +7,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -177,7 +178,7 @@ describe('analytics tracking Route sites', function (): void {
         $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
 
         expect(new DevelopmentSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.40:8000'])
-            ->and(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
+            ->and(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20');
     });
 
@@ -192,7 +193,7 @@ describe('analytics tracking Route sites', function (): void {
     it('answers private DNS for the host with the Router', function (): void {
         analytics_projection_publish($this->route);
 
-        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
+        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20')
             ->not->toContain('host-record=analytics.shop.example.com,10.44.0.30');
     });
@@ -211,7 +212,7 @@ describe('analytics tracking Route sites', function (): void {
             ->toBe([["route-{$this->route->id}-router", false]])
             ->and($sites->forNode($workload)->map(static fn (DevelopmentSite $site): array => [$site->scope, $site->secondary])->all())
             ->toBe([["route-{$this->route->id}-router", true]])
-            ->and(new DevelopmentDnsConfigRenderer($sites)->render())
+            ->and(new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20')
             ->not->toContain('host-record=analytics.shop.example.com,10.44.0.50');
 
@@ -297,7 +298,7 @@ describe('analytics tracking Route removal', function (): void {
         };
         $sites = new DevelopmentSiteRepository;
         $projector = new NativeRouteRemovalProjector(
-            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites)),
+            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
             new RemoteAppDevCertificateManager($executor, $signer, $accounts),
             new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
             new RemoteAppDevRouteFirewallManager($executor),

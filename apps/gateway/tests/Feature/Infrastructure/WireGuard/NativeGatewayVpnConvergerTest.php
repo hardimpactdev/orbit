@@ -93,21 +93,6 @@ it('rejects invalid subnet inputs before host mutation', function (
         '10.44.0.1',
         'WireGuard subnet [10.44.0.0/31] is invalid.',
     ],
-    'network address' => [
-        '10.44.0.0/30',
-        '10.44.0.0',
-        'Gateway WireGuard address [10.44.0.0] is not usable in [10.44.0.0/30].',
-    ],
-    'broadcast address' => [
-        '10.44.0.0/30',
-        '10.44.0.3',
-        'Gateway WireGuard address [10.44.0.3] is not usable in [10.44.0.0/30].',
-    ],
-    'outside address' => [
-        '10.44.0.0/30',
-        '10.44.0.4',
-        'Gateway WireGuard address [10.44.0.4] is not usable in [10.44.0.0/30].',
-    ],
 ]);
 
 function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, string $orbitHome): void

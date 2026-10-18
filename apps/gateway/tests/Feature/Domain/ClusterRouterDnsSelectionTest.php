@@ -6,6 +6,7 @@ use App\Domain\AppDev\DnsRequester;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -26,7 +27,7 @@ use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('returns the Router LAN address to an eligible Cluster member for the TLD and Cluster-scoped Routes', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
-    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog();
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
@@ -40,7 +41,7 @@ it('returns the Router LAN address to an eligible Cluster member for the TLD and
 
 it('returns the Router WireGuard address when any LAN-selection condition is absent', function (string $source): void {
     [$route, $outside] = orb260_cluster_routes();
-    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog();
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
@@ -59,7 +60,7 @@ it('returns the Router WireGuard address when any LAN-selection condition is abs
 
 it('ignores a caller-supplied EDNS identity when selecting a Router address', function (): void {
     [$route, , $eligible] = orb260_cluster_routes();
-    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog());
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog());
     $codec = new PrivateDnsMessageCodec;
     $claimed = $codec->encodeQuery($route->domain, ednsClientSubnet: (string) $eligible->wireguard_ip);
 
@@ -72,7 +73,7 @@ it('ignores a caller-supplied EDNS identity when selecting a Router address', fu
 it('keeps interleaved eligible and ineligible answers isolated across cache flush', function (): void {
     [$route, , $eligible] = orb260_cluster_routes();
     $cache = new InMemoryPrivateDnsAnswerCache;
-    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog(), $cache);
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog(), $cache);
     $codec = new PrivateDnsMessageCodec;
     $query = fn (): string => $codec->encodeQuery($route->domain);
 
@@ -157,7 +158,7 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
     ]);
     $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $eligible = Node::query()->where('name', 'lan-member')->sole();
-    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog());
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog());
     $codec = new PrivateDnsMessageCodec;
 
     expect(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery('solo.app.test'))))
@@ -173,7 +174,7 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
 it('publishes Cluster TLD wildcards to the Router WireGuard address', function (): void {
     orb260_cluster_routes();
 
-    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
 
     expect($configuration)
         ->toContain('address=/.cluster.test/10.44.0.20')
@@ -190,7 +191,7 @@ it('releases an untargeted retiring Route hostname from Cluster Router DNS selec
     $route->targets()->delete();
     $route->update(['status' => RouteStatus::Retiring]);
 
-    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog();
     $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
 
     expect($catalog->exact[$route->domain] ?? null)
@@ -215,7 +216,7 @@ it('releases a targeted Route hostname once its removal withdraws the publicatio
         'error_code' => $failedStep === null ? null : 'route.test',
     ]);
 
-    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog();
     $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
 
     expect(isset($catalog->overrides[$eligibleKey][$route->domain]))
@@ -230,7 +231,7 @@ it('releases a targeted Route hostname once its removal withdraws the publicatio
 
 it('fills requester catalog overrides for eligible LAN members only', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
-    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->catalog();
     $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
     $vpn = Node::query()->where('name', 'vpn-only')->sole();
     $vpnKey = DnsRequester::registered($vpn->id, (string) $vpn->wireguard_ip)->cacheKey();

@@ -41,9 +41,12 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -58,7 +61,6 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
@@ -68,7 +70,6 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
-use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -214,11 +215,10 @@ use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
-use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
@@ -230,6 +230,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
+use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
@@ -354,7 +355,6 @@ use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -505,6 +505,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
+        ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,
@@ -550,6 +551,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([ValkeyConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
+
         $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
 
         $this->app->bind(
@@ -693,17 +696,14 @@ final class ApplicationServiceProvider extends ServiceProvider
                 deadline: app(CommandDeadline::class),
             ),
         );
-        $this->app->bind(
-            NodeCaddyfileRenderer::class,
-            static fn (): NodeCaddyfileRenderer => new NodeCaddyfileRenderer([
-                app(GatewayWebCaddySiteSource::class),
-                app(MetricsCaddySiteSource::class),
-                app(ServiceMetricsCaddySiteSource::class),
-                app(RouteCaddySiteSource::class),
-                app(WebSocketCaddySiteSource::class),
-                app(AnalyticsCaddySiteSource::class),
-            ], app(Contributions::class)->of(ContributedCaddySiteSource::class)),
-        );
+        $this->app->tag([
+            GatewayWebCaddySiteSource::class,
+            MetricsCaddySiteSource::class,
+            ServiceMetricsCaddySiteSource::class,
+            RouteCaddySiteSource::class,
+            WebSocketCaddySiteSource::class,
+            AnalyticsCaddySiteSource::class,
+        ], NodeCaddySiteSource::class);
         $this->app->scoped(
             ClusterRouterOperationLock::class,
             static fn (): ClusterRouterOperationLock => new NativeClusterRouterOperationLock(
@@ -813,15 +813,6 @@ final class ApplicationServiceProvider extends ServiceProvider
                 processes: app(ProcessRunner::class),
                 firewallParser: app(UfwStatusParser::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-            ),
-        );
-        // One converger, with the contributed start hooks, for Gateway web convergence and the release handoff.
-        $this->app->bind(
-            NativeGatewayFpmConverger::class,
-            static fn (): NativeGatewayFpmConverger => new NativeGatewayFpmConverger(
-                app(ProcessRunner::class),
-                app(RemoteProgramCatalog::class),
-                app(Contributions::class)->of(GatewayServiceStartHook::class),
             ),
         );
         $this->app->singleton(

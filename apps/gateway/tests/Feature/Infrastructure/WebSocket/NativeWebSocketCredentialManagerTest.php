@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
@@ -82,10 +83,10 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
         'wireguard_ip' => '10.44.0.89',
         'user' => 'orbit',
     ]);
-    new CaddySiteCertificates()->record($source->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
     // The move stored the role row on the target, which has its certificate but no live build yet.
     $target = websocketCredentialsNode();
-    new CaddySiteCertificates()->record($target->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
     $manager = app(WebSocketCredentialManager::class);
     $manager->ensure($target);
 
@@ -98,7 +99,7 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
         ->and($manager->current()?->addresses())->toBe(['10.44.0.90', '10.44.0.89']);
 
     // The old Node's withdrawal forgets its certificate record before its build and its mark after it.
-    new CaddySiteCertificates()->forget($source->id, CaddySiteCertificates::Websocket);
+    new CaddySiteCertificates()->forget($source->id, WebSocketCaddySiteSource::CertificateSlug);
 
     expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
 

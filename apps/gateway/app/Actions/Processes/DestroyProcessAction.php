@@ -6,7 +6,6 @@ namespace App\Actions\Processes;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRemovalGuard;
@@ -17,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
 use App\Models\RouteCustomProxy;
+use Illuminate\Container\Attributes\Tag;
 use SensitiveParameter;
 
 final readonly class DestroyProcessAction
@@ -27,9 +27,11 @@ final readonly class DestroyProcessAction
 
     private RecordEventBroadcaster $broadcaster;
 
+    /** @param iterable<ProcessRemovalGuard> $guards */
     public function __construct(
         private ProcessRuntimeManager $runtime,
         private ProcessTargetResolver $targets,
+        #[Tag(ProcessRemovalGuard::class)] private iterable $guards,
         ?ProcessRuntimeLease $lease = null,
         ?RecordEventBroadcaster $broadcaster = null,
     ) {
@@ -42,7 +44,7 @@ final readonly class DestroyProcessAction
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
             if (! $removedByOwningRole) {
-                foreach (app(Contributions::class)->of(ProcessRemovalGuard::class) as $guard) {
+                foreach ($this->guards as $guard) {
                     $guard->assertRemovable($fresh);
                 }
             }

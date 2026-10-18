@@ -6,6 +6,9 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
@@ -26,17 +29,17 @@ it('records a certificate for every role site that renders today and for nothing
 
     $records = new CaddySiteCertificates;
 
-    expect($records->published($websocket->id, CaddySiteCertificates::Websocket))->toBeTrue()
-        ->and($records->published($retrying->id, CaddySiteCertificates::Analytics))->toBeTrue()
-        ->and($records->published($gateway->id, CaddySiteCertificates::Metrics))->toBeTrue()
+    expect($records->published($websocket->id, WebSocketCaddySiteSource::CertificateSlug))->toBeTrue()
+        ->and($records->published($retrying->id, AnalyticsCaddySiteSource::CertificateSlug))->toBeTrue()
+        ->and($records->published($gateway->id, MetricsCaddySiteSource::CertificateSlug))->toBeTrue()
         ->and($records->published($collector->id, ProxyCliCaddySiteSource::CertificateSlug))->toBeTrue()
-        ->and($records->published($removing->id, CaddySiteCertificates::Websocket))->toBeFalse()
-        ->and($records->published($removalFailed->id, CaddySiteCertificates::Analytics))->toBeFalse()
-        ->and($records->published($metrics->id, CaddySiteCertificates::Metrics))->toBeFalse();
+        ->and($records->published($removing->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
+        ->and($records->published($removalFailed->id, AnalyticsCaddySiteSource::CertificateSlug))->toBeFalse()
+        ->and($records->published($metrics->id, MetricsCaddySiteSource::CertificateSlug))->toBeFalse();
 
     run_legacy_schema_migration($migration, 'down');
 
-    expect($records->published($websocket->id, CaddySiteCertificates::Websocket))->toBeFalse()
+    expect($records->published($websocket->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
         ->and(app(ProxyCliState::class)->enabled())->toBeTrue();
 });
 
@@ -47,7 +50,7 @@ it('records no Metrics certificate on the Gateway while no Metrics role renders'
 
     run_legacy_schema_migration($migration, 'up');
 
-    expect(new CaddySiteCertificates()->published($gateway->id, CaddySiteCertificates::Metrics))->toBeFalse();
+    expect(new CaddySiteCertificates()->published($gateway->id, MetricsCaddySiteSource::CertificateSlug))->toBeFalse();
 });
 
 /** @param array<string, array{LifecycleStatus, ?string}> $roles */

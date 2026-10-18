@@ -31,6 +31,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private CustomProxyRouteInspector $inspector,
+        private ReservedPrivateHostname $reservedHostnames,
     ) {}
 
     public function family(): DoctorFamily
@@ -161,7 +162,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
      */
     private function reservedIssues(Collection $routes): array
     {
-        $reserved = ReservedPrivateHostname::names();
+        $reserved = $this->reservedHostnames->names();
 
         return array_values($routes
             ->filter(static fn (Route $route): bool => in_array($route->domain, $reserved, true))

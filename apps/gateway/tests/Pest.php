@@ -78,7 +78,6 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
-require_once __DIR__.'/Helpers/PlugInAssertions.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
@@ -154,6 +153,7 @@ pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tia
 // The Gateway reads these as programs and catalogues, not as PHP, so coverage never records them.
 // A change reruns the tests that cover that file, and no others.
 pest()->tia()->watch([
+    'tests/Fixtures/valkey/*.json' => 'tests/Unit/Domain/DatabaseServers/ValkeyAclUserTest.php',
     'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
     'resources/tasks/metadata' => 'tests/Feature/Infrastructure/Tasks',
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
@@ -175,6 +175,7 @@ pest()->tia()->watch([
     'resources/remote/lib/program.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'resources/remote/lib/source-removal.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
     'resources/remote/instances/*.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+    'resources/remote/database-servers/*.py' => 'tests/Feature/Api/ValkeyDatabaseServersTest.php',
     'tests/Programs/*.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'ruff.toml' => 'tests/Feature/Infrastructure/RemotePrograms',
 ]);

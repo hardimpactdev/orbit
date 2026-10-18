@@ -16,6 +16,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -138,7 +139,7 @@ it('projects a production workload through a remote Router over LAN without publ
         ->first(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true));
     $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
     $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
-    $dnsConfiguration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
+    $dnsConfiguration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
     $pushed = collect($ssh->commands)
         ->map(static fn (array $entry): ?string => SshNodeCaddyBuilds::pushed($entry['command']))
         ->filter();
@@ -427,7 +428,7 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
         new RemoteAppDevCertificateManager($executor, $signer, $accounts),
         $firewall,
         new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
-        new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites)),
+        new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
         new Orb199ProductionReleaseLayout,
         $executor,
     );

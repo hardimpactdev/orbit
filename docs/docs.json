@@ -484,7 +484,8 @@
               "GET /api/v1/database-servers",
               "POST /api/v1/database-servers",
               "DELETE /api/v1/database-servers/{database_server}",
-              "GET /api/v1/database-servers/{database_server}"
+              "GET /api/v1/database-servers/{database_server}",
+              "POST /api/v1/database-servers/{database_server}/close"
             ]
           },
           {
@@ -667,8 +668,10 @@
               "decisions/0215-start-development-processes-from-project-definitions",
               "decisions/0218-take-long-commands-off-the-request-path",
               "decisions/0219-answer-cluster-names-from-a-dns-on-the-router",
+              "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users",
               "decisions/0222-give-task-vms-a-cloned-topology-seed",
-              "decisions/0223-run-one-gate-from-handoff-to-merge"
+              "decisions/0223-run-one-gate-from-handoff-to-merge",
+              "decisions/0224-give-each-task-group-one-holder-and-one-sender"
             ]
           }
         ]

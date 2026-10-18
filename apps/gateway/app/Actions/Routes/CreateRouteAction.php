@@ -50,6 +50,7 @@ final readonly class CreateRouteAction
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
         private CustomProxyRouteProjector $customProxies,
+        private ReservedPrivateHostname $reservedHostnames,
         private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
@@ -216,7 +217,7 @@ final readonly class CreateRouteAction
     private function run(CreateRouteData $data, bool $activating = false): array
     {
         $domain = RouteDomain::validate($data->domain);
-        ReservedPrivateHostname::assertAvailable($domain);
+        $this->reservedHostnames->assertAvailable($domain);
 
         $result = $data->isCustomProxy()
             ? $this->persistCustomProxy($data, $domain)
@@ -296,7 +297,7 @@ final readonly class CreateRouteAction
                 $placement->effectiveTld,
             )
             : RouteDomain::validate($domain);
-        ReservedPrivateHostname::assertAvailable($resolvedHostname);
+        $this->reservedHostnames->assertAvailable($resolvedHostname);
 
         return $this->create(
             projectId: $instance->project_id,

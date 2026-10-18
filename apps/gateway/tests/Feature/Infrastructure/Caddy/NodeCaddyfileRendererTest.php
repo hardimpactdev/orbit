@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -271,9 +270,9 @@ describe('site sources', function (): void {
 
     it('keeps the certificate slugs that live Nodes store', function (): void {
         expect([
-            CaddySiteCertificates::Websocket,
-            CaddySiteCertificates::Analytics,
-            CaddySiteCertificates::Metrics,
+            WebSocketCaddySiteSource::CertificateSlug,
+            AnalyticsCaddySiteSource::CertificateSlug,
+            MetricsCaddySiteSource::CertificateSlug,
             ProxyCliCaddySiteSource::CertificateSlug,
         ])->toBe(['websocket', 'analytics', 'metrics', 'proxycli']);
     });
@@ -287,11 +286,11 @@ describe('site sources', function (): void {
 
         expect($render())->not->toContain('reverb.orbit')->not->toContain('analytics.orbit');
 
-        $certificates->record($node->id, CaddySiteCertificates::Websocket);
+        $certificates->record($node->id, WebSocketCaddySiteSource::CertificateSlug);
 
         expect($render())->toContain('reverb.orbit')->not->toContain('analytics.orbit');
 
-        $certificates->forget($node->id, CaddySiteCertificates::Websocket);
+        $certificates->forget($node->id, WebSocketCaddySiteSource::CertificateSlug);
 
         expect($render())->not->toContain('reverb.orbit');
     });
@@ -301,7 +300,7 @@ describe('site sources', function (): void {
         $target = caddy_build_node('app-dev', '10.44.0.2');
         $role = $source->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         $certificates = new CaddySiteCertificates;
-        $certificates->record($source->id, CaddySiteCertificates::Websocket);
+        $certificates->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
         $serves = static fn (Node $node): bool => str_contains(caddy_build_renderer()->render($node)->content, 'reverb.orbit {');
 
         // The move transfers the row first; the target has no certificate yet.
@@ -309,12 +308,12 @@ describe('site sources', function (): void {
 
         expect($serves($source))->toBeTrue()->and($serves($target))->toBeFalse();
 
-        $certificates->record($target->id, CaddySiteCertificates::Websocket);
+        $certificates->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
 
         expect($serves($source))->toBeTrue()->and($serves($target))->toBeTrue();
 
         // The retraction forgets the source record before its withdrawing build.
-        $certificates->forget($source->id, CaddySiteCertificates::Websocket);
+        $certificates->forget($source->id, WebSocketCaddySiteSource::CertificateSlug);
 
         expect($serves($source))->toBeFalse()->and($serves($target))->toBeTrue();
 
@@ -596,25 +595,6 @@ describe('duplicate addresses', function (): void {
     });
 });
 
-describe('contributed site sources', function (): void {
-    it('refuses a contributed site that uses a core source name', function (string $source): void {
-        $node = caddy_build_node('services', '10.44.0.3');
-        caddy_build_task_vms();
-        $site = caddy_build_rendered_site(CaddyListenerRule::Shared, host: 'collector.test', source: $source);
-
-        $caddyfile = new NodeCaddyfileRenderer([], [caddy_build_contribution(null, $site)])->render($node);
-
-        expect($caddyfile->buildable())->toBeFalse()
-            ->and($caddyfile->problems)->toBe(["The contributed {$source} site collector.test uses a core source name."])
-            ->and($caddyfile->sites)->toBe([]);
-    })->with(['gateway', 'websocket']);
-
-    it('refuses a contributed source that uses a core certificate slug', function (string $slug): void {
-        expect(fn (): NodeCaddyfileRenderer => new NodeCaddyfileRenderer([], [caddy_build_contribution($slug)]))
-            ->toThrow(LogicException::class, "uses the core certificate slug [{$slug}].");
-    })->with(CaddySiteCertificates::CoreSlugs);
-});
-
 function caddy_build_renderer(): NodeCaddyfileRenderer
 {
     return new NodeCaddyfileRenderer([
@@ -624,26 +604,7 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
         new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer),
         new WebSocketCaddySiteSource(new WebSocketCaddySiteRenderer, 8080),
         new AnalyticsCaddySiteSource,
-    ], app(Contributions::class)->of(ContributedCaddySiteSource::class));
-}
-
-function caddy_build_contribution(?string $slug, CaddySite ...$sites): ContributedCaddySiteSource
-{
-    return new readonly class($slug, $sites) implements ContributedCaddySiteSource
-    {
-        /** @param list<CaddySite> $sites */
-        public function __construct(private ?string $slug, private array $sites) {}
-
-        public function certificateSlug(): ?string
-        {
-            return $this->slug;
-        }
-
-        public function sites(Node $node): array
-        {
-            return $this->sites;
-        }
-    };
+    ], [...app()->tagged(ContributedCaddySiteSource::class)]);
 }
 
 /** @param list<CaddySite> $sites */

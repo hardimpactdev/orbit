@@ -8,6 +8,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -332,7 +333,7 @@ describe('custom proxy ownership guards', function (): void {
         $runtime = Mockery::mock(ProcessRuntimeManager::class);
         $runtime->shouldNotReceive('remove');
 
-        expect(fn () => new DestroyProcessAction($runtime, new ProcessTargetResolver)->execute($process))
+        expect(fn () => new DestroyProcessAction($runtime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('process.has_routes');
             })

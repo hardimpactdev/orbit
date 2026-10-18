@@ -13,6 +13,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -460,7 +461,7 @@ function certificate_order_bind_projectors(
             }
         },
     );
-    $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites));
+    $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
     $firewall = new RemoteAppDevRouteFirewallManager($executor);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);

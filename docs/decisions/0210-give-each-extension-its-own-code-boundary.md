@@ -78,7 +78,7 @@ Two more points move the last Documents footprints out of core:
 
 Core checks each start hook before it changes anything, then installs the program and its drop-in. Core keeps the MCP envelopes exact itself. Documents contributes its startup hook and its document routes. The hook and its drop-in keep their paths and bytes. Core records the hooks it installed in a manifest and removes only what the manifest lists. The first run on a Gateway without a manifest adopts the Documents files and removes nothing.
 
-Each extension that moves after Documents adds points the same way: Caddy site sources, private DNS records, reserved hostnames, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
+Each extension that moves after Documents adds points the same way: Caddy site sources, private hostnames with optional DNS addresses, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
 ### The boundary is enforced
 
@@ -152,7 +152,7 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - Core no longer installs the Documents PHP-FPM startup hook or matches document routes. Documents contributes the hook, which runs `project-documents:cleanup:invalidate`, through `GatewayServiceStartHook`, and its exact request bodies through `ExactRequestBody`.
 - Documents contributes its Activity rule through `ActivityInputRedaction`: it matches `project:document:*` by route name and never calls the input closure, so Activity never parses a document body.
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
-- The CLI and `bin/docs-openapi` keep their own slug lists. The CLI shows every slug as `UNKNOWN` when the Gateway cannot answer, and the OpenAPI document is generated without a database. A new extension updates both lists.
+- `bin/docs-openapi` derives extension tags and slugs from `RequireEnabledExtension:<slug>` in the route middleware, without a database. The CLI keeps one slug list only to show `UNKNOWN` when the Gateway cannot answer.
 - While `documents` is off, its background cleanup still runs and still needs its storage credentials.
 - While `vault` is off, a published item stays as it was. A credential that changed or a Database user that was removed meanwhile is fixed on the first sync after the switch turns on.
 - While `conn` is off, a T3 server cannot register and a device cannot read its profile. The records stay.

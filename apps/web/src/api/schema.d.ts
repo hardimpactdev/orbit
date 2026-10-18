@@ -692,6 +692,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/database-servers/{database_server}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * database:server:close
+         * @description Give default the admin password on an adopted Valkey server.
+         */
+        post: operations["database-server-close"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deployments/{deployment}": {
         parameters: {
             query?: never;
@@ -741,7 +761,7 @@ export interface paths {
         };
         /**
          * List extensions
-         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, `documents`, `vault`, and `conn`.
+         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers.
          */
         get: operations["extension-list"];
         put?: never;
@@ -763,7 +783,7 @@ export interface paths {
         put?: never;
         /**
          * Disable an extension
-         * @description Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.
+         * @description Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. An unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.
          */
         post: operations["extension-disable"];
         delete?: never;
@@ -783,7 +803,7 @@ export interface paths {
         put?: never;
         /**
          * Enable an extension
-         * @description Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
+         * @description Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. An unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
          */
         post: operations["extension-enable"];
         delete?: never;
@@ -4059,6 +4079,7 @@ export interface components {
         DatabaseServer: {
             id?: number;
             slug?: string;
+            driver?: string;
             node_id?: number;
             process_id?: number | null;
             tag?: string;
@@ -4096,7 +4117,7 @@ export interface components {
         };
         DoctorFamilyReport: {
             /** @enum {string} */
-            family?: "node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route";
+            family?: "node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route" | "database_server";
             /** @enum {string} */
             status?: "healthy" | "drift" | "unverifiable";
             checked?: number;
@@ -6977,6 +6998,12 @@ export interface operations {
                     slug: string;
                     server: string;
                     instance_id?: number;
+                } | {
+                    slug: string;
+                    server: string;
+                    database?: number;
+                    patterns: string[];
+                    allow: string[];
                 };
             };
         };
@@ -7627,10 +7654,18 @@ export interface operations {
                     /** @description Database server slug */
                     slug: string;
                     node_id: number;
-                    /** @description MySQL image tag. Defaults to 8.4 */
+                    /**
+                     * @description Server driver: mysql or redis. Defaults to mysql
+                     * @enum {string}
+                     */
+                    driver?: "mysql" | "redis";
+                    /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis */
                     tag?: string;
-                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 */
+                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis */
                     port?: number;
+                    process_id?: number;
+                    /** @description Existing redis connection for adoption */
+                    connection?: string;
                 };
             };
         };
@@ -7787,6 +7822,59 @@ export interface operations {
             };
         };
     };
+    "database-server-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database server slug. */
+                database_server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-deployment-show": {
         parameters: {
             query?: never;
@@ -7841,7 +7929,7 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id?: number;
-                    families?: ("node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route")[];
+                    families?: ("node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route" | "database_server")[];
                 };
             };
         };
@@ -7905,11 +7993,11 @@ export interface operations {
                     "application/json": {
                         /** @description Enabled state keyed by extension slug. */
                         data: {
-                            tasks: boolean;
-                            proxycli: boolean;
-                            documents: boolean;
-                            vault: boolean;
                             conn: boolean;
+                            documents: boolean;
+                            proxycli: boolean;
+                            tasks: boolean;
+                            vault: boolean;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -7931,8 +8019,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`. */
-                extension: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
+                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -7947,7 +8035,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
                             /** @constant */
                             enabled: false;
                         };
@@ -7989,8 +8077,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`. */
-                extension: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
+                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -8005,7 +8093,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "tasks" | "proxycli" | "documents" | "vault" | "conn";
+                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
                             /** @constant */
                             enabled: true;
                         };

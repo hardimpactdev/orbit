@@ -9,19 +9,12 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\GatewayExtensionState;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use App\Support\ExtensionCommandVisibility;
 use App\Support\GatedExtensionCommand;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 
 abstract class ProxyCliCommand extends GatewayCommand implements GatedExtensionCommand
 {
-    public function isHidden(): bool
-    {
-        return ExtensionCommandVisibility::listing()
-            && app(GatewayExtensionState::class)->isEnabled('proxycli') !== true;
-    }
-
     public function extensionSlug(): ?string
     {
         return 'proxycli';

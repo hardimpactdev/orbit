@@ -215,6 +215,7 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
+                "Database server",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -455,6 +456,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Database server",
                 "Doctor",
                 "Gateway",
                 "Instance",
@@ -1120,6 +1122,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users.md",
+            "title": "ADR 0221: Run Valkey Database servers with Orbit-owned ACL users",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0190",
+                "0212",
+                "0221"
+            ]
+        },
+        {
             "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
             "title": "ADR 0222: Give task VMs a cloned topology seed",
             "kind": "decision",
@@ -1173,6 +1202,42 @@
                 "0200",
                 "0213",
                 "0223"
+            ]
+        },
+        {
+            "path": "docs/decisions/0224-give-each-task-group-one-holder-and-one-sender.md",
+            "title": "ADR 0224: Give each task group one workspace holder and one sender",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deliverable",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Pi server",
+                "Process",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0210",
+                "0211",
+                "0212",
+                "0218",
+                "0223",
+                "0224"
             ]
         },
         {
@@ -1235,8 +1300,10 @@
                 "0215",
                 "0218",
                 "0219",
+                "0221",
                 "0222",
-                "0223"
+                "0223",
+                "0224"
             ]
         },
         {
@@ -1699,13 +1766,17 @@
             "concepts": [
                 "Activity",
                 "Database server",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project"
+                "Project",
+                "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0221"
+            ]
         },
         {
             "path": "docs/reference/delivery-line.md",
@@ -1875,7 +1946,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Cluster",
                 "Database server",
                 "Doctor",
                 "Extension",
@@ -1922,6 +1992,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1935,7 +2006,10 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0212",
+                "0221"
+            ]
         },
         {
             "path": "docs/reference/gateway-recovery.md",
@@ -1977,6 +2051,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Database server",
                 "Deliverable",
                 "Doctor",
                 "Extension",
@@ -2632,6 +2707,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2653,6 +2729,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",
@@ -2839,6 +2916,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
                 "Deployment",
                 "Doctor",
                 "Extension",

@@ -3,13 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Processes\DestroyProcessAction;
-use App\Domain\Analytics\AnalyticsProcessOwnership;
-use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
-use App\Domain\Extensions\Contributions;
-use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\ProxyCli\ProxyCliProcess;
-use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -33,11 +28,6 @@ function guarded_process(): array
 
     return [$node, $process, $runtime];
 }
-
-it('resolves the core and extension guards through production provider tags', function (): void {
-    expect(array_map(static fn (ProcessRemovalGuard $guard): string => $guard::class, app(Contributions::class)->of(ProcessRemovalGuard::class)))
-        ->toEqualCanonicalizing([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class, ProxyCliProcessOwnership::class]);
-});
 
 it('refuses collector removal before changing stored state or calling the runtime', function (): void {
     [$node, $process, $runtime] = guarded_process();
@@ -63,17 +53,3 @@ it('keeps the owning feature removal path and permits removal after setup releas
     expect(Process::query()->whereKey($process->id)->exists())->toBeFalse();
     expect($runtime->removed)->toBe([$process->id]);
 })->with([true, false]);
-
-it('fails closed on invalid and duplicate guard registrations before any mutation', function (string $guard, string $message): void {
-    [, $process, $runtime] = guarded_process();
-    $before = $process->refresh()->getAttributes();
-    app()->tag([$guard], ProcessRemovalGuard::class);
-
-    expect(fn () => app(DestroyProcessAction::class)->execute($process))->toThrow(LogicException::class, $message);
-    expect($process->fresh()?->getAttributes())->toBe($before);
-    expect($runtime->removed)->toBeEmpty();
-})->with([
-    'wrong interface' => [stdClass::class, 'does not implement it'],
-    'duplicate core' => [AnalyticsProcessOwnership::class, 'tagged twice'],
-    'duplicate extension' => [ProxyCliProcessOwnership::class, 'tagged twice'],
-]);

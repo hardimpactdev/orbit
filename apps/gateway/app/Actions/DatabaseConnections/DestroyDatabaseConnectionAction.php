@@ -34,8 +34,9 @@ final readonly class DestroyDatabaseConnectionAction
             $guard->assertRemovable($connection);
         }
 
-        $this->drops->execute($connection);
-        $connection->delete();
+        $this->drops->execute($connection, static function () use ($connection): void {
+            $connection->delete();
+        });
 
         $this->broadcaster->broadcast(
             RecordEventType::DatabaseDeleted,

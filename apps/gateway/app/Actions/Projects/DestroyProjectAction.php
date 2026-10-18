@@ -6,26 +6,26 @@ namespace App\Actions\Projects;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Extensions\Contributions;
 use App\Domain\Projects\ProjectRemovalHook;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Project;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DestroyProjectAction
 {
+    /** @param iterable<ProjectRemovalHook> $hooks */
     public function __construct(
+        #[Tag(ProjectRemovalHook::class)] private iterable $hooks,
         private ?RouteRemovalGuard $routes = null,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Project $project): Project
     {
-        $hooks = app(Contributions::class)->of(ProjectRemovalHook::class);
-
-        DB::transaction(function () use ($project, $hooks): void {
-            foreach ($hooks as $hook) {
+        DB::transaction(function () use ($project): void {
+            foreach ($this->hooks as $hook) {
                 $hook->lock($project);
             }
             if ($project->instances()->exists()) {
@@ -46,7 +46,7 @@ final readonly class DestroyProjectAction
                 );
             }
 
-            foreach ($hooks as $hook) {
+            foreach ($this->hooks as $hook) {
                 $hook->remove($project);
             }
             $project->delete();
