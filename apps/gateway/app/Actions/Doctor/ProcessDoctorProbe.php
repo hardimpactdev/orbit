@@ -11,6 +11,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
@@ -23,6 +24,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
@@ -37,30 +39,43 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Process;
     }
 
-    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
     {
-        $processes = Process::query()
-            ->where(function ($query) use ($context): void {
+        return DoctorResources::groups($this->rows($node)->modelKeys(), 3);
+    }
+
+    /** @return Collection<int, Process> */
+    private function rows(Node $node): Collection
+    {
+        return Process::query()
+            ->where(function ($query) use ($node): void {
                 $query
-                    ->where(function ($query) use ($context): void {
+                    ->where(function ($query) use ($node): void {
                         $query
                             ->whereIn('owner_type', Instance::morphTypes())
                             ->whereIn(
                                 'owner_id',
                                 Instance::query()
                                     ->select('id')
-                                    ->where('node_id', $context->node->id)
+                                    ->where('node_id', $node->id)
                                     ->where('status', '!=', InstanceState::Removing),
                             );
                     })
-                    ->orWhere(function ($query) use ($context): void {
+                    ->orWhere(function ($query) use ($node): void {
                         $query
                             ->where('owner_type', Node::class)
-                            ->where('owner_id', $context->node->id);
+                            ->where('owner_id', $node->id);
                     });
             })
             ->orderBy('id')
             ->get();
+    }
+
+    public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
+    {
+        $processes = $this->rows($context->node);
+        $processes = $context->select($processes);
 
         if ($processes->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, 0, []);
@@ -87,49 +102,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         $instanceIssues = [];
         $asleep = [];
         foreach ($processes as $process) {
-            $issue = null;
-            try {
-                $inspection = $this->inspector->inspect($process);
-            } catch (DoctorInspectionException) {
-                $issue = $this->failure($process);
-            }
-
-            if (! $issue instanceof DoctorIssueData && ! $inspection->present) {
-                $issue = $this->issue(
-                    $process,
-                    ProcessDoctorIssueCode::RuntimeMissing,
-                    DoctorIssueKind::Drift,
-                    'present',
-                    'absent',
-                );
-            }
-
-            if (! $issue instanceof DoctorIssueData) {
-                $observed = $inspection->status;
-                if ($observed === null) {
-                    $issue = $this->failure($process);
-                } elseif (
-                    $process->runtime === ProcessRuntime::Systemd
-                    && $process->desired_state === DesiredProcessState::Running
-                    && $inspection->isCrashLoop()
-                ) {
-                    $issue = $this->issue(
-                        $process,
-                        ProcessDoctorIssueCode::CrashLoop,
-                        DoctorIssueKind::Drift,
-                        DesiredProcessState::Running->value,
-                        $inspection->crashLoopEvidence(),
-                    );
-                } elseif (! $this->isHealthy($process, $observed, $asleep)) {
-                    $issue = $this->issue(
-                        $process,
-                        ProcessDoctorIssueCode::StateMismatch,
-                        DoctorIssueKind::Drift,
-                        $process->desired_state->value,
-                        $observed->value,
-                    );
-                }
-            }
+            $issue = $this->inspectState($process, $asleep);
 
             if (! $issue instanceof DoctorIssueData) {
                 continue;
@@ -160,6 +133,64 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues);
+    }
+
+    /** Inspect one Process without a fleet or Node scan. */
+    public function inspectProcess(Process $process): ?DoctorIssueData
+    {
+        $asleep = [];
+
+        return $this->inspectState($process, $asleep);
+    }
+
+    /** @param array<int, bool> $asleep */
+    private function inspectState(Process $process, array &$asleep): ?DoctorIssueData
+    {
+        $issue = null;
+        try {
+            $inspection = $this->inspector->inspect($process);
+        } catch (DoctorInspectionException) {
+            $issue = $this->failure($process);
+        }
+
+        if (! $issue instanceof DoctorIssueData && ! $inspection->present) {
+            $issue = $this->issue(
+                $process,
+                ProcessDoctorIssueCode::RuntimeMissing,
+                DoctorIssueKind::Drift,
+                'present',
+                'absent',
+            );
+        }
+
+        if (! $issue instanceof DoctorIssueData) {
+            $observed = $inspection->status;
+            if ($observed === null) {
+                $issue = $this->failure($process);
+            } elseif (
+                $process->runtime === ProcessRuntime::Systemd
+                && $process->desired_state === DesiredProcessState::Running
+                && $inspection->isCrashLoop()
+            ) {
+                $issue = $this->issue(
+                    $process,
+                    ProcessDoctorIssueCode::CrashLoop,
+                    DoctorIssueKind::Drift,
+                    DesiredProcessState::Running->value,
+                    $inspection->crashLoopEvidence(),
+                );
+            } elseif (! $this->isHealthy($process, $observed, $asleep)) {
+                $issue = $this->issue(
+                    $process,
+                    ProcessDoctorIssueCode::StateMismatch,
+                    DoctorIssueKind::Drift,
+                    $process->desired_state->value,
+                    $observed->value,
+                );
+            }
+        }
+
+        return $issue;
     }
 
     /** @param array<int, bool> $asleep */

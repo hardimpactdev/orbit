@@ -71,7 +71,7 @@ it('refuses reservations on every queue without consuming or clearing work', fun
     $this->redis->shouldReceive('zcard')->with('queues:'.$queue.':reserved')->andReturn(1);
 
     expect(fn () => $this->drain->assertHeld($this->target))->toThrow(GatewayReleaseException::class, "Queue [{$queue}]");
-})->with(['tasks', 'task-vms', 'builds', 'builds-optional', 'operations']);
+})->with(['tasks', 'problems', 'task-vms', 'builds', 'builds-optional', 'operations']);
 
 it('refuses hidden or unobservable process owners', function (string $mount): void {
     $path = $this->pipeline->home.'/proc-mounts';
