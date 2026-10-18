@@ -6,7 +6,7 @@ namespace App\Infrastructure\Nodes;
 
 final readonly class NodeAgentFootprint
 {
-    public const string Version = '0.4.2';
+    public const string Version = '0.4.3';
 
     /** @var list<string> */
     public const array Architectures = ['x86_64', 'aarch64'];
@@ -17,6 +17,10 @@ final readonly class NodeAgentFootprint
      * @var array<string, array{x86_64: string, aarch64: string}>
      */
     private const array ReleaseManifests = [
+        '0.4.3' => [
+            'x86_64' => '4effe5a562dbb087f33a580e9912e0b78c83f77ff72af6d2eec030b4b918d74a',
+            'aarch64' => '8c063259e2f04900b988bc6405c987dd5273ad9d15b856abb3ab98bbb36cb4df',
+        ],
         '0.4.2' => [
             'x86_64' => '800c83121c6c3c1e1614d11326e1a2386f0651897a5dd7eb35155aac1867ccee',
             'aarch64' => 'edddd97040290d7a4cc8ba83c8cc68121c46c714bb8fbf05bd60f06f94bf2bb1',
