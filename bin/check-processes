@@ -14,7 +14,7 @@ SETTING = 'ORBIT_CHECK_PROCESSES'
 # Measured Gateway worker RSS, rounded up with headroom. See implementation-loop.md.
 WORKER_MEMORY = 1280 * 1024 ** 2
 # Fixed gate overhead, in addition to the headroom in each worker allocation.
-MEMORY_RESERVE = 512 * 1024 ** 2
+MEMORY_RESERVE = 640 * 1024 ** 2
 PROC = Path('/proc')
 CGROUP = Path('/sys/fs/cgroup')
 

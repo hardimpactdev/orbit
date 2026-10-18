@@ -18,7 +18,7 @@ budget = importlib.util.module_from_spec(spec)
 loader.exec_module(budget)
 GIB = 1024 ** 3
 WORKER = 1280 * 1024 ** 2
-RESERVE = 512 * 1024 ** 2
+RESERVE = 640 * 1024 ** 2
 
 
 class CheckProcessesTest(unittest.TestCase):

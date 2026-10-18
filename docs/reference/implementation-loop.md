@@ -328,7 +328,7 @@ Root `bin/test` queues the five project suites through the same weighted lane al
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 512 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
 
 | Tool | How it reads the process count |
 | --- | --- |
@@ -747,7 +747,7 @@ The 1.25 GiB allocation comes from the Gateway's full suite and `composer check`
 | Pint | 92.5 MiB |
 
 
-Whole-gate measurements on Beast used disposable task VMs from base image `46ccd3ced25598cdf6693a5b83213669ae44b8b9246f053ca10fa7a541773442`, recipe `5f4f8085d91f6523112b8ecb558db1fc85988e114356883afac08ebf8fba2100`, PHP 8.5.11, and the reviewed step 2 code. Each ran root `composer check` with `ORBIT_CHECK_SCOPE=full`, the main TIA graphs at `353ef196c`, and no worker-count override. The normal size supports no topology. The other sizes kept their nested Nodes running after the harness passed readiness. The VMs ran one at a time.
+Whole-gate measurements on Beast used disposable task VMs from base image `46ccd3ced25598cdf6693a5b83213669ae44b8b9246f053ca10fa7a541773442`, recipe `5f4f8085d91f6523112b8ecb558db1fc85988e114356883afac08ebf8fba2100`, PHP 8.5.11, and the reviewed step 2 code. Each ran root `composer check` with `ORBIT_CHECK_SCOPE=full`, the main TIA graphs at `353ef196c`, and no worker-count override. This checks all quality-tool paths; the warm affected selections ran 748 E2E tests and no tests in the other four PHP projects, including Gateway. The normal size supports no topology. The other sizes kept their nested Nodes running after the harness passed readiness. Gates ran one at a time, with the other measurement VMs stopped.
 
 | VM | Nested Nodes | Derived workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS |
 | --- | --- | --- | --- | --- | --- | --- |
