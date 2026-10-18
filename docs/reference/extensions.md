@@ -97,8 +97,8 @@ Core resolves tagged implementations and calls each one through the typed interf
 | `App\Domain\Routes\ContributedReservedHostnames` | The [Route domain](/reference/routes) and analytics tracking host checks, and private DNS publication | `hostnames()` |
 | `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | `database:update` | `validate()` and `afterCommit()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | `database:destroy` | `assertRemovable()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
+| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
 `ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action reads all guards through strict `Contributions::of()` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.

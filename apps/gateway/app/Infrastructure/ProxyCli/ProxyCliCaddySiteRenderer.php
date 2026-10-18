@@ -15,8 +15,9 @@ final readonly class ProxyCliCaddySiteRenderer
 {
     public const string RetryDuration = '5s';
 
-    public function render(int $port = ProxyCliProcess::PORT): string
+    public function render(): string
     {
+        $port = ProxyCliProcess::PORT;
         $marker = ProxyCliFootprint::CaddyFragmentMarker;
         $host = ProxyCliFootprint::Hostname;
         $certificate = ProxyCliFootprint::CertificateCurrentDirectory;

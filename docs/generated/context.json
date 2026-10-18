@@ -177,6 +177,7 @@
             "concepts": [
                 "Database server",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1739,6 +1740,7 @@
                 "Activity",
                 "Database server",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

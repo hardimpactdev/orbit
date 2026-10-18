@@ -20,7 +20,7 @@ final readonly class ProxyCliProcess
     /**
      * @param  array<string, string>  $environment
      */
-    public static function data(Node $node, array $environment, int $port = self::PORT): AddProcessData
+    public static function data(Node $node, array $environment): AddProcessData
     {
         return new AddProcessData(
             targetType: ProcessTargetType::Node,
@@ -30,8 +30,8 @@ final readonly class ProxyCliProcess
             command: [self::EXECUTABLE, '/var/lib/orbit/proxycli/server.py'],
             image: null,
             workingDirectory: '/var/lib/orbit/proxycli',
-            environment: $environment,
-            ports: ['127.0.0.1:'.$port.':'.$port.'/tcp'],
+            environment: [...$environment, 'PROXYCLI_PORT' => (string) self::PORT],
+            ports: ['127.0.0.1:'.self::PORT.':'.self::PORT.'/tcp'],
             volumes: [],
             restartPolicy: 'unless-stopped',
             start: true,

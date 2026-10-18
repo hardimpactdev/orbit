@@ -373,7 +373,7 @@ it('takes over the Route before it restarts the collector', function (): void {
     {
         public function __construct(private ArrayObject $events) {}
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void
         {
             $this->events->append("publication:route-{$takeover?->id}");
         }
@@ -384,7 +384,7 @@ it('takes over the Route before it restarts the collector', function (): void {
     {
         public function __construct(private ArrayObject $events) {}
 
-        public function converge(Node $node, array $environment, int $port = ProxyCliProcess::PORT): void
+        public function converge(Node $node, array $environment): void
         {
             $this->events->append('runtime');
         }
@@ -658,7 +658,7 @@ it('holds the model key lock from the key check through the teardown', function 
     {
         public ?bool $lockFree = null;
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
 
         public function remove(Node $node): void
         {
@@ -724,7 +724,7 @@ it('republishes private DNS without the collector name when the extension is dis
     {
         public ?string $dnsAtRemoval = null;
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
 
         public function remove(Node $node): void
         {

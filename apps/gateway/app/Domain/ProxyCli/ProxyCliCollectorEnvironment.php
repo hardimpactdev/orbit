@@ -19,11 +19,10 @@ final readonly class ProxyCliCollectorEnvironment
             'PROXYCLI_MANAGEMENT_KEY' => $this->state->cliproxyManagementKey() ?? throw new LogicException('ProxyCli setup has no management key.'),
             'PROXYCLI_READ_TOKEN' => $this->state->readToken() ?? throw new LogicException('ProxyCli setup has no read token.'),
             'PROXYCLI_CONTROL_TOKEN' => $this->state->controlToken() ?? throw new LogicException('ProxyCli setup has no control token.'),
-            'PROXYCLI_CACHE_HOST' => (string) $connection->host,
-            'PROXYCLI_CACHE_PORT' => (string) $connection->port,
+            'PROXYCLI_CACHE_HOST' => $connection->host ?? throw new LogicException('ProxyCli cache connection has no host.'),
+            'PROXYCLI_CACHE_PORT' => (string) ($connection->port ?? throw new LogicException('ProxyCli cache connection has no port.')),
             'PROXYCLI_CACHE_USERNAME' => $connection->username ?? '',
             'PROXYCLI_CACHE_PASSWORD' => $connection->password ?? '',
-            'PROXYCLI_PORT' => (string) ProxyCliProcess::PORT,
         ];
     }
 }

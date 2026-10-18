@@ -230,6 +230,8 @@ orbit database:destroy app --force
 
 <Warning>
 The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user.
+
+The Gateway returns `database_connection.required_by_ai_router` (409) while [ProxyCli setup](/reference/proxycli#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 </Warning>
 
 ## orbit database:query
