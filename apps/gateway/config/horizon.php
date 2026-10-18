@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /*
- * Laravel Horizon works the Gateway queue (docs/reference/gateway-queue.md): four supervisors, so a long build
- * never holds up a short job. It runs as the Gateway Node's `horizon` Process.
+ * Laravel Horizon works the Gateway queue (docs/reference/gateway-queue.md): separate supervisors keep short jobs
+ * independent of builds. Required and optional builds share an ordered pool. It runs as the Gateway Node's `horizon` Process.
  */
 return [
     'name' => 'orbit-gateway',
@@ -20,6 +20,7 @@ return [
         'gateway:problems' => 600,
         'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
+        'gateway:builds-optional' => 3600,
         'gateway:operations' => 300,
     ],
     'trim' => [
@@ -73,7 +74,7 @@ return [
         ],
         'builds' => [
             'connection' => 'gateway',
-            'queue' => ['builds'],
+            'queue' => ['builds', 'builds-optional'],
             'balance' => false,
             'minProcesses' => 2,
             'maxProcesses' => 2,

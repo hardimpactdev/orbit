@@ -26,7 +26,7 @@ final class TaskVmBuildStage
         try {
             $result = $stage();
         } catch (Throwable $exception) {
-            throw new TaskVmException($code, "The {$work} failed at stage [{$name}]: ".TaskVmException::messageOf($exception), 502, $exception);
+            throw new TaskVmException($code, "The {$work} failed at stage [{$name}]: ".TaskVmException::messageOf($exception), 502, $exception, imageFailure: $exception instanceof TaskVmException ? $exception->imageFailure : null);
         }
         if ($progress instanceof Closure) {
             $progress($name, round(microtime(true) - $started, 1));

@@ -12,5 +12,6 @@ final readonly class ToolPin
         public string $version,
         public ?string $package = null,
         public array $artifacts = [],
+        public ?string $lockSha256 = null,
     ) {}
 }

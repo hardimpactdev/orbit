@@ -28,6 +28,8 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Models\Activity;
@@ -233,7 +235,7 @@ it('enables proxycli with the matching task VM origin and normalizes trailing sl
     'configured trailing slash' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317/'],
 ]);
 
-it('reconverges the selected collector after a Database connection update', function (): void {
+it('reconverges the selected collector after a Database connection update', function (bool $switch): void {
     $gateway = proxycli_gateway();
     $node = proxycli_node();
     $connection = proxycli_valkey($node);
@@ -244,6 +246,7 @@ it('reconverges the selected collector after a Database connection update', func
         ])->assertCreated();
     $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
     $tokens = [app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()];
+    app(ExtensionStore::class)->set('proxycli', $switch);
     $this->patchJson('/api/v1/database-connections/'.$connection->slug, [
         'host' => '10.44.0.9', 'port' => 6380, 'username' => 'collector', 'password' => 'new-cache-secret',
     ])->assertOk()->assertDontSee('new-cache-secret');
@@ -252,7 +255,7 @@ it('reconverges the selected collector after a Database connection update', func
         'PROXYCLI_CACHE_USERNAME' => 'collector', 'PROXYCLI_CACHE_PASSWORD' => 'new-cache-secret',
         'PROXYCLI_READ_TOKEN' => $tokens[0], 'PROXYCLI_CONTROL_TOKEN' => $tokens[1],
     ])->and(Process::query()->where('name', ProxyCliProcess::NAME)->sole()->id)->toBe($process->id);
-});
+})->with([true, false]);
 
 it('refuses incompatible proposed selected connections without changing connection or collector', function (string $change, string $error): void {
     $gateway = proxycli_gateway();
@@ -370,7 +373,7 @@ it('takes over the Route before it restarts the collector', function (): void {
     {
         public function __construct(private ArrayObject $events) {}
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void
         {
             $this->events->append("publication:route-{$takeover?->id}");
         }
@@ -381,7 +384,7 @@ it('takes over the Route before it restarts the collector', function (): void {
     {
         public function __construct(private ArrayObject $events) {}
 
-        public function converge(Node $node, array $environment, int $port = ProxyCliProcess::PORT): void
+        public function converge(Node $node, array $environment): void
         {
             $this->events->append('runtime');
         }
@@ -655,7 +658,7 @@ it('holds the model key lock from the key check through the teardown', function 
     {
         public ?bool $lockFree = null;
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
 
         public function remove(Node $node): void
         {
@@ -721,7 +724,7 @@ it('republishes private DNS without the collector name when the extension is dis
     {
         public ?string $dnsAtRemoval = null;
 
-        public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?OrbitRoute $takeover = null): void {}
+        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
 
         public function remove(Node $node): void
         {
@@ -747,4 +750,77 @@ it('republishes private DNS without the collector name when the extension is dis
 
     expect($publication->dnsAtRemoval)->toBeString()
         ->not->toContain('collector.cli-proxy-api.orbit');
+});
+
+it('refuses removing the selected cache until teardown even with the extension switch off', function (bool $switch): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    app(ProxyCliState::class)->enable($node->id, $connection->slug, 'http://127.0.0.1:8317', 'management', 'read', 'control');
+    app(ExtensionStore::class)->set('proxycli', $switch);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    Event::fake([RecordBroadcast::class]);
+
+    $this->deleteJson('/api/v1/database-connections/'.$connection->slug)
+        ->assertConflict()->assertJsonPath('error.code', 'database_connection.required_by_ai_router');
+
+    $this->assertModelExists($connection);
+    Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseDeleted);
+    expect(app(RecordingProxyCliRuntimeLifecycle::class)->removed)->toBeFalse();
+
+    $other = DatabaseConnection::query()->create(['slug' => 'unrelated', 'driver' => 'redis', 'host' => 'other.example.test', 'port' => 6379]);
+    $this->deleteJson('/api/v1/database-connections/'.$other->slug)->assertOk();
+    $this->assertModelMissing($other);
+
+    app(ProxyCliState::class)->disable();
+    $this->deleteJson('/api/v1/database-connections/'.$connection->slug)->assertOk();
+    $this->assertModelMissing($connection);
+})->with([true, false]);
+
+it('uses one fixed port for setup, takeover, publication, and connection reconvergence', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    $route = proxycli_hostname_route($node, 'http://127.0.0.1:8787');
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id, 'cache_connection' => $connection->slug,
+            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management',
+        ])->assertCreated();
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
+    $environment = $process->runtime_config['environment'];
+    expect($environment['PROXYCLI_PORT'])->toBe('8787')
+        ->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp'])
+        ->and(app(RecordingProxyCliPublicationManager::class)->takeoverRouteId)->toBe($route->id);
+    $this->assertDatabaseMissing('settings', ['scope_type' => 'gateway', 'scope_id' => 0, 'key' => 'proxycli.process_port']);
+    new CaddySiteCertificates()->record($node->id, ProxyCliCaddySiteSource::CertificateSlug);
+    $sites = app(ProxyCliCaddySiteSource::class)->sites($node);
+    expect($sites)->toHaveCount(1)
+        ->and($sites[0]->body)->toContain('reverse_proxy 127.0.0.1:8787');
+
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rotated'])->assertOk();
+
+    expect($process->refresh()->runtime_config['environment'])->toBe([
+        ...$environment, 'PROXYCLI_CACHE_PASSWORD' => 'rotated',
+    ])->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp']);
+});
+
+it('does not reconverge a connection update that its outer transaction rolls back', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    app(ProxyCliState::class)->enable($node->id, $connection->slug, 'http://127.0.0.1:8317', 'management', 'read', 'control');
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $runtime = app(RecordingProxyCliRuntimeLifecycle::class);
+
+    DB::beginTransaction();
+    try {
+        $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rolled-back'])->assertOk();
+        expect($runtime->converged)->toBeFalse();
+    } finally {
+        DB::rollBack();
+    }
+
+    expect($connection->refresh()->password)->toBeNull()
+        ->and($runtime->converged)->toBeFalse();
 });

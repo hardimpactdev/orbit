@@ -58,7 +58,7 @@ A CI runner is a Gateway record with a Node, a unique name, a repository, labels
 
 `ci-runner:create` refuses a Node without the role with `ci_runner.role_missing`.
 
-Each container has a `runner` user with no `sudo` and no group beyond its own, as the shard containers have today. Every tool a job needs comes from the `ci-runner` profile of the [machine software recipe](/reference/node-provisioning). Runners are persistent: one runner takes job after job in the same container. Ephemeral runners need a new ADR.
+Each container has a `runner` user with no `sudo` and no group beyond its own, as the shard containers have today. Every tool a job needs comes from the `ci-runner` profile of the [machine software recipe](/reference/node-provisioning). Today a roleless Node selects that profile with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). The role selects it instead, and the `--profile` option goes away. Runners are persistent: one runner takes job after job in the same container. Ephemeral runners need a new ADR.
 
 ### Registration through the GitHub App
 
@@ -101,7 +101,8 @@ The pull request that builds this decision deletes `tools/ci-runners/`, rewrites
 
 - Runners become visible to Doctor, the API, and agents, and removal deregisters them.
 - Sabre's jobs lose `sudo` and run in a container, so a job no longer acts as Sabre.
-- The GitHub App gains `Administration: write`, which also covers repository settings. Orbit requests it only for runner tokens.
+- The GitHub App gains `Administration: write`, which also covers repository settings. Orbit uses it for runner tokens, scoped to `administration: write`.
+- ADR 0223 reads classic branch protection with the same grant, through a token scoped to `administration: read`. Whichever ADR builds first adds the permission to the manifest once, and Nick accepts it on the installation once.
 - Privileged tests run only on the GitHub-hosted privileged job.
 - Persistent runners keep warm caches, and a job can still leave state for the next job.
 

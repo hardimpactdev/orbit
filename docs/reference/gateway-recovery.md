@@ -205,7 +205,7 @@ For a destructive schema change, use the local operator command `gateway:release
 
 Before snapshot, migration and promotion, staging checks a root-owned `/run/orbit-gateway-drain/hold.json` bound to that exact SHA. The file lists the complete installed and loaded Gateway writer units and the previous release SHA. Every writer unit and timer must be masked, inactive with no MainPID and no remaining cgroup members. PHP-FPM must be masked and stopped, so no HTTP request, including health requests, reaches application code during migration.
 
-The supported Gateway uses PHP 8.5 and the five queues declared in `config/horizon.php`: `tasks`, `problems`, `task-vms`, `builds` and `operations`. The observer checks this closed runtime contract, including `php8.5-fpm.service`; a different runtime needs a reviewed observer change.
+The supported Gateway uses PHP 8.5 and the six queues declared in `config/horizon.php`: `tasks`, `problems`, `task-vms`, `builds`, `builds-optional` and `operations`. The observer checks this closed runtime contract, including `php8.5-fpm.service`; a different runtime needs a reviewed observer change.
 
 The observer inventories all installed and loaded service and timer units with full unit names. Other systemd unit types do not consume the inventory output limit. Unknown managed writers, templates and loaded concrete instances still require the hold. Each observation has a 65,536-byte output limit; truncation or command failure refuses admission. The separate all-owner process scan keeps this limit too. If a service/timer inventory or the all-owner process scan exceeds it, keep the hold and obtain a reviewed observer change; never remove host units or hide processes to pass the check.
 

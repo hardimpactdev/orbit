@@ -43,7 +43,7 @@ it('refuses a Docker migration recipe mismatch before any SSH', function (): voi
 it('translates the Docker CE recipe refusal to a typed reason with the explicit migration command', function (): void {
     $node = FleetFixtures::node('ce-provider', [RoleName::AppProd]);
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
+    $ssh->on('/^python3 - inspect$/', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
     $recipe = new RecipeLoader()->load();
     $program = app(NodeRecipeProgram::class);

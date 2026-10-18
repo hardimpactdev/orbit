@@ -11,7 +11,6 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RequiredCheckState;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -25,7 +24,6 @@ final readonly class MergeNightlyRecipePullRequestsAction
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
         private GitHubAppStore $store,
-        private RecipeLoader $loader,
         private RecipeMaintenanceAlerts $alerts,
         private NightlyRecipeContents $contents,
     ) {}
@@ -63,10 +61,8 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 // Read the evidence after green, immediately before the head-fenced merge.
                 $commits = $http->get($path.'/commits', ['per_page' => 2])->throw()->json();
                 $files = $http->get($path.'/files', ['per_page' => 2])->throw()->json();
-                $this->require(is_array($commits) && array_is_list($commits) && count($commits) === 1
-                    && data_get($commits, '0.sha') === $pull->headSha && data_get($commits, '0.author.login') === $author
-                    && data_get($commits, '0.author.type') === 'Bot' && data_get($commits, '0.committer.login') === $author,
-                    'Expected exactly one commit authored and committed by the Gateway App.');
+                $this->require($this->contents->appCommit($commits, $pull->headSha, $author),
+                    'Expected exactly one Gateway App commit with a verified GitHub web-flow signature.');
                 $parents = data_get($commits, '0.parents');
                 $parent = data_get($commits, '0.parents.0.sha');
                 if (! is_array($parents) || count($parents) !== 1 || ! $this->contents->isSha($parent)) {
@@ -119,8 +115,8 @@ final readonly class MergeNightlyRecipePullRequestsAction
         }
         $before = $this->contents->read($http, $parent);
         $after = $this->contents->read($http, $head);
-        $old = $this->loader->decode($before)->snapshot;
-        $this->require($snapshot > $old && $this->loader->decode($after)->snapshot === $snapshot
+        $old = $this->contents->snapshot($before);
+        $this->require($snapshot > $old && $this->contents->snapshot($after) === $snapshot
             && preg_match('/\A\s*"snapshot"\s*:\s*"'.preg_quote($old, '/').'"\s*,?\z/', $removed[0]) === 1
             && $added[0] === str_replace($old, $snapshot, $removed[0]), 'The patch does not advance only ubuntu.snapshot to its branch date.');
         $expected = str_replace($removed[0], $added[0], $before, $count);

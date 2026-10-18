@@ -51,6 +51,8 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
+Deletion returns `database_connection.required_by_ai_router` (409) while [ProxyCli setup](/reference/proxycli#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
+
 A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [proxycli collector](/reference/proxycli#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
 
 A validated connection change is stored before dependent runtimes converge and is not rolled back on a runtime failure. Retrying an identical update still checks and repairs stale dependents, even when no connection field changes. See [Connection persistence and retry recovery](/reference/proxycli#connection-persistence-and-retry-recovery) for lost responses, crashes, partial completion, and retry limits.

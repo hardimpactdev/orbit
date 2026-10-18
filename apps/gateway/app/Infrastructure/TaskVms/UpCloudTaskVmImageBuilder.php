@@ -119,7 +119,10 @@ final readonly class UpCloudTaskVmImageBuilder
             return $published;
         } catch (Throwable $exception) {
             if ($attempt !== null) {
-                DB::table('upcloud_task_vm_image_builds')->where('id', $attempt)->update(['state' => 'failed', 'finished_at' => now()]);
+                DB::table('upcloud_task_vm_image_builds')->where('id', $attempt)->update([
+                    'state' => 'failed', 'finished_at' => now(),
+                    'failure' => $exception instanceof TaskVmException && $exception->imageFailure !== null ? json_encode($exception->imageFailure, JSON_THROW_ON_ERROR) : null,
+                ]);
                 try {
                     $this->discard([$builder, $smoke], $stamp, $template);
                 } catch (Throwable $cleanupError) {

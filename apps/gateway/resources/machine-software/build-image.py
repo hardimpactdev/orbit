@@ -96,38 +96,8 @@ def image_javascript(payload):
         safe_directory(directory, account.pw_uid, account.pw_gid)
     with tempfile.TemporaryDirectory(prefix='orbit-image-js-') as directory:
         work = Path(directory)
-        downloads = {name: download(tools[name], payload['architecture'], work / (name + '.archive')) for name in names if name in tools}
-        # The standalone, pinned vp dispatcher needs no first-run installer. The recipe's JS distribution
-        # is kept beside it; no package-manager dependency resolution or Project package install runs here.
-        if 'vp' in downloads and not (scope / 'current/node_modules/vite-plus').exists():
-            unpacked = extract(downloads['vp'], work / 'seed-vp')
-            current = scope / 'current/node_modules'
-            current.mkdir(parents=True)
-            shutil.copytree(unpacked / 'package', current / 'vite-plus')
-            for parent, directories, files in os.walk(scope):
-                os.chown(parent, account.pw_uid, account.pw_gid)
-                for entry in directories + files:
-                    os.chown(Path(parent) / entry, account.pw_uid, account.pw_gid, follow_symlinks=False)
-            # A fresh image runs the standalone dispatcher; production's existing JS dependency closure
-            # is not a prerequisite for installing its exact JS distribution in this image.
-            active = current / 'vite-plus'
-            moved = scope / 'seed-vite-plus'
-            active.rename(moved)
-            active.symlink_to(moved, target_is_directory=True)
-            os.chown(active, account.pw_uid, account.pw_gid, follow_symlinks=False)
-        # Avoid the production helper's dependency-closure migration for a fresh standalone image.
-        javascript_tools = {name: pin for name, pin in tools.items() if name in names and name != 'vp'}
-        install_javascript(javascript_tools, {name: path for name, path in downloads.items() if name != 'vp'}, work, account)
-        runtime = safe_directory(scope / 'recipe', account.pw_uid, account.pw_gid)
-        if 'vp' in downloads:
-            target = runtime / ('vp-' + hashlib.sha256(downloads['vp'].read_bytes()).hexdigest())
-            if not target.exists():
-                shutil.copytree(scope / 'current/node_modules/vite-plus', target)
-                for parent, directories, files in os.walk(target):
-                    os.chown(parent, account.pw_uid, account.pw_gid)
-                    for entry in directories + files:
-                        os.chown(Path(parent) / entry, account.pw_uid, account.pw_gid, follow_symlinks=False)
-            package_link(runtime, 'vp', target, account.pw_uid, account.pw_gid)
+        downloads = {name: download(tools[name], payload['architecture'], work / (name + '.archive')) for name in names if name != 'vp' and name in tools}
+        install_javascript(tools, downloads, work, account, payload.get('vp_lock'))
 
 
 def image_rust(payload):
@@ -263,7 +233,9 @@ def image_main():
          'agent': image_agent, 'verify': image_verify}[phase](payload)
         print('{"ok":true}')
         return 0
-    except Exception:
+    except Exception as error:
+        if isinstance(error, RecipeFailure) and error.detail:
+            print(failure_output(error.detail), file=IMAGE_LOG if IMAGE_LOG is not None else sys.stderr, flush=True)
         if IMAGE_LOG is not None:
             traceback.print_exc(file=IMAGE_LOG)
             IMAGE_LOG.flush()

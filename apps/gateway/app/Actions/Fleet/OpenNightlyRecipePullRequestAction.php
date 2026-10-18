@@ -22,7 +22,6 @@ final readonly class OpenNightlyRecipePullRequestAction
 
     public function execute(): ?string
     {
-        $this->refresh->execute();
         $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository())
             ?? throw new RuntimeException('The Orbit repository is invalid.');
         $token = $this->access->token($repository);
@@ -37,6 +36,8 @@ final readonly class OpenNightlyRecipePullRequestAction
         if (! is_string($content) || ! is_string($file['sha'] ?? null)) {
             throw new RuntimeException('GitHub did not return the recipe file.');
         }
+        $this->contents->requireDeployed($content);
+        $this->refresh->execute($head, $content);
         $recipe = $this->loader->decode($content);
         $snapshot = now('Europe/Amsterdam')->format('Ymd').'T000000Z';
         if ($recipe->snapshot >= $snapshot) {

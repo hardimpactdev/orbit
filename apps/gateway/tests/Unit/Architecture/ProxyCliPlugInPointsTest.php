@@ -45,3 +45,11 @@ arch('Process removal never uses proxycli code')
 arch('the Process model never uses proxycli code')
     ->expect('App\Models\Process')
     ->not->toUse([...proxycli_namespaces(), 'App\Models\ProxyCliProcessSource']);
+
+arch('Database connection updates never use proxycli code')
+    ->expect('App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction')
+    ->not->toUse(proxycli_namespaces());
+
+arch('Database connection removal never uses proxycli code')
+    ->expect('App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction')
+    ->not->toUse(proxycli_namespaces());

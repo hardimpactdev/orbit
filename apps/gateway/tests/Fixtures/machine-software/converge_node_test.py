@@ -1,5 +1,6 @@
 """Regression tests for the fixed remote program; all package/service/network operations are faked."""
 import importlib.util
+import hashlib
 import json
 import io
 import os
@@ -296,40 +297,36 @@ class ConvergenceTest(unittest.TestCase):
         self.assertEqual((scope / 'bin/pnpm').read_bytes(), native)
         self.assertEqual((scope / 'bin/pnpm').stat().st_mode & 0o777, 0o755)
 
-    def test_activates_the_pinned_vite_package_using_only_matching_existing_dependencies(self):
+    def test_pinned_vite_distribution_replaces_only_its_runtime_with_the_complete_lock(self):
         scope = Path(self.directory.name)
-        modules = scope / 'current/node_modules'
-        modules.mkdir(parents=True)
         old = scope / 'old-vite'
         old.mkdir()
-        (modules / 'vite-plus').symlink_to(old, target_is_directory=True)
-        dependency = scope / 'dependency'
-        dependency.mkdir()
-        (dependency / 'package.json').write_text('{"version":"1.0.0"}')
-        (old / 'node_modules').mkdir()
-        (old / 'node_modules/dep').symlink_to(dependency)
-        package = scope / 'new-vite'
-        package.mkdir()
-        (package / 'package.json').write_text('{"version":"2.0.0","dependencies":{"dep":"=1.0.0"}}')
-        with patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'amd64', '')):
-            recipe.activate_vite_package(scope, package, os.getuid(), os.getgid())
-        self.assertEqual((modules / 'vite-plus').resolve(), package)
-        self.assertEqual(json.loads((package / 'node_modules/dep/package.json').read_text())['version'], '1.0.0')
+        (old / 'package.json').write_text('{"version":"1.0.0","dependencies":{"dep":"1.0.0"}}')
+        active = scope / 'node_modules/vite-plus'
+        active.parent.mkdir()
+        active.symlink_to(old)
+        runtime = scope / 'recipe'
+        runtime.mkdir()
+        lock = json.dumps({'name': 'orbit-recipe-vite-plus', 'version': '2.0.0', 'packages': {'': {'dependencies': {'vite-plus': '2.0.0'}}}})
+        tools = {'vp': {'version': '2.0.0', 'lock_sha256': hashlib.sha256(lock.encode()).hexdigest()}, 'node': {'version': '24.22.0'}}
+        account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_name='test-user')
+        def command(argv):
+            self.assertIn('--ignore-scripts', argv)
+            candidate = Path(argv[-1]) / 'node_modules/vite-plus'
+            candidate.mkdir(parents=True)
+            (candidate / 'package.json').write_text('{"version":"2.0.0","dependencies":{"dep":"2.0.0"}}')
+        with patch.object(recipe, 'run', side_effect=command):
+            recipe.install_vite_runtime(scope, runtime, tools, lock, account)
+        self.assertEqual(json.loads((active / 'package.json').read_text())['version'], '2.0.0')
+        self.assertEqual(json.loads((old / 'package.json').read_text())['version'], '1.0.0')
 
-    def test_refuses_unpinned_vite_dependency_downloads_before_switching_the_package(self):
+    def test_refuses_a_vite_runtime_without_its_pinned_lock(self):
         scope = Path(self.directory.name)
-        modules = scope / 'current/node_modules'
-        modules.mkdir(parents=True)
-        old = scope / 'old-vite'
-        old.mkdir()
-        (modules / 'vite-plus').symlink_to(old, target_is_directory=True)
-        package = scope / 'new-vite'
-        package.mkdir()
-        (package / 'package.json').write_text('{"version":"2.0.0","dependencies":{"missing":"=2.0.0"}}')
-        with patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'amd64', '')):
+        account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_name='test-user')
+        with patch.object(recipe, 'run') as command:
             with self.assertRaises(recipe.RecipeFailure):
-                recipe.activate_vite_package(scope, package, os.getuid(), os.getgid())
-        self.assertEqual((modules / 'vite-plus').resolve(), old)
+                recipe.install_vite_runtime(scope, scope, {'vp': {'lock_sha256': '0' * 64}}, '{}', account)
+        command.assert_not_called()
 
     def test_publication_refuses_foreign_symlinks(self):
         target = Path(self.directory.name) / 'target'

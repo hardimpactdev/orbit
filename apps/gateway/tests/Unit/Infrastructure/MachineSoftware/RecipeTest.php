@@ -10,6 +10,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\RecipeValidator;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Infrastructure\MachineSoftware\ToolPin;
+use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
@@ -105,12 +106,29 @@ describe('machine recipe structure and identity', function (): void {
         }, 'architecture-independent artifacts must have the same digest'],
     ]);
 
+    it('pins the complete Vite+ runtime lock and refuses a changed digest or package pin', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $pin = $recipe->tools['vp'];
+        $lock = VitePlusRuntimeLock::read($pin);
+        expect(hash('sha256', $lock))->toBe($pin->lockSha256);
+        foreach ([
+            new ToolPin($pin->source, $pin->version, artifacts: $pin->artifacts, lockSha256: str_repeat('0', 64)),
+            new ToolPin($pin->source, '1.0.0', artifacts: $pin->artifacts, lockSha256: $pin->lockSha256),
+            new ToolPin($pin->source, $pin->version, artifacts: ['amd64' => new ArtifactPin($pin->artifacts['amd64']->location, 'sha512', str_repeat('0', 128))], lockSha256: $pin->lockSha256),
+        ] as $invalid) {
+            expect(fn () => VitePlusRuntimeLock::read($invalid))->toThrow(InvalidArgumentException::class);
+        }
+        $document = machine_recipe_document();
+        $document['tools']['vp']['lock_sha256'] = str_repeat('a', 64);
+        expect(machine_recipe_decode($document)->identity)->not->toBe($recipe->identity);
+    });
+
     it('loads the repository seed and exposes explicit profile membership', function (): void {
         Http::preventStrayRequests();
         $recipe = new RecipeLoader()->load();
         expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
             ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
-            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.2')
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.3')
             ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
             ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
             ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
@@ -569,18 +587,28 @@ describe('machine recipe command', function (): void {
         unset($tool);
         $directory = sys_get_temp_dir().'/recipe-command-'.bin2hex(random_bytes(6));
         mkdir($directory);
+        mkdir($directory.'/resources/machine-software', 0700, true);
+        $basePath = base_path();
+        $lock = json_decode(file_get_contents(resource_path('machine-software/vite-plus-package-lock.json')), true, flags: JSON_THROW_ON_ERROR);
+        $lock['packages']['node_modules/vite-plus']['integrity'] = 'sha512-'.base64_encode(hash('sha512', 'fixture', true));
+        $lockBytes = json_encode($lock, JSON_THROW_ON_ERROR);
+        $document['tools']['vp']['lock_sha256'] = hash('sha256', $lockBytes);
+        file_put_contents($directory.'/resources/machine-software/vite-plus-package-lock.json', $lockBytes);
         file_put_contents($directory.'/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
         file_put_contents($directory.'/pi-server-fixture', 'fixture');
         $probe = machine_recipe_snapshot_probe();
         $this->app->instance(SnapshotAvailability::class, $probe);
         Http::preventStrayRequests();
         Http::fake(['*' => Http::response('fixture')]);
+        app()->setBasePath($directory);
         try {
-            expect(Artisan::call('orbit:machine-recipe', [
+            $status = Artisan::call('orbit:machine-recipe', [
                 '--path' => $directory.'/recipe.json', '--validate' => true, '--json' => true,
                 '--role' => 'operator', '--artifact-directory' => $directory,
-            ]))->toBe(0);
-            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            ]);
+            $rawOutput = Artisan::output();
+            expect($status)->toBe(0, $rawOutput);
+            $output = json_decode($rawOutput, true, flags: JSON_THROW_ON_ERROR);
             expect($output['validation'])->toBe('structure_availability_integrity')
                 ->and(array_keys($output['profiles']))->toBe(['operator'])
                 ->and($probe->called)->toBeTrue();
@@ -594,8 +622,12 @@ describe('machine recipe command', function (): void {
             expect($error['error'])->toContain('Missing or unreadable artifact file')
                 ->and($error)->not->toHaveKey('validation');
         } finally {
+            app()->setBasePath($basePath);
             @unlink($directory.'/pi-server-fixture');
             unlink($directory.'/recipe.json');
+            unlink($directory.'/resources/machine-software/vite-plus-package-lock.json');
+            rmdir($directory.'/resources/machine-software');
+            rmdir($directory.'/resources');
             rmdir($directory);
         }
     });

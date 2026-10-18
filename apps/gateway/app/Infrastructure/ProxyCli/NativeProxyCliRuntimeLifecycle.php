@@ -38,7 +38,6 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         Node $node,
         #[SensitiveParameter]
         array $environment,
-        int $port = ProxyCliProcess::PORT,
     ): void {
         $script = $this->script();
         $revision = hash('sha256', $script);
@@ -58,7 +57,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
             $source->source_revision = null;
             $source->save();
         }
-        $data = ProxyCliProcess::data($node, $environment, $port);
+        $data = ProxyCliProcess::data($node, $environment);
 
         try {
             $result = $this->add->execute($data);

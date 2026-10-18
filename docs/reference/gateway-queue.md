@@ -26,21 +26,22 @@ The Gateway reads the host, port, and password of that connection from its recor
 
 ## Queues
 
-Laravel Horizon runs five queues on the connection with four supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. Builds, task VMs and operations keep separate supervisors:
+Laravel Horizon runs six queues on the connection with four supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs and operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Doctor collection and signal collection, after waiting `tasks` jobs |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
-| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
 | `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-Two `builds` workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
+Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. A waiting Incus chain step therefore runs before an optional UpCloud build. Running jobs are not preempted. Two build workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
 ## Scheduled work
 
@@ -165,7 +166,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:builds,gateway:operations` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
