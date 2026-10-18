@@ -7,7 +7,7 @@ use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
 use Tests\Support\ReviewFindings;
 
-it('orders a conflict before failed checks in GitHub order for any Project check', function (?string $taskCheck): void {
+it('orders a conflict before failed checks in GitHub order', function (): void {
     $checks = [
         new TaskPullRequestCheck('Custom', 'https://example.test/custom'),
         new TaskPullRequestCheck('Gateway', 'https://example.test/gateway'),
@@ -16,18 +16,15 @@ it('orders a conflict before failed checks in GitHub order for any Project check
 
     $identities = array_map(
         static fn (TaskSettlingFixup $plan): string => $plan->identity,
-        TaskSettlingFixup::plans($taskCheck, true, 'main', $checks),
+        TaskSettlingFixup::plans(true, 'main', $checks),
     );
 
     expect($identities)->toBe(['conflict:main', 'check:Custom', 'check:Gateway', 'check:CLI']);
-})->with([
-    'make check' => ['make check'],
-    'no check' => [null],
-]);
+});
 
 it('keeps the check url out of the identity and truncates only the title', function (): void {
     $name = str_repeat('n', 200);
-    $plan = TaskSettlingFixup::plans('make check', false, null, [
+    $plan = TaskSettlingFixup::plans(false, null, [
         new TaskPullRequestCheck($name, 'https://example.test/run'),
     ])[0];
 
@@ -39,16 +36,13 @@ it('keeps the check url out of the identity and truncates only the title', funct
         ->and($plan->deliverables)->toHaveCount(1);
 });
 
-it('runs the configured check from the workspace root for a conflict and a failed check', function (): void {
-    $plans = TaskSettlingFixup::plans('  make check  ', true, null, [
+it('requires reviewer confirmation for a conflict and a failed check', function (): void {
+    $plans = TaskSettlingFixup::plans(true, null, [
         new TaskPullRequestCheck('Gateway', null),
     ]);
     $deliverable = [[
-        'id' => 'project-check',
-        'type' => 'command',
-        'description' => 'Run the Project task check',
-        'command' => 'make check',
-        'directory' => '.',
+        'id' => 'fixup-review', 'type' => 'review',
+        'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
     ]];
 
     expect($plans[0]->conflictBase())->toBe('the base branch')
@@ -59,7 +53,7 @@ it('runs the configured check from the workspace root for a conflict and a faile
 });
 
 it('does not add a CI reproduction command for an Orbit job name', function (): void {
-    $plans = TaskSettlingFixup::plans('composer check', false, null, [
+    $plans = TaskSettlingFixup::plans(false, null, [
         new TaskPullRequestCheck('Custom', null),
         new TaskPullRequestCheck('Gateway', null),
         new TaskPullRequestCheck('Rust agent', null),
@@ -68,16 +62,13 @@ it('does not add a CI reproduction command for an Orbit job name', function (): 
     expect(array_map(static fn (TaskSettlingFixup $plan): string => $plan->identity, $plans))
         ->toBe(['check:Custom', 'check:Gateway', 'check:Rust agent'])
         ->and($plans[1]->deliverables)->toBe([[
-            'id' => 'project-check',
-            'type' => 'command',
-            'description' => 'Run the Project task check',
-            'command' => 'composer check',
-            'directory' => '.',
+            'id' => 'fixup-review', 'type' => 'review',
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
         ]]);
 });
 
-it('asks for a review when the Project has no check', function (?string $taskCheck): void {
-    $plans = TaskSettlingFixup::plans($taskCheck, true, 'main', [
+it('always asks for a review of the fixup', function (): void {
+    $plans = TaskSettlingFixup::plans(true, 'main', [
         new TaskPullRequestCheck('Gateway', 'https://example.test/gateway'),
     ]);
     $review = [[
@@ -88,34 +79,25 @@ it('asks for a review when the Project has no check', function (?string $taskChe
 
     expect($plans[0]->deliverables)->toBe($review)
         ->and($plans[1]->deliverables)->toBe($review);
-})->with([
-    'null' => [null],
-    'blank' => ['   '],
-]);
+});
 
-it('plans per-reviewer fixups with mandatory findings review and an optional snapshotted check', function (?string $command): void {
+it('plans per-reviewer fixups with only the mandatory findings review', function (): void {
     $packet = TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate());
-    $plan = TaskSettlingFixup::reviewPlan($command, $packet);
+    $plan = TaskSettlingFixup::reviewPlan($packet);
     expect($plan->identity)->toBe('review:42')->and($plan->brief)->toBe($packet->brief)
         ->and($plan->conflictBase())->toBeNull()
         ->and($plan->deliverables[0]['id'])->toBe('review-findings')
         ->and($plan->deliverables[0]['type'])->toBe('review')
         ->and($plan->deliverables[0]['description'])->toContain('every snapshotted finding')->toContain('.git/orbit/context.md')
-        ->and($plan->deliverables)->toHaveCount(trim($command ?? '') === '' ? 1 : 2);
-    if (trim($command ?? '') !== '') {
-        expect($plan->deliverables[1])->toBe([
-            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-            'command' => trim($command), 'directory' => '.',
-        ]);
-    }
-    $later = TaskSettlingFixup::reviewPlan('changed check', TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate(reviewId: 102)));
+        ->and($plan->deliverables)->toHaveCount(1);
+    $later = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate(reviewId: 102)));
     expect($later->identity)->toBe($plan->identity)
         ->and($plan->brief)->toBe($packet->brief)
-        ->and($plan->deliverables)->not->toBe($later->deliverables);
-})->with([null, '   ', '  composer check  ']);
+        ->and($plan->deliverables)->toBe($later->deliverables);
+});
 
 it('adds merge origin first to a check brief and keeps its identity, title, and deliverables', function (): void {
-    $plan = TaskSettlingFixup::plans('make check', false, 'main', [new TaskPullRequestCheck('CLI', null)])[0];
+    $plan = TaskSettlingFixup::plans(false, 'main', [new TaskPullRequestCheck('CLI', null)])[0];
     $merged = $plan->mergingBaseFirst('main');
 
     expect($merged->brief)->toBe('Merge origin/main first; base may already fix this. Check CLI failed. Do not rebase and do not force-push.')

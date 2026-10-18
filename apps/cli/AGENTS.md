@@ -49,7 +49,7 @@ the project rule set.
 ## Verification
 
 - Use `composer test:affected` for Pest 5 development checks. CI runs checks across all projects; `composer test` also uses TIA.
-- Run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.
+- In an Orbit task, do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer check` before delivery. Pint, Larastan, and Rector are the configured PHP quality tools.
 
 === boost rules ===
 

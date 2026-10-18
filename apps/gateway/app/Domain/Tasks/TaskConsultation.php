@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use Illuminate\Support\Carbon;
@@ -193,12 +194,12 @@ final readonly class TaskConsultation
     }
 
     /**
-     * Sends one reminder per attempt, then asks for assistance.
+     * Sends three failed-handoff reminders, or one ordinary reminder per attempt, then asks for assistance.
      *
      * @param  list<TaskRubricItem>  $items
      * @return bool whether the scheduler reminded the agent or asked for assistance
      */
-    public function remindOrAssist(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $thread, array $items): bool
+    public function remindOrAssist(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $thread, array $items, ?TaskCheck $failedCheck = null): bool
     {
         $failures = $this->failedItems($items);
         $implementer = $thread->role === TaskThreadRole::Implementer;
@@ -206,11 +207,17 @@ final readonly class TaskConsultation
         $reminder = $implementer ? 'completion_reminder_attempt' : 'review_reminder_attempt';
         $input = $implementer ? 'completion_reminder_input_id' : 'review_reminder_input_id';
         $pendingId = $thread->pendingUserInputId ?? $thread->pendingApprovalId;
-        if ($task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
+        if ($failedCheck === null && $task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
             return false;
         }
-        if ($task->{$reminder} !== $task->{$attempt}) {
-            $key = self::reminderKey($task, $thread->role);
+        $checkFailures = 0;
+        if ($failedCheck !== null) {
+            $lastPass = $task->checks()->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Passed)->where('id', '<', $failedCheck->id)->max('id');
+            $checkFailures = $task->checks()->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Failed)
+                ->where('id', '>', $lastPass ?? 0)->where('id', '<=', $failedCheck->id)->count();
+        }
+        if ($failedCheck !== null ? $checkFailures <= 3 : $task->{$reminder} !== $task->{$attempt}) {
+            $key = $failedCheck === null ? self::reminderKey($task, $thread->role) : 'tasks.check-reminder:'.$failedCheck->id;
             try {
                 if (! $this->runner->prepareTurn($scheduler, $group, $task, $thread->role, $thread->threadId, sendKey: $key)) {
                     return false;
@@ -222,13 +229,15 @@ final readonly class TaskConsultation
 
                 return false;
             }
-            $task->update([$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]);
+            $task->update($failedCheck === null
+                ? [$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]
+                : ['communication_failures' => 0]);
 
             return true;
         }
 
         $reasons = array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures);
-        $this->requestAssistance($task, $group, 'Checks still failed after the reminder. '.implode(' ', $reasons));
+        $this->requestAssistance($task, $group, ($failedCheck === null ? 'Checks still failed after the reminder. ' : 'The handoff check failed '.$checkFailures.' times in a row. ').implode(' ', $reasons));
 
         return true;
     }

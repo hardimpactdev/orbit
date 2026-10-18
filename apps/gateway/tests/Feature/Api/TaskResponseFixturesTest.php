@@ -177,7 +177,7 @@ describe('task response fixtures', function (): void {
         $group = task_fixture_group($this->project);
         $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/widgets/pull/7']);
         $group->tasks()->update(['status' => TaskStatus::Completed]);
-        $plan = TaskSettlingFixup::reviewPlan('composer check', TaskReviewFindingsPacket::fromCandidate(
+        $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(
             ReviewFindings::candidate(comments: [ReviewFindings::comment()]),
         ));
         $fixup = Task::query()->create([

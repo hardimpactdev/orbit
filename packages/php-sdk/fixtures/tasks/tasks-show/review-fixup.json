@@ -124,13 +124,6 @@
                             "id": "review-findings",
                             "type": "review",
                             "description": "Read the complete immutable findings in .git/orbit/context.md and confirm every snapshotted finding was addressed or explicitly resolved within the existing feature contract. Scope conflicts and product decisions require operator assistance. Internal approval does not replace GitHub re-review."
-                        },
-                        {
-                            "id": "project-check",
-                            "type": "command",
-                            "description": "Run the Project task check",
-                            "command": "composer check",
-                            "directory": "."
                         }
                     ],
                     "topology": [],

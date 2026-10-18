@@ -369,7 +369,7 @@ final readonly class TaskReviewOutcome
                 'position' => TaskFinalReview::nextPosition($this->runner->lockedTasks($lockedGroup)),
                 'title' => $title,
                 'brief' => $brief,
-                'deliverables' => TaskFinalReview::fixupDeliverables($lockedGroup->project->taskCheckCommand()),
+                'deliverables' => TaskFinalReview::fixupDeliverables(),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
             ]);

@@ -847,7 +847,7 @@ it('quotes hostile bodies paths and hunks without fetching linked content or gra
 
 it('keeps full immutable findings in fresh task context when the compact reviewer brief is cut', function (): void {
     $body = str_repeat('Complete finding. ', 1500).'FINAL-FINDING';
-    $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate($body)));
+    $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate($body)));
     $deliverables = array_map(TaskDeliverable::fromArray(...), $plan->deliverables);
     $compact = review_packet(['subtaskBrief' => $plan->brief, 'deliverables' => $deliverables]);
     $context = new TaskReviewContext('Existing feature contract', $plan->brief, $deliverables, [], '');

@@ -19,5 +19,6 @@ documentation corpus under the repository-root `docs/` directory.
 
 - Run `composer docs:lint` after changing the root documentation corpus.
 - Run `composer context:build` after a change affects the context index.
-- Run `composer check` for changes to this application or its documentation
-  contracts.
+- In an Orbit task, run `composer test:affected` for changes to this application
+  or its documentation contracts. Do not run `composer check` or `bin/review-check`:
+  the Gateway runs the Project check at handoff. Outside a task, also run `composer check`.
