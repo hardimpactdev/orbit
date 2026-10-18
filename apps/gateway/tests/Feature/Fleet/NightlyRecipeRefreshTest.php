@@ -35,7 +35,7 @@ function nightlyRefreshEvidence(): array
 
     return ['pr' => $pr, 'final' => $pr, 'before' => $before, 'after' => $after,
         'main' => str_repeat('c', 40), 'main_content' => $before, 'comparison' => 'ahead',
-        'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => $bot, 'parents' => [['sha' => str_repeat('a', 40)]]]],
+        'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => ['login' => 'web-flow', 'type' => 'User'], 'commit' => ['committer' => ['name' => 'GitHub', 'email' => 'noreply@github.com'], 'verification' => ['verified' => true, 'reason' => 'valid']], 'parents' => [['sha' => str_repeat('a', 40)]]]],
         'files' => [['filename' => OpenNightlyRecipePullRequestAction::Path, 'status' => 'modified', 'additions' => 1, 'deletions' => 1, 'changes' => 2]],
         'runs' => [['name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'head_sha' => $sha, 'app' => ['slug' => 'github-actions']]],
         'timeline' => [['event' => 'committed', 'sha' => $sha]],
@@ -90,6 +90,8 @@ it('recreates a red App nightly PR as one commit on current main without closing
     nightlyRefreshHttp($evidence);
 
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe($evidence['pr']['html_url']);
+
+    expect(collect(Http::recorded())->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/git/ref/heads/main')))->toHaveCount(1);
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/git/trees')
         && $request['base_tree'] === str_repeat('9', 40) && $request['tree'] === [
@@ -158,6 +160,11 @@ it('leaves closed green pending unchanged-base and person-touched nightly PRs al
         'extra commit' => $evidence['pr']['commits'] = 2,
         'human author' => $evidence['commits'][0]['author']['login'] = 'person',
         'human committer' => $evidence['commits'][0]['committer']['login'] = 'person',
+        'unsigned commit' => $evidence['commits'][0]['commit']['verification']['verified'] = false,
+        'missing signature' => $evidence['commits'][0]['commit']['verification'] = null,
+        'invalid signature' => $evidence['commits'][0]['commit']['verification']['reason'] = 'invalid',
+        'wrong author type' => $evidence['commits'][0]['author']['type'] = 'User',
+        'wrong committer type' => $evidence['commits'][0]['committer']['type'] = 'Bot',
         'changed file' => $evidence['files'][0]['filename'] = 'README.md',
         'changed contents' => $evidence['after'] .= "\n",
         'body edit' => $evidence['edits'][] = ['editor' => ['login' => 'person']],
@@ -184,7 +191,7 @@ it('leaves closed green pending unchanged-base and person-touched nightly PRs al
         || str_ends_with($request->url(), '/issues/99/comments')
         || (str_ends_with($request->url(), '/graphql') && str_starts_with($request['query'], 'mutation')));
 })->with(['closed', 'green', 'pending', 'missing', 'spoofed check', 'same main', 'diverged main', 'human PR author', 'extra commit',
-    'human author', 'human committer', 'changed file', 'changed contents', 'human edit', 'human close reopen', 'human force push',
+    'human author', 'human committer', 'unsigned commit', 'missing signature', 'invalid signature', 'wrong author type', 'wrong committer type', 'changed file', 'changed contents', 'human edit', 'human close reopen', 'human force push',
     'truncated timeline', 'unknown human event', 'unknown missing actor', 'body edit', 'hidden edit', 'truncated edits', 'concurrent push', 'concurrent close', 'bot review', 'App force push', 'App reopen']);
 
 it('does not report success or comment when an expected-head branch update loses a race', function (): void {
@@ -212,7 +219,7 @@ it('leaves older-date green closed and reviewed PRs unchanged in the recovery pa
     $this->travelTo(nightlyRefreshDate()->modify('+1 day'));
     nightlyRefreshHttp($evidence);
 
-    app(RefreshNightlyRecipePullRequestAction::class)->execute();
+    app(RefreshNightlyRecipePullRequestAction::class)->execute($evidence['main'], $evidence['main_content']);
 
     Http::assertNotSent(fn (Request $request): bool => in_array($request->method(), ['PUT', 'PATCH'], true)
         || str_ends_with($request->url(), '/issues/99/comments')

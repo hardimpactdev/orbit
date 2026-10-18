@@ -29,26 +29,6 @@ final readonly class RecipeImageBuilds
     {
         $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
-        try {
-            $upcloud = $this->upcloudStatus($recipe);
-            if ($upcloud !== null && $upcloud['template'] === null) {
-                $attempt = $upcloud['attempt'];
-                if ($attempt === null || $retry) {
-                    RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt->id ?? 0);
-                } elseif ($attempt->fenced()) {
-                    $key = 'task-vms:upcloud-image-build:fenced:'.$attempt->id;
-                    if (Cache::add($key, true, 3600)) {
-                        $receipt = $this->alerts->halted($attempt->fenceMessage(), $attempt->id, 'machine-recipe-upcloud');
-                        if (($receipt['outcome'] ?? null) === 'skipped') {
-                            Cache::forget($key);
-                        }
-                    }
-                }
-            }
-        } catch (Throwable $error) {
-            // Optional UpCloud refresh must not block Incus recovery or recipe builds.
-            report($error);
-        }
         $builds = [];
         $this->chain->recoverSubmissions();
         foreach ($this->settings->hosts as $host) {
@@ -83,6 +63,27 @@ final readonly class RecipeImageBuilds
                     throw $error;
                 }
             }
+        }
+
+        try {
+            $upcloud = $this->upcloudStatus($recipe);
+            if ($upcloud !== null && $upcloud['template'] === null) {
+                $attempt = $upcloud['attempt'];
+                if ($attempt === null || $retry) {
+                    RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt->id ?? 0);
+                } elseif ($attempt->fenced()) {
+                    $key = 'task-vms:upcloud-image-build:fenced:'.$attempt->id;
+                    if (Cache::add($key, true, 3600)) {
+                        $receipt = $this->alerts->halted($attempt->fenceMessage(), $attempt->id, 'machine-recipe-upcloud');
+                        if (($receipt['outcome'] ?? null) === 'skipped') {
+                            Cache::forget($key);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $error) {
+            // Optional UpCloud refresh must not block Incus recovery or recipe builds.
+            report($error);
         }
 
         return $builds;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -161,10 +162,10 @@ final readonly class SystemdGatewayReleaseDrain implements GatewayReleaseDrain
         if (config('queue.connections.gateway.driver') !== 'redis' || config('queue.connections.gateway.connection') !== 'gateway') {
             $this->refuse('The held release requires the supported Gateway Redis queue.');
         }
-        foreach (['tasks', 'task-vms', 'builds', 'operations'] as $queue) {
-            $reserved = Redis::connection('gateway')->zcard('queues:'.$queue.':reserved');
+        foreach (GatewayQueue::cases() as $queue) {
+            $reserved = Redis::connection('gateway')->zcard('queues:'.$queue->value.':reserved');
             if (! is_int($reserved) || $reserved !== 0) {
-                $this->refuse("Queue [{$queue}] has reservations or could not be observed.");
+                $this->refuse("Queue [{$queue->value}] has reservations or could not be observed.");
             }
         }
     }

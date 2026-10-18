@@ -30,7 +30,7 @@ function nightlyMergeEvidence(): array
         'head' => ['ref' => 'nightly/recipe-'.$date->format('Ymd'), 'sha' => $sha, 'repo' => ['full_name' => 'nckrtl/orbit']],
         'base' => ['ref' => 'main', 'repo' => ['full_name' => 'nckrtl/orbit']]];
 
-    return ['pr' => $pr, 'final' => $pr, 'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => $bot, 'parents' => [['sha' => str_repeat('a', 40)]]]],
+    return ['pr' => $pr, 'final' => $pr, 'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => ['login' => 'web-flow', 'type' => 'User'], 'commit' => ['committer' => ['name' => 'GitHub', 'email' => 'noreply@github.com'], 'verification' => ['verified' => true, 'reason' => 'valid']], 'parents' => [['sha' => str_repeat('a', 40)]]]],
         'files' => [['filename' => 'apps/gateway/resources/machine-software/recipe.json', 'status' => 'modified', 'additions' => 1, 'deletions' => 1, 'changes' => 2,
             'patch' => "@@ -2,6 +2,6 @@\n     \"ubuntu\": {\n         \"release\": \"{$release}\",\n-        \"snapshot\": \"{$snapshot}\"\n+        \"snapshot\": \"{$next}\"\n     },"]],
         'before' => $before, 'after' => $after,
@@ -65,6 +65,18 @@ function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
 
     return $alerts;
 }
+
+it('verifies a signed date-only commit independently of the serving tool catalog', function (): void {
+    $evidence = nightlyMergeEvidence();
+    foreach (['before', 'after'] as $field) {
+        $evidence[$field] = preg_replace('/^            "lock_sha256":.*\n/m', '', $evidence[$field]);
+    }
+    nightlyMergeHttp($evidence);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+});
 
 it('verifies the live patch and merges with the expected SHA from the per-minute maintenance job', function (): void {
     $alerts = nightlyMergeHttp(nightlyMergeEvidence());
@@ -109,6 +121,11 @@ it('blocks and alerts for any author commit file or snapshot evidence outside th
         'extra commit response' => $evidence['commits'][] = $evidence['commits'][0],
         'human commit author' => $evidence['commits'][0]['author']['login'] = 'nick',
         'human committer' => $evidence['commits'][0]['committer']['login'] = 'nick',
+        'unsigned commit' => $evidence['commits'][0]['commit']['verification']['verified'] = false,
+        'missing signature' => $evidence['commits'][0]['commit']['verification'] = null,
+        'invalid signature' => $evidence['commits'][0]['commit']['verification']['reason'] = 'invalid',
+        'wrong author type' => $evidence['commits'][0]['author']['type'] = 'User',
+        'wrong committer type' => $evidence['commits'][0]['committer']['type'] = 'Bot',
         'wrong commit head' => $evidence['commits'][0]['sha'] = str_repeat('d', 40),
         'merge commit' => $evidence['commits'][0]['parents'][] = ['sha' => str_repeat('d', 40)],
         'extra file count' => $evidence['pr']['changed_files'] = 2,
@@ -131,7 +148,7 @@ it('blocks and alerts for any author commit file or snapshot evidence outside th
     Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
     expect($alerts->alerts)->toHaveCount(1);
     expect($alerts->alerts[0]->summary)->toContain('pull/99', 'blocked:');
-})->with(['human PR author', 'other App', 'extra commit count', 'extra commit response', 'human commit author', 'human committer', 'wrong commit head', 'merge commit',
+})->with(['human PR author', 'other App', 'extra commit count', 'extra commit response', 'human commit author', 'human committer', 'unsigned commit', 'missing signature', 'invalid signature', 'wrong author type', 'wrong committer type', 'wrong commit head', 'merge commit',
     'extra file count', 'extra file response', 'wrong file', 'renamed file', 'missing patch', 'extra patch line', 'wrong snapshot date', 'hidden tool edit',
     'head changed at merge', 'extra commit at merge', 'wrong base', 'fork']);
 

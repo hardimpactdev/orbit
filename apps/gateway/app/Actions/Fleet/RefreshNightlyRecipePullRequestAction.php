@@ -22,7 +22,7 @@ final readonly class RefreshNightlyRecipePullRequestAction
 {
     public function __construct(private GitHubAppStore $store, private GitHubApi $github, private RepositoryPullRequestAccess $access, private RecipeLoader $loader, private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts) {}
 
-    public function execute(): void
+    public function execute(string $main, string $content): void
     {
         try {
             $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository());
@@ -37,11 +37,6 @@ final readonly class RefreshNightlyRecipePullRequestAction
             }
             $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
                 ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
-            $main = $http->get('/git/ref/heads/main')->throw()->json('object.sha');
-            if (! $this->contents->isSha($main)) {
-                throw new \RuntimeException('GitHub did not return the main commit.');
-            }
-            $content = $this->contents->read($http, $main);
             foreach ($pulls as $pull) {
                 if (preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) !== 1 || $pull->authorLogin !== $credentials->slug.'[bot]') {
                     continue;
@@ -88,9 +83,7 @@ final readonly class RefreshNightlyRecipePullRequestAction
         $commits = $http->get($path.'/commits', ['per_page' => 2])->throw()->json();
         $parent = data_get($commits, '0.parents.0.sha');
         $parents = data_get($commits, '0.parents');
-        if (! is_array($commits) || count($commits) !== 1 || data_get($commits, '0.sha') !== $sha
-            || data_get($commits, '0.author.login') !== $author || data_get($commits, '0.author.type') !== 'Bot'
-            || data_get($commits, '0.committer.login') !== $author || data_get($commits, '0.committer.type') !== 'Bot'
+        if (! $this->contents->appCommit($commits, $sha, $author)
             || ! is_array($parents) || count($parents) !== 1
             || ! $this->contents->isSha($parent) || $parent === $main) {
             return;
@@ -107,7 +100,7 @@ final readonly class RefreshNightlyRecipePullRequestAction
         $before = $this->contents->read($http, $parent);
         $after = $this->contents->read($http, $sha);
         $snapshot = substr($branch, -8).'T000000Z';
-        $old = $this->loader->decode($before)->snapshot;
+        $old = $this->contents->snapshot($before);
         $expected = $this->contents->replace($before, $old, $snapshot);
         if ($old >= $snapshot || $expected !== $after) {
             return;

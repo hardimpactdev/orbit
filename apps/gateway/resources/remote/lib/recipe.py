@@ -1,5 +1,5 @@
 # Library: recipe apt, package and source helpers shared by convergence and Docker migration.
-"""Fixed, synchronous recipe operations. Only bounded package failure diagnostics escape this boundary."""
+"""Fixed, synchronous recipe operations. Only bounded, redacted failure diagnostics escape this boundary."""
 from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 import gzip
@@ -26,10 +26,11 @@ MAX_SNAPSHOT_LOOKUPS = 3
 
 
 class RecipeFailure(Exception):
-    def __init__(self, stage='', *, result=None, packages=None):
+    def __init__(self, stage='', *, result=None, packages=None, detail=''):
         super().__init__(stage)
         self.result = result
         self.packages = packages or []
+        self.detail = detail
 
 
 class RecipeInterrupted(RecipeFailure):
@@ -207,21 +208,22 @@ def snapshot_origin(package, version, snapshots=None):
     return True
 
 
-def deb822_fields(paragraph):
+def deb822_fields(paragraph, source='Deb822 source'):
     fields = {}
     key = None
-    for line in paragraph.splitlines():
+    for number, line in enumerate(paragraph.splitlines(), 1):
         if not line.strip() or line.startswith('#'):
             continue
         if line[:1].isspace():
             if key is None:
-                raise RecipeFailure('apt-source')
+                raise RecipeFailure('apt-source', detail=f'{source}: line {number} continues a field before any field was declared.')
             fields[key] += ' ' + line.strip()
             continue
         key, separator, value = line.partition(':')
         key = key.lower()
         if not separator or key in fields or not re.fullmatch(r'[a-z][a-z0-9-]*', key):
-            raise RecipeFailure('apt-source')
+            reason = 'missing field separator' if not separator else (f'duplicate field [{key}]' if key in fields else 'invalid field name')
+            raise RecipeFailure('apt-source', detail=f'{source}: line {number}: {reason}.')
         fields[key] = value.strip()
     return fields
 
@@ -240,7 +242,7 @@ def ubuntu_signed_sources(options):
         entries = []
         if path.suffix == '.sources':
             for paragraph in re.split(r'\n\s*\n', document):
-                fields = deb822_fields(paragraph)
+                fields = deb822_fields(paragraph, str(path))
                 if (fields.get('signed-by') == UBUNTU_KEYRING and 'deb' in fields.get('types', '').split()
                         and fields.get('enabled', 'yes').lower() != 'no'):
                     entries.append((fields.get('uris', '').split(), fields.get('suites', '').split(), fields.get('components', '').split()))
@@ -397,7 +399,8 @@ def backup_apt_source(path, content, owner, *, check_only=False):
     backup = APT_ETC / (path.name + '.orbit-' + owner + '-backup')
     if backup.exists() or backup.is_symlink():
         if (backup.is_symlink() or not backup.is_file() or backup.read_bytes() != content):
-            raise RecipeFailure('apt-source')
+            reason = 'is a symlink' if backup.is_symlink() else ('is not a regular file' if not backup.is_file() else 'differs from the source')
+            raise RecipeFailure('apt-source', detail=f'Backup [{backup}] {reason}; refusing to replace source [{path}].')
     elif not check_only:
         publish(backup, content)
     return backup
@@ -467,7 +470,7 @@ def provider_sources(pattern, allowed_uris, suite_pattern, components, owner):
         if not re.search(pattern, content):
             continue
         if path.is_symlink():
-            raise RecipeFailure('apt-source')
+            raise RecipeFailure('apt-source', detail=f'Provider source [{path}] is a symlink; refusing to retire it.')
         blocks = re.split(r'(\n\s*\n)', content) if path.suffix == '.sources' else content.splitlines(keepends=True)
         result = []
         for block in blocks:
@@ -476,7 +479,7 @@ def provider_sources(pattern, allowed_uris, suite_pattern, components, owner):
                 result.append(block)
                 continue
             if path.suffix == '.sources':
-                fields = deb822_fields(block)
+                fields = deb822_fields(block, str(path))
                 uris = fields.get('uris', '').split()
                 suites = fields.get('suites', '').split()
                 entry_components = fields.get('components', '').split()
@@ -484,14 +487,17 @@ def provider_sources(pattern, allowed_uris, suite_pattern, components, owner):
             else:
                 entry = re.fullmatch(r'\s*(deb(?:-src)?)\s+(?:\[[^]]+\]\s+)?(\S+)\s+(\S+)\s+([^#]+?)(?:\s*#.*)?\s*', block)
                 if not entry:
-                    raise RecipeFailure('apt-source')
+                    raise RecipeFailure('apt-source', detail=f'Provider source [{path}] has an invalid deb/deb-src list entry.')
                 types, uris, suites, components_value = [entry[1]], [entry[2]], [entry[3]], entry[4]
                 entry_components = components_value.split()
             if (not uris or any(uri.rstrip('/') not in allowed_uris for uri in uris)
                     or len(suites) != 1 or not re.fullmatch(suite_pattern, suites[0])
                     or entry_components != components or not types
                     or set(types) - {'deb', 'deb-src'}):
-                raise RecipeFailure('apt-source')
+                raise RecipeFailure('apt-source', detail=f'Provider source [{path}] has unsupported or mixed fields: '
+                                    f'URIs={uris!r}, Suites={suites!r}, Components={entry_components!r}, Types={types!r}; '
+                                    f'expected URIs from {sorted(allowed_uris)!r}, one suite matching {suite_pattern!r}, '
+                                    f'Components={components!r}, and only deb/deb-src Types.')
         replacement = ''.join(result)
         if replacement != content:
             backup_apt_source(path, content.encode(), owner, check_only=True)
@@ -524,7 +530,7 @@ def configure_git(payload, *, apply=False):
     changes = git_sources()
     preference = APT_ETC / 'preferences.d/orbit-git'
     if preference.is_symlink():
-        raise RecipeFailure('apt-source')
+        raise RecipeFailure('apt-source', detail=f'Git preference [{preference}] is a symlink; refusing to replace it.')
     expected = git_preferences(tools)
     pin_changed = not preference.is_file() or preference.read_bytes() != expected
     actions = (['retire_git_source'] if changes else []) + (['pin_git'] if pin_changed else [])
@@ -647,10 +653,15 @@ def inspect(tools):
             ready = binary.is_file() and (binary.parent / '.vp-setup-complete').is_file()
             versions[name] = binary_version(binary, dict(os.environ, VP_HOME=str(scope))) if ready else None
         elif name == 'vp':
-            metadata = scope / 'recipe/vp-current/package.json'
-            if not metadata.is_file():
-                metadata = scope / 'current/node_modules/vite-plus/package.json'
-            versions[name] = json_file(metadata).get('version')
+            digest = pin.get('lock_sha256')
+            target = scope / 'recipe' / ('vp-runtime-' + str(digest))
+            metadata = target / 'node_modules/vite-plus/package.json'
+            lock = target / 'package-lock.json'
+            active = scope / 'node_modules/vite-plus'
+            current = (isinstance(digest, str) and lock.is_file()
+                       and hashlib.sha256(lock.read_bytes()).hexdigest() == digest
+                       and active.is_symlink() and active.resolve() == metadata.parent)
+            versions[name] = json_file(metadata).get('version') if current else None
         elif name == 'pnpm':
             versions[name] = json_file(scope / 'recipe/pnpm-current/package.json').get('version')
         elif name == 'node':
@@ -677,8 +688,14 @@ def safe_directory(path, uid=0, gid=0):
 
 def publish(path, content, mode=0o644, uid=0, gid=0, replace_link=False):
     path = Path(path)
-    if (path.is_symlink() and (not replace_link or path.lstat().st_uid != uid)) or (not path.is_symlink() and path.exists() and (not path.is_file() or path.stat().st_uid != uid)):
-        raise RecipeFailure()
+    if path.is_symlink() and not replace_link:
+        raise RecipeFailure(detail=f'Refusing to publish [{path}]: symlink replacement is not allowed.')
+    if path.exists() or path.is_symlink():
+        if not path.is_symlink() and not path.is_file():
+            raise RecipeFailure(detail=f'Refusing to publish [{path}]: target is not a regular file.')
+        owner = path.lstat().st_uid
+        if owner != uid:
+            raise RecipeFailure(detail=f'Refusing to publish [{path}]: target owned by UID [{owner}], not owned by UID [{uid}].')
     fd, candidate = tempfile.mkstemp(prefix='.orbit-recipe-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as stream:
@@ -772,44 +789,6 @@ def vite_scope(account):
     return home / '.local/share/vite-plus'
 
 
-def activate_vite_package(scope, package, uid, gid):
-    active = scope / 'current/node_modules/vite-plus'
-    if not active.is_symlink() or active.lstat().st_uid != uid:
-        raise RecipeFailure()
-    previous = active.resolve(strict=True)
-    manifest = json_file(package / 'package.json')
-    dependencies = dict(manifest.get('dependencies', {}))
-    architecture = 'x64' if run(['dpkg', '--print-architecture']).stdout.strip() == 'amd64' else 'arm64'
-    native = '@voidzero-dev/vite-plus-linux-' + architecture + '-gnu'
-    if native in manifest.get('optionalDependencies', {}):
-        dependencies[native] = manifest['optionalDependencies'][native]
-    # Retain the existing dependency closure only when its exact versions satisfy this distribution.
-    # Missing/new dependencies require recipe pins; never let Vite+'s installer fetch them implicitly.
-    resolved = {}
-    for name, constraint in dependencies.items():
-        expected = constraint.rsplit('@', 1)[-1] if constraint.startswith('npm:') else constraint.lstrip('=')
-        dependency = previous / 'node_modules' / name
-        if not dependency.exists():
-            dependency = previous.parent / name
-        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', expected) or json_file(dependency / 'package.json').get('version') != expected:
-            raise RecipeFailure()
-        resolved[name] = dependency.resolve(strict=True)
-    modules = safe_directory(package / 'node_modules', uid, gid)
-    for name, dependency in resolved.items():
-        destination = modules / name
-        if name.startswith('@'):
-            safe_directory(destination.parent, uid, gid)
-        if not destination.exists():
-            destination.symlink_to(dependency, target_is_directory=True)
-            os.chown(destination, uid, gid, follow_symlinks=False)
-    candidate = active.parent / '.orbit-recipe-vite-plus'
-    if candidate.exists() or candidate.is_symlink():
-        raise RecipeFailure()
-    candidate.symlink_to(package, target_is_directory=True)
-    os.chown(candidate, uid, gid, follow_symlinks=False)
-    os.replace(candidate, active)
-
-
 def package_link(runtime, name, package, uid, gid):
     alias = runtime / (name + '-current')
     if alias.exists() or alias.is_symlink():
@@ -823,7 +802,56 @@ def package_link(runtime, name, package, uid, gid):
     os.replace(candidate, alias)
 
 
-def install_javascript(tools, downloads, work, account):
+def install_vite_runtime(scope, runtime, tools, lock_content, account):
+    """Materialize the recipe's complete lock before atomically switching the runtime package."""
+    uid, gid = account.pw_uid, account.pw_gid
+    if not isinstance(lock_content, str) or hashlib.sha256(lock_content.encode()).hexdigest() != tools['vp']['lock_sha256']:
+        raise RecipeFailure()
+    lock = json.loads(lock_content)
+    if lock['packages']['']['dependencies'] != {'vite-plus': tools['vp']['version']}:
+        raise RecipeFailure()
+    target = runtime / ('vp-runtime-' + tools['vp']['lock_sha256'])
+    if not target.exists():
+        with tempfile.TemporaryDirectory(prefix='.vp-runtime-', dir=runtime) as directory:
+            candidate = Path(directory)
+            os.chown(candidate, uid, gid)
+            manifest = {'name': lock['name'], 'version': lock['version'], 'private': True,
+                        'dependencies': lock['packages']['']['dependencies']}
+            publish(candidate / 'package.json', json.dumps(manifest).encode(), 0o644, uid, gid)
+            publish(candidate / 'package-lock.json', lock_content.encode(), 0o644, uid, gid)
+            node = scope / 'js_runtime/node' / tools['node']['version']
+            cache = safe_directory(runtime / 'npm-cache', uid, gid)
+            run(['sudo', '-u', account.pw_name, '-H', 'env', 'PATH=' + str(node / 'bin') + ':' + os.defpath,
+                 'npm_config_cache=' + str(cache), str(node / 'bin/node'), str(node / 'lib/node_modules/npm/bin/npm-cli.js'),
+                 'ci', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', str(candidate)])
+            os.replace(candidate, target)
+    safe_directory(target, uid, gid)
+    if hashlib.sha256((target / 'package-lock.json').read_bytes()).hexdigest() != tools['vp']['lock_sha256']:
+        raise RecipeFailure()
+    package = target / 'node_modules/vite-plus'
+    if json_file(package / 'package.json').get('version') != tools['vp']['version']:
+        raise RecipeFailure()
+    modules = scope / 'node_modules'
+    if modules.is_symlink():
+        if modules.lstat().st_uid != uid:
+            raise RecipeFailure()
+        safe_directory(modules.resolve(strict=True), uid, gid)
+    else:
+        safe_directory(modules, uid, gid)
+    active = modules / 'vite-plus'
+    if active.exists() or active.is_symlink():
+        if not active.is_symlink() or active.lstat().st_uid != uid:
+            raise RecipeFailure()
+    candidate = modules / '.orbit-recipe-vite-plus'
+    if candidate.exists() or candidate.is_symlink():
+        raise RecipeFailure()
+    candidate.symlink_to(package, target_is_directory=True)
+    os.chown(candidate, uid, gid, follow_symlinks=False)
+    os.replace(candidate, active)
+    package_link(runtime, 'vp', package, uid, gid)
+
+
+def install_javascript(tools, downloads, work, account, vp_lock=None):
     """Keep the existing Vite+ scope and global store; replace only its pinned runtime inputs."""
     uid, gid = account.pw_uid, account.pw_gid
     home = Path(account.pw_dir)
@@ -835,7 +863,7 @@ def install_javascript(tools, downloads, work, account):
     safe_directory(scope, uid, gid)
     bin_dir = safe_directory(scope / 'bin', uid, gid)
     runtime = safe_directory(scope / 'recipe', uid, gid)
-    for name in ('node', 'vp', 'vp-cli', 'pnpm', 'bun'):
+    for name in ('node', 'vp-cli', 'pnpm', 'bun'):
         if name not in downloads:
             continue
         unpacked = extract(downloads[name], work / ('unpack-' + name))
@@ -867,12 +895,6 @@ def install_javascript(tools, downloads, work, account):
             publish(bin_dir / 'vp', (target / 'vp').read_bytes(), 0o755, uid, gid, replace_link=True)
             # Standalone Vite+ otherwise runs an unpinned installer on its first invocation.
             publish(bin_dir / '.vp-setup-complete', b'', 0o644, uid, gid)
-        elif name == 'vp':
-            # Retain the separately pinned JS distribution alongside the standalone dispatcher.
-            if json.loads((target / 'package/package.json').read_text())['version'] != tools[name]['version']:
-                raise RecipeFailure()
-            activate_vite_package(scope, target / 'package', uid, gid)
-            package_link(runtime, 'vp', target / 'package', uid, gid)
         elif name == 'pnpm':
             package_link(runtime, 'pnpm', target / 'package', uid, gid)
             native = target / 'package/pnpm'
@@ -892,6 +914,8 @@ def install_javascript(tools, downloads, work, account):
             safe_directory('/opt/orbit/bun/bin', uid, gid)
             publish('/opt/orbit/bun/bin/bun', executable.read_bytes(), 0o755, uid, gid, replace_link=True)
             publish('/usr/local/bin/bun', b'#!/bin/sh\nexec /opt/orbit/bun/bin/bun "$@"\n', 0o755, replace_link=True)
+    if 'vp' in tools:
+        install_vite_runtime(scope, runtime, tools, vp_lock, account)
     if 'node' in tools:
         for binary in ('node', 'npm', 'npx'):
             shim = bin_dir / binary
@@ -944,7 +968,7 @@ def apply_recipe(payload, snapshots):
             work = Path(directory)
             stage = 'download'
             downloads = {name: download_deb(name, pin, payload, work / (name + ('.deb' if pin['artifacts'][payload['architecture']]['url'].endswith('.deb') else '.archive')))
-                         for name, pin in tools.items() if pin['source'] != 'ubuntu' and versions[name] != pin['version']}
+                         for name, pin in tools.items() if name != 'vp' and pin['source'] != 'ubuntu' and versions[name] != pin['version']}
             debs = [str(path) for name, path in downloads.items() if tools[name]['artifacts'][payload['architecture']]['url'].endswith('.deb')]
             # Validate Debian package identity before allowing maintainer scripts to run.
             for deb in debs:
@@ -977,7 +1001,7 @@ def apply_recipe(payload, snapshots):
                 policy.unlink()
             pin_git(payload)
             stage = 'tools'
-            install_javascript(tools, downloads, work, account) if js else None
+            install_javascript(tools, downloads, work, account, payload.get('vp_lock')) if js else None
             stage = 'inventory'
             after_versions = inspect(tools)
             after_assessment = assess(tools, after_versions, apt_options, snapshots, git_packages(payload))
@@ -1002,8 +1026,8 @@ def apply_recipe(payload, snapshots):
                     'newer_than_recipe': newer_packages(after_assessment), 'healthy': True}
     except Exception as error:
         if isinstance(error, RecipeFailure):
-            raise RecipeFailure(str(error) or stage, result=error.result, packages=error.packages) from error
-        raise RecipeFailure(stage) from error
+            raise RecipeFailure(str(error) or stage, result=error.result, packages=error.packages, detail=error.detail) from error
+        raise RecipeFailure(stage, detail=f'{type(error).__name__}: {error}') from error
 
 
 def interrupted(signum, frame):
@@ -1027,11 +1051,15 @@ def main():
     except Exception as error:
         if isinstance(error, RecipeFailure) and str(error):
             stage = str(error)
-        if stage == 'packages' and isinstance(error, RecipeFailure) and error.result is not None:
-            result = error.result
-            print(json.dumps({'failure': {'stage': 'recipe-stage:packages', 'packages': error.packages,
-                                         'command': result.args, 'exit_code': result.returncode,
-                                         'stdout': failure_output(result.stdout), 'stderr': failure_output(result.stderr)}}, ensure_ascii=False))
+        if isinstance(error, RecipeFailure) and (error.result is not None or error.detail):
+            failure = {'stage': 'recipe-stage:' + stage}
+            if error.detail:
+                failure['reason'] = failure_output(error.detail)
+            if error.result is not None:
+                result = error.result
+                failure.update(packages=error.packages, command=result.args, exit_code=result.returncode,
+                               stdout=failure_output(result.stdout), stderr=failure_output(result.stderr))
+            print(json.dumps({'failure': failure}, ensure_ascii=False))
         else:
             print('recipe-stage:' + stage)
         return 1

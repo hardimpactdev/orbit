@@ -84,7 +84,7 @@ final readonly class RecipeLoader
             $this->object($pin, "tools.{$name}", match ($source) {
                 'ubuntu' => ['source', 'version', 'package'],
                 'internal' => ['source', 'version', 'source_commit', 'artifacts'],
-                default => ['source', 'version', 'artifacts'],
+                default => $name === 'vp' ? ['source', 'version', 'artifacts', 'lock_sha256'] : ['source', 'version', 'artifacts'],
             });
             $version = $this->text($pin->version, "tools.{$name}.version");
             $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1 || ($source === 'internal' && preg_match('/^[0-9a-f]{12,40}$/D', $version) === 1), "tools.{$name}.version: expected an exact version, not a channel or constraint.");
@@ -127,7 +127,9 @@ final readonly class RecipeLoader
                 }
                 $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest);
             }
-            $tools[$name] = new ToolPin($source, $version, artifacts: $artifacts);
+            $lock = $name === 'vp' ? $this->text($pin->lock_sha256, 'tools.vp.lock_sha256') : null;
+            $this->require($lock === null || preg_match('/\A[0-9a-f]{64}\z/', $lock) === 1, 'tools.vp.lock_sha256: expected a SHA-256 digest.');
+            $tools[$name] = new ToolPin($source, $version, artifacts: $artifacts, lockSha256: $lock);
         }
         $this->require(array_diff(array_keys($catalog), array_keys($tools)) === [], 'tools: missing catalog tools: '.implode(', ', array_diff(array_keys($catalog), array_keys($tools))));
         $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);

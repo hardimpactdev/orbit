@@ -101,7 +101,8 @@ The pull request that builds this decision deletes `tools/ci-runners/`, rewrites
 
 - Runners become visible to Doctor, the API, and agents, and removal deregisters them.
 - Sabre's jobs lose `sudo` and run in a container, so a job no longer acts as Sabre.
-- The GitHub App gains `Administration: write`, which also covers repository settings. Orbit requests it only for runner tokens.
+- The GitHub App gains `Administration: write`, which also covers repository settings. Orbit uses it for runner tokens, scoped to `administration: write`.
+- ADR 0223 reads classic branch protection with the same grant, through a token scoped to `administration: read`. Whichever ADR builds first adds the permission to the manifest once, and Nick accepts it on the installation once.
 - Privileged tests run only on the GitHub-hosted privileged job.
 - Persistent runners keep warm caches, and a job can still leave state for the next job.
 
