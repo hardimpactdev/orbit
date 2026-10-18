@@ -1254,23 +1254,26 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Placement",
                 "Process",
                 "Project",
-                "Task",
-                "Tool"
+                "Task"
             ],
             "governing_adrs": [
                 "0209",
                 "0210",
                 "0211",
+                "0212",
                 "0218",
+                "0219",
                 "0224",
                 "0225"
             ]

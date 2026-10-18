@@ -629,7 +629,7 @@ jobs:
           fetch-depth: 0
       - name: Refuse Gateway script growth
         env:
-          NODE_SCRIPTS_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
         run: |
           python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Count remaining Gateway scripts and refuse growth relative to a Git base (ADR 0225)."""
+"""Count Gateway scripts and refuse growth relative to a Git base (ADR 0225)."""
 import argparse
 import io
 import re
@@ -8,37 +8,77 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCOPES = ('apps/gateway/app', 'apps/gateway/extensions', 'apps/gateway/resources')
-INLINE = re.compile(r"<<<[ \t]*(['\"]?)(?:BASH|PY|PYTHON|SH|SHELL|AWK)\1[ \t]*$", re.MULTILINE)
+SCOPE = 'apps/gateway'
+DATA_LABELS = frozenset({
+    'SQL', 'CADDY', 'CADDYFILE', 'FPM', 'INI', 'UNIT', 'SYSTEMD', 'CONF',
+    'EXTENSIONS', 'TEXT', 'MARKDOWN', 'HTML', 'REGEX',
+})
+SCRIPT_EXTENSIONS = frozenset({'.sh', '.bash', '.zsh', '.fish', '.py', '.pl', '.rb', '.ps1',
+    '.lua', '.awk', '.js', '.mjs', '.cjs'})
+HEREDOC = re.compile(r"<<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*$", re.MULTILINE)
+# PHP argv literals, including options between python3 and -c. Heredoc bodies are masked first.
+ARGV_SCRIPT = re.compile(
+    r'''(['"])(?:/[^'"\s]*/)?(?:sh|bash|python3)\1'''
+    r'''(?:\s*,\s*['"]-[^'"]+['"])*?\s*,\s*(['"])-[a-zA-Z]*c[a-zA-Z]*\2''',
+)
+SHELL_SCRIPT = re.compile(
+    r'''(?<![\w/.-])(?:/[^\s'\"]*/)?(?:sh|bash|python3)'''
+    r'''(?:\s+--?[a-zA-Z][a-zA-Z-]*)*?\s+-[a-zA-Z]*c[a-zA-Z]*(?=\s|['\"]|$)''',
+)
+
+
+def inline_count(source):
+    count = 0
+    remaining = source
+    outside = []
+    while match := HEREDOC.search(remaining):
+        count += match[2] not in DATA_LABELS
+        outside.append(remaining[:match.start()])
+        end = re.search(r'^[ \t]*' + re.escape(match[2]) + r'\b', remaining[match.end():], re.MULTILINE)
+        if end is None:
+            raise ValueError(f'Unclosed heredoc: {match[2]}')
+        remaining = remaining[match.end() + end.end():]
+    outside.append(remaining)
+    code = '\n'.join(outside)
+    return count + len(ARGV_SCRIPT.findall(code)) + len(SHELL_SCRIPT.findall(code))
 
 
 def inventory(files):
-    counts = {'inline': {}, 'resource': {}}
+    counts = {'inline': {}, 'files': {}}
     for name, content in files:
-        if name.startswith(SCOPES[2] + '/'):
-            path = Path(name)
-            first = content.split(b'\n', 1)[0]
-            if path.suffix in ('.sh', '.py') or (
-                not path.suffix and first.startswith(b'#!') and (b'bash' in first or b'python' in first)
-            ):
-                counts['resource'][name] = 1
-        elif name.endswith('.php'):
-            count = len(INLINE.findall(content.decode('utf-8')))
+        path = Path(name)
+        in_resources = 'resources' in path.parts
+        is_script = (
+            path.suffix in SCRIPT_EXTENSIONS
+            or content.startswith(b'#!')
+            or (in_resources and not name.endswith('.blade.php') and (
+                path.suffix == '.php' or content.lstrip().startswith(b'<?php')
+            ))
+        )
+        if is_script:
+            counts['files'][name] = 1
+        elif path.suffix == '.php' and (
+            name.startswith((SCOPE + '/app/', SCOPE + '/extensions/'))
+        ):
+            count = inline_count(content.decode('utf-8'))
             if count:
                 counts['inline'][name] = count
     return counts
 
 
 def checkout_files():
-    for scope in SCOPES:
-        for path in sorted((ROOT / scope).rglob('*')):
-            if path.is_file() and not path.is_symlink() and 'node_modules' not in path.parts:
-                yield path.relative_to(ROOT).as_posix(), path.read_bytes()
+    names = subprocess.check_output(
+        ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', SCOPE], cwd=ROOT,
+    ).decode().split('\0')
+    for name in sorted(set(names) - {''}):
+        path = ROOT / name
+        if path.is_file() and not path.is_symlink():
+            yield name, path.read_bytes()
 
 
 def base_files(base):
     archive = subprocess.run(
-        ['git', 'archive', '--format=tar', base, *SCOPES], cwd=ROOT, check=True, capture_output=True,
+        ['git', 'archive', '--format=tar', base, SCOPE], cwd=ROOT, check=True, capture_output=True,
     ).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
         for entry in tree:
@@ -48,26 +88,22 @@ def base_files(base):
 
 def growth(before, after):
     return [
-        f'{kind}: {path}: {before[kind].get(path, 0)} -> {count}'
+        f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}'
         for kind in before
-        for path, count in sorted(after[kind].items())
-        if count > before[kind].get(path, 0)
+        if sum(after[kind].values()) > sum(before[kind].values())
     ]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--base', required=True, help='Target Git revision; CI supplies its base SHA.')
+    parser.add_argument('--base', required=True, help='Git base; PR CI uses the merge commit first parent.')
     args = parser.parse_args()
     before = inventory(base_files(args.base))
     after = inventory(checkout_files())
     for kind in before:
         print(f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}', flush=True)
-    findings = growth(before, after)
-    for finding in findings:
-        print(finding)
-    if findings:
-        raise SystemExit('Gateway scripts may only decrease. Use a named Rust agent command.')
+    if growth(before, after):
+        raise SystemExit('Gateway script totals may only decrease. Use a named Rust agent command.')
 
 
 if __name__ == '__main__':

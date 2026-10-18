@@ -1,4 +1,4 @@
-"""Regression tests for the merge-day script ratchet, without PHP dependencies."""
+"""Regression tests for the Gateway script inventory and its total-count ratchet."""
 import importlib.machinery
 import importlib.util
 import unittest
@@ -15,45 +15,64 @@ class ScriptRatchetTest(unittest.TestCase):
     def scan(self, files):
         return RATCHET.inventory((name, text.encode()) for name, text in files.items())
 
-    def test_counts_each_script_in_a_file_and_extensions(self):
-        counts = self.scan({
-            'apps/gateway/app/One.php': "<<<'BASH'\na\nBASH;\n<<<PYTHON\nb\nPYTHON;\n",
-            'apps/gateway/extensions/documents/One.php': '<<<"AWK"\na\nAWK;\n',
-            'apps/gateway/app/Config.php': "<<<'CADDY'\na\nCADDY;\n",
-        })
-        self.assertEqual(sum(counts['inline'].values()), 3)
-        self.assertEqual(counts['resource'], {})
+    def test_counts_unknown_heredoc_labels_and_excludes_only_data_labels(self):
+        source = "\n".join(f"<<<'{label}'\ncontent\n{label};" for label in [
+            'BASH', 'BOOTSTRAP_DNS', 'BASH_WRAP', 'SCRIPT', 'SQL', 'CADDY', 'FPM',
+        ])
+        self.assertEqual(RATCHET.inline_count(source), 4)
 
-    def test_counts_libraries_fragments_and_extensionless_programs(self):
+    def test_counts_argv_and_shell_string_scripts(self):
+        source = '''
+            ['sh', '-c', 'one']; ['bash', '-ceu', 'two'];
+            ['python3', '-I', '-c', 'three']; ['/bin/sh', '-ec', 'four'];
+            "bash -c five"; ['bash', '-seu', '--']; ['python3', 'file.py'];
+        '''
+        self.assertEqual(RATCHET.inline_count(source), 5)
+
+    def test_counts_literal_scripts_with_prefixes_and_multiple_flags(self):
+        source = "'sudo sh -c true'; ' bash -eu -c true'; 'f() { python3 -I -c true; }'"
+        self.assertEqual(RATCHET.inline_count(source), 3)
+
+    def test_does_not_double_count_shell_inside_heredoc(self):
+        self.assertEqual(RATCHET.inline_count("<<<'SCRIPT'\nsh -c 'true'\nSCRIPT;\n"), 1)
+
+    def test_counts_script_files_across_gateway_and_extension_resources(self):
         counts = self.scan({
             'apps/gateway/resources/remote/lib/a.py': 'pass',
-            'apps/gateway/resources/task-vms/a.sh': 'true',
-            'apps/gateway/resources/tasks/check': '#!/usr/bin/env python3\npass',
-            'apps/gateway/resources/tasks/bash': '#!/bin/bash\ntrue',
-            'apps/gateway/resources/template': 'plain data',
+            'apps/gateway/extensions/ai-router/resources/start.bash': 'true',
+            'apps/gateway/extensions/tasks/resources/check': '#!/bin/sh\ntrue',
+            'apps/gateway/extensions/ai-router/resources/server.php': '<?php echo 1;',
+            'apps/gateway/resources/tasks/composer': '<?php echo 1;',
+            'apps/gateway/resources/private-dns/serve.php': '<?php echo 1;',
+            'apps/gateway/resources/scripts/horizon-queue.php': '<?php echo 1;',
+            'apps/gateway/tests/fixture.py': 'pass',
+            'apps/gateway/bin/probe': '#!/usr/bin/env ruby\nexit',
+            'apps/gateway/app/Action.php': '<?php',
+            'apps/gateway/resources/views/page.blade.php': '<?php echo 1;',
+            'apps/gateway/resources/data.json': '{}',
         })
-        self.assertEqual(sum(counts['resource'].values()), 4)
+        self.assertEqual(sum(counts['files'].values()), 9)
+        self.assertEqual(counts['inline'], {})
 
-    def test_blocks_growth_in_existing_file_even_when_total_falls(self):
+    def test_moves_between_files_and_into_extensions_are_neutral(self):
         before = self.scan({
-            'apps/gateway/app/A.php': "<<<'BASH'\n<<<'BASH'\n<<<'BASH'\n",
-            'apps/gateway/app/B.php': "<<<'BASH'\n",
-        })
-        after = self.scan({'apps/gateway/app/B.php': "<<<'BASH'\n<<<'BASH'\n"})
-        self.assertEqual(len(RATCHET.growth(before, after)), 1)
-
-    def test_blocks_new_location_and_resource_even_when_others_are_deleted(self):
-        before = self.scan({
-            'apps/gateway/app/A.php': "<<<'BASH'\n",
-            'apps/gateway/resources/a.py': 'pass',
+            'apps/gateway/app/One.php': "<<<'SCRIPT'\ntrue\nSCRIPT;\n",
+            'apps/gateway/resources/server.py': 'pass',
         })
         after = self.scan({
-            'apps/gateway/app/B.php': "<<<'BASH'\n",
-            'apps/gateway/resources/b.py': 'pass',
+            'apps/gateway/extensions/ai-router/src/One.php': "<<<'SCRIPT'\ntrue\nSCRIPT;\n",
+            'apps/gateway/extensions/ai-router/resources/server.py': 'pass',
         })
-        self.assertEqual(len(RATCHET.growth(before, after)), 2)
-        self.assertEqual(RATCHET.growth(before, before), [])
+        self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_only_total_growth_fails_and_categories_cannot_offset_each_other(self):
+        before = self.scan({'apps/gateway/app/A.php': "['sh', '-c', 'true'];"})
+        after = self.scan({'apps/gateway/app/B.php': "['sh', '-c', 'true']; ['bash', '-c', 'true'];"})
+        self.assertEqual(len(RATCHET.growth(before, after)), 1)
         self.assertEqual(RATCHET.growth(before, self.scan({})), [])
+        self.assertEqual(len(RATCHET.growth(before, self.scan({
+            'apps/gateway/resources/a.py': 'pass',
+        }))), 1)
 
 
 if __name__ == '__main__':

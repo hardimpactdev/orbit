@@ -1,12 +1,12 @@
 ---
 title: "ADR 0225: Make Node changes through agent commands"
 sidebarTitle: "0225 Agent commands"
-description: "In progress. The Rust agent owns every Node change through named commands with typed input, output, and errors. SSH carries calls, operations own long runs, and CI freezes the remaining Gateway scripts now."
+description: "In progress. Named Rust agent commands own Node execution. Operations own long runs. CI freezes Gateway scripts now, and area groups migrate them after ADR 0224."
 ---
 
 # ADR 0225: Make Node changes through agent commands
 
-The Rust agent in `apps/agent` is the end state for every Node change. The Gateway calls a named agent command with typed input and gets typed output or a named error. It sends no shell or Python source. This supersedes [ADR 0211](/decisions/0211-ship-node-changes-as-remote-programs), including its resource programs. The script ratchet starts with this ADR. The runtime build follows [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), one area per task group.
+The Rust agent in `apps/agent` is the end state for every Node change. The Gateway calls a named command with typed input and gets typed output or a named error. It sends no program source. This supersedes [ADR 0211](/decisions/0211-ship-node-changes-as-remote-programs), including its resource programs. The script ratchet starts with this ADR. The runtime build follows [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), one area per task group.
 
 ## Status
 
@@ -14,143 +14,189 @@ In progress.
 
 Nick decided this on 2026-10-19.
 
-Principle: [One way, one name](/mission#principles). One Rust command owns each Node action, and one runner carries its contract. It also serves [Deterministic first](/mission#principles): Rust types and tests replace script assembly and numeric exit codes. No principle exception is proposed.
+Principle: [One way, one name](/mission#principles). Each Node action has one Rust implementation and one typed contract. It also serves [Deterministic first](/mission#principles): code, tests, and a CI ratchet enforce the boundary. No principle exception is proposed.
 
 ## Context
 
-On 2026-10-19, `main` at `353ef196c9ce76a5f4988ac32b1c29edbdb0142c` had 205 inline heredocs using `<<<'BASH'`, `<<<BASH`, `<<<'PYTHON'`, and `<<<'PY'` in 97 files under `apps/gateway/app`. The starting inventory was 205 in 98 files; the checked count above uses exactly those four delimiter forms. The existing architecture test also counts `SH`, `SHELL`, and `AWK`. That wider count is 208 in 98 core files and one in the Documents extension. It allows files, not script counts, so a listed file can gain scripts without failing.
+At `main` commit `353ef196c9ce76a5f4988ac32b1c29edbdb0142c`, the revised guard counts 272 inline scripts across the Gateway.
 
-ADR 0211 moved scripts into `apps/gateway/resources/`. The current scan finds 46 Bash and Python files there, including libraries and files with a shebang and no extension. The earlier estimate was about 43. `remote/` holds 26. The rest includes `task-vms/`, `instances/`, `tasks/`, image building, metrics, and the AI router collector. These are part of this migration too.
+It also counts 76 script files. Fifty are Node resources. The other 26 are the Gateway's Artisan entry point and test support.
 
-### Current runners
+The supplied starting inventory counted four heredoc forms: 205 occurrences in 97 files. The previous guard counted six labels: 209 occurrences across core and extensions. Both missed other labels and one-line interpreter calls. The broader count above replaces them. It also includes the PHP resources, Bash files, shebangs, and extension resources that the earlier 46-file inventory missed.
 
-`RemoteProgramCatalog` reads header comments, prepends libraries, and builds a program. `SshProgramRunner` sends the source and input over SSH on every call. Python returns an outcome and data; Bash still returns an exit code and text. `tests/Programs` tests Python programs directly. This improved review and testing, but the Gateway still owns a second language and execution contract.
+### Current execution
 
-The [Node agent](/reference/node-agent) has no command surface today. `main.rs` rejects all arguments and refuses to run outside its systemd unit. It observes Processes and task checkouts. The Gateway asks it to refresh observations and log streams through Reverb; it does not ask it to mutate a Node. The agent runs as root with an empty capability set, `NoNewPrivileges=yes`, and a read-only system view. Those limits cannot support the new commands unchanged.
+`RemoteProgramCatalog` reads program headers and prepends libraries. `SshProgramRunner` sends source and input over SSH on every call. Python returns an outcome and data; Bash returns an exit code and text. `tests/Programs` tests programs directly. The Gateway still owns another language and execution contract.
 
-Installation also needs a change. `NodeAgentSshExecutor` installs pinned Linux binaries, trust, a secret, and the unit through SSH. `orbit self-update` replaces the binary under the Node update lock. `GatewayNodeAgentUpdate` updates the Gateway's own agent locally. Neither macOS agent artifacts nor a macOS installer exist. Task VMs enroll as Linux Nodes and use their normal managed SSH connection; their images and nested topology Nodes need the same command binary.
+The [Node agent](/reference/node-agent) has no command mode. It rejects arguments and refuses to start outside its systemd unit. It observes Processes and task checkouts, and reads log streams. It runs as root, with an empty capability set, `NoNewPrivileges=yes`, and a read-only system view. Its systemd, zbus, and `/proc` code is not gated for macOS.
+
+`NodeAgentSshExecutor` installs pinned Linux binaries through SSH. `orbit self-update` pulls them on the Node. `GatewayNodeAgentUpdate` updates the Gateway's agent locally. Their update lock is exclusive. Linux managed accounts have `NOPASSWD:ALL`; macOS commands use the enrolled account without sudo. Task VM image builds also use `IncusGuestShell` and `UpCloudGuestShell` before the guest is a managed Node.
 
 ## Decision
 
 The agent owns Node execution. The Gateway owns intent and the operation that calls it.
 
-### One command contract over SSH
+### One typed command
 
-The agent gains a command mode: `orbit-agent command <name>`. A stable name such as `instances.remove-source` selects Rust code compiled into the binary. One JSON object arrives on standard input. The command writes exactly one JSON result on standard output. Bounded, redacted log lines go to standard error. No source, interpreter, module path, executable path, or caller-selected environment selects the implementation.
+The agent gains `orbit-agent command <name>`. A name such as `instances.remove-source` selects compiled Rust code. Each command defines an input struct, output struct, error enum, and timeout bound. It refuses unknown fields and invalid input before mutation. Standard input carries one JSON envelope: the expected binary SHA-256, remaining deadline, and typed input.
 
-Each command defines a Rust input struct, output struct, error enum, and timeout bound. Unknown fields and invalid values fail before changes start. The result is either `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { "code": ..., "message": ..., "details": ... } }`. Each error code and its details have declared types. A valid result exits 0, including a refusal. A panic or process failure is not a command result.
+The command checks its running executable's SHA-256 once, before executing. A mismatch returns `agent.version_mismatch` with the expected and observed hashes. There is no preflight round trip, version range, or separate contract revision. An exact binary digest identifies the contract too.
 
-One Gateway `AgentCommandRunner` owns encoding, version checks, transport failures, and result decoding. Callers pass typed input and receive typed results. PHP contract types and Rust types must pass the same JSON fixtures. The command definitions in `apps/agent` own the wire contract; there is no second header catalogue or program loader. A domain action maps a named command error to its public error once, at its existing boundary.
+Standard output contains one result: `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { "code": ..., "message": ..., "details": ... } }`. Error codes and details have declared types. A valid result exits 0, including a refusal. Redacted logs go to standard error. A panic, missing result, malformed result, undeclared error, transport loss, and timeout are distinct runner failures.
 
-The runner invokes the installed binary through the existing pinned SSH connection, as the enrolled account. SSH carries the command name and JSON; it carries no program source. The Gateway's own Node uses a local process invocation of the same binary and contract, rather than SSH to itself. These are transport adapters of one runner, not separate execution rules. The observer service keeps its outbound connections. Command mode needs neither Reverb nor the agent secret and starts no command listener or job queue.
+One Gateway `AgentCommandRunner` owns encoding, transport, and decoding. Rust definitions own the contract. PHP types and Rust types pass the same JSON fixtures. A domain action maps a command error to its public error once. No source, interpreter, module path, executable path, or caller-selected environment selects an implementation. A migrated caller has no script path to try after failure.
 
-A missing command, unsupported platform, or incompatible binary is a named refusal before mutation. Missing output, malformed output, an undeclared error, an abnormal exit, an unreachable target, and a timeout are separate runner failures. The runner never tries a script or a different implementation after a refusal or failure. Migrating a caller deletes its script path in the same change.
+### Transport adapters
 
-### Operations own long runs
+The runner has four adapters. They carry the same command envelope and result.
 
-[ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) decide whether a public command starts an operation, runs on an existing queue, or stays within a bounded request. An agent call changes none of those choices. The Gateway keeps access checks, intent, placement, target locks, and operation planning.
+- Managed Nodes use SSH to their WireGuard address, with the enrolled account and pinned host identity. Admission uses the pinned bootstrap SSH connection until WireGuard is ready.
+- The Gateway's own Node uses a local process. It does not SSH to itself.
+- Incus guests use `incus exec` through the managed host. This works before guest networking and SSH exist.
+- UpCloud guests use guest SSH with the host key that Orbit generated and pinned through user-data. This is the existing `UpCloudGuestShell` trust path.
 
-An operation step calls the agent synchronously from its Horizon job. The agent enforces the smaller of its declared command bound and the caller's remaining deadline, including waits and child processes. PHP does not keep another timeout table. Its redacted log tail goes into the step's existing 8 KiB output. The typed result supplies the domain result; a named failure supplies the step error. Credentials and private input never go into operation input, output, or Activity.
+The observer service keeps its outbound connections and sandbox. Command mode needs neither Reverb nor the agent secret. It adds no listener or job queue. Incus and local execution add no alternate implementation.
 
-Cancellation keeps the operation rule: finish the running step, start no further step, and record cancellation. The transport timeout bounds that step. A lost client does not stop the job. A lost worker follows the existing operation recovery: repeat only a resumable step. Commands for those steps converge from observed state; a step that cannot safely repeat is not resumable. The runner sends once and never retries a mutation on its own.
+### Operations and a lost connection
 
-There is no agent task table, receipt ledger, generic detached runner, or claim of exactly-once execution. [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender#supervision-only-for-detached-checks-and-topologies) keeps supervision only for detached checks and topologies. Their Rust commands use that existing run ID, unit, and result. Other calls are plain synchronous commands. Tasks keeps its holder and queued workspace steps; it gains no new ownership model.
+[ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) decide whether a public action starts an operation, runs on an existing queue, or stays within a bounded request. The Gateway keeps access checks, intent, placement, operation plans, and target locks.
 
-### Installation breaks the bootstrap cycle
+An operation step calls the agent synchronously from its Horizon job. The agent enforces the smaller of its command bound and the remaining deadline, including lock waits and children. PHP keeps no second timeout table. The redacted log tail feeds the step's existing 8 KiB output. Typed results supply domain results; named failures supply step errors. Private input and credentials enter neither operation records nor Activity.
 
-One Rust `agent.install` command installs or repairs the agent on a fresh Node and updates it on an existing Node. It runs from the candidate binary, so it does not depend on a working installed agent or observer service. The Gateway downloads the exact published artifact and checks its pinned SHA-256 before staging it through the managed SSH file transfer. It then invokes that candidate with the install input. Staging executable bytes is the transport's only write outside a named command. It is not a general remote file API.
+Cancellation keeps the operation rule: finish the running step, start no further step, and record cancellation. Losing the API client does not stop the queued job. The runner sends a mutation once and does not retry it.
 
-The installer owns the canonical binary, configuration, CA, secret, service definition, atomic replacement, health check, and candidate cleanup. It retains the update lock and the current secret handoff rule. A failed health check restores the previous binary and reports failure; restoration repairs installation and never selects an old command implementation. `orbit self-update`, agent convergence, and the Gateway release handoff all call this installer. Their PHP and shell install logic goes. A release handoff uses the same command locally and stays outside Horizon because it restarts the Gateway itself.
+A command holds an exclusive OS lock for its target on the Node. The key is the canonical target that the Gateway operation locks, not the command name. A resumed step uses the same key. Commands on different targets can run together. Nested actions within one command are Rust calls under the held lock, not another invocation that takes the lock again.
 
-Bootstrap first stages and installs the agent through the admission SSH connection with its pinned host identity. Then named agent commands configure WireGuard, prerequisites, and the Node footprint. Managed calls thereafter use WireGuard. The staging path cannot run footprint, package, or application actions. A missing or broken agent is repaired through this same install command, not an SSH script.
+On `SIGHUP`, `SIGTERM`, a broken output pipe, or its deadline, the command stops its child process group and waits for it to exit before releasing the target lock. Mutating children retain the lock descriptor for their lifetime, so killing the supervisor cannot release it while a child still changes the target. A command that remains alive after SSH drops keeps its lock and remains bounded by its own deadline. Recovery waits for that lock within its remaining deadline; it never runs beside an orphan. A lost result does not prove that no change occurred.
 
-The foundation task group adds the command binary for Linux x86_64, Linux aarch64, and macOS arm64. macOS command mode runs on tool-only Nodes. It does not add Linux roles, exporters, or the observer service to macOS. macOS enrollment must verify noninteractive sudo before staging the agent. It refuses with `node.agent_privilege_required` when the enrolled account lacks it. Existing macOS Nodes stay unavailable for managed changes until their account meets this prerequisite and installation passes. The old SSH path is removed when Tools migrates. Root installs the agent; Homebrew and Vite+ commands run as the enrolled account. Unsupported platform-command pairs refuse before changes.
+The Gateway then follows existing operation recovery. It repeats only a resumable step, whose command converges from observed state. Other steps fail for inspection. There is no agent task table, receipt ledger, or claim of exactly-once execution. [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender#supervision-only-for-detached-checks-and-topologies) keeps detached checks and topologies under their existing run ID, unit, and result. Their supervision is not a generic command runner.
 
-Task VM images carry the pinned binary without a Node secret or identity. Enrollment supplies those through `agent.install`. Image building and nested topology setup invoke the same binary inside the guest through the existing Incus execution transport, before guest SSH is available. They do not copy a Gateway script into the image. A resumed VM passes the same version check as any Node before taking work. A topology Node enrolls with its own identity. No image or VM keeps another command contract.
+### One installer and one binary path per platform
 
-### One pin during release and fleet rollout
+One Rust `agent.install` command installs, repairs, and updates the binary. It runs from a staged candidate, so it needs no working installed agent. Both download paths feed it: the Gateway can download and push the candidate, and `orbit self-update` can pull it on the Node. Each uses the same pinned artifact and installer. The installer checks the candidate digest before installing it.
 
-The Gateway release pins one agent version and SHA-256 per supported platform, as it pins Linux binaries today. It also pins the command contract revision. `orbit-agent command` reports both in its result envelope. The runner checks the installed artifact against the target pin before a call. The input envelope carries the expected artifact SHA-256, contract revision, and remaining timeout beside the typed command input. Under the update lock, command mode checks its own artifact and revision before mutation. A matching semantic version alone is insufficient.
+Linux installs to `/usr/local/bin/orbit-agent`, owned by root. macOS installs to `$ORBIT_HOME/bin/orbit-agent`, owned by the enrolled account. The runner uses that platform's absolute path. macOS installation and commands use no sudo and require no root access. They do not add Linux roles, exporters, or an observer service to macOS.
 
-Publish all agent artifacts and checksums before a Gateway release that requires them can deploy. The new Gateway may meet old agents while the fleet rolls out. Such a Node is unavailable for command work until the normal installer brings it to the new pin. It reports `agent.version_mismatch`, with the expected and observed identity. It does not keep the old behavior, download source per call, negotiate an older contract, or depend on a CLI release arriving first.
+The installer owns atomic replacement, candidate cleanup, and the health check. On Linux it also owns the observer configuration, CA, secret handoff, and systemd unit. A failed health check restores the kept binary and reports failure. It does not run an old command implementation. Agent convergence, self-update, and the Gateway release handoff all use this installer. Their duplicate PHP and shell install code goes.
 
-The release drains running Gateway jobs before changing the Gateway and agent pin. A command already running finishes from its open binary. The installer does not replace the binary while a managed command runs; it uses the Node update lock shared by the runner. The first runner version and installer must use this lock before any area migrates. The Gateway updates its own agent before it accepts command work. A failed agent update leaves the affected Node unavailable and makes rollout incomplete; it no longer counts as a harmless agent warning.
+The transport may stage only the pinned candidate bytes outside a named command. It provides no general file-write API. Managed and admission SSH use file transfer. Incus builds first transfer the candidate to the host, then use `incus file push` into the guest and invoke `agent.install` through `incus exec`. UpCloud builds transfer it over the guest's pinned SSH connection and invoke the installer there. Local installation stages it on the Gateway. Rust then performs the Node changes.
 
-Rollback installs the agent pin of the selected Gateway release through the same installer before command work resumes. Offline Nodes stay unavailable until repaired to that pin. A new task VM image is built for the pin; an older image can boot, but cannot take work until installation and the pin check pass. Exact pins trade a short, visible pause on each Node for one contract and no compatibility branches.
+Image building installs command mode before the first recipe phase. A Linux guest needs no WireGuard, agent secret, observer, or PHP to run it. Images carry the binary but no Node identity or secret. Enrollment installs those through the same installer. Each nested topology Node gets its own identity. A resumed VM must match the pin before taking work.
 
-### Root is a command boundary
+The foundation gates Linux-only dependencies and modules with Rust target conditions. That includes zbus, systemd, `/proc`, and Linux observation. CI builds and tests command mode on macOS arm64 as well as Linux x86_64 and aarch64. Unsupported platform-command pairs refuse before changes.
 
-The Gateway's current Node access rule authorizes the call. The agent adds no per-command permission service. Root commands run as `sudo -n orbit-agent command <name>`. Each command fixes its required identity; the caller cannot request a UID or arbitrary privilege mode.
+### Update locking
 
-Filesystem and package changes that need root run as root. Git, project setup and teardown, builds, Homebrew, Vite+, and task code run as the recorded owner. A root command drops groups, GID, and UID before starting project-controlled code. It does not source that account's shell configuration. The agent secret and trust files stay root-owned and never enter project code's environment or input.
+Ordinary commands do not hold the self-update lock, in either shared or exclusive mode. They run from an open executable. Atomic replacement leaves that executable valid until the command exits. Updating the observer does not stop a command process. A long deploy therefore does not make self-update busy.
 
-The observer service keeps its current sandbox. Command processes run outside it, with the privileges their fixed action needs. Expanding the observer's writable paths or giving it a generic sudo interface is not the design. Rust uses filesystem and OS APIs directly where practical. Where it must run Git, a package manager, systemd, or Incus, the command owns the executable and argument construction. No `sh -c`, `bash -c`, Python source, or downloaded script implements an Orbit action.
+Only installation and CLI replacement take the update lock, exclusively. Self-update and the Gateway handoff wait at most 120 seconds; convergence waits at most 300 seconds. A caller's remaining deadline can shorten that wait. Expiry returns the existing busy error and changes nothing. macOS uses the account's `$ORBIT_HOME/self-update.lock`; Linux keeps `/run/lock/orbit-self-update.lock`.
 
-### What stays outside
+Footprint and recipe convergence stop holding an outer update lock. When they install the agent, they call the installer inside the same Rust process. The installer takes the update lock once. Self-update calls that same locked implementation for its agent step and takes the lock for its CLI swap. It never holds a lock and invokes another process that reacquires it. Target locks remain separate and always precede the update lock when both are needed.
 
-The Gateway keeps API validation, authorization, database intent, operations, schedules, and extension switches. Providers still manage external resources through their APIs. These are control-plane decisions, not Node programs.
+### Build and test before publishing
 
-Project-owned setup and teardown lists, deploy hooks, Process commands, and checks written for coding agents remain part of the Project. A named command runs them as the project owner under their existing limits. They are not compiled into Orbit and cannot select a root action. This is not a generic script API for the Gateway to implement its own Node behavior.
+The foundation changes CI before an area moves. CI builds the agent from the exact PR source, including extension modules. It writes a manifest with the source commit, platform artifacts, and SHA-256 values. The isolated integration environment installs those artifacts with that manifest. Review fixes get another CI build; they do not need a release tag. The published-release check in `tools/check_agent_release.py` becomes a production delivery check, not a prerequisite for testing PR code.
 
-Every executable file that the Gateway owns under `resources/` either become Rust commands or are deleted when their purpose goes. Libraries become Rust modules. The AI router collector and the FPM exporter also leave Python: their service entry points become named agent commands under their existing Process or service supervision and existing ports. They do not become command listeners for the Gateway. Static configuration, certificates, and templates stay data. No Gateway-owned shell or Python survives by being called an asset.
+After the change merges, main CI builds and tests the merged source. Once its required checks pass, the release workflow tags that commit as `agent-v<commit>` and publishes those same tested artifacts and checksums. It does not rebuild after the tag. Only the release workflow pushes agent tags; task agents do not push them. A maintainer can rerun that workflow for the same commit and immutable artifacts.
+
+The Gateway release takes its exact pins from that delivery manifest, which also supplies recipe and desired-fleet-state pins. This replaces the hard-coded agent hashes in the recipe and `NodeAgentFootprint`. There is no follow-up source commit to insert hashes after merge. A Gateway change that leaves agent build inputs unchanged can keep the existing delivery. A production release that needs new agent code waits for its published artifacts before deployment.
+
+### Release and fleet rollout
+
+The release drains Gateway jobs before changing its agent pin. The new Gateway may meet old agents during fleet rollout. Their command hash check refuses work until installation brings them to the new pin. The Gateway updates its own agent before accepting command work. An update failure makes rollout incomplete and leaves that Node unavailable for new command work.
+
+Commands already running finish from their open binary. Rollback installs the selected Gateway release's pin before new work resumes. Offline Nodes wait for repair to that pin. A VM from an older image can boot but cannot take work until installation passes. There is one active contract per Gateway release, with no compatibility branch or script fallback.
+
+### Privilege is a code rule
+
+Linux keeps the existing managed account's full passwordless sudo, `NOPASSWD:ALL`. This ADR does not narrow sudoers. The named-command boundary is enforced by Gateway architecture tests and Rust code, not by an OS restriction on that account. Staging and running the installer uses that same authority.
+
+Commands that need root run with `sudo -n` on Linux. A command fixes its identity policy. Before project-controlled code starts, the supervisor drops groups, GID, and UID to the recorded owner. Git, setup and teardown, builds, Homebrew, Vite+, and task code run as their owner. Root trust files and secrets never enter that code's environment or input. macOS always uses the enrolled account.
+
+Rust uses filesystem and OS APIs directly where practical. Commands own fixed executable selection and argument construction when they call Git, package managers, systemd, or Incus. No shell or PHP source implements an Orbit action. The observer's writable paths and privileges do not expand.
+
+### Extension ownership and scope
+
+Each extension owns its Node code under `apps/gateway/extensions/<name>/agent/`. Documents commands use the `documents.*` prefix, AI router commands `ai-router.*`, and Tasks commands `tasks.*`. These Rust modules compile into the one agent binary. Core holds only their composition and dispatch registration. It holds no extension behavior. Deleting an extension removes its directory, composition references, and tests in the same change. There is no dynamic plug-in loader or second runner. This extends the source boundary of [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) to Node code.
+
+The Gateway keeps API validation, authorization, database intent, operations, schedules, and extension switches. Providers keep external API calls. Project-owned hooks, setup lists, Process commands, and checks remain project code. A named command runs them as the owner under their existing limits. They do not select a root action or implement Gateway behavior.
+
+Each resource that the Gateway runs on a Node becomes Rust code or is deleted. Libraries become modules. The AI router collector and FPM exporter become named service commands under their existing supervision and ports. The PHP `scripts/horizon-queue.php` and `tasks/composer` move too. `private-dns/serve.php` is deleted by [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router); if that deletion has not landed, the DNS group must deliver it before closing. The Gateway's `fpm/opcache-reset.php` adapter is deleted when its handoff uses a service restart to clear that pool's opcache. No PHP program is retained as a Node runner.
+
+Static configuration, templates, and certificates stay data. The Gateway's Artisan entry point and test fixtures stay control-plane or test code. They are counted by the broad file guard but are not Node programs to port. Python program tests disappear as Rust tests replace them.
 
 ### The ratchet starts at this merge
 
-The ADR pull request adds `bin/node-scripts-ratchet` to CI and replaces the file allowlist of `InlineRemoteScriptTest`. It compares the candidate with the target branch, rather than a count that a pull request can raise. It scans PHP under `apps/gateway/app` and `apps/gateway/extensions` for `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, and `AWK` heredocs and nowdocs. It also counts each `.sh`, `.py`, and extensionless Bash or Python shebang file under `apps/gateway/resources`, including libraries and fragments.
+`bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in Gateway application and extension PHP, except a fixed list of data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, and `python3 -c` calls, including combined flags and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
 
-CI reports inline and resource totals separately. Neither total may rise. Each existing PHP file's count may only fall, and a new script file or new location for an inline script fails even when another area shrinks. There is no reviewed-exception list or editable ceiling. A deletion lowers the next comparison automatically. Renaming a script is not migration. It must move to Rust instead. Plain configuration and text heredocs stay outside the count.
+The file scan covers the whole Gateway, including extensions and test support. It counts shell and interpreter file extensions, every shebang, and PHP programs under any `resources/` directory. This includes extensionless PHP such as `tasks/composer`. Blade templates remain data. The checker contains the exact extension list. Git-tracked files and new unignored files are scanned; dependencies are not brought into the inventory.
 
-This count guard does not parse every possible PHP string or prove that a shell command is harmless. Review enforces the no-new-script rule for other forms too. Each area also removes direct Node process calls outside the command runner, with architecture coverage at its Gateway boundary. At the end, those boundaries and the zero-count check forbid a second implementation. Existing scripts remain only as unconverted work, not a supported alternative for a migrated caller.
+Inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-path exception list.
 
-### Tests and build order
+The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and test support; that count still cannot rise.
 
-Rust unit tests replace `apps/gateway/tests/Programs` as each program moves. They use temporary directories and test the real command logic, its typed errors, repeated execution, and refusal before a side effect. OS and process adapters let tests cover failure paths without requiring root. PHP tests keep domain behavior and error mapping. Shared JSON fixtures test input, output, and errors across the Rust and PHP boundary. Linux integration tests on an isolated topology and macOS command tests verify the real privilege and install boundaries that unit tests cannot prove.
+### Tests and migration groups
 
-No runtime migration starts before ADR 0224 is built. First, one foundation task group delivers the runner, contract tests, platform builds, installation, and pin checks. It changes no area caller until those pass on Linux, macOS, and a task VM. Then each row below is one task-group-sized step, largest first. Counts are from the context commit, include shared libraries once, and measure scripts, not lines. ADR 0224 deletes Tasks scripts before this migration; count that deletion rather than porting them.
+Rust unit tests replace `tests/Programs` as each program moves. They exercise real command logic, typed errors, repeated execution, and refusal before mutation in temporary directories. Shared JSON fixtures test the PHP and Rust contract. Integration tests exercise installation, exact-hash refusal, target locks, transport loss with live children, update during a long command, and nested recipe installation. Linux, macOS, Incus, and UpCloud adapters each get their real-path acceptance test.
 
-| Order | Area and scope | Inline | Resource | Total |
+No runtime migration starts before ADR 0224 is built. One foundation group delivers the runner, installer, platform gates, CI build path, and contract fixtures. Then a small Documents group proves the pattern. Remaining groups run largest first. The former 113-script row is split into removal, registration, dependencies, runtime, deploy, data, networking, Vite, Projects, and hibernation groups. Each is a separate task group.
+
+The table counts the 272 inline scripts and 50 Node resource files at the context commit. Shared libraries appear once. It excludes the 26 control-plane and test-support files from migration work. Groups preserve the extension moves in ADRs 0210 and 0212; a move does not raise the ratchet. Delete code that ADRs 0219 and 0224 remove rather than porting it. Recount each area when its group is planned.
+
+| Step | Area | Inline | Node files | Total |
 | --- | --- | --- | --- | --- |
-| 1 | Instances, AppDev, Hibernation, Projects, and the shared Orbit directory; checkout, deploy, removal, setup, and dependencies | 99 | 14 | 113 |
-| 2 | Nodes, WireGuard, Firewall, Fleet, Gateway, and Gateway releases; bootstrap, packages, recipes, and footprint | 39 | 8 | 47 |
-| 3 | Tasks and task VMs; checks, turn metadata, images, caches, and nested topologies | 18 | 15 | 33 |
-| 4 | Doctor; all Node probes use named read commands too | 15 | 0 | 15 |
-| 5 | Tools; manager actions and Vite+ inspection | 8 | 5 | 13 |
-| 6 | Caddy and WebSocket; routing, certificates, and service convergence | 8 | 0 | 8 |
-| 7 | Processes and Schedules; units and owner execution | 8 | 0 | 8 |
-| 8 | Metrics; service metrics and the FPM exporter | 6 | 2 | 8 |
-| 9 | Database servers; database actions and Valkey ACLs | 3 | 1 | 4 |
-| 10 | AI router; collector and source publication | 2 | 1 | 3 |
-| 11 | Analytics; service convergence | 2 | 0 | 2 |
-| 12 | Documents; service start hook | 1 | 0 | 1 |
+| 1 | Documents pilot | 1 | 0 | 1 |
+| 2 | Task VM images and guests | 26 | 10 | 36 |
+| 3 | Nodes and recipes | 23 | 7 | 30 |
+| 4 | Tasks | 17 | 6 | 23 |
+| 5 | Instance dependencies | 19 | 0 | 19 |
+| 6 | Instance runtime | 18 | 1 | 19 |
+| 7 | Doctor | 17 | 0 | 17 |
+| 8 | Development source removal | 6 | 9 | 15 |
+| 9 | Tools | 9 | 5 | 14 |
+| 10 | Development networking and PHP | 13 | 0 | 13 |
+| 11 | Gateway and releases | 11 | 2 | 13 |
+| 12 | Instance registration and checkout | 13 | 0 | 13 |
+| 13 | Instance data, transfer, and logs | 11 | 1 | 12 |
+| 14 | Instance deploy | 12 | 0 | 12 |
+| 15 | Processes and Schedules | 12 | 0 | 12 |
+| 16 | WireGuard and private DNS | 11 | 1 | 12 |
+| 17 | Projects and lifecycle lists | 8 | 3 | 11 |
+| 18 | Metrics | 7 | 2 | 9 |
+| 19 | Production source lifecycle | 8 | 1 | 9 |
+| 20 | Caddy and WebSocket | 8 | 0 | 8 |
+| 21 | Vite runtime | 8 | 0 | 8 |
+| 22 | Database servers | 4 | 1 | 5 |
+| 23 | Hibernation and directories | 5 | 0 | 5 |
+| 24 | AI router | 2 | 1 | 3 |
+| 25 | Analytics | 3 | 0 | 3 |
 
-Each group removes its scripts and tests in the same change. Each group updates the owning reference pages and guidance from the old observer-only rule to the built command boundary. A migrated area exposes no script path, even if other areas are still unconverted.
-
-After the last group, delete `RemoteProgramCatalog`, `RemoteProgramRunner`, `SshProgramRunner`, their data types, the Python program tests, and the unused program lint and assembly code. Keep the zero-count CI guard. Absorb this decision into [Node agent](/reference/node-agent), [Operations](/reference/operations), and the affected reference pages, then retire both this ADR and the superseded ADR 0211. No second runner remains.
+Each group removes its scripts and replaces their tests in the same change. Its reference pages and guidance describe the built command boundary. A migrated caller exposes no script path. After the last group, delete `RemoteProgramCatalog`, `RemoteProgramRunner`, `SshProgramRunner`, their data types, and unused program assembly and lint code. Keep the ratchet. Absorb this decision and retire it with the superseded ADR 0211.
 
 ## Rejected alternatives
 
-- **Finish ADR 0211 first.** It writes more Python that must then move again. New work goes straight to Rust.
-- **An agent that executes delivered scripts.** It preserves the second runtime, source assembly, and untyped program contracts.
-- **A Reverb command bus or agent job queue.** SSH already gives an authenticated request, input, result, and deadline. A bus adds delivery and recovery state beside operations.
-- **An SSH script when an agent is old or absent.** It makes rollout failure select another implementation. Refuse work and use the one installer.
-- **Compatible ranges and multiple command revisions.** Exact pins and an explicit unavailable Node are simpler than maintaining more than one contract.
-- **Give the observer service mutation privileges.** A separate invocation of the same binary gives each command its required identity without broadening the always-on observer.
-- **Keep the resource scripts because they have tests.** Those tests describe behavior to preserve in Rust, not a reason to keep Python.
+- **Finish ADR 0211 first.** It writes more Python that must move again.
+- **An agent that runs delivered scripts.** It keeps source assembly and another runtime contract.
+- **An agent command bus or job ledger.** The existing transports carry calls; operations own recovery.
+- **Keep old commands during rollout.** Exact hashes and a visible refusal keep one contract.
+- **Hold the update lock during every command.** Open executables survive replacement. A long deploy need not block installation.
+- **Require root on macOS.** Its commands need only the enrolled account's permissions.
+- **Tag PR builds before review.** CI artifacts test the source without publishing a release after every fix.
 
 ## Consequences
 
-- The Gateway sends data and names instead of assembling Node code.
-- Every Node action has one Rust implementation and one typed contract.
-- Node operations need a matching agent, including on macOS and task VMs.
-- Agent release publication becomes a Gateway deployment prerequisite.
-- A fleet rollout can leave a Node temporarily unavailable for command work.
-- The immediate CI guard stops script growth while task groups migrate the existing areas.
-- This changes the agent's observer-only boundary. The runtime and its reference documentation change together in the migration groups.
+- The Gateway sends names and data instead of Node code.
+- CI stops script growth now. Runtime migration follows ADR 0224.
+- Agent builds include the Rust modules owned by extensions.
+- Production deployment waits for the tested agent artifacts it pins.
+- Fleet rollout can leave a Node unavailable for new commands until its update passes.
+- The Gateway FPM handoff restarts its pool instead of using a PHP opcache adapter.
+- Runtime reference pages and guidance change with each migration group.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/e2e, apps/docs
-- Agent: `apps/agent` owns all command implementations and platform binaries.
-- ADRs: supersedes [0211](/decisions/0211-ship-node-changes-as-remote-programs). Uses the operations of [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [0218](/decisions/0218-take-long-commands-off-the-request-path). Builds after [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender). Extension code keeps the boundary of [0210](/decisions/0210-give-each-extension-its-own-code-boundary).
-- Detail: [Node agent](/reference/node-agent), [Remote programs](/reference/remote-programs), [Operations](/reference/operations), [Node provisioning](/reference/node-provisioning), [Self update](/reference/self-update), [Compute drivers](/reference/compute-drivers), and [Gateway recovery](/reference/gateway-recovery).
-- Verify: `composer docs-lint`; `bin/node-scripts-ratchet --base origin/main`; the ratchet's regression tests; after implementation, `cargo test --locked` in apps/agent, shared contract fixtures, and Linux, macOS, task VM, version mismatch, installation, and privilege integration tests.
+- Agent: `apps/agent` owns the runner binary and core commands. Extension directories own extension command modules.
+- ADRs: supersedes [0211](/decisions/0211-ship-node-changes-as-remote-programs). Uses [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [0218](/decisions/0218-take-long-commands-off-the-request-path). Builds after [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender). Extends [0210](/decisions/0210-give-each-extension-its-own-code-boundary) to Rust modules, permits the moves in [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension), and counts the DNS deletion in [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router).
+- Detail: [Node agent](/reference/node-agent), [Remote programs](/reference/remote-programs), [Operations](/reference/operations), [Node provisioning](/reference/node-provisioning), [Self update](/reference/self-update), [Compute drivers](/reference/compute-drivers), [Extensions](/reference/extensions), and [Gateway recovery](/reference/gateway-recovery).
+- Verify: `composer docs-lint`; `bin/node-scripts-ratchet --base HEAD^1`; ratchet regression tests; after implementation, Rust tests, JSON fixtures, and acceptance on Linux, macOS, Incus, and UpCloud.
