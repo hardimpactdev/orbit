@@ -51,7 +51,7 @@ class ScriptRatchetTest(unittest.TestCase):
             'apps/gateway/resources/views/page.blade.php': '<?php echo 1;',
             'apps/gateway/resources/data.json': '{}',
         })
-        self.assertEqual(sum(counts['files'].values()), 9)
+        self.assertEqual(sum(counts['files'].values()), 8)
         self.assertEqual(counts['inline'], {})
 
     def test_moves_between_files_and_into_extensions_are_neutral(self):
@@ -110,6 +110,56 @@ class ScriptRatchetTest(unittest.TestCase):
 
     def test_comments_count_interpreter_calls(self):
         self.assertEqual(RATCHET.inline_count('// never use sh -c'), 1)
+
+    def test_resource_moves_outside_resources_are_neutral(self):
+        before = self.scan({'apps/gateway/resources/task-vms/hub.sh': '#!/bin/sh\ntrue'})
+        for target in ['app/hub.txt', 'database/hub', 'public/hub.txt']:
+            with self.subTest(target=target):
+                after = self.scan({'apps/gateway/' + target: 'true'})
+                self.assertEqual(sum(after['files'].values()), 1)
+                self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_nested_test_and_vendor_names_do_not_hide_php(self):
+        source = "<?php\n<<<'BASH'\ntrue\nBASH;\n" * 8
+        for target in ['app/tests/Runtime.php', 'app/vendor/Runtime.php']:
+            with self.subTest(target=target):
+                counts = self.scan({'apps/gateway/' + target: source})
+                self.assertEqual(sum(counts['inline'].values()), 8)
+
+    def test_php_content_rename_to_inc_is_neutral(self):
+        source = "<?php\n<<<'BASH'\ntrue\nBASH;\n" * 8
+        before = self.scan({'apps/gateway/app/Runtime.php': source})
+        after = self.scan({'apps/gateway/app/Runtime.inc': source})
+        self.assertEqual(sum(after['inline'].values()), 8)
+        self.assertEqual(after['files'], {})
+        self.assertEqual(RATCHET.growth(before, after), [])
+
+    def test_only_real_test_and_dependency_roots_are_excluded(self):
+        source = "<?php\n<<<'BASH'\ntrue\nBASH;\n"
+        counts = self.scan({f'apps/gateway/{root}/probe.php': source for root in [
+            'tests', 'vendor', 'node_modules', 'extensions/documents/tests',
+        ]})
+        self.assertEqual(counts, {'inline': {}, 'files': {}})
+        self.assertEqual(sum(self.scan({'apps/gateway/app/vendor/probe.txt': 'true'})['files'].values()), 1)
+
+    def test_counts_option_values_and_other_common_interpreters(self):
+        for source in [
+            "['bash', '-o', 'pipefail', '-c', 'true']",
+            "['sh', '-euo', 'pipefail', '-c', 'true']",
+            '"bash -o pipefail -c true"', '"bash -euo pipefail -c true"',
+            "['php', '-r', 'echo 1;']", '"php -r code"',
+            "['perl', '-e', 'print 1;']", '"perl -e code"',
+            "['node', '-e', 'console.log(1)']", '"node -e code"',
+        ]:
+            with self.subTest(source=source):
+                self.assertEqual(RATCHET.inline_count(source), 1)
+
+    def test_resource_json_and_xml_must_parse_to_be_exempt(self):
+        for suffix, valid in [('json', '{}'), ('xml', '<config/>')]:
+            with self.subTest(suffix=suffix):
+                path = 'apps/gateway/resources/probe.' + suffix
+                self.assertEqual(self.scan({path: valid})['files'], {})
+                self.assertEqual(sum(self.scan({path: 'echo true'})['files'].values()), 1)
 
     def test_only_total_growth_fails_and_categories_cannot_offset_each_other(self):
         before = self.scan({'apps/gateway/app/A.php': "['sh', '-c', 'true'];"})

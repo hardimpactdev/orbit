@@ -2,9 +2,11 @@
 """Count Gateway scripts and refuse growth relative to a Git base (ADR 0225)."""
 import argparse
 import io
+import json
 import re
 import subprocess
 import tarfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,22 +15,23 @@ DATA_LABELS = frozenset({
     'SQL', 'CADDY', 'CADDYFILE', 'FPM', 'INI', 'UNIT', 'SYSTEMD', 'CONF',
     'EXTENSIONS', 'TEXT', 'MARKDOWN', 'HTML', 'REGEX',
 })
-SCRIPT_EXTENSIONS = frozenset({'.sh', '.bash', '.zsh', '.fish', '.py', '.pl', '.rb', '.ps1',
-    '.lua', '.awk', '.js', '.mjs', '.cjs'})
-# Resource names do not select whether a file is executable. Only these data types are exempt.
+# Every non-PHP file counts unless it is one of these data types.
 DATA_SUFFIXES = ('.json', '.xml', '.md', '.blade.php', '.pem', '.crt', '.cer')
 # This PHP runs in the Gateway's own FPM pool, like Artisan, not as a Node program.
 OPCACHE_RESET = SCOPE + '/resources/fpm/opcache-reset.php'
 HEREDOC = re.compile(r"<<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*$", re.MULTILINE)
-# PHP argv literals, including options between python3 and -c. Heredoc bodies are masked first.
-ARGV_SCRIPT = re.compile(
-    r'''(['"])(?:/[^'"\s]*/)?(?:sh|bash|python3)\1'''
-    r'''(?:\s*,\s*['"]-[^'"]+['"])*?\s*,\s*(['"])-[a-zA-Z]*c[a-zA-Z]*\2''',
-)
-SHELL_SCRIPT = re.compile(
-    r'''(?<![\w/.-])(?:/[^\s'\"]*/)?(?:sh|bash|python3)'''
-    r'''(?:\s+--?[a-zA-Z][a-zA-Z-]*)*?\s+-[a-zA-Z]*c[a-zA-Z]*(?=\s|['\"]|$)''',
-)
+# Option flags may have values, such as bash -o pipefail -c.
+INTERPRETERS = ((r'(?:sh|bash|python3)', 'c'), ('php', 'r'), (r'(?:perl|node)', 'e'))
+ARGV_SCRIPTS = [re.compile(
+    r"(['\"])(?:/[^'\"\s]*/)?" + names + r"\1"
+    r"(?:\s*,\s*['\"]-[^'\"]+['\"](?:\s*,\s*['\"][^-'\"\s][^'\"]*['\"])?)*?"
+    r"\s*,\s*(['\"])-[a-zA-Z]*" + flag + r"[a-zA-Z]*\2",
+) for names, flag in INTERPRETERS]
+SHELL_SCRIPTS = [re.compile(
+    r"(?<![\w/.-])(?:/[^\s'\"]*/)?" + names
+    + r"(?:\s+--?[a-zA-Z][a-zA-Z-]*(?:\s+[^-\s'\";]+)?)*?"
+    r"\s+-[a-zA-Z]*" + flag + r"[a-zA-Z]*(?=\s|['\"]|$)",
+) for names, flag in INTERPRETERS]
 
 
 def inline_count(source):
@@ -44,25 +47,31 @@ def inline_count(source):
         remaining = remaining[match.end() + end.end():]
     outside.append(remaining)
     code = '\n'.join(outside)
-    return count + len(ARGV_SCRIPT.findall(code)) + len(SHELL_SCRIPT.findall(code))
+    return count + sum(len(pattern.findall(code)) for pattern in ARGV_SCRIPTS + SHELL_SCRIPTS)
 
 
 def inventory(files):
     counts = {'inline': {}, 'files': {}}
     for name, content in files:
         path = Path(name)
-        if 'vendor' in path.parts or 'node_modules' in path.parts:
+        parts = path.relative_to(SCOPE).parts
+        if parts[0] in ('tests', 'vendor', 'node_modules') or (
+            len(parts) > 2 and parts[0] == 'extensions' and parts[2] == 'tests'
+        ):
             continue
-        in_resources = 'resources' in path.parts
+        in_resources = 'resources' in parts
+        is_php = path.suffix == '.php' or content.lstrip().startswith(b'<?php')
         is_data = name.endswith(DATA_SUFFIXES) or (path.name == '.gitkeep' and not content.strip())
-        is_script = (
-            (in_resources and not is_data)
-            or path.suffix in SCRIPT_EXTENSIONS
-            or content.startswith(b'#!')
-        )
-        if is_script and name != OPCACHE_RESET:
+        if in_resources and path.suffix in ('.json', '.xml'):
+            try:
+                json.loads(content) if path.suffix == '.json' else ET.fromstring(content)
+            except (ValueError, ET.ParseError):
+                is_data = False
+        if name != OPCACHE_RESET and (
+            (not is_data and (not is_php or in_resources)) or content.startswith(b'#!')
+        ):
             counts['files'][name] = 1
-        if path.suffix == '.php' and 'tests' not in path.parts:
+        if is_php:
             count = inline_count(content.decode('utf-8'))
             if count:
                 counts['inline'][name] = count

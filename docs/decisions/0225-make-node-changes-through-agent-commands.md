@@ -18,9 +18,9 @@ Principle: [One way, one name](/mission#principles). Each Node action has one Ru
 
 ## Context
 
-At `main` commit `353ef196c9ce76a5f4988ac32b1c29edbdb0142c`, the guard counts 272 inline scripts across the Gateway.
+At `main` commit `78a7bd43b293a5e67a752e8e54cb313dd76da875`, the guard counts 272 inline scripts across the Gateway.
 
-It also counts 75 files. Forty-nine are Node resources. The other 26 are the Gateway's Artisan entry point and test support. The OPcache adapter runs in the Gateway's own pool and is excluded.
+It also counts 73 files. Forty-nine are Node resources. The other 24 are the Gateway's entry point and support files. The OPcache adapter runs in the Gateway's own pool and is excluded.
 
 ### Current execution
 
@@ -131,17 +131,17 @@ Each resource that the Gateway runs on a Node becomes Rust code or is deleted. L
 
 The Gateway keeps `resources/fpm/opcache-reset.php`, like its Artisan entry point. It runs Gateway PHP in the Gateway's own pool; it is control-plane code, outside Node execution and the resource count. All pools share one OPcache. The handoff keeps the idle check and socket reset in [Gateway recovery](/reference/gateway-recovery#runtime-handoff). It never restarts or reloads PHP-FPM to clear OPcache.
 
-Static configuration, templates, and certificates stay data. Artisan and test fixtures remain control-plane or test code. The broad file guard counts them, but they are not Node programs to port. Python program tests disappear as Rust tests replace them.
+Static configuration, templates, and certificates stay data. Artisan and support files remain control-plane code or data. The broad file guard counts them, but they are not Node programs to port. Test fixtures stay outside the scan. Python program tests disappear as Rust tests replace them.
 
 ### The ratchet starts at this merge
 
-`bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in all Gateway PHP outside test and dependency directories. It excludes only these fixed data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, and `python3 -c` calls, including combined flags and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
+`bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in all Gateway PHP, identified by extension or a `<?php` opening, outside the excluded roots below. It excludes only these fixed data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, `python3 -c`, `php -r`, `perl -e`, and `node -e` calls. Combined flags and option values before the code flag count, including `bash -euo pipefail -c` and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
 
-The file scan covers the whole Gateway, including extensions and test support. It counts every file under any `resources/` directory except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Unknown types count, including `.txt` and `.stub`. The fixed OPcache adapter is excluded for the control-plane reason above. Outside resources, interpreter file extensions and every shebang count. Git-tracked files and new unignored files are scanned; dependency directories are excluded.
+The file scan covers the whole Gateway, including extensions. It counts every non-PHP file, and PHP files under any `resources/` directory, except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Resource `.json` and `.xml` files must parse to qualify as data. Unknown types count, including `.txt` and `.stub`. Every shebang counts. The fixed OPcache adapter is excluded for the control-plane reason above. Only `apps/gateway/tests/`, `apps/gateway/extensions/*/tests/`, `apps/gateway/vendor/`, and `apps/gateway/node_modules/` are excluded roots. A nested directory named `tests` or `vendor` is not exempt. Git-tracked files and new unignored files are scanned.
 
 Inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-script budget.
 
-The matcher also counts interpreter calls in comments. The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and test support; that count still cannot rise.
+The matcher also counts interpreter calls in comments. The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Review rejects relabelling a heredoc, hiding a script in a data file, or building one by string concatenation. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and support files; that count still cannot rise.
 
 ### Tests and migration groups
 
@@ -149,7 +149,7 @@ Rust unit tests replace `tests/Programs` as each program moves. They exercise re
 
 No runtime migration starts before ADR 0224 is built. One foundation group delivers the runner, installer, platform gates, CI and topology build paths, release tag guard and ruleset, extension composition check, and contract fixtures. Then a small Documents group proves the pattern. Remaining groups run largest first. The former 113-script row is split into removal, registration, dependencies, runtime, deploy, data, networking, Vite, Projects, hibernation, and Production source lifecycle groups. Each is a separate task group.
 
-The table counts the 272 inline scripts and 49 Node resource files at the context commit. Shared libraries appear once. It excludes the 26 control-plane and test-support files from migration work. Groups preserve the extension moves in ADRs 0210 and 0212; a move does not raise the ratchet. Delete code that ADRs 0219 and 0224 remove rather than porting it. Recount each area when its group is planned.
+The table counts the 272 inline scripts and 49 Node resource files at the context commit. Shared libraries appear once. It excludes the 24 control-plane and support files from migration work. Groups preserve the extension moves in ADRs 0210 and 0212; a move does not raise the ratchet. Delete code that ADRs 0219 and 0224 remove rather than porting it. Recount each area when its group is planned.
 
 | Step | Area | Inline | Node files | Total |
 | --- | --- | --- | --- | --- |

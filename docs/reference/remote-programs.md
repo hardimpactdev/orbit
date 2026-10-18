@@ -105,13 +105,13 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 
 ## Inline scripts
 
-`bin/node-scripts-ratchet --base HEAD^1` compares the remaining script totals with a Git revision. It counts every heredoc and nowdoc in all Gateway PHP except test and dependency directories, with the fixed data labels in the checker excluded. Unknown labels count. Literal `sh -c`, `bash -c`, and `python3 -c` calls count too, including combined flags. A heredoc body counts once. The matcher also counts interpreter calls in comments: `// never use sh -c` raises the inline total.
+`bin/node-scripts-ratchet --base HEAD^1` compares the remaining script totals with a Git revision. It counts every heredoc and nowdoc in all Gateway PHP, identified by extension or a `<?php` opening, outside the excluded roots below, with the fixed data labels in the checker excluded. Unknown labels count. Literal `sh -c`, `bash -c`, `python3 -c`, `php -r`, `perl -e`, and `node -e` calls count too. Combined flags and option values before the code flag count, such as `bash -euo pipefail -c`. A heredoc body counts once. The matcher also counts interpreter calls in comments: `// never use sh -c` raises the inline total.
 
 ### Files
 
-The file scan covers the whole Gateway, extensions included. Under any `resources/` directory it counts every file except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Unknown types count, so renaming a script to `.txt` or `.stub` is neutral. Outside resources, interpreter file extensions and every shebang count. Dependency directories are excluded.
+The file scan covers the whole Gateway, extensions included. It counts every non-PHP file, and PHP files under any `resources/` directory, except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Resource `.json` and `.xml` files must parse to qualify as data. Unknown types count, so renaming a script to `.txt` or `.stub` is neutral. Every shebang counts. Only `apps/gateway/tests/`, `apps/gateway/extensions/*/tests/`, `apps/gateway/vendor/`, and `apps/gateway/node_modules/` are excluded roots. Nested directories named `tests` or `vendor` are scanned.
 
-The fixed `resources/fpm/opcache-reset.php` adapter is excluded. It runs Gateway PHP in the Gateway's own pool, like Artisan, and is outside Node execution. The handoff keeps the [idle check and socket reset](/reference/gateway-recovery#runtime-handoff). Artisan and test support are still counted by the file guard but remain outside the Node migration.
+The fixed `resources/fpm/opcache-reset.php` adapter is excluded. It runs Gateway PHP in the Gateway's own pool, like Artisan, and is outside Node execution. The handoff keeps the [idle check and socket reset](/reference/gateway-recovery#runtime-handoff). Artisan and support files are still counted by the file guard but remain outside the Node migration. Test fixtures are excluded.
 
 ### CI comparison
 
