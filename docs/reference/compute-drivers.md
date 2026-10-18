@@ -446,8 +446,6 @@ At the claim, Orbit decides the size of the group's VM once. It takes the union 
 
 A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. Each size defines how many test nodes it holds, one in a medium VM and two in a large VM, and the group gets the smallest size that holds its topology. The largest size sets the most test nodes a group may declare.
 
-The [sizing reasons](#why-task-vms-work-this-way) explain why topology declarations precede the claim and why a running group keeps its size.
-
 The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host.
 
 A subtask whose topology needs a larger VM than its group got waits before its first turn, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
@@ -953,7 +951,7 @@ Packs on the standard input and output of the existing SSH commands need no new 
 
 Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
 
-A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three slots.
+A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three slots. Measurements on beast put the test Gateway, an `app-dev` Node, and the operator at about 2.7 GiB together. Four test machines filled a large VM's 12 GiB under IO.
 
 These alternatives were also rejected:
 
@@ -968,7 +966,7 @@ These alternatives were also rejected:
 | A hub table for each VM | One static filter on the reserved range enforces the same limits without per-VM rules on the live hub |
 | The Incus REST API from the Gateway | It needs certificate and host setup. The Gateway already has root SSH, and host-local builds need no image transfer between hosts |
 | Subscription sign-ins copied into VMs | They expose the subscriptions. Rotating OAuth refresh tokens fail when several copies refresh |
-| A task VM outside the fleet for every Project | Project work needs real Routes, deployment, and previews. Enrollment with no access grants and the hub filter supports those features within the VM boundary |
+| A task VM outside the fleet for every Project | Project work needs real Routes, deployment, and previews. Enrollment with no access grants and the hub filter support those features within the VM boundary |
 | A finished task VM as the next image | Agents and Project install scripts can change any file. Cleanup cannot prove that disk clean |
 | Stateful snapshots of a running topology | The workspace uses virtiofs, which Incus cannot migrate statefully. Restored memory also carries old addresses and a clock jump |
 

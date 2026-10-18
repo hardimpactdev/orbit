@@ -326,7 +326,7 @@ The base supplies pinned software. Convergence runs the checkout's Gateway and V
 
 The host's [topology seed](/reference/compute-drivers#the-topology-seed) lets preparation adopt a pool and copy its template without installing packages or transferring an image. The template is a stopped instance, because recovery restores instances but not images.
 
-Copying the base image into each task VM would repeat a large transfer, import, and unpack for every group. Installing Incus there would also repeat package installation. A clone avoids both costs.
+Copying the base image into each task VM would repeat a large transfer, import, and unpack for every group. Each group would also install Incus. A clone avoids both costs.
 
 Baking the template into the base image would require the image to contain itself. Using the previous base instead would give the template a different recipe and add another base image's size to every task VM. A separate seed builder would duplicate the smoke VM, which already boots the published base and has a name that the builder audit tracks.
 
