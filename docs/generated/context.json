@@ -970,6 +970,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Task",
                 "Tool"
@@ -1036,30 +1037,6 @@
                 "0210",
                 "0213",
                 "0215"
-            ]
-        },
-        {
-            "path": "docs/decisions/0216-run-one-exact-php-build-everywhere.md",
-            "title": "ADR 0216: Run one exact PHP build everywhere",
-            "kind": "decision",
-            "components": [
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Roleless Node",
-                "Schedule",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0213",
-                "0216"
             ]
         },
         {
@@ -1216,7 +1193,6 @@
                 "0213",
                 "0214",
                 "0215",
-                "0216",
                 "0218",
                 "0219",
                 "0222"
@@ -1609,7 +1585,6 @@
             "governing_adrs": [
                 "0200",
                 "0206",
-                "0216",
                 "0222"
             ]
         },
@@ -2035,6 +2010,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task check",
