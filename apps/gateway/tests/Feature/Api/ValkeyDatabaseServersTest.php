@@ -377,7 +377,7 @@ describe('database:server:create --process --connection', function (): void {
         } else {
             $this->valkey->configuration[$field] = $value;
         }
-        $before = $this->process->getAttributes();
+        $before = $this->process->refresh()->getAttributes();
 
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()
             ->assertJsonPath('error.code', 'database.server_adoption_refused');
