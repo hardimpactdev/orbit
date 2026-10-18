@@ -52,21 +52,7 @@ final readonly class NativeToolInspector implements ToolInspector
         }
 
         foreach ($groups as $group) {
-            $manager = $group['manager'];
-
-            if ($manager instanceof ComposerToolManager) {
-                $this->inspectComposerScope($manager, $group['node'], $group['indexes'], $group['tools'], $outcomes);
-
-                continue;
-            }
-
-            foreach ($group['indexes'] as $offset => $index) {
-                $outcomes[$index] = $this->inspectManagedTool(
-                    $manager,
-                    $group['node'],
-                    $group['tools'][$offset],
-                );
-            }
+            $this->inspectScope($group['manager'], $group['node'], $group['indexes'], $group['tools'], $outcomes);
         }
 
         ksort($outcomes);
@@ -103,8 +89,8 @@ final readonly class NativeToolInspector implements ToolInspector
      * @param  list<Tool>  $tools
      * @param  array<int, ToolInspectionOutcome>  $outcomes
      */
-    private function inspectComposerScope(
-        ComposerToolManager $manager,
+    private function inspectScope(
+        ToolManager $manager,
         Node $node,
         array $indexes,
         array $tools,
@@ -134,14 +120,6 @@ final readonly class NativeToolInspector implements ToolInspector
                 fn (): ?string => $inventory->versionFor($tool->package),
             );
         }
-    }
-
-    private function inspectManagedTool(ToolManager $manager, Node $node, Tool $tool): ToolInspectionOutcome
-    {
-        return $this->outcomeFromVersion(
-            $manager,
-            fn (): ?string => $manager->installedVersion($node, $tool->package),
-        );
     }
 
     /** @param callable(): ?string $readVersion */

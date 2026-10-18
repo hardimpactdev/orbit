@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -29,7 +30,7 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
     ]);
     problem_suppression_sandbox();
     problem_suppression_append('');
-    Artisan::call('problems:collect');
+    problem_suppression_collect();
 
     $seen = Carbon::parse('2026-09-01 00:00:00', 'UTC');
     $existing = ProblemFingerprint::query()->create([
@@ -81,7 +82,7 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
         '2026-10-01 00:06:06',
     ));
 
-    expect(Artisan::call('problems:collect'))->toBe(0);
+    expect(problem_suppression_collect())->toBe(0);
 
     $stored = ProblemFingerprint::query()->orderBy('fingerprint')->pluck('fingerprint')->all();
 
@@ -100,7 +101,7 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
         ->and($log->evidence['source_path'])->toBe('app/Domain/Tasks/TaskScheduler.php')
         ->and($log->evidence['request_ids'])->toBe(['req-kept']);
 
-    expect(Artisan::call('problems:collect'))->toBe(0)
+    expect(problem_suppression_collect())->toBe(0)
         ->and(ProblemFingerprint::query()->count())->toBe(4)
         ->and($log->refresh()->occurrences)->toBe(1)
         ->and($existing->refresh()->occurrences)->toBe(1);
@@ -114,7 +115,7 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
         '2026-10-01 00:11:06',
     ));
 
-    expect(Artisan::call('problems:collect'))->toBe(0)
+    expect(problem_suppression_collect())->toBe(0)
         ->and(ProblemFingerprint::query()->where(
             'fingerprint',
             'log|LogicException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick',
@@ -124,7 +125,7 @@ it('suppresses an exact fingerprint and a path prefix and still counts an unsupp
 it('records a log source path for an open window and does not replace it while suppression is on', function (): void {
     problem_suppression_sandbox();
     problem_suppression_append('');
-    Artisan::call('problems:collect');
+    problem_suppression_collect();
     $seen = Carbon::parse('2026-10-01 00:01:06', 'UTC');
     $fingerprint = 'log|RuntimeException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick';
     $row = ProblemFingerprint::query()->create([
@@ -144,7 +145,7 @@ it('records a log source path for an open window and does not replace it while s
     $call = 'App\\Domain\\Tasks\\TaskScheduler->tick()';
     problem_suppression_append(problem_suppression_record('RuntimeException', $frame, $call, 'req-window', 'Scheduler failed.', '2026-10-01 00:01:06'));
 
-    expect(Artisan::call('problems:collect'))->toBe(0);
+    expect(problem_suppression_collect())->toBe(0);
 
     $row->refresh();
 
@@ -158,7 +159,7 @@ it('records a log source path for an open window and does not replace it while s
     $row->save();
     problem_suppression_append(problem_suppression_record('RuntimeException', $frame, $call, 'req-again', 'Scheduler failed.', '2026-10-01 00:02:06'));
 
-    expect(Artisan::call('problems:collect'))->toBe(0)
+    expect(problem_suppression_collect())->toBe(0)
         ->and($row->refresh()->occurrences)->toBe(1)
         ->and($row->evidence['observation_counts'])->toBe([3])
         ->and($row->evidence['source_path'])->toBe('app/Domain/Tasks/Original.php');
@@ -167,7 +168,7 @@ it('records a log source path for an open window and does not replace it while s
 it('stores the log source path for a shortened fingerprint that suppression cannot read from the key', function (): void {
     problem_suppression_sandbox();
     problem_suppression_append('');
-    Artisan::call('problems:collect');
+    problem_suppression_collect();
     $frame = base_path().'/app/Domain/Tasks/TaskScheduler.php';
     $call = 'App\\Domain\\Tasks\\TaskScheduler->'.str_repeat('a', 240).'()';
     problem_suppression_append(problem_suppression_record(
@@ -179,7 +180,7 @@ it('stores the log source path for a shortened fingerprint that suppression cann
         '2026-10-01 00:01:06',
     ));
 
-    expect(Artisan::call('problems:collect'))->toBe(0);
+    expect(problem_suppression_collect())->toBe(0);
 
     $row = ProblemFingerprint::query()->sole();
 
@@ -194,7 +195,7 @@ it('does not suppress a source path when the configured prefix is empty', functi
     config()->set('orbit.problems.suppressed_path_prefixes', ['']);
     problem_suppression_sandbox();
     problem_suppression_append('');
-    Artisan::call('problems:collect');
+    problem_suppression_collect();
     problem_suppression_append(problem_suppression_record(
         'RuntimeException',
         base_path().'/app/Infrastructure/Example/Driver.php',
@@ -204,7 +205,7 @@ it('does not suppress a source path when the configured prefix is empty', functi
         '2026-10-01 00:01:06',
     ));
 
-    expect(Artisan::call('problems:collect'))->toBe(0)
+    expect(problem_suppression_collect())->toBe(0)
         ->and(ProblemFingerprint::query()->count())->toBe(1)
         ->and(ProblemFingerprint::query()->sole()->evidence['source_path'])->toBe('app/Infrastructure/Example/Driver.php');
 });
@@ -558,4 +559,9 @@ function problem_suppression_cancelled(int $projectId, string $title): Task
     Task::topLevel()->whereKey($task->id)->update(['updated_at' => '2026-09-16 08:30:00']);
 
     return $task;
+}
+
+function problem_suppression_collect(): int
+{
+    return app(ProblemCollector::class)->collect() === [] ? 0 : 1;
 }

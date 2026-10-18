@@ -69,7 +69,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
             cask_product(),
             $metadata,
             cask_prefix(),
-            cask_result(exitCode: 1),
             cask_result(cask_installed_names(['1password-cli', 'docker-desktop'])),
             cask_prefix(),
             cask_product(),
@@ -108,7 +107,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$info],
             ['/bin/bash', '-su', '--', 'mini'],
-            [...$plain, 'list', '--versions', '--cask', 'font-hack'],
             [...$plain, 'info', '--json=v2', '--cask', '--installed'],
             ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
@@ -464,25 +462,24 @@ describe(HomebrewCaskToolManager::class, function (): void {
         'older missing-cask text' => ["Error: Cask 'homebrew/cask/missing' is unavailable: No Cask with this name exists.\n"],
     ]);
 
-    it('reads the installed version from the unqualified cask token', function (): void {
+    it('reads the installed version from the official cask inventory', function (): void {
         [$manager, $ssh] = cask_manager([
             cask_prefix(),
-            cask_result("1password-cli 2.33.0\n"),
+            cask_result(cask_installed_names(['1password-cli'])),
         ]);
 
         expect($manager->installedVersion(cask_node(), '1password-cli'))->toBe('2.33.0')
-            ->and($ssh->arguments()[1])->toBe([...cask_arguments(), 'list', '--versions', '--cask', '1password-cli']);
+            ->and($ssh->arguments()[1])->toBe([...cask_arguments(), 'info', '--json=v2', '--cask', '--installed']);
     });
 
-    it('confirms a silent cask list failure before treating the cask as absent', function (array $names, string $package, ?string $version): void {
+    it('reads presence and absence from the complete cask inventory', function (array $names, string $package, ?string $version): void {
         [$manager, $ssh] = cask_manager([
             cask_prefix(),
-            cask_result(exitCode: 1),
             cask_result(cask_installed_names($names)),
         ]);
 
         expect($manager->installedVersion(cask_node(), $package))->toBe($version)
-            ->and($ssh->arguments()[2])->toBe([...cask_arguments(), 'info', '--json=v2', '--cask', '--installed']);
+            ->and($ssh->arguments()[1])->toBe([...cask_arguments(), 'info', '--json=v2', '--cask', '--installed']);
     })->with([
         'absent official cask' => [['1password-cli', 'docker-desktop'], 'font-hack', null],
         'nonexistent token' => [['1password-cli', 'docker-desktop'], 'not-a-cask', null],
@@ -492,7 +489,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
     it('does not report a same-token third-party cask as the official tool', function (): void {
         [$manager] = cask_manager([
             cask_prefix(),
-            cask_result(exitCode: 1),
             cask_result(cask_metadata([
                 'token' => 'font-hack',
                 'tap' => 'someone/cask',
@@ -503,14 +499,14 @@ describe(HomebrewCaskToolManager::class, function (): void {
         expect($manager->installedVersion(cask_node(), 'font-hack'))->toBeNull();
     });
 
-    it('does not treat a noisy cask list failure as an absent cask', function (): void {
+    it('does not treat a failed cask inventory as an absent cask', function (): void {
         [$manager, $ssh] = cask_manager([
             cask_prefix(),
             cask_result(exitCode: 1, stderr: "Error: Cask 'font-hack' is not installed.\n"),
         ]);
 
         expect(fn () => $manager->installedVersion(cask_node(), 'font-hack'))
-            ->toThrow(ToolManagerException::class, 'installed version probe failed');
+            ->toThrow(ToolManagerException::class, 'installed inventory probe failed');
         expect($ssh->arguments())->toHaveCount(2);
     });
 
@@ -655,7 +651,7 @@ describe(HomebrewCaskToolManager::class, function (): void {
         ]);
         [$manager, $ssh] = cask_manager([
             cask_prefix(),
-            cask_result("font-hack 3.003\n"),
+            cask_result(cask_metadata(['installed' => '3.003'])),
             cask_prefix(),
             cask_product(),
             cask_result($metadata),
@@ -738,7 +734,7 @@ describe(HomebrewCaskToolManager::class, function (): void {
     })->with([
         'disabled cask' => [[
             cask_prefix(),
-            cask_result("font-hack 3.003\n"),
+            cask_result(cask_metadata(['installed' => '3.003'])),
             cask_prefix(),
             cask_product(),
             cask_result(cask_metadata([
@@ -749,12 +745,11 @@ describe(HomebrewCaskToolManager::class, function (): void {
             cask_prefix(),
             cask_result(),
             cask_prefix(),
-            cask_result(exitCode: 1),
             cask_result(cask_installed_names(['1password-cli', 'docker-desktop'])),
         ], 'homebrew/cask/font-hack'],
         'delisted cask' => [[
             cask_prefix(),
-            cask_result("font-hack 3.003\n"),
+            cask_result(cask_metadata(['installed' => '3.003'])),
             cask_prefix(),
             cask_product(),
             cask_result(exitCode: 1, stderr: cask_tap_unavailable('font-hack')),
@@ -767,7 +762,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
             cask_prefix(),
             cask_result(),
             cask_prefix(),
-            cask_result(exitCode: 1),
             cask_result(cask_installed_names(['1password-cli', 'docker-desktop'])),
         ], 'font-hack'],
     ]);
@@ -791,14 +785,12 @@ describe(HomebrewCaskToolManager::class, function (): void {
     it('adopts an official cask from live metadata and refuses one that needs authorization', function (): void {
         [$manager, $ssh] = cask_manager([
             cask_prefix(),
-            cask_prefix(),
-            cask_result("font-hack 3.003\n"),
+            cask_result(cask_metadata(['installed' => '3.003'])),
             cask_prefix(),
             cask_product(),
             cask_result(cask_metadata()),
             cask_prefix(),
-            cask_prefix(),
-            cask_result("docker 4.39.0\n"),
+            cask_result(cask_metadata(['token' => 'docker', 'installed' => '4.39.0'])),
             cask_prefix(),
             cask_product(),
             cask_result(cask_metadata([
@@ -813,11 +805,15 @@ describe(HomebrewCaskToolManager::class, function (): void {
             ->and($manager->inspectForAdoption($node, 'docker'))
             ->toEqual(new ToolAdoptionFact('4.39.0', ToolInventoryPackage::BLOCK_AUTHORIZATION))
             ->and(json_encode($ssh->arguments()))
-            ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE')
-            ->not->toContain('install')
-            ->not->toContain('upgrade')
-            ->not->toContain('uninstall')
-            ->not->toContain('--zap');
+            ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE');
+
+        foreach ($ssh->arguments() as $arguments) {
+            expect($arguments)
+                ->not->toContain('install')
+                ->not->toContain('upgrade')
+                ->not->toContain('uninstall')
+                ->not->toContain('--zap');
+        }
     });
 });
 
@@ -1024,7 +1020,6 @@ function cask_install_probe(string $metadata, ?string $installedAfter = null): a
         cask_prefix(),
         cask_result("Homebrew 4.6.15\n"),
         cask_prefix(),
-        cask_result(exitCode: 1),
         cask_result(cask_installed_names(['1password-cli', 'docker-desktop'])),
         cask_prefix(),
         cask_product(),
@@ -1040,7 +1035,7 @@ function cask_install_probe(string $metadata, ?string $installedAfter = null): a
         cask_prefix(),
         cask_result(),
         cask_prefix(),
-        cask_result("font-hack {$installedAfter}\n"),
+        cask_result(cask_metadata(['installed' => $installedAfter])),
     ];
 }
 
@@ -1097,3 +1092,62 @@ function cask_operation_exception(callable $callback): ToolOperationException
 
     throw new RuntimeException('The Homebrew cask tool operation succeeded.');
 }
+
+it('reads the installed cask index once and isolates unreadable package versions', function (): void {
+    [$manager, $ssh] = cask_manager([
+        cask_prefix(),
+        cask_result(json_encode(['casks' => [
+            ['token' => '1password-cli', 'tap' => 'homebrew/cask', 'installed' => '2.33.0'],
+            ['token' => 'unreadable', 'tap' => 'homebrew/cask', 'installed' => 'latest'],
+            ['token' => 'foreign', 'tap' => 'other/cask', 'installed' => '1.0'],
+        ]], JSON_THROW_ON_ERROR)),
+    ]);
+    $inventory = $manager->installedInventory(cask_node());
+    expect($inventory->versionFor('1password-cli'))->toBe('2.33.0')
+        ->and($inventory->versionFor('absent'))->toBeNull()
+        ->and($inventory->versionFor('foreign'))->toBeNull();
+    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+    expect($ssh->commands)->toHaveCount(2)
+        ->and($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch');
+    expect($ssh->commands[1]->arguments)->toBe([...cask_arguments(), 'info', '--json=v2', '--cask', '--installed']);
+});
+
+it('refuses an unverifiable cask inventory instead of reporting absent Tools', function (CommandResult $result): void {
+    [$manager] = cask_manager([cask_prefix(), $result]);
+
+    expect(fn () => $manager->installedInventory(cask_node()))->toThrow(ToolManagerException::class);
+})->with([
+    'failed command' => [new CommandResult(1, '', '', 10, false)],
+    'truncated index' => [new CommandResult(0, '{"casks":[]}', '', 10, true)],
+    'missing index' => [new CommandResult(0, '{}', '', 10, false)],
+]);
+
+it('uses the official cask inventory for installed versions and adoption', function (): void {
+    $foreign = cask_result(cask_metadata(['token' => 'font-hack', 'tap' => 'someone/cask', 'installed' => '3.003']));
+    [$manager, $ssh] = cask_manager([cask_prefix(), $foreign, cask_prefix(), $foreign]);
+
+    expect($manager->installedVersion(cask_node(), 'font-hack'))->toBeNull()
+        ->and($manager->inspectForAdoption(cask_node(), 'font-hack')->installedVersion)->toBeNull();
+    expect($ssh->arguments())->toBe([
+        ['/bin/bash', '-su', '--', 'mini'],
+        [...cask_arguments(), 'info', '--json=v2', '--cask', '--installed'],
+        ['/bin/bash', '-su', '--', 'mini'],
+        [...cask_arguments(), 'info', '--json=v2', '--cask', '--installed'],
+    ]);
+});
+
+it('uses the normal Homebrew scope checks before reading installed casks', function (CommandResult $scope, string $step): void {
+    [$manager, $ssh] = cask_manager([$scope]);
+
+    expect(fn () => $manager->installedInventory(cask_node()))
+        ->toThrow(function (ToolManagerException $exception) use ($step): void {
+            expect($exception->step)->toBe($step);
+        });
+    expect($ssh->commands)->toHaveCount(1);
+})->with([
+    'absent scope' => [new CommandResult(42, '', '', 10, false), 'manager-absent'],
+    'conflicting scope' => [new CommandResult(43, '', '', 10, false), 'manager-conflict'],
+    'unsafe prefix' => [new CommandResult(0, "/tmp/brew\n", '', 10, false), 'manager-probe'],
+    'extra output' => [new CommandResult(0, "/opt/homebrew\n/Users/mini\nextra\n", '', 10, false), 'manager-probe'],
+    'truncated scope' => [new CommandResult(0, "/opt/homebrew\n", '', 10, true), 'ssh'],
+]);

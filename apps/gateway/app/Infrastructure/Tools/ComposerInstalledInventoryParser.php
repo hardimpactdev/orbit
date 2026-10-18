@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ToolManagerException;
 use App\Infrastructure\Processes\CommandResult;
 use Closure;
@@ -17,7 +18,7 @@ final readonly class ComposerInstalledInventoryParser
     /**
      * @param  Closure(string): bool  $validatePackage
      */
-    public function parse(CommandResult $result, Closure $validatePackage): ComposerInstalledInventory
+    public function parse(CommandResult $result, Closure $validatePackage): InstalledToolInventory
     {
         try {
             $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
@@ -31,7 +32,7 @@ final readonly class ComposerInstalledInventoryParser
         }
 
         if ($decoded === []) {
-            return new ComposerInstalledInventory([], $result);
+            return new InstalledToolInventory([], $result);
         }
 
         if (
@@ -64,7 +65,7 @@ final readonly class ComposerInstalledInventoryParser
             $versionsByPackage[$name][] = $version;
         }
 
-        return new ComposerInstalledInventory($versionsByPackage, $result);
+        return new InstalledToolInventory($versionsByPackage, $result);
     }
 
     private function isSafePackageVersion(string $version): bool

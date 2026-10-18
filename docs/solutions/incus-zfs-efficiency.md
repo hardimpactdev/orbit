@@ -20,7 +20,7 @@ The original prepared Gateway and app-prod guests held Docker images despite run
 
 ## Improvements, in priority order
 
-The host builds and smokes only the base image once per recipe, and builds one topology seed from it. A task VM boots with a clone of the seed and copies every Node from its template, so it builds, transfers, and imports no image ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)).
+The host builds and smokes only the base image once per recipe, and builds one [topology seed](/reference/compute-drivers#the-topology-seed) from it. A task VM boots with a clone of the seed and copies every Node from its template, so it builds, transfers, and imports no image.
 
 The recipe base build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
 

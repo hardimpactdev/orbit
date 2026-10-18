@@ -11,6 +11,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -49,9 +50,23 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Instance;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return DoctorResources::groups($this->rows($node)->modelKeys());
+    }
+
+    /** @return Collection<int, Instance> */
+    private function rows(Node $node): Collection
+    {
+        return Instance::query()->with(['project', 'tasks'])->where('node_id', $node->id)->orderBy('id')->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $peers = $this->rows($context->node);
+
+        $rows = $context->select($peers);
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
@@ -143,7 +158,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationMissing);
             }
 
-            if ($instance->placedOnAppProd() && $this->productionAssociationShared($instance, $rows)) {
+            if ($instance->placedOnAppProd() && $this->productionAssociationShared($instance, $peers)) {
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationShared);
             }
 

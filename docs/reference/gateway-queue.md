@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection and ACL user, five queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection and ACL user, six queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -9,7 +9,7 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. Problem collection and filing, and document cleanup, run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
+The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. The narrow Horizon observation, problem filing, and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
 
 ## Connection
 
@@ -26,11 +26,12 @@ After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services`
 
 ## Queues
 
-Laravel Horizon runs five queues on the connection. Four supervisors separate short jobs from builds and deploys. The two build queues share one supervisor:
+Laravel Horizon runs six queues on the connection with four supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs and operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
+| `problems` | shares the 3 `tasks` workers | Doctor collection and signal collection, after waiting `tasks` jobs |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
 | `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 | `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
@@ -64,16 +65,33 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 | Command | Every | Overlap lock |
 | --- | --- | --- |
-| `problems:collect` | 10 minutes | 15 minutes |
+| `problems:collect` (dispatch only) | 10 minutes | none |
+| Horizon Doctor observation | 10 minutes | none |
 | `problems:file` | hour | 30 minutes |
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-[Problem collection and filing](/reference/tasks#outer-loop) watch Horizon, so they must not depend on it. A collection usually takes under a minute. While it runs, the rest of that minute's scheduler run waits, so the 10-second dispatches of that minute run late. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
+`problems:collect` runs every 10 minutes and only dispatches collection on `problems`. One batch observes each Node; a second checks typed resource groups selected by each Doctor family. The last job collects the other signals. Collection never files problems. Only hourly `problems:file` does that, under its lock.
+
+Each probe group shares one 12-second command deadline. The worker timeout is 13 seconds, a backstop derived from the same budget. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside the probe deadline rather than be replaced by worker failures.
+
+Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline.
+
+Each Tool rows job owns one manager on one Node. It reads that manager’s installed inventory once, then compares every selected Tool locally. Homebrew on macOS and Vite+ first use the normal scope probe, including its output checks, then read the inventory. Both calls share the job deadline. Tool environment checks keep one batch read per Node; discovery inventory is separate.
+
+Three read-only Mini measurements of the collection jobs took 1.20–2.85 seconds for five Brew Tools, 1.22–1.26 seconds for one cask, and 0.96–0.97 seconds for one Vite+ Tool. Each manager job made two SSH calls: the normal scope probe and one inventory read. The separate discovery job took 4.54–5.19 seconds. Grouping by manager bounds the remote work independently of the number of registered Tools.
+
+Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
+
+Laravel batches keep all Node observations available to related-node checks. Observations survive release switches in shared cache. Resource groups commit separately, so a release waits only for the running group, never the full fleet scan. Collection needs the queue; without it, dispatch fails with an error.
+
+The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
+
+Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout.
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks, and the Gateway creates no `horizon` Process. Fleet problem collection and task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too. An Instance deploy or rollback request answers `503` with `operation.queue_unavailable` and records nothing ([Operations](/reference/operations#start-an-operation)).
 
@@ -218,7 +236,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
@@ -227,7 +245,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Horizon observation callback runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. Nick creates their connection on `services-valkey` with the pattern `orbit:ai-router:*` after step 3 and before step 4. Step 4 binds it ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users#the-collector-gets-its-own-user-later)).
 
@@ -235,7 +253,7 @@ The ProxyCli collector has no ACL user of its own. It logs in as `default` throu
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Problem collection is the exception, because it is how a stopped Horizon gets recorded. As a queued job, it would stop with Horizon, and the failure it should report would go unseen. In the scheduler, a collection costs late 10-second dispatches once every 10 minutes, and a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff) waits for a running collection. Both are short and need no extra machinery.
+Fleet problem collection runs as short queued steps, so it cannot hold the [scheduler drain](/reference/gateway-recovery#runtime-handoff), and an in-flight collection step holds Horizon termination for at most its 13-second worker timeout. Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
 

@@ -1,8 +1,8 @@
 # Program: docker.migrate
 # Uses: lib/program.py lib/artifacts.py lib/recipe.py
-# Outcomes: planned prepared reported failed
+# Outcomes: planned prepared restored reported failed
 # Timeout: 3600
-# Input: {"mode": "plan"|"prepare"|"report", "recipe": identity, "snapshot": timestamp,
+# Input: {"mode": "plan"|"prepare"|"restore-policies"|"report", "recipe": identity, "snapshot": timestamp,
 #   "architecture": amd64|arm64, "docker_version": version, "containerd_version": version,
 #   "process_ids": [...], "process_states": {...}, "process_specs": {...}, "fallback": bool}
 # Result: plan or per-container final states. failed adds a fixed stage and resumable=true.
@@ -27,7 +27,7 @@ STEPS = ['inventory and storage driver', 'check archive and commit space plus 2 
          'swap CE packages for recipe docker.io, containerd, docker-buildx, docker-compose-v2',
          'record swapping; repair interrupted dpkg and dependencies; install with recipe snapshot sources',
          'verify every image, container layer and volume; start and stop one container before restoring policies',
-         'if unreadable: refuse unless --fallback; isolate fresh engine, load archives, preserve volume paths and recreate',
+         'if unreadable: refuse unless --fallback; mask system containerd, isolate fresh engine, load archives, preserve volume paths and recreate',
          'reconcile Orbit Processes from stored specs', 'report every container state']
 
 
@@ -56,7 +56,7 @@ def api(method, path, body=None, *, missing=False):
 
 
 def inspect_container(name, *, missing=False):
-    return api('GET', '/containers/' + quote(name, safe='') + '/json', missing=missing)
+    return api('GET', '/containers/' + quote(name.lstrip('/'), safe='') + '/json', missing=missing)
 
 
 def record(name, value):
@@ -159,9 +159,24 @@ def inventory(payload):
     info = api('GET', '/info')
     raw = daemon_bytes()
     config = json.loads(raw) if raw else {}
-    if (info['DockerRootDir'] != '/var/lib/docker' or any(key in config for key in ('data-root', 'hosts', 'containerd'))
+    if (any(key in config for key in ('hosts', 'containerd'))
             or DROPIN.exists()):
         raise RecipeFailure('custom-daemon')
+    for unit in ('docker.service', 'containerd.service'):
+        if run(['systemctl', 'show', '--property=DropInPaths', '--value', unit]).stdout.strip():
+            raise RecipeFailure('custom-daemon')
+        fragment = run(['systemctl', 'show', '--property=FragmentPath', '--value', unit]).stdout.strip()
+        if fragment and fragment not in ('/usr/lib/systemd/system/' + unit, '/lib/systemd/system/' + unit):
+            raise RecipeFailure('custom-daemon')
+    docker_root = storage_root(info.get('DockerRootDir'), 'storage-root')
+    if 'data-root' in config and storage_root(config['data-root'], 'storage-root') != docker_root:
+        raise RecipeFailure('storage-root')
+    # config dump resolves defaults and imports without opening the containerd socket.
+    dump = run(['containerd', 'config', 'dump'], required=False)
+    if dump.returncode:
+        raise RecipeFailure('containerd-root')
+    match = re.search(r'''^root\s*=\s*(['"])(.+)\1\s*$''', dump.stdout, re.MULTILINE)
+    containerd_root = storage_root(match[2] if match else None, 'containerd-root')
     containers = [inspect_container(item['Id']) for item in api('GET', '/containers/json?all=1')]
     images = [api('GET', '/images/' + item['Id'] + '/json') for item in api('GET', '/images/json?all=1')]
     image_refs = {}
@@ -198,10 +213,20 @@ def inventory(payload):
             container['Config'].pop('Env', None)
     return {'recipe': payload['recipe'], 'containers': containers, 'volumes': volumes, 'networks': networks,
             'images': images, 'image_refs': image_refs, 'driver': info.get('Driver'),
-            'defaults': {key: info.get(key) for key in ('DefaultRuntime', 'LoggingDriver', 'CgroupDriver')},
+            'metadata_roots': {'docker': str(docker_root), 'containerd': str(containerd_root)},
+            'defaults': daemon_defaults(info),
             'archives': {}, 'committed': {}, 'stage': 'inventory',
             'daemon': None if raw is None else raw.hex(),
             'fallback': False, 'swapped': False, 'prepared': False, 'stopped': False}
+
+
+def storage_root(value, failure):
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise RecipeFailure(failure)
+    root = Path(value).resolve()
+    if root == Path('/') or not root.is_dir():
+        raise RecipeFailure(failure)
+    return root
 
 
 def daemon_defaults(info):
@@ -316,16 +341,14 @@ def preserve_images(state, *, shutdown=False):
             archive_image(state, state['committed'][key])
 
 
-METADATA_ROOTS = [Path('/var/lib/docker'), Path('/var/lib/containerd')]
-
-
 def backup_metadata(state):
     if state.get('metadata_backed_up'):
         return
     stage(state, 'metadata-backup')
     target = JOURNAL / 'metadata'
     target.mkdir(mode=0o700, exist_ok=True)
-    for root in METADATA_ROOTS:
+    for name, value in state['metadata_roots'].items():
+        root = Path(value)
         if not root.exists():
             continue
         candidates = [*root.glob('volumes/metadata.db'), *root.glob('network/files/local-kv.db'),
@@ -345,7 +368,7 @@ def backup_metadata(state):
                         or (parts[0] == 'image' and ('imagedb' in parts or 'layerdb' in parts)))
             if not selected or '_data' in parts:
                 continue
-            destination = target / root.name / relative
+            destination = target / name / relative
             destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             with source.open('rb') as incoming, destination.open('wb') as outgoing:
                 shutil.copyfileobj(incoming, outgoing)
@@ -444,7 +467,8 @@ def readable(state):
     try:
         start_daemon()
         info = api('GET', '/info')
-        if info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {}):
+        if (str(storage_root(info.get('DockerRootDir'), 'storage-root')) != state['metadata_roots']['docker']
+                or info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {})):
             return False
         if any(inspect_container(c['Id'], missing=True) is None for c in state['containers']):
             return False
@@ -482,10 +506,19 @@ def network_request(network):
 
 
 def fresh_engine(state):
-    stop_loaded(['docker.service', 'docker.socket'])
-    content = ('[Unit]\nRequires=\nRequires=docker.socket\nWants=\nWants=network-online.target\n'
-               '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
-               + str(JOURNAL / 'engine') + '\n').encode()
+    # Without --containerd, dockerd still reuses a running system containerd socket.
+    stop_loaded(['docker.service', 'docker.socket', 'containerd.service'])
+    # Drop-ins cannot clear the vendor unit's Wants=containerd.service. Keep the
+    # system daemon masked across restart/reboot while the fresh engine is in use.
+    run(['systemctl', 'mask', 'containerd.service'])
+    # dockerd refuses an option present in both JSON and argv. Keep the original
+    # config intact for native startup/restore; only the fresh engine uses this copy.
+    config = json.loads(bytes.fromhex(state['daemon'])) if state['daemon'] is not None else {}
+    config.pop('data-root', None)
+    config_path = JOURNAL / 'daemon.json'
+    publish(config_path, json.dumps(config, sort_keys=True).encode(), 0o600)
+    content = ('[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
+               + str(JOURNAL / 'engine') + ' --config-file=' + str(config_path) + '\n').encode()
     if DROPIN.exists() and DROPIN.read_bytes() != content:
         raise RecipeFailure('custom-daemon')
     DROPIN.parent.mkdir(parents=True, exist_ok=True)
@@ -579,17 +612,47 @@ def public_report(state):
                                    if (c['Config'].get('Labels') or {}).get('orbit.managed') == 'true'})}
 
 
+def restore_policies(state):
+    if ('docker-ce' not in packages() or DROPIN.exists()
+            or daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon']))
+            or str(storage_root(api('GET', '/info').get('DockerRootDir'), 'restore-engine')) != state['metadata_roots']['docker']):
+        raise RecipeFailure('restore-engine')
+    current = [inspect_container(old['Id'], missing=True) for old in state['containers']]
+    if any(not actual or actual['Name'] != old['Name'] for old, actual in zip(state['containers'], current, strict=True)):
+        raise RecipeFailure('restore-container')
+    stage(state, 'recover-policies')
+    # The restored engine has the original IDs, even if migration used fallback.
+    policies(dict(state, fallback=False), restore=True)
+    for old, actual in zip(state['containers'], current, strict=True):
+        if (old['Config'].get('Labels') or {}).get('orbit.managed') == 'true':
+            continue  # The Gateway reconciles Processes after this step.
+        if old['State']['Running']:
+            run(['docker', 'start', old['Id']])
+        elif actual['State']['Running']:
+            run(['docker', 'stop', '--time', '60', old['Id']], timeout=90)
+    state['fallback'] = False
+    state['prepared'] = True
+    stage(state, 'restored')
+    return public_report(state)
+
+
 def migrate(payload, mode):
     path = JOURNAL / 'inventory.json'
     state = json_file(path) if path.exists() else None
     if state and state['recipe'] != payload['recipe']:
         raise RecipeFailure('recipe-mismatch')
+    if state is None and mode == 'restore-policies':
+        raise RecipeFailure('missing-inventory')
     if state is None:
         if 'docker-ce' not in packages():
             raise RecipeFailure('not-docker-ce')
         state = inventory(payload)
     for container in state['containers']:
         validate_process(container, payload)
+    if mode == 'restore-policies':
+        return restore_policies(state)
+    if state['stage'] in ('recover-policies', 'restored') and mode != 'report':
+        raise RecipeFailure('already-restored')
     sources = docker_sources()
     if mode == 'plan':
         return {'steps': STEPS, 'containers': [c['Name'].lstrip('/') for c in state['containers']],
@@ -603,6 +666,7 @@ def migrate(payload, mode):
                 'source_backups': [str(APT_ETC / (p.name + '.orbit-docker-backup')) for p, _, _ in sources],
                 'resuming': path.exists(), 'daemon_json': 'unchanged', 'volume_data': 'never deleted',
                 'storage_driver': state.get('driver'), 'fallback_authorized': payload.get('fallback', False),
+                'metadata_roots': state['metadata_roots'],
                 'space': image_space(state),
                 'local_images': list(archive_images(state)),
                 'changed_layers': [c['Name'].lstrip('/') for c in state['containers']
@@ -784,7 +848,7 @@ def migration_main(payload):
                             state['stopped'] = False
                             stage(state, 'post-stop-refusal')
                     raise
-        return {'plan': 'planned', 'prepare': 'prepared', 'report': 'reported'}[mode], report
+        return {'plan': 'planned', 'prepare': 'prepared', 'restore-policies': 'restored', 'report': 'reported'}[mode], report
     except Exception as error:
         # Fixed stage names only. Docker and apt errors can include credentials.
         failure_stage = str(error) if isinstance(error, RecipeFailure) and re.fullmatch('[a-z-]+', str(error)) else 'remote'

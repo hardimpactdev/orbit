@@ -99,9 +99,7 @@ final readonly class RunDoctorAction
             $familyReports = [];
 
             foreach ($this->families($families) as $family) {
-                $familyReports[] = $this->parked($context->node)
-                    ? $this->parkedReport($family, $context->node)
-                    : $this->probe($family)->inspect($context);
+                $familyReports[] = $this->inspectFamily($context, $family);
             }
 
             $nodeReports[] = DoctorNodeReportData::fromFamilies(
@@ -112,6 +110,13 @@ final readonly class RunDoctorAction
         }
 
         return DoctorReportData::fromNodes($nodeReports);
+    }
+
+    public function inspectFamily(DoctorNodeContext $context, DoctorFamily $family): DoctorFamilyReportData
+    {
+        return $this->parked($context->node)
+            ? $this->parkedReport($family, $context->node)
+            : $this->probe($family)->inspect($context);
     }
 
     /** @return Collection<int, Node> */
@@ -155,7 +160,7 @@ final readonly class RunDoctorAction
             )]);
     }
 
-    private function context(Node $node): DoctorNodeContext
+    public function context(Node $node): DoctorNodeContext
     {
         if ($this->parked($node)) {
             return new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null));
@@ -187,7 +192,7 @@ final readonly class RunDoctorAction
         ));
     }
 
-    private function probe(DoctorFamily $family): DoctorFamilyProbe
+    public function probe(DoctorFamily $family): DoctorFamilyProbe
     {
         return match ($family) {
             DoctorFamily::Node => $this->nodeProbe,

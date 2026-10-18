@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Tools\DebianVersionNormalizer;
+use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolInspectionException;
 use App\Domain\Tools\ToolManagerName;
@@ -25,7 +26,7 @@ use Tests\Support\ToolManagerFakeSshExecutor;
 
 it('returns bounded installed state and normalized version', function (): void {
     $manager = new FakeToolManager;
-    $manager->installedVersions = ['1.2.3'];
+    $manager->inventory = new InstalledToolInventory(['example' => ['1.2.3']]);
     $tool = Tool::make(['package' => 'example']);
     $node = Node::make();
     $node->setAttribute('id', 1);
@@ -40,7 +41,7 @@ it('returns bounded installed state and normalized version', function (): void {
 
 it('returns absent state when the manager reports no installed version', function (): void {
     $manager = new FakeToolManager;
-    $manager->installedVersions = [null];
+    $manager->inventory = new InstalledToolInventory([]);
     $tool = Tool::make(['package' => 'example']);
     $node = Node::make();
     $node->setAttribute('id', 1);
@@ -57,7 +58,7 @@ it('reports an APT package with retained configuration as bounded absence', func
     [$manager, $ssh] = native_apt_inspector_manager([
         new CommandResult(
             exitCode: 0,
-            stdout: "deinstall ok config-files\n1:2.4.3-1ubuntu2\n",
+            stdout: "redis-server\tdeinstall ok config-files\t1:2.4.3-1ubuntu2\n",
             stderr: '',
             durationMs: 10,
             truncated: false,
@@ -69,7 +70,7 @@ it('reports an APT package with retained configuration as bounded absence', func
 
     expect($data->installed)->toBeFalse()->and($data->normalizedVersion)->toBeNull();
     expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'redis-server'],
+        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
     ]);
 });
 
@@ -80,7 +81,7 @@ it('reports installed APT meta-packages as installed when Debian versions are no
     [$manager, $ssh] = native_apt_inspector_manager([
         new CommandResult(
             exitCode: 0,
-            stdout: "install ok installed\n{$rawVersion}\n",
+            stdout: "{$package}\tinstall ok installed\t{$rawVersion}\n",
             stderr: '',
             durationMs: 10,
             truncated: false,
@@ -92,7 +93,7 @@ it('reports installed APT meta-packages as installed when Debian versions are no
 
     expect($data->installed)->toBeTrue()->and($data->normalizedVersion)->toBeNull();
     expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', $package],
+        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
     ]);
 })->with([
     'postgresql-client meta-package' => ['postgresql-client', '16+257build1.1'],
@@ -125,14 +126,14 @@ it('fails closed for unsupported and throwing managers', function (): void {
     expect(fn (): mixed => new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool))
         ->toThrow(ToolInspectionException::class);
     $manager->supports = true;
-    $manager->installedVersions = [new RuntimeException('secret-output')];
+    $manager->failures['installedInventory'] = [new RuntimeException('secret-output')];
     expect(fn (): mixed => new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool))
         ->toThrow(ToolInspectionException::class, '');
 });
 
 it('returns installed state without a normalized version when the manager version is unparseable', function (): void {
     $manager = new FakeToolManager;
-    $manager->installedVersions = ['not-a-version'];
+    $manager->inventory = new InstalledToolInventory(['example' => ['not-a-version']]);
     $tool = Tool::make(['package' => 'example']);
     $node = Node::make();
     $node->setAttribute('id', 1);
@@ -149,7 +150,7 @@ it('returns installed state without a normalized version when the manager versio
 
 it('uses only the read-only installed version interaction and ignores stored version', function (): void {
     $manager = new FakeToolManager;
-    $manager->installedVersions = ['1.2.3'];
+    $manager->inventory = new InstalledToolInventory(['example' => ['1.2.3']]);
     $tool = Tool::make(['package' => 'example', 'installed_version' => '99.99.99']);
     $node = Node::make();
     $node->setAttribute('id', 1);
@@ -159,7 +160,7 @@ it('uses only the read-only installed version interaction and ignores stored ver
         'name' => ToolManagerName::Apt->value,
     ]));
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
-    expect($data->normalizedVersion)->toBe('1.2.3')->and($manager->calls)->toBe(['installedVersion']);
+    expect($data->normalizedVersion)->toBe('1.2.3')->and($manager->calls)->toBe(['installedInventory', 'validatePackage']);
 });
 
 it('inspects multiple Composer tools from one installed inventory command', function (): void {
@@ -290,7 +291,7 @@ it('marks Composer tools unverifiable when the inventory snapshot fails and keep
         ),
     ]);
     $apt = new FakeToolManager;
-    $apt->installedVersions = ['1.2.3'];
+    $apt->inventory = new InstalledToolInventory(['jq' => ['1.2.3']]);
     $composerTool = native_composer_inspector_tool('laravel/installer', nodeId: 1);
     $secondComposer = native_composer_inspector_tool('phpunit/phpunit', nodeId: 1);
     $aptTool = Tool::make(['package' => 'jq']);
@@ -308,7 +309,7 @@ it('marks Composer tools unverifiable when the inventory snapshot fails and keep
         ->and($outcomes[1]->data()->normalizedVersion)->toBe('1.2.3');
     expect(fn (): mixed => $outcomes[2]->data())->toThrow(ToolInspectionException::class, '');
     expect($ssh->arguments())->toHaveCount(1);
-    expect($apt->calls)->toBe(['installedVersion']);
+    expect($apt->calls)->toBe(['installedInventory', 'validatePackage']);
 });
 
 /**
@@ -430,3 +431,29 @@ function native_composer_inspector_tool(string $package, int $nodeId): Tool
 
     return $tool;
 }
+
+it('inspects all APT tools from one installed package inventory', function (): void {
+    [$manager, $ssh] = native_apt_inspector_manager([
+        new CommandResult(0, "jq\tinstall ok installed\t1.7.1\nredis-server\tdeinstall ok config-files\t7.0.0\n", '', 10, false),
+    ]);
+    $tools = [native_apt_inspector_tool('jq'), native_apt_inspector_tool('redis-server'), native_apt_inspector_tool('absent')];
+
+    $outcomes = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspectMany($tools);
+
+    expect($outcomes[0]->data()->normalizedVersion)->toBe('1.7.1')
+        ->and($outcomes[1]->data()->installed)->toBeFalse()
+        ->and($outcomes[2]->data()->installed)->toBeFalse();
+    expect($ssh->arguments())->toBe([['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n']]);
+});
+
+it('isolates unfinished APT package state from healthy installed packages', function (): void {
+    [$manager] = native_apt_inspector_manager([
+        new CommandResult(0, "jq\tinstall ok installed\t1.7.1\nbroken\tinstall ok half-configured\t1.0\n", '', 10, false),
+    ]);
+    $outcomes = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspectMany([
+        native_apt_inspector_tool('broken'), native_apt_inspector_tool('jq'),
+    ]);
+
+    expect(fn () => $outcomes[0]->data())->toThrow(ToolInspectionException::class)
+        ->and($outcomes[1]->data()->normalizedVersion)->toBe('1.7.1');
+});

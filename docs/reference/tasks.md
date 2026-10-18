@@ -3,7 +3,7 @@ title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
   - "apps/gateway/app/{Data/Tasks,Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
-  - "apps/gateway/app/{Actions/Tasks/**,Jobs/PublishTaskVmCommit.php}"
+  - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
@@ -456,26 +456,28 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both [in the scheduler itself](/reference/gateway-queue#scheduled-work), never on the Gateway queue, so they keep running while Horizon is down. Each holds an overlap lock and its own lock: 15 minutes for the collector, and 30 minutes for the filer. A killed run leaves its locks until they expire, so the collector can skip one run after a kill, and the filer skips none.
+`problems:collect` runs every 10 minutes and dispatches short jobs on `problems`, below `tasks` in the same Horizon supervisor. A batch observes each Node, a second checks resource groups selected by each Doctor family, and a final job collects the other signals. Each group has one 12-second command deadline and a 13-second worker timeout. Laravel's `failed()` hook records an unverifiable observation when a job fails. Collection does not file problems; only hourly `problems:file` does that under its lock. [Gateway queue](/reference/gateway-queue#scheduled-work) gives the measured timings and group sizes.
+
+The cached Node observations last at most one hour and are removed after collection; they are not a second problem ledger. The scheduler observes the Gateway Horizon Process separately, without a cache or overlap lock, so it can record a stopped Horizon without queue workers. `problems:file` also runs hourly in the scheduler, with its 30-minute overlap and command locks. All run only while the Tasks extension is enabled. See [Scheduled work](/reference/gateway-queue#scheduled-work).
 
 | Source | Bound per run |
 | --- | --- |
-| Doctor | 200 issues, then the next run resumes in fingerprint order |
+| Doctor | Typed resource groups; 12-second probe deadline, 13-second worker timeout |
 | Activity | 500 rows with `id` above the stored cursor |
 | Log | 1 MiB, stopping at the end of a whole record |
 | Assistance | 200 open rows |
 
-Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues. It skips `informational` issues, such as unregistered packages, because Doctor health ignores them too. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues. It skips `informational` issues, such as unregistered packages, because Doctor health ignores them too. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, and the byte offset. Doctor results commit per resource.
 
 The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
 
-Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For Doctor it is the resume key. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice. The collector applies [Suppression](#suppression) and the [occurrence window](#occurrence-windows) before it increments `occurrences`.
+Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice. The collector applies [Suppression](#suppression) and the [occurrence window](#occurrence-windows) before it increments `occurrences`.
 
-A failure in one source does not skip the others. The same exception class for one command is reported at most once an hour. The command still exits nonzero when any source failed.
+A failure in one source does not skip the others. The dispatch command exits successfully once queued; a dispatch failure fails the command. Worker failures appear in Horizon and the Gateway log. An interrupted resource check does not discard another resource's findings.
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also runs `problems:collect` every 10 minutes and `problems:file` every hour, itself, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also dispatches `problems:collect` every 10 minutes, observes Horizon separately, and runs `problems:file` every hour, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 A tick that takes the lock records that time in the Gateway cache, and [`tasks:status`](/cli/tasks#orbit-tasksstatus) reports it as `last_tick_at`. A ticking scheduler moves it forward about every 10 seconds. Clearing the cache forgets it until the next tick. [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) reads it to prove the scheduler runs after a Gateway release.
 
@@ -1628,9 +1630,7 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 ### Every task group runs on its own task VM
 
-Each task group gets its own [task VM](#task-vm-workspace). Inside it, one user, `orbit`, runs the agents, the setup steps, the checks, and teardown, so agents and checks see the same environment. The VM edge is the boundary. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records that choice.
-
-Groups once shared host Nodes, and agents ran there as a separate account without sudo. That account needed checkout ACLs, a second Git trust list, and a worker handoff in every check, and tests that need sudo failed for agents but passed in the gate. Orbit deleted that shared mode once every Project ran on task VMs. No fallback to a host Node exists: a task waits for its VM.
+Each task group gets its own [task VM](#task-vm-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
 
 ### Backlog before Todo
 

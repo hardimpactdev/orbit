@@ -45,6 +45,9 @@ class RecipeGitTest(unittest.TestCase):
         self.dpkg_metadata = {name: {'source:Package': 'git'} for name in self.tools}
         self.commands = []
         self.origin = INDEX
+        fixture = patch.object(image, 'IMAGE_APT', self.apt / 'image-apt')
+        fixture.start()
+        self.addCleanup(fixture.stop)
         for module in (recipe, image):
             for name, value in [('APT_ETC', self.apt), ('POLICY', self.apt / 'policy')]:
                 fixture = patch.object(module, name, value)
@@ -87,7 +90,11 @@ class RecipeGitTest(unittest.TestCase):
              patch.object(module, 'publish', side_effect=lambda path, data, *args: Path(path).write_bytes(data)), \
              patch.object(module, 'download', side_effect=lambda pin, arch, path: path) as download:
             self.download = download
-            result = module.apply(self.payload) if module is recipe else module.image_packages(self.payload)
+            if module is recipe:
+                result = module.apply(self.payload)
+            else:
+                module.image_apt_source(self.payload)
+                result = module.image_packages(self.payload)
         return result, download
 
     def test_beast_plans_cleanly_without_origin_refusal_or_mutation_then_retires_its_inline_key_source(self):
@@ -373,10 +380,11 @@ class RecipeGitTest(unittest.TestCase):
         policies = []
         def command(argv, **kwargs):
             nonlocal refreshed
-            snapshot = any(arg.startswith('Dir::Etc::sourcelist=') for arg in argv)
+            config = Path(os.environ['APT_CONFIG']).read_text() if 'APT_CONFIG' in os.environ else ''
+            snapshot = f'Dir::Etc::sourcelist "{image.IMAGE_APT}/ubuntu.sources";' in config
             if argv[:2] == ['apt-get', 'update']:
                 self.assertTrue(snapshot)
-                self.assertIn('DPkg::Lock::Timeout=300', argv)
+                self.assertIn('DPkg::Lock::Timeout "300";', config)
                 refreshed = True
             if argv[:2] == ['apt-cache', 'policy']:
                 self.assertTrue(refreshed, 'Git origin was checked before index refresh')
@@ -385,7 +393,7 @@ class RecipeGitTest(unittest.TestCase):
                     name = argv[2].split(':')[0] if len(argv) > 2 else ''
                     output = (name + ':\n *** ' + self.installed[name] + ' 100\n        100 /var/lib/dpkg/status\n') if name else ''
                     return subprocess.CompletedProcess(argv, 0, output, '')
-                self.assertIn('DPkg::Lock::Timeout=300', argv)
+                self.assertIn('DPkg::Lock::Timeout "300";', config)
             return base_command(argv, **kwargs)
         with patch.object(self, 'command', side_effect=command), patch.object(image, 'snapshot_origin', side_effect=AssertionError('No log/network fallback needed')), \
              patch.object(image, 'assess', wraps=image.assess) as assess:

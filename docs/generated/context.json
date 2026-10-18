@@ -801,41 +801,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0200-run-each-task-group-in-its-own-sandbox-vm.md",
-            "title": "ADR 0200: Run each task group in its own sandbox VM",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Deliverable",
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Pi server",
-                "Placement",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Subtask",
-                "Task",
-                "Task check",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0200",
-                "0222"
-            ]
-        },
-        {
             "path": "docs/decisions/0206-build-task-vm-images-as-chains-of-small-jobs.md",
             "title": "ADR 0206: Build task VM images as chains of small jobs",
             "kind": "decision",
@@ -851,9 +816,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0200",
-                "0206",
-                "0222"
+                "0206"
             ]
         },
         {
@@ -957,7 +920,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0200",
                 "0210",
                 "0212",
                 "0214",
@@ -1151,31 +1113,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
-            "title": "ADR 0222: Give task VMs a cloned topology seed",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Subtask",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0200",
-                "0206",
-                "0222"
-            ]
-        },
-        {
             "path": "docs/decisions/0223-run-one-gate-from-handoff-to-merge.md",
             "title": "ADR 0223: Run one gate from handoff to merge",
             "kind": "decision",
@@ -1201,7 +1138,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0200",
                 "0213",
                 "0223"
             ]
@@ -1233,7 +1169,6 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200",
                 "0210",
                 "0211",
                 "0212",
@@ -1327,7 +1262,6 @@
                 "0182",
                 "0190",
                 "0196",
-                "0200",
                 "0206",
                 "0209",
                 "0210",
@@ -1339,7 +1273,6 @@
                 "0218",
                 "0219",
                 "0221",
-                "0222",
                 "0223",
                 "0224",
                 "0225"
@@ -1730,9 +1663,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0200",
-                "0206",
-                "0222"
+                "0206"
             ]
         },
         {
@@ -2040,8 +1971,10 @@
                 "Process",
                 "Project",
                 "Role",
+                "Route",
                 "Schedule",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": [
                 "0212",
@@ -2203,9 +2136,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0222"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -2627,9 +2558,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2904,9 +2833,7 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/tools.md",
@@ -3057,9 +2984,7 @@
                 "Node",
                 "Task"
             ],
-            "governing_adrs": [
-                "0222"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",

@@ -242,7 +242,7 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, every credential helper, and the alternate-refs command, allows only HTTPS, and fetches from the explicit Project repository URL. It still reads the checkout's `.git/config`, which setup steps, development Processes, and agents running as the managed user can write, so those command-line settings are what keep the token in Git.
 
-Task agents work only in task VMs, and a VM never receives a token: the Gateway fetches and pushes for it in its own mirror. Task groups once shared host Nodes, where an agent account could write `.git/config`. Token-bearing Git then ran in a private bare repository that the agent could not write. That isolation went with shared mode: no second account writes a checkout on a host Node anymore, and the command-line settings above cover what the managed user's own programs could plant.
+Task agents work only in task VMs, and a VM never receives a token: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm). On a host Node, the command-line settings above cover what the managed user's own programs could plant in the checkout.
 
 The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
 

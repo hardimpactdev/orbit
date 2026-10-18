@@ -13,17 +13,19 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 {
@@ -37,15 +39,26 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::Route;
     }
 
+    /** @return list<DoctorResources> */
+    public function resources(Node $node): array
+    {
+        return DoctorResources::groups(array_values(array_unique(StoredInteger::listFrom([
+            ...$this->servedRoutes($node)->pluck('id')->all(),
+            ...$this->proxies($node)->pluck('route_id')->all(),
+        ]))));
+    }
+
+    /** @return Collection<int, RouteCustomProxy> */
+    private function proxies(Node $node): Collection
+    {
+        return RouteCustomProxy::query()->with('route')->where('node_id', $node->id)->orderBy('route_id')->get();
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $routes = $this->servedRoutes($context->node);
+        $routes = $context->select($this->servedRoutes($context->node));
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
-        $proxies = RouteCustomProxy::query()
-            ->with('route')
-            ->where('node_id', $context->node->id)
-            ->orderBy('route_id')
-            ->get();
+        $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 
         if ($proxies->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);
