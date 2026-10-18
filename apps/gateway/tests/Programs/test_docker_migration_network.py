@@ -106,6 +106,8 @@ class DockerMigrationNetworkTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, 'loaded', '')
             if argv[:2] == ['systemctl', 'stop']:
                 self.stop_daemon()
+            elif argv == ['systemctl', 'mask', 'containerd.service']:
+                pass  # The namespace has no system containerd service or host systemd access.
             elif argv[:2] == ['systemctl', 'start']:
                 self.start_daemon(self.root / 'engine')
             elif argv != ['systemctl', 'daemon-reload']:

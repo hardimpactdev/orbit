@@ -27,7 +27,7 @@ STEPS = ['inventory and storage driver', 'check archive and commit space plus 2 
          'swap CE packages for recipe docker.io, containerd, docker-buildx, docker-compose-v2',
          'record swapping; repair interrupted dpkg and dependencies; install with recipe snapshot sources',
          'verify every image, container layer and volume; start and stop one container before restoring policies',
-         'if unreadable: refuse unless --fallback; isolate fresh engine, load archives, preserve volume paths and recreate',
+         'if unreadable: refuse unless --fallback; mask system containerd, isolate fresh engine, load archives, preserve volume paths and recreate',
          'reconcile Orbit Processes from stored specs', 'report every container state']
 
 
@@ -508,14 +508,16 @@ def network_request(network):
 def fresh_engine(state):
     # Without --containerd, dockerd still reuses a running system containerd socket.
     stop_loaded(['docker.service', 'docker.socket', 'containerd.service'])
+    # Drop-ins cannot clear the vendor unit's Wants=containerd.service. Keep the
+    # system daemon masked across restart/reboot while the fresh engine is in use.
+    run(['systemctl', 'mask', 'containerd.service'])
     # dockerd refuses an option present in both JSON and argv. Keep the original
     # config intact for native startup/restore; only the fresh engine uses this copy.
     config = json.loads(bytes.fromhex(state['daemon'])) if state['daemon'] is not None else {}
     config.pop('data-root', None)
     config_path = JOURNAL / 'daemon.json'
     publish(config_path, json.dumps(config, sort_keys=True).encode(), 0o600)
-    content = ('[Unit]\nRequires=\nRequires=docker.socket\nWants=\nWants=network-online.target\n'
-               '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
+    content = ('[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
                + str(JOURNAL / 'engine') + ' --config-file=' + str(config_path) + '\n').encode()
     if DROPIN.exists() and DROPIN.read_bytes() != content:
         raise RecipeFailure('custom-daemon')

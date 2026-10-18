@@ -277,17 +277,22 @@ class DockerMigrationTest(unittest.TestCase):
     def test_fallback_stops_system_containerd_before_starting_managed_containerd(self):
         self.incompatible = True
         system_containerd = True
+        masked = False
         command = self.command
 
         def services(argv, **kwargs):
-            nonlocal system_containerd
+            nonlocal system_containerd, masked
             if argv[:2] == ['systemctl', 'stop'] and 'containerd.service' in argv:
                 system_containerd = False
+            if argv == ['systemctl', 'mask', 'containerd.service']:
+                masked = True
             if argv[:2] == ['systemctl', 'start']:
+                # systemd dependencies are additive: an empty Wants= in a drop-in
+                # does not clear the vendor unit's Wants=containerd.service.
+                if not masked:
+                    system_containerd = True
                 if self.dropin.exists():
                     self.assertFalse(system_containerd, 'dockerd would reuse the system containerd socket')
-                else:
-                    system_containerd = True  # Stock Docker unit Wants=containerd.service.
             return command(argv, **kwargs)
 
         with patch.object(module, 'run', services):
@@ -377,12 +382,12 @@ class DockerMigrationTest(unittest.TestCase):
 
     def test_foreign_service_unit_fragments_refuse_before_mutation(self):
         for unit in ('docker.service', 'containerd.service'):
-            for directory in ('/etc/systemd/system', '/run/systemd/system'):
-                def foreign(argv, unit=unit, directory=directory, **kwargs):
+            for fragment in ('/etc/systemd/system/' + unit, '/run/systemd/system/' + unit, '/dev/null'):
+                def foreign(argv, unit=unit, fragment=fragment, **kwargs):
                     if '--property=FragmentPath' in argv and argv[-1] == unit:
-                        return subprocess.CompletedProcess(argv, 0, directory + '/' + unit, '')
+                        return subprocess.CompletedProcess(argv, 0, fragment, '')
                     return self.command(argv, **kwargs)
-                with self.subTest(unit=unit, directory=directory), patch.object(module, 'run', foreign):
+                with self.subTest(unit=unit, fragment=fragment), patch.object(module, 'run', foreign):
                     with self.assertRaisesRegex(module.RecipeFailure, 'custom-daemon'):
                         module.migrate(self.payload, 'prepare')
         self.assertFalse((self.journal / 'inventory.json').exists())
