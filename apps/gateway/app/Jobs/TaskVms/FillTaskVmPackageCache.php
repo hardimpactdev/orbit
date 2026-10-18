@@ -33,7 +33,7 @@ final class FillTaskVmPackageCache implements ShouldBeUniqueUntilProcessing, Sho
     /** @return list<WithoutOverlapping> */
     public function middleware(): array
     {
-        return [new WithoutOverlapping('package-cache:'.$this->hostNodeId)->releaseAfter(30)->expireAfter(1760)];
+        return [new WithoutOverlapping('package-cache:'.$this->hostNodeId)->dontRelease()->expireAfter(1760)];
     }
 
     public function handle(FillPackageCacheAction $fill): void

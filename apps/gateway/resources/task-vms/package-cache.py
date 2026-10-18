@@ -17,9 +17,10 @@ ROOT = Path('/var/lib/orbit/package-cache')
 MAX_ARCHIVE = 512 * 1024 * 1024
 
 
-def allowed_url(url):
+def allowed_url(url, *, redirect=False):
+    api_path = r'repositories/[1-9][0-9]*' if redirect else r'repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
     return bool(re.fullmatch(r'https://registry\.npmjs\.org/(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*/-/[a-z0-9][a-z0-9_.-]*-[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\.tgz', url)
-                or re.fullmatch(r'https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/zipball/[a-f0-9]{40}', url)
+                or re.fullmatch(r'https://api\.github\.com/' + api_path + r'/zipball/[a-f0-9]{40}', url)
                 or re.fullmatch(r'https://codeload\.github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:legacy\.zip|zip)/[a-f0-9]{40}', url))
 
 
@@ -29,11 +30,8 @@ class ArchiveError(ValueError):
 
 class PublicRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, msg, headers, newurl):
-        repository_redirect = bool(re.fullmatch(r'https://api\.github\.com/repositories/[1-9][0-9]*/zipball/[a-f0-9]{40}', newurl))
-        if (not (allowed_url(newurl) or repository_redirect) or github_url(request.full_url) != github_url(newurl)
-                or (github_url(newurl) and (request.full_url.rsplit('/', 1)[-1] != newurl.rsplit('/', 1)[-1]
-                    or (urllib.parse.urlparse(newurl).hostname == 'api.github.com'
-                        and not newurl.startswith('https://api.github.com/repositories/'))))):
+        if (not allowed_url(newurl, redirect=True) or github_url(request.full_url) != github_url(newurl)
+                or (github_url(newurl) and request.full_url.rsplit('/', 1)[-1] != newurl.rsplit('/', 1)[-1])):
             raise ArchiveError('Rejected archive redirect')
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 

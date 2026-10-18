@@ -23,9 +23,12 @@ use App\Models\Project;
 use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Worker;
 use Illuminate\Queue\WorkerOptions;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -123,7 +126,7 @@ it('retries a pending fill at the same commit without reading the tree and keeps
     Queue::assertPushed(FillTaskVmPackageCache::class, 1);
 });
 
-it('coalesces pending fills by host and permits a successor once processing starts', function (): void {
+it('coalesces queued fills by host until processing starts', function (): void {
     config(['queue.connections.gateway.driver' => 'database']);
     FillTaskVmPackageCache::dispatch(31);
     FillTaskVmPackageCache::dispatch(31);
@@ -486,4 +489,79 @@ it('fails a package fill after one attempt and leaves the Project pending for it
     expect($snapshot->fresh()->fill_pending)->toBeTrue();
     app(ObservePackageCacheAction::class)->execute($project, '/nonexistent-mirror', $snapshot->commit);
     expect(DB::table('jobs')->count())->toBe(1);
+});
+
+it('drops an overlapping fill without failure and fills a changed lock on the next fetch', function (): void {
+    config(['queue.connections.gateway.driver' => 'database', 'queue.failed.driver' => 'database-uuids']);
+    $root = TestOrbitHome::scratch('package-cache-overlap');
+    mkdir($root, 0700, true);
+    package_cache_git($root, ['init', '-b', 'main']);
+    file_put_contents($root.'/composer.json', '{}');
+    $lock = ['packages' => [['name' => 'acme/demo', 'version' => '1.0.0', 'dist' => ['type' => 'zip', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40)]]]];
+    file_put_contents($root.'/composer.lock', json_encode($lock, JSON_THROW_ON_ERROR));
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $observe = app(ObservePackageCacheAction::class);
+    $observe->execute($project, $root.'/.git', package_cache_commit($root));
+    $snapshot = PackageCacheSnapshot::query()->findOrFail($project->id);
+    $oldKey = $snapshot->artifacts[0]['key'];
+    $failures = [];
+    Event::listen(JobFailed::class, function (JobFailed $event) use (&$failures): void {
+        $failures[] = $event->exception::class;
+    });
+    /** @var Worker $worker */
+    $worker = app('queue.worker');
+    $options = new WorkerOptions(sleep: 0, maxTries: 3);
+    $ssh = new class(function () use ($root, $lock, $project, $observe, $worker, $options): void {
+        $lock['packages'][0]['version'] = '2.0.0';
+        $lock['packages'][0]['dist']['url'] = 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('b', 40);
+        file_put_contents($root.'/composer.lock', json_encode($lock, JSON_THROW_ON_ERROR));
+        $observe->execute($project, $root.'/.git', package_cache_commit($root));
+        expect(DB::table('jobs')->count())->toBe(2);
+        $worker->runNextJob('gateway', 'builds', $options);
+    }) implements SshExecutor
+    {
+        public array $inventories = [];
+
+        public function __construct(private readonly Closure $duringFill) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+            $keys = array_column($payload['artifacts'], 'key');
+            $this->inventories[] = $keys;
+            if (count($this->inventories) === 1) {
+                ($this->duringFill)();
+            }
+
+            return new CommandResult(0, json_encode(['hashes' => array_fill_keys($keys, 'sha256-'.str_repeat('a', 64)), 'failures' => []], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+    app()->instance(TaskVmPackageCache::class, package_cache_transport($ssh));
+
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--sleep' => 0, '--tries' => 3]);
+    $this->travel(31)->seconds();
+    $worker->runNextJob('gateway', 'builds', $options);
+
+    expect($failures)->toBe([]);
+    expect(DB::table('failed_jobs')->count())->toBe(0);
+    expect(DB::table('jobs')->count())->toBe(0);
+    expect($ssh->inventories)->toBe([[$oldKey]]);
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
+    expect(PackageCacheEntry::query()->count())->toBe(0);
+    $current = $snapshot->fresh();
+    $newKey = $current->artifacts[0]['key'];
+    expect($newKey)->not->toBe($oldKey);
+
+    $observe->execute($project, '/nonexistent-mirror', $current->commit);
+    expect(DB::table('jobs')->count())->toBe(1);
+    $worker->runNextJob('gateway', 'builds', $options);
+
+    expect($ssh->inventories)->toBe([[$oldKey], [$newKey]]);
+    expect($snapshot->fresh()->fill_pending)->toBeFalse();
+    expect(PackageCacheEntry::query()->sole()->key)->toBe($newKey);
+    expect($failures)->toBe([]);
+    expect(DB::table('failed_jobs')->count())->toBe(0);
+    expect(DB::table('jobs')->count())->toBe(0);
 });
