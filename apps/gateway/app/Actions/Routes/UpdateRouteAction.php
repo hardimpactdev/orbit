@@ -29,6 +29,7 @@ final readonly class UpdateRouteAction
         private ConvergeRouteAction $converge,
         private PublishPublicRouteAction $publishPublic,
         private RouteReconciliationGuard $reconciliation,
+        private ReservedPrivateHostname $reservedHostnames,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
         private ?ChangeRouteWebRootAction $webRoots = null,
@@ -107,7 +108,7 @@ final readonly class UpdateRouteAction
         $domainChanges = $domain !== null && $domain !== $route->domain;
 
         if ($domainChanges) {
-            ReservedPrivateHostname::assertAvailable($domain);
+            $this->reservedHostnames->assertAvailable($domain);
         }
 
         if ($domainChanges && $route->hasWebRoot()) {

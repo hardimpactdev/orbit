@@ -35,7 +35,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -153,7 +152,7 @@ function tvm_life_stranded_workspace(bool $removalFailed): array
     $group->taskable()->associate($instance);
     $group->save();
     if ($removalFailed) {
-        TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
     }
 
     return [$vm, $instance, $route, $group->fresh() ?? $group];
@@ -792,7 +791,7 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('never makes an ownership refusal eligible for offline VM destruction', function (): void {
+    it('handles an ownership refusal as a removal failure when the ended groups VM is gone', function (): void {
         Queue::fake();
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
         $instance = tvm_life_workspace($vm->group, $vm->node);
@@ -809,12 +808,11 @@ describe(DestroyTaskVm::class, function (): void {
         app(DestroyEndedTaskVmsAction::class)->execute();
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->provider->calls)->toBe([]);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        $this->assertModelExists($instance);
-        Queue::assertNotPushed(DestroyTaskVm::class);
-        app(RemoveTaskWorkspaceAction::class)->clearFailure($vm->group);
-        expect($vm->group->fresh()->assistance_reason)->toBeNull();
+        expect($this->provider->calls)->toBe(['observe', 'destroy'])
+            ->and($vm->fresh()->state)->toBe(TaskVmState::Destroyed)
+            ->and($vm->group->fresh()->assistance_requested)->toBeFalse();
+        $this->assertModelMissing($instance);
+        Queue::assertPushed(DestroyTaskVm::class);
     });
 
     it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {
@@ -870,7 +868,7 @@ describe(DestroyTaskVm::class, function (): void {
     it('keeps the workspace of a group that still runs after its removal failed, even when the VM is gone', function (TaskGroupStatus $status): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => $status]);
-        TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The teardown step failed.');
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The teardown step failed.');
         $this->provider->observations = [null];
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
@@ -913,7 +911,7 @@ describe(DestroyTaskVm::class, function (): void {
         $group->save();
         if ($earlierFailure) {
             // The stuck state an earlier cancel left: the group still runs and asks for help, the VM still runs.
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'Sandbox workload nodes must be managed by the compute driver.');
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'Sandbox workload nodes must be managed by the compute driver.');
         }
         app(TaskExtensionState::class)->enable();
         bind_task_node_reachability();
@@ -1083,7 +1081,7 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         [$vm, , , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => $status]);
         if ($removalFailed) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
         }
         $queued = $removalFailed && $status !== TaskGroupStatus::Running;
 
@@ -1134,7 +1132,6 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         $vm = tvm_life_vm($group, TaskVmState::Failed);
         $vm->update(['error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
         app(TaskExtensionState::class)->enable();
-        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once();
         $reason = "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.";
 
         foreach ([1, 2] as $claim) {
@@ -1218,22 +1215,19 @@ describe('failed VM claims', function (): void {
         $group = tvm_life_group($status);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
         $reason = TaskVmFailedException::stoppedReason('task_vm.vm_missing', 'The VM is gone.');
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
 
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Ready], 'task_vm.vm_missing', 'The VM is gone.', $reason))->toBeTrue();
 
-        expect($group->fresh())->status->toBe($status)->assistance_requested->toBeFalse()->assistance_reason->toBe($reason);
+        expect($group->fresh())->status->toBe($status)->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
 
-    it('notifies Coder once when the failure action asks before the next claim', function (): void {
+    it('records assistance once when the failure action asks before the next claim', function (): void {
         Queue::fake();
         $group = tvm_life_group(TaskGroupStatus::Todo);
         $vm = tvm_life_vm($group, TaskVmState::Provisioning);
         app(TaskExtensionState::class)->enable();
         $reason = TaskVmFailedException::reason($vm->name, 'task_vm.bootstrap_failed', 'Cloud-init failed.');
-        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()
-            ->withArgs(fn (Task $asked, string $actual): bool => $asked->id === $group->id && $actual === $reason);
 
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeTrue();
         expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeFalse();

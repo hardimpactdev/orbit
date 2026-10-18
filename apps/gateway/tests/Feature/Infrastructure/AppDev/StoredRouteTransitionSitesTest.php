@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\ClusterRouterTransition;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -469,7 +470,7 @@ function stored_transition_every_converge_matches(array $fleet): bool
 /** @param array<int, array{router_node_id?: ?int}> $clusterOverrides */
 function stored_transition_dns(array $clusterOverrides = []): string
 {
-    return new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render(clusterOverrides: $clusterOverrides);
+    return new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render(clusterOverrides: $clusterOverrides);
 }
 
 /** @param array{ingress: ?Node} $fleet */

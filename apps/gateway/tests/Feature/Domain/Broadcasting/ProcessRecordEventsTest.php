@@ -12,6 +12,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -201,7 +202,7 @@ describe('Process record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
+        new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process);
 
         Event::assertDispatched(
             RecordBroadcast::class,

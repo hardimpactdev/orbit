@@ -31,7 +31,7 @@ Two Nodes can use the same port. The database keeps each port unique per Node. T
 Create the preset Process on a development Instance. `--instance` accepts an Instance ID or its exact Route domain.
 
 ```bash
-orbit process:create vite --instance=commander.test --preset=vp-dev --start
+orbit process:create vite --instance=orbit.test --preset=vp-dev --start
 ```
 
 The preset needs `/usr/local/bin/vp`, a readable `package.json`, and an installed `node_modules`. It installs no dependencies and edits no application code. It sets the command, the working directory, and restart on failure. A custom command, runtime, or Docker option conflicts with the preset and is refused. An Instance has at most one preset Process. Naming a plain Process `vp-dev` has no effect. The [Processes](/reference/processes-and-schedules#presets) page lists every preset.

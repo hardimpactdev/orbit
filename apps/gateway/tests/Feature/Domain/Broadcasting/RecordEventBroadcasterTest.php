@@ -7,6 +7,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
@@ -97,9 +98,9 @@ describe('RecordEventBroadcaster', function (): void {
             'wireguard_ip' => '10.44.0.89',
             'user' => 'orbit',
         ]);
-        new CaddySiteCertificates()->record($source->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
         [$target] = activate_websocket_role();
-        new CaddySiteCertificates()->record($target->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->markServing($target->id);
         $sent = [];
 
@@ -143,9 +144,9 @@ describe('RecordEventBroadcaster', function (): void {
             'wireguard_ip' => '10.44.0.89',
             'user' => 'orbit',
         ]);
-        new CaddySiteCertificates()->record($source->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
         [$target] = activate_websocket_role();
-        new CaddySiteCertificates()->record($target->id, CaddySiteCertificates::Websocket);
+        new CaddySiteCertificates()->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->markServing($target->id);
         $sent = [];
         $oldReachable = false;

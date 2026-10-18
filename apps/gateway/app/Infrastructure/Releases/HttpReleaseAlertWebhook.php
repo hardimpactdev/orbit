@@ -13,7 +13,7 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Signs the body like the Coder webhook. The URL, the secret, and the response never leave this class,
+ * Signs the body with HMAC-SHA256. The URL, the secret, and the response never leave this class,
  * because a chat webhook URL is itself a credential.
  */
 final readonly class HttpReleaseAlertWebhook implements ReleaseAlertWebhook

@@ -126,7 +126,7 @@ A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orb
 
 ## Keep the catalogue current
 
-`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. `--check` fails when the manifest is stale. Tool descriptions also come from the OpenAPI document. The `tasks-create` and `tasks-update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks), with Project ownership and the status, subtask, deliverable, and Coder notification requirements. The `tasks-cancel` description follows [cancelling a stuck task](/reference/tasks#cancel-a-stuck-task): forced workspace removal also removes an eligible pending or failed exclusive Route of a `source_resolved` workspace, while an active or shared Route still refuses. A repeated cancel removes the unattached workspace the task [owns](/reference/tasks#workspace-ownership). Each generated operation records its extension slug, or `null` for an untagged (core) operation. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. The `route-create` tool accepts either `instance_id` and `domain` for an app Route or `node_id`, `domain`, and one of `upstream` or `process_id` for a custom proxy. It does not accept `project_id` or `cluster_id` on creation. After a change to a route, form request, data class, or operation description, regenerate both:
+`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. `--check` fails when the manifest is stale. Tool descriptions also come from the OpenAPI document. The `tasks-create` and `tasks-update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks), with Project ownership and the status, subtask, and deliverable requirements. The `tasks-cancel` description follows [cancelling a stuck task](/reference/tasks#cancel-a-stuck-task): forced workspace removal also removes an eligible pending or failed exclusive Route of a `source_resolved` workspace, while an active or shared Route still refuses. A repeated cancel removes the unattached workspace the task [owns](/reference/tasks#workspace-ownership). Each generated operation records its extension slug, or `null` for an untagged (core) operation. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. The `route-create` tool accepts either `instance_id` and `domain` for an app Route or `node_id`, `domain`, and one of `upstream` or `process_id` for a custom proxy. It does not accept `project_id` or `cluster_id` on creation. After a change to a route, form request, data class, or operation description, regenerate both:
 
 ```bash
 bin/docs-openapi
@@ -138,6 +138,8 @@ Continuous integration and the local candidate gate run `bin/docs-openapi --chec
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+For a request with alternative object shapes, the manifest keeps the full `oneOf` branches. A field shared by branches accepts each distinct field schema through `anyOf`; the last branch must not replace earlier types or bounds. For example, `database-create` accepts a string database name when registering MySQL or PostgreSQL, and an integer database index when creating a Valkey ACL user. The full branches still reject a string index in Valkey user creation and an integer database name in registration.
 
 ### Tools generated from the API description
 

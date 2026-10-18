@@ -16,12 +16,15 @@ use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -216,7 +219,7 @@ it('pushes approved commits before it cancels a settling group without a pull re
         ->and($cancelledSubtask->fresh()->status)->toBe(TaskStatus::Cancelled);
 });
 
-it('cancels an unreachable Node without pushing and the sweep retries removal', function (): void {
+it('cancels an unreachable Node without pushing and the sweep retries removal', function (bool $direction): void {
     app(TaskExtensionState::class)->enable();
     bind_task_node_reachability(unreachable: true);
     $remover = cancel_recording_remover();
@@ -227,16 +230,24 @@ it('cancels an unreachable Node without pushing and the sweep retries removal', 
     $running = cancel_subtask($group, TaskStatus::Running, 2);
     $instanceId = $group->taskable_id;
 
+    if ($direction) {
+        TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose a mirror.');
+    }
+
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
     expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->taskable_id)->toBe($instanceId)
-        ->and($cancelled->assistance_requested)->toBeFalse()
+        ->and($cancelled->assistance_requested)->toBeTrue()
+        ->and($cancelled->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and($cancelled->assistance_question)->toBeNull()
         ->and($cancelled->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
         ->and($publisher->pushes)->toBe([])
         ->and($remover->calls)->toBe([])
         ->and($running->fresh()?->status)->toBe(TaskStatus::Cancelled)
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
+
+    expect(Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())->toBe($direction ? ['assistance requested', 'assistance changed'] : ['assistance requested']);
 
     $again = app(CancelTaskGroupAction::class)->execute($cancelled);
 
@@ -249,7 +260,7 @@ it('cancels an unreachable Node without pushing and the sweep retries removal', 
         ->and(Instance::query()->find($instanceId))->toBeNull()
         ->and($group->fresh()?->taskable_id)->toBeNull()
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
-});
+})->with([false, true]);
 
 it('keeps the settling group and its Instance when the push fails', function (): void {
     app(TaskExtensionState::class)->enable();
@@ -287,6 +298,32 @@ it('does not push a settling group without approved subtasks', function (): void
     expect($publisher->pushes)->toBe([])
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled);
 });
+
+it('keeps a refused unpublished cancellation out of the cleanup sweep until cancel is retried', function (TaskGroupStatus $status, ?string $prUrl): void {
+    app(TaskExtensionState::class)->enable();
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
+    {
+        public function execute(Instance $instance, bool $force): InstanceRemoval
+        {
+            throw new ResourceOperationException('instance.force_failed', 'The checkout could not be inspected.', 409);
+        }
+    });
+    $group = cancellable_task_group($status, $prUrl);
+    $instance = $group->taskable;
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(ResourceOperationException::class, 'The checkout could not be inspected.');
+    expect($group->fresh())->status->toBe($status)->assistance_kind->toBe(AssistanceKind::RemovalFailure);
+    $remover = cancel_recording_remover();
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+        ->and($remover->calls)->toBe([])
+        ->and($group->fresh())->status->toBe($status)->taskable_id->toBe($instance->id)->assistance_requested->toBeTrue();
+    $this->assertModelExists($instance);
+
+    expect(app(CancelTaskGroupAction::class)->execute($group))->status->toBe(TaskGroupStatus::Cancelled)
+        ->and($remover->calls)->toBe([[$instance->id, true]]);
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])->with([null, '']);
 
 it('asks for assistance and keeps the clone when removal of a source-resolved workspace is refused', function (): void {
     app(TaskExtensionState::class)->enable();
@@ -735,9 +772,29 @@ it('preserves the removal error after a claim attaches during cancellation', fun
         'id' => $group->id,
         'status' => 'cancelled',
         'taskable_id' => $deleted ? null : $workspace->id,
-        'assistance_requested' => false,
-        'assistance_kind' => 'failure',
+        'assistance_requested' => true,
+        'assistance_kind' => 'removal_failure',
         'assistance_reason' => 'Workspace removal failed: Original removal failure.',
     ]);
     expect(Instance::query()->whereKey($workspace->id)->exists())->toBe(! $deleted);
 })->with(['row already removed' => true, 'row retained for cleanup' => false]);
+
+it('clears removal assistance once when a refused cancellation succeeds on retry', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $remover = Mockery::mock(InstanceRemover::class);
+    $remover->shouldReceive('execute')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'Removal refused.', 409));
+    app()->instance(InstanceRemover::class, $remover);
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))->toThrow(ResourceOperationException::class);
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+
+    cancel_recording_remover();
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+    app(CancelTaskGroupAction::class)->execute($cancelled);
+
+    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($cancelled->assistance_requested)->toBeFalse()
+        ->and($cancelled->taskable_id)->toBeNull()
+        ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)
+            ->where('description', 'assistance cleared')->count())->toBe(1);
+});

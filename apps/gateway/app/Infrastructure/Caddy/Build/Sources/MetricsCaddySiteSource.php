@@ -20,6 +20,8 @@ use App\Models\Node;
  */
 final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
 {
+    public const string CertificateSlug = 'metrics';
+
     public function __construct(
         private ?MetricsPublicationRenderer $renderer = null,
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
@@ -29,7 +31,7 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
     {
         if (
             ! CaddySiteRoles::nodeServes($node->id, RoleName::Gateway)
-            || ! $this->certificates->published($node->id, CaddySiteCertificates::Metrics)
+            || ! $this->certificates->published($node->id, MetricsCaddySiteSource::CertificateSlug)
         ) {
             return [];
         }

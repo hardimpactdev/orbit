@@ -21,6 +21,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -547,7 +548,7 @@ it('rejects leftover Process owners before runtime removal', function (): void {
         'status' => LifecycleStatus::Active,
     ]);
 
-    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
+    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process))
         ->toThrow(ResourceOperationException::class, 'not a supported Instance or Node')
         ->and($this->runtime->removed)
         ->toBeEmpty();
@@ -714,7 +715,7 @@ it('lists runtime status and removes only the selected process', function (): vo
         ProcessTargetType::Instance,
         $this->instance->id,
     );
-    $removed = new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
+    $removed = new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process);
 
     expect($listed)
         ->toHaveCount(1)
@@ -770,7 +771,7 @@ it('does not persist a start outcome while remove still owns the runtime lease',
         }
     };
 
-    $removed = new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
+    $removed = new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process);
 
     expect($peerPersisted)
         ->toBeFalse()
@@ -831,7 +832,7 @@ it('leaves a removing process unmarked when remove loses the runtime owner', fun
     expect($lock->get())->toBeTrue();
 
     try {
-        expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
+        expect(fn () => new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process))
             ->toThrow(ProcessOperationException::class);
 
         expect($process->refresh()->getRawOriginal())
@@ -1002,7 +1003,7 @@ it('retains the process definition when runtime removal fails', function (): voi
         message: 'The owned unit could not be stopped.',
     );
 
-    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
+    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets, guards: app()->tagged(ProcessRemovalGuard::class))->execute($process))
         ->toThrow(ProcessOperationException::class, 'could not be stopped');
 
     expect($process->refresh())

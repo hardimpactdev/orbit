@@ -10,7 +10,6 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -27,9 +26,9 @@ it('replays a queued implementer failure resolution once after the workspace hol
     app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'The implementer needs a resolution.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Failure, null, 'The implementer needs a resolution.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
@@ -71,9 +70,9 @@ it('withdraws a queued resolution when its request changes', function (string $r
     app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original failure.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Failure, null, 'Original failure.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
@@ -82,9 +81,9 @@ it('withdraws a queued resolution when its request changes', function (string $r
     app(StoreTaskCommentAction::class)->execute($task, [
         'type' => 'resolution', 'body' => 'Resolve the original failure.', 'author' => 'operator',
     ]);
-    $replacement = TaskAssistance::attributes($replacementKind === 'direction' ? AssistanceKind::Direction : AssistanceKind::Failure, null, 'A different request.');
-    $task->update($replacement);
-    $group->update($replacement);
+    $replacement = test_assistance_attributes($replacementKind === 'direction' ? AssistanceKind::Direction : AssistanceKind::Failure, null, 'A different request.');
+    test_update_task($task, $replacement);
+    test_update_task($group, $replacement);
     if ($replacementKind === 'reviewing') {
         $task->update(['status' => TaskStatus::Reviewing]);
     }
@@ -110,8 +109,8 @@ it('does not replay an old resolution that was stored before assistance was requ
     app(StoreTaskCommentAction::class)->execute($task, [
         'type' => 'resolution', 'body' => 'An older unrelated answer.', 'author' => 'operator',
     ]);
-    $task->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'New failure.'));
-    $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'New failure.'));
+    test_update_task($task, test_assistance_attributes(AssistanceKind::Failure, null, 'New failure.'));
+    test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'New failure.'));
 
     app(TaskScheduler::class)->tick();
 
@@ -126,9 +125,9 @@ it('retries the same persisted failure resolution after an accepted send loses i
     app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'A resolution is required.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Failure, null, 'A resolution is required.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $driver = new class('pi') extends FakeAgentDriver
     {
         public bool $loseReply = true;
@@ -168,15 +167,15 @@ it('withdraws a reserved resolution when the request changes before immediate de
     tick_bind_defaults();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $task->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original failure.'));
-    $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original failure.'));
+    test_update_task($task, test_assistance_attributes(AssistanceKind::Failure, null, 'Original failure.'));
+    test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Original failure.'));
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     Task::updated(static function (Task $updated) use ($task): void {
         if ($updated->id === $task->id && $updated->wasChanged('pending_resolution_comment_id')
             && $updated->pending_resolution_comment_id !== null) {
-            Task::query()->whereKey($task->id)->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'A newer failure.'));
+            test_update_task(Task::query()->whereKey($task->id), test_assistance_attributes(AssistanceKind::Failure, null, 'A newer failure.'));
         }
     });
 
@@ -198,9 +197,9 @@ it('relays the exact running direction answer once after a workspace wait and se
     $task = $group->tasks()->firstOrFail();
     $reviewer = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
     $reviewer->update(['task_id' => $task->id]);
-    $hold = TaskAssistance::attributes(AssistanceKind::Direction, 'Which mirror?', 'Which mirror?');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Direction, 'Which mirror?', 'Which mirror?');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $question = TaskQuestion::query()->create([
         'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => $task->completion_attempt,
         'asked_by' => QuestionAsker::Implementer, 'question' => 'Which mirror?',
@@ -268,9 +267,9 @@ it('preserves another parent request or requesting sibling when a queued child a
     app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original child failure.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Failure, null, 'Original child failure.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
@@ -281,11 +280,11 @@ it('preserves another parent request or requesting sibling when a queued child a
     ]);
     expect($task->fresh()->pending_resolution_comment_id)->toBe($comment->id);
     if ($other === 'failure') {
-        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'A newer unrelated parent failure.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'A newer unrelated parent failure.'));
     } elseif ($other === 'direction') {
-        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
     } else {
-        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
+        test_create_task($group->tasks(), ['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
     }
     $before = $group->only(array_keys($hold));
     $leases->release($holder);
@@ -309,9 +308,9 @@ it('preserves parent direction arriving during queued resolution delivery', func
     app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
-    $hold = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original child failure.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Failure, null, 'Original child failure.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'blocked-turn');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
@@ -320,9 +319,9 @@ it('preserves parent direction arriving during queued resolution delivery', func
     $comment = app(StoreTaskCommentAction::class)->execute($task, [
         'type' => 'resolution', 'body' => 'Resolve the original child failure.', 'author' => 'operator',
     ]);
-    $replacement = TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']);
+    $replacement = test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']);
     $driver->beforeTurn = static function () use ($group, $replacement): void {
-        $group->fresh()->update($replacement);
+        test_update_task($group->fresh(), $replacement);
     };
     $leases->release($holder);
 
@@ -341,9 +340,9 @@ it('preserves parent and sibling assistance when a waiting direction relay start
     $group = tick_group();
     $task = $group->tasks()->firstOrFail();
     AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['task_id' => $task->id]);
-    $hold = TaskAssistance::attributes(AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
-    $task->update($hold);
-    $group->update($hold);
+    $hold = test_assistance_attributes(AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+    test_update_task($task, $hold);
+    test_update_task($group, $hold);
     TaskQuestion::query()->create([
         'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => $task->completion_attempt,
         'asked_by' => QuestionAsker::Implementer, 'question' => 'Which mirror?',
@@ -358,11 +357,11 @@ it('preserves parent and sibling assistance when a waiting direction relay start
         'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
     ]);
     if ($other === 'failure') {
-        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Publication failed.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Publication failed.'));
     } elseif ($other === 'direction') {
-        $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, 'Which environment?', $hold['assistance_reason']));
     } else {
-        $group->tasks()->create(['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
+        test_create_task($group->tasks(), ['title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo, ...$hold]);
     }
     $before = $group->only(array_keys($hold));
     $leases->release($holder);

@@ -217,7 +217,6 @@ describe('a thread that works outside the task phase', function (): void {
             {
 
                 return null;
-
             }
 
             public function spawnReviewer(Task $task): ?int
@@ -392,7 +391,7 @@ describe('topology paths at handoff', function (): void {
 
 describe('subtask deliverables at handoff', function (): void {
     it('asks the check for the diff and commands, then starts the reviewer when every deliverable passes', function (): void {
-        [$group, $task, $checks, , $receipts] = tick_deliverables(tick_all_deliverables(), tick_all_confirmations(), tick_evidence());
+        [$group, $task, $checks, $receipts] = tick_deliverables(tick_all_deliverables(), tick_all_confirmations(), tick_evidence());
 
         app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
@@ -467,7 +466,7 @@ describe('subtask deliverables at handoff', function (): void {
             'export-test' => ['exit_code' => 0, 'output' => ''],
             'web-tests' => ['exit_code' => 2, 'output' => "boom\n"],
         ]]));
-        [$group, $task, $checks, $notifier] = tick_deliverables(
+        [$group, $task, $checks] = tick_deliverables(
             tick_all_deliverables(),
             tick_all_confirmations(),
             null,
@@ -480,7 +479,7 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->assistance_requested)->toBeTrue()
-            ->and($notifier->reason)->toStartWith("Checks still failed after the reminder. Orbit could not verify these deliverables:\n- web-tests (command): `bun test` in apps/web exited with 2.")
+            ->and($group->fresh()?->assistance_reason)->toStartWith("Checks still failed after the reminder. Orbit could not verify these deliverables:\n- web-tests (command): `bun test` in apps/web exited with 2.")
             ->and($checks->starts)->toBe(2)
             ->and(app(AgentCommandDispatcher::class)->commands)->toHaveCount(1);
     });
@@ -537,7 +536,7 @@ describe('subtask deliverables at handoff', function (): void {
     it('asks for assistance when a command overlay path is invalid, without reminding the implementer', function (): void {
         $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
         $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $reason."\n", failedStep: 'invalid_deliverable');
-        [$group, $task, $checks, $notifier] = tick_deliverables(
+        [$group, $task, $checks] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
                 'type' => 'command',
@@ -558,7 +557,7 @@ describe('subtask deliverables at handoff', function (): void {
         expect($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($group->fresh()?->assistance_reason)->toBe($reason)
             ->and($task->fresh()?->assistance_reason)->toBe($reason)
-            ->and($notifier->reason)->toBe($reason)
+            ->and($group->fresh()?->assistance_reason)->toBe($reason)
             ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
             ->and($checks->starts)->toBe(1)
             ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
@@ -568,7 +567,7 @@ describe('subtask deliverables at handoff', function (): void {
     it('asks for assistance for an invalid deliverable even when the tree changed', function (): void {
         $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
         $failed = TaskCheckReading::finished(1, str_repeat('d', 40), str_repeat('c', 40), ['app'], $reason."\n", failedStep: 'invalid_deliverable');
-        [$group, $task, $checks, $notifier] = tick_deliverables(
+        [$group, $task, $checks] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
                 'type' => 'command',
@@ -589,7 +588,7 @@ describe('subtask deliverables at handoff', function (): void {
         expect($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($group->fresh()?->assistance_reason)->toBe($reason)
             ->and($task->fresh()?->assistance_reason)->toBe($reason)
-            ->and($notifier->reason)->toBe($reason)
+            ->and($group->fresh()?->assistance_reason)->toBe($reason)
             ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
             ->and($checks->starts)->toBe(1)
             ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
@@ -608,7 +607,6 @@ it('project baseline setup only', function (): void {
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -1132,14 +1130,14 @@ it('preserves another parent failure or sibling request when a baseline resoluti
     app(TaskScheduler::class)->tick();
     $task = $group->tasks()->sole();
     if ($other === 'failure') {
-        $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
+        test_update_task($group, test_assistance_attributes(AssistanceKind::Failure, null, 'Unrelated parent failure.'));
     } else {
-        $group->tasks()->create([
+        test_create_task($group->tasks(), [
             'title' => 'Still blocked', 'brief' => 'Keep this request.', 'position' => 2, 'status' => TaskStatus::Todo,
-            ...TaskAssistance::attributes(AssistanceKind::Failure, null, 'Another failure.'),
+            ...test_assistance_attributes(AssistanceKind::Failure, null, 'Another failure.'),
         ]);
     }
-    $before = $group->fresh()->only(array_keys(TaskAssistance::cleared()));
+    $before = $group->fresh()->only(array_keys(['assistance_requested' => false, 'assistance_kind' => null, 'assistance_question' => null, 'assistance_reason' => null]));
     $fetcher = mock(TaskBaseBranchFetcher::class);
     $fetcher->shouldReceive('fetchForTurn')->once();
     $fetcher->shouldReceive('resetToDefault')->once()->andReturn(str_repeat('c', 40));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -147,7 +148,7 @@ function dns_target_manager(ProcessRunner $processes, SshExecutor $ssh): Dnsmasq
 {
     return new DnsmasqPrivateDnsManager(
         processes: $processes,
-        renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
+        renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
         activateListener: true,
         ssh: $ssh,
         keys: new DnsTargetSshKeyProvider,

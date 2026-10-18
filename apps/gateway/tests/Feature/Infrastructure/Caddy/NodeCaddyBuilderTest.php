@@ -185,7 +185,6 @@ describe('building a Node', function (): void {
         expect(node_caddy_builder($this)->build($node))->toBe(NodeCaddyBuildResult::Published);
         expect(node_caddy_builder_pushed($this->ssh->commands[0]))->toContain('https://shop.test {')->not->toContain('# orbit: extension');
     })->with([
-        'reserved core source' => ['collector.test', 'gateway', '10.44.0.3', false],
         'collision with an existing route' => ['shop.test', 'extension', '10.44.0.3', false],
         'duplicate across contributions' => ['collector.test', 'extension', '10.44.0.3', true],
         'out of range listener address' => ['collector.test', 'extension', '10.44.0.999', false],

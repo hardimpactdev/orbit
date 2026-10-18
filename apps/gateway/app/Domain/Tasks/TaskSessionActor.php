@@ -11,7 +11,6 @@ final readonly class TaskSessionActor
 {
     public function __construct(
         private AgentDriverRegistry $drivers,
-        private CoderSettleNotifier $coder,
         private TaskTurnFetchNotice $fetchNotice = new TaskTurnFetchNotice,
     ) {}
 
@@ -22,8 +21,8 @@ final readonly class TaskSessionActor
 
     private function executeAdmitted(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
-        if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-            $this->coder->escalate($group, $observation, $decision);
+        if ($decision->action === TaskSessionNextAction::RequestAssistance) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, $decision->reason);
 
             return;
         }

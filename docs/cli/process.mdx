@@ -78,7 +78,7 @@ A preset owns the runtime, command, working directory, and environment, and refu
 `--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
 
 ```bash
-orbit process:create assets --instance=commander.test --preset=vp-dev --start
+orbit process:create assets --instance=orbit.test --preset=vp-dev --start
 ```
 
 Install a Vite development server on an Instance and start it:
@@ -168,6 +168,8 @@ orbit process:update 41 \
   --port=10.44.0.20:6379:6379 \
   --restart=unless-stopped
 ```
+
+This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and `process:update` refuses its Process.
 
 In an interactive terminal, an omitted target uses a finite `Process` selector (`process.update.target`) populated by the read-only Process list, with choices labeled by ID, name, and owner and no default. Selection returns the numeric ID. With `--project`, use a `Process definition` selector populated by that Project's definitions and return the name. An empty list reports `No Processes found.` (or `No Process definitions found.`) and returns `process.id_invalid` (or `process.name_required`) without mutation. A slow lookup shows indeterminate waiting feedback. A missing required Docker image uses a text prompt `Docker image` (`process.update.image`, source `--image`, no default). A missing command collects literal argv items through text prompts (`process.update.command`, source repeated `--command`, no default), never through shell evaluation. Validate each answer and prompt again when it is invalid. Ctrl-C or EOF returns `input.cancelled` before mutation. JSON and noninteractive calls never prompt: an omitted or invalid installed target returns `process.id_invalid` (an omitted definition name returns `process.name_required`), and invalid runtime fields use the create validation codes, including `process.command_invalid`, `process.environment_invalid`, and `process.option_invalid`.
 

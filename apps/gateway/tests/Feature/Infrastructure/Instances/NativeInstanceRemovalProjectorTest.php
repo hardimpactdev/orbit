@@ -14,6 +14,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -633,7 +634,7 @@ function orb181_removal_projector(
                 $accounts,
                 new RemotePhpPackageManager,
             ),
-            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites)),
+            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
             new RemoteAppDevRouteFirewallManager($executor),
             $productionPhp,
             $publicEdge,

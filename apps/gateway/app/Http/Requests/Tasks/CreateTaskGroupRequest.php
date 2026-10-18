@@ -36,8 +36,6 @@ final class CreateTaskGroupRequest extends FormRequest
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
             'preview' => ['sometimes', 'boolean:strict'],
-            'notify_coder' => ['sometimes', 'boolean'],
-            'notify_on_settle' => ['sometimes', 'boolean'],
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -68,8 +66,6 @@ final class CreateTaskGroupRequest extends FormRequest
                 'brief',
                 'status',
                 'preview',
-                'notify_coder',
-                'notify_on_settle',
                 'tasks',
             ]);
         } catch (UnexpectedValueException $exception) {
@@ -100,7 +96,6 @@ final class CreateTaskGroupRequest extends FormRequest
             title: $this->string('title')->toString(),
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
-            notifyCoder: $this->boolean('notify_coder') || $this->boolean('notify_on_settle'),
             tasks: $tasks,
             preview: $this->boolean('preview'),
         );

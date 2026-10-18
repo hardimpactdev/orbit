@@ -12,7 +12,6 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
@@ -73,7 +72,7 @@ function tvm_park_settings(int $parkAfterMinutes = 30): void
  */
 function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireguardIp = '10.44.0.129'): array
 {
-    $task = Task::topLevel()->create([
+    $task = test_create_task(Task::topLevel(), [
         'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
         'pr_url' => 'https://github.com/acme/dlf/pull/7',
         'settled_at' => now()->subMinutes($minutesAgo + 10), ...$group,
@@ -154,7 +153,7 @@ describe('park', function (): void {
         Queue::fake();
         Sleep::fake();
         $this->provider->observation = new VmObservation(true, null);
-        [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_reason' => $prefix.'disk full']);
+        [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_kind' => AssistanceKind::RemovalFailure, 'assistance_reason' => $prefix.'disk full']);
         tvm_park_workspace($group, $vm);
 
         foreach ([1, 2, 3] as $tick) {
@@ -165,7 +164,18 @@ describe('park', function (): void {
         }
         Queue::assertNotPushed(ParkTaskVm::class);
         Queue::assertNotPushed(ResumeTaskVm::class);
-    })->with([RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix, RemoveTaskWorkspaceAction::RemovalFailedPrefix]);
+    })->with([RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix, RemoveTaskWorkspaceAction::RemovalFailedPrefix, RemoveTaskWorkspaceAction::OwnershipRefusedPrefix, 'No prefix: ']);
+
+    it('parks after a removal request clears even when its historical reason remains', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
+        TaskAssistance::apply($group, reason: $group->assistance_reason);
+
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+        Queue::assertPushed(ParkTaskVm::class);
+    });
 
     it('keeps a VM that was started again running for park_after_minutes before it parks again', function (): void {
         Queue::fake();
@@ -222,7 +232,6 @@ describe('park', function (): void {
     it('keeps a VM parked with the error when it cannot be stopped', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
         Log::spy();
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
@@ -527,7 +536,6 @@ describe('park failure races', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
         TaskAssistance::apply($group, $kind, $kind === AssistanceKind::Direction ? 'Which branch?' : null, 'Original request.');
-        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
         $job = new ParkTaskVm($vm->id);
 
         $job->failed(new RuntimeException('stop failed'));

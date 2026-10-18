@@ -70,7 +70,7 @@ function tasks_gateway(): Node
     return $gateway;
 }
 
-function tasks_app(string $slug = 'commander-demo'): Project
+function tasks_app(string $slug = 'tasks-demo'): Project
 {
     return Project::query()->create([
         'name' => $slug,
@@ -248,21 +248,6 @@ it('reports when the last tasks tick started its work on tasks status', function
         ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
 });
 
-it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
-    tasks_gateway();
-    enable_tasks();
-    $project = tasks_app('notify-alias');
-
-    $this->postJson('/api/v1/task-groups', [
-        'project_id' => $project->id,
-        'title' => 'Notify alias',
-        'brief' => 'Commander callers send notify_on_settle.',
-        'notify_on_settle' => true,
-    ])
-        ->assertCreated()
-        ->assertJsonPath('data.notify_coder', true);
-});
-
 it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
     tasks_gateway();
     $project = tasks_app();
@@ -355,9 +340,8 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
 
     $created = $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id,
-        'title' => 'Absorb Commander',
+        'title' => 'Build Tasks',
         'brief' => 'Persist groups. Accept when create and list work.',
-        'notify_coder' => true,
         'tasks' => [
             ['title' => 'ADR', 'brief' => 'Write the decision. Accept when reviewers can follow it.'],
             ['title' => 'Models', 'brief' => 'Store Task and Task. Accept when migrations run.'],
@@ -366,10 +350,9 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
 
     $created
         ->assertCreated()
-        ->assertJsonPath('data.title', 'Absorb Commander')
-        ->assertJsonPath('data.project', 'commander-demo')
+        ->assertJsonPath('data.title', 'Build Tasks')
+        ->assertJsonPath('data.project', 'tasks-demo')
         ->assertJsonPath('data.status', 'backlog')
-        ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.reviewer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.taskable_type', null)
@@ -706,13 +689,13 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $blocked = 'The implementer is blocked.';
     $question = 'Which database should this use?';
 
-    Task::topLevel()->whereKey($flagged['id'])->update([
+    test_update_task(Task::topLevel()->whereKey($flagged['id']), [
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
         'assistance_reason' => $blocked,
     ]);
-    Task::query()->whereKey($flagged['tasks'][0]['id'])->update([
+    test_update_task(Task::query()->whereKey($flagged['tasks'][0]['id']), [
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
@@ -793,25 +776,25 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     $subtaskOnly = $create('Subtask only');
     $question = 'Which database should this use?';
 
-    Task::topLevel()->whereKey($first)->update([
+    test_update_task(Task::topLevel()->whereKey($first), [
         'status' => 'running',
         'assistance_requested' => true,
         'assistance_kind' => 'direction',
         'assistance_question' => $question,
         'assistance_reason' => 'The implementer is blocked.',
     ]);
-    Task::topLevel()->whereKey($clear)->update([
+    test_update_task(Task::topLevel()->whereKey($clear), [
         'assistance_requested' => false,
         'assistance_reason' => 'An old reason.',
     ]);
-    Task::topLevel()->whereKey($second)->update([
+    test_update_task(Task::topLevel()->whereKey($second), [
         'status' => 'settling',
         'assistance_requested' => true,
         'assistance_kind' => 'failure',
         'assistance_question' => null,
         'assistance_reason' => null,
     ]);
-    Task::query()->where('parent_id', $subtaskOnly)->update([
+    test_update_task(Task::query()->where('parent_id', $subtaskOnly), [
         'assistance_requested' => true,
         'assistance_reason' => $question,
     ]);
@@ -1125,8 +1108,8 @@ function deliverable_correction_task(?string $failedStep = 'invalid_deliverable'
     enable_tasks();
     deliverable_path_repository();
     $project = tasks_app('correction');
-    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
-    $task = Task::query()->create([
+    $group = test_create_task(Task::query(), ['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
+    $task = test_create_task(Task::query(), [
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Started', 'brief' => 'Keep this brief.',
         'status' => TaskStatus::Running, 'subtask_start_commit' => str_repeat('b', 40),
         'deliverables' => [deliverable_path_file('tests/MissingTest.php')],
@@ -1209,7 +1192,7 @@ it('keeps deliverable correction locked outside the failed handoff assistance wi
     $task = deliverable_correction_task();
     $before = $task->deliverables;
     if ($case === 'not-assisted') {
-        $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        test_update_task($task, ['assistance_requested' => false, 'assistance_reason' => null]);
     } elseif ($case === 'new-attempt') {
         $task->update(['completion_attempt' => 3]);
     } elseif ($case === 'reviewing') {
@@ -1351,3 +1334,14 @@ it('accepts at plan time exactly the command paths that the handoff check accept
     expect(array_combine($paths, $plan))->toBe(array_combine($paths, $handoff));
     TestOrbitHome::clearScratch();
 });
+
+it('refuses retired notification inputs when creating a task', function (string $field): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Build Tasks', 'brief' => 'Keep the task contract small.', $field => true,
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(Task::topLevel()->count())->toBe(0);
+})->with(['notify_coder', 'notify_on_settle']);

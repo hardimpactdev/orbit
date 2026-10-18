@@ -8,6 +8,7 @@ use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\ExtensionDiscoveryResult;
+use App\Services\Extensions\GatewayExtensionState;
 use App\Services\GatewayConnectorFactory;
 use App\Services\SelfUpdate\CliReleaseNotice;
 use App\Support\Console\CommandPrompts;
@@ -23,6 +24,8 @@ use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
 use App\Support\Console\SpinnerDisplay;
 use App\Support\Console\TerminalText;
+use App\Support\ExtensionCommandVisibility;
+use App\Support\GatedExtensionCommand;
 use App\Support\GatewayFailureRenderer;
 use Closure;
 use InvalidArgumentException;
@@ -46,6 +49,16 @@ use Throwable;
 
 abstract class GatewayCommand extends Command
 {
+    #[\Override]
+    public function isHidden(): bool
+    {
+        $extension = $this instanceof GatedExtensionCommand ? $this->extensionSlug() : null;
+
+        return parent::isHidden() || ($extension !== null
+            && ExtensionCommandVisibility::listing()
+            && app(GatewayExtensionState::class)->isEnabled($extension) !== true);
+    }
+
     #[\Override]
     public function run(InputInterface $input, OutputInterface $output): int
     {

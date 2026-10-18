@@ -8,8 +8,10 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -18,6 +20,7 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWait;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -142,7 +145,7 @@ it('leaves every waiting group in todo, tries each once, and clears a provisioni
     claim_hol_enable();
     $project = claim_hol_app();
     $groups = [claim_hol_group($project, 'First'), claim_hol_group($project, 'Second'), claim_hol_group($project, 'Third')];
-    $groups[1]->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($groups[1], ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $provisioning = new class implements InstanceProvisioning
     {
         public int $calls = 0;
@@ -170,7 +173,7 @@ it('passes a group that waits for its task VM without a failure reason', functio
     claim_hol_enable();
     $project = claim_hol_app();
     $waiting = claim_hol_group($project, 'Waiting');
-    $waiting->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($waiting, ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $next = claim_hol_group($project, 'Next');
     $instance = claim_hol_instance($project, 'claim-hol-next', $next);
     app()->instance(InstanceProvisioning::class, new class($waiting->id, $instance) implements InstanceProvisioning
@@ -267,7 +270,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
 it('clears the provisioning failure reason when a group moves to backlog', function (): void {
     $gateway = claim_hol_enable();
     $group = claim_hol_group(claim_hol_app(), 'Moved');
-    $group->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
+    test_update_task($group, ['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
     $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'backlog'])->assertOk();
@@ -477,7 +480,21 @@ describe('the stale reservation sweep', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect($stranded->fresh()?->status)->toBe(TaskGroupStatus::Running)
-            ->and($stranded->fresh()?->assistance_reason)->toBeNull();
+            ->and($stranded->fresh()?->assistance_reason)->toBeNull()
+            ->and(Activity::query()->where('subject_id', $stranded->id)->whereIn('description', ['assistance requested', 'assistance changed', 'assistance cleared'])->count())->toBe(0);
+    });
+
+    it('preserves operator direction while releasing an expired reservation', function (): void {
+        claim_hol_enable();
+        $group = claim_hol_group(claim_hol_app(), 'Waiting for direction');
+        $group->forceFill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subSeconds(3601)])->save();
+        TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose the mirror.');
+
+        expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->assistance_question)->toBe('Which mirror?')
+            ->and(app(TaskScheduler::class)->claimNext())->toBeNull();
     });
 
     it('leaves a group reserved within the bound', function (): void {
@@ -676,7 +693,7 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
             ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
-            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(0)
+            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(5)
             ->and(Task::topLevel()->where('assistance_reason', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')->count())->toBe(5);
         Exceptions::assertReportedCount(5);
 
@@ -747,12 +764,13 @@ describe('the abandoned workspace sweep', function (): void {
         $group = claim_hol_group($project, 'Attached');
         $workspace = claim_hol_workspace($project, $group, 'source_resolved');
         $group->taskable()->associate($workspace);
-        $group->forceFill([
+        test_update_task($group, [
             'status' => TaskGroupStatus::Cancelled,
             'reserved_at' => now()->subSeconds(30),
             'assistance_requested' => true,
+            'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.',
-        ])->save();
+        ]);
         $removed = claim_hol_recording_remover();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
@@ -768,12 +786,13 @@ describe('the abandoned workspace sweep', function (): void {
         $group = claim_hol_group($project, 'Merged');
         $workspace = claim_hol_workspace($project, $group, 'source_resolved');
         $group->taskable()->associate($workspace);
-        $group->forceFill([
+        test_update_task($group, [
             'status' => TaskGroupStatus::Settling,
             'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
             'assistance_requested' => true,
+            'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
-        ])->save();
+        ]);
         $removed = claim_hol_recording_remover();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)

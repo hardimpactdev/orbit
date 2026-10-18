@@ -12,7 +12,7 @@ enum TaskSessionNextAction: string
     case RelayReviewToImplementer = 'relay_review_to_implementer';
     case MarkSubtaskDone = 'mark_subtask_done';
     case SettleGroup = 'settle_group';
-    case EscalateCoder = 'escalate_coder';
+    case RequestAssistance = 'request_assistance';
     case Noop = 'noop';
 
 }

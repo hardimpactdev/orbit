@@ -20,12 +20,6 @@ final class ShowTasksStatusCommand extends TaskCommand
     protected $signature = 'tasks:status
         {--json : Return machine-readable JSON}';
 
-    #[\Override]
-    public function isHidden(): bool
-    {
-        return false;
-    }
-
     public function extensionSlug(): ?string
     {
         return null;

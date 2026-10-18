@@ -27,9 +27,20 @@ class StartupTests(unittest.TestCase):
             worker.assert_not_called()
             server.assert_not_called()
 
+    def test_requires_gateway_cache_host_and_port_before_starting(self):
+        for missing in ('PROXYCLI_CACHE_HOST', 'PROXYCLI_CACHE_PORT'):
+            environment = {'PROXYCLI_PORT': '9345', 'PROXYCLI_CACHE_HOST': '10.44.0.3', 'PROXYCLI_CACHE_PORT': '6380'}
+            del environment[missing]
+            with self.subTest(missing=missing), patch.dict(m.os.environ, environment, clear=True), patch.object(m.threading, 'Thread') as worker, patch.object(m, 'ThreadingHTTPServer') as server:
+                with self.assertRaisesRegex(KeyError, missing):
+                    m.main()
+                worker.assert_not_called()
+                server.assert_not_called()
+
     def test_listens_on_gateway_environment_port(self):
-        with patch.dict(m.os.environ, {'PROXYCLI_PORT': '9345'}, clear=True), patch.object(m.threading, 'Thread'), patch.object(m, 'ThreadingHTTPServer') as server:
+        with patch.dict(m.os.environ, {'PROXYCLI_PORT': '9345', 'PROXYCLI_CACHE_HOST': '10.44.0.3', 'PROXYCLI_CACHE_PORT': '6380'}, clear=True), patch.object(m.threading, 'Thread'), patch.object(m, 'Valkey') as cache, patch.object(m, 'ThreadingHTTPServer') as server:
             m.main()
+            cache.assert_called_once_with('10.44.0.3', 6380, '', '')
             server.assert_called_once_with(('127.0.0.1', 9345), m.Handler)
             server.return_value.serve_forever.assert_called_once_with()
 

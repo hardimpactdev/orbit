@@ -7,7 +7,6 @@ namespace App\Actions\Tasks;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
@@ -26,7 +25,7 @@ final readonly class RequestEndedPullRequestAssistanceAction
 {
     public const string ReasonPrefix = 'Watched pull request ended: ';
 
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $coder) {}
+    public function __construct(private AgentDriverRegistry $drivers) {}
 
     public static function isReason(?string $reason): bool
     {
@@ -52,14 +51,13 @@ final readonly class RequestEndedPullRequestAssistanceAction
             $list = $open->map(static fn (Task $task): string => '#'.$task->id.' '.$task->title)->implode(', ');
             $reason = self::ReasonPrefix.$group->watched_pr_url.' is '.$group->watched_pr_state.'. Open subtasks: '.$list.'.';
             DB::transaction(function () use ($group, $open, $reason): void {
-                $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, $reason));
+                TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true, replaceDirection: true);
                 foreach ($open as $task) {
                     if (in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
-                        $task->update(TaskAssistance::attributes(AssistanceKind::Failure, null, $reason));
+                        TaskAssistance::apply($task, AssistanceKind::Failure, null, $reason, replaceFailure: true, replaceDirection: true);
                     }
                 }
             });
-            $this->coder->assistance($group, $reason);
         }
 
         foreach ($open as $task) {

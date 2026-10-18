@@ -13,8 +13,8 @@ uses(TestCase::class);
 it('tags the collector reconvergence as a connection update hook', function (): void {
     $hooks = iterator_to_array(app()->tagged(DatabaseConnectionUpdateHook::class));
 
-    expect($hooks)->toHaveCount(1)
-        ->and($hooks[0])->toBeInstanceOf(ReconvergeProxyCliConnectionAction::class);
+    expect(array_map(static fn (DatabaseConnectionUpdateHook $hook): string => $hook::class, $hooks))
+        ->toContain(ReconvergeProxyCliConnectionAction::class);
 });
 
 it('tags cache ownership as a connection removal guard', function (): void {

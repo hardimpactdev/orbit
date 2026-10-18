@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -286,7 +287,7 @@ it('hydrates only Instance Route sites and never reads leftover Instance or Work
     $unrelatedRoute = app_dev_supported_route($unrelatedApp, 'unrelated.app-dev.orbit');
     $sites = new DevelopmentSiteRepository;
     $globalSites = $sites->all();
-    $globalDns = new DevelopmentDnsConfigRenderer($sites)->render();
+    $globalDns = new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
 
     $nodeSites = $sites->forNode($node);
 
@@ -1107,7 +1108,7 @@ it('requests a Node Caddy build for Route sites and publishes DNS through its pr
     };
     $caddy = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
     $processes = new AppDevFakeProcessRunner;
-    $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository));
+    $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
     $caddy->build($node);
     $dns->converge();
@@ -1141,7 +1142,7 @@ it('retains exact DNS records for active and pending Routes on different Routers
     $firstRoute = orb173_dns_projection_route('first', '10.44.0.31', '10.44.0.32', RouteStatus::Active);
     $secondRoute = orb173_dns_projection_route('second', '10.44.0.41', '10.44.0.42', RouteStatus::Pending);
     $processes = new AppDevFakeProcessRunner;
-    $renderer = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository);
+    $renderer = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class));
     $manager = new DnsmasqPrivateDnsManager($processes, $renderer);
 
     $secondRoute->publishSites();
@@ -1179,7 +1180,7 @@ it('projects only the explicit provisioning node before its active transition', 
         'wireguard_ip' => '10.44.0.31',
     ]);
     $processes = new AppDevFakeProcessRunner;
-    $manager = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository));
+    $manager = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
     $manager->converge($pending);
 
@@ -1212,7 +1213,7 @@ it('projects node wildcards only while the app-dev role is provisioning or activ
     }
     $processes = new AppDevFakeProcessRunner;
 
-    new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository))->converge();
+    new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)))->converge();
 
     $input = $processes->invocations[0]->input ?? '';
     preg_match("/printf '%s' '([^']+)'/", $input, $matches);
@@ -1257,7 +1258,7 @@ it('holds the shared projection lock while capturing and publishing DNS intent',
     };
 
     try {
-        new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository))->converge();
+        new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)))->converge();
 
         expect($processes->observedLock)->toBeTrue();
     } finally {
@@ -1407,7 +1408,7 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
     };
     $dns = new DnsmasqPrivateDnsManager(
         $processes,
-        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
+        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
         $owner,
     );
 
@@ -1477,7 +1478,7 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
     app_dev_runtime_models();
     $processes = new AppDevFakeProcessRunner;
     $processes->fail = true;
-    $manager = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository));
+    $manager = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
     expect($manager->converge(...))
         ->toThrow(function (RuntimeConvergenceException $exception): void {

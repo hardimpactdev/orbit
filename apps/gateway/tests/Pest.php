@@ -14,6 +14,8 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -34,6 +36,9 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
+use App\Models\Task;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -78,7 +83,6 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
-require_once __DIR__.'/Helpers/PlugInAssertions.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
@@ -154,6 +158,7 @@ pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tia
 // The Gateway reads these as programs and catalogues, not as PHP, so coverage never records them.
 // A change reruns the tests that cover that file, and no others.
 pest()->tia()->watch([
+    'tests/Fixtures/valkey/*.json' => 'tests/Unit/Domain/DatabaseServers/ValkeyAclUserTest.php',
     'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
     'resources/tasks/metadata' => 'tests/Feature/Infrastructure/Tasks',
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
@@ -175,6 +180,7 @@ pest()->tia()->watch([
     'resources/remote/lib/program.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'resources/remote/lib/source-removal.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
     'resources/remote/instances/*.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+    'resources/remote/database-servers/*.py' => 'tests/Feature/Api/ValkeyDatabaseServersTest.php',
     'tests/Programs/*.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'ruff.toml' => 'tests/Feature/Infrastructure/RemotePrograms',
 ]);
@@ -420,4 +426,46 @@ function router_lan_node(
         'lan_ip' => $lanIp,
         'wireguard_public_key' => $publicKey,
     ]);
+}
+
+/** @return array<string, mixed> */
+function test_assistance_attributes(AssistanceKind $kind, ?string $question, string $reason): array
+{
+    return ['assistance_requested' => true, 'assistance_kind' => $kind,
+        'assistance_question' => $kind === AssistanceKind::Direction ? $question : null, 'assistance_reason' => $reason];
+}
+
+/** Seed current task assistance through the same writer as production. */
+function test_update_task(Task|Builder|Relation $task, array $attributes): bool
+{
+    if (! $task instanceof Task) {
+        foreach ($task->get() as $record) {
+            test_update_task($record, $attributes);
+        }
+
+        return true;
+    }
+    $assistance = array_intersect_key($attributes, array_flip(TaskAssistance::Fields));
+    $task->update(array_diff_key($attributes, $assistance));
+    if ($assistance !== []) {
+        $requested = $assistance['assistance_requested'] ?? $task->assistance_requested;
+        $kind = $requested ? ($assistance['assistance_kind'] ?? $task->assistance_kind ?? AssistanceKind::Failure) : null;
+        $kind = is_string($kind) ? AssistanceKind::from($kind) : $kind;
+        TaskAssistance::apply($task, $kind,
+            $assistance['assistance_question'] ?? $task->assistance_question,
+            $assistance['assistance_reason'] ?? $task->assistance_reason,
+            replaceFailure: true, replaceDirection: true);
+    }
+
+    return true;
+}
+
+/** Create first, then request assistance against the stored task. */
+function test_create_task(Builder|Relation $query, array $attributes): Task
+{
+    $assistance = array_intersect_key($attributes, array_flip(TaskAssistance::Fields));
+    $task = $query->create(array_diff_key($attributes, $assistance));
+    test_update_task($task, $assistance);
+
+    return $task;
 }

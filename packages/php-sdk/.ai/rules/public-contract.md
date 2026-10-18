@@ -119,7 +119,7 @@ operations. Keep the public API typed and small.
   thread IDs, the optional Project ID and status list filters, the question list filters
   (Project ID, cause, status, and since), the agent thread cursor
   `after_sequence`, the group title, brief, status,
-  Coder notification flag, and ordered subtask titles and briefs on create,
+  and ordered subtask titles and briefs on create,
   partial title, brief, status, and position updates, and the comment type,
   body, author, and optional agent thread ID. Toggle, status, cancel, complete,
   destroy, and question list requests are bodyless. Task and subtask responses
@@ -134,7 +134,7 @@ operations. Keep the public API typed and small.
   Deploy and rollback return the queued record. The Gateway owns release
   execution, locking, the unit that runs it, and every release policy.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  schedule, tool, process, firewall, database_connection, and route.
+  schedule, tool, process, firewall, database_connection, database_server, and route.
   Keep Doctor verify-only and policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy

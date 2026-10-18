@@ -7,6 +7,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -96,7 +97,7 @@ it('restores the previous working service after a restart failure and republishe
 
         $harness->clearRestartFailure();
         $harness->manager()->converge();
-        $expected = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
+        $expected = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
 
         expect(file_get_contents($harness->recordsPath()))
             ->toBe($expected)

@@ -87,14 +87,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     {
         $subnet = $this->subnet($data->wireguardSubnet);
 
-        if (! $subnet->containsUsableAddress($data->wireguardIp)) {
-            throw new NodeProvisioningException(
-                step: 'wireguard-configuration',
-                errorCode: 'vpn.configuration_invalid',
-                message: "Gateway WireGuard address [{$data->wireguardIp}] is not usable in [{$subnet->value()}].",
-            );
-        }
-
         $prefixLength = $subnet->prefixLength();
         $privateKey = $this->key('private');
         $publicKey = $this->key('public');

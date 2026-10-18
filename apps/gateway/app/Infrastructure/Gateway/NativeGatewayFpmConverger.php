@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use Illuminate\Container\Attributes\Tag;
 
 /**
  * Converges the Gateway PHP-FPM pool and the contributed start hooks ({@see GatewayServiceStartHook}). The container
@@ -34,11 +35,11 @@ final readonly class NativeGatewayFpmConverger
 
     private const string START_HOOKS_PROGRAM = 'gateway.install-start-hooks';
 
-    /** @param list<GatewayServiceStartHook> $startHooks */
+    /** @param iterable<GatewayServiceStartHook> $startHooks */
     public function __construct(
         private ProcessRunner $processes,
         private RemoteProgramCatalog $programs,
-        private array $startHooks,
+        #[Tag(GatewayServiceStartHook::class)] private iterable $startHooks,
     ) {}
 
     /**

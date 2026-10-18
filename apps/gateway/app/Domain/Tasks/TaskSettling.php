@@ -34,7 +34,6 @@ final readonly class TaskSettling
         private TaskPullRequestWatcher $pullRequestWatcher,
         private TaskPullRequestUpdater $pullRequestUpdater,
         private CompleteTaskGroupAction $completeGroup,
-        private CoderSettleNotifier $coder,
         private BriefCoverageLabeler $coverageLabeler,
         private TaskPullRequestPublisher $publisher,
         private TaskBroadcasts $broadcasts,
@@ -233,7 +232,7 @@ final readonly class TaskSettling
 
         try {
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                $group->update(TaskAssistance::cleared());
+                TaskAssistance::apply($group);
             }
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
@@ -273,8 +272,8 @@ final readonly class TaskSettling
         }
 
         return in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
-            && is_string($group->assistance_reason)
-            && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
+            && is_string($group->pr_url) && $group->pr_url !== ''
+            && Task::topLevel()->whereKey($group->id)->removalFailure()->exists();
     }
 
     private function releaseRemovedWorkspace(Task $group, int $instanceId): void
@@ -363,12 +362,11 @@ final readonly class TaskSettling
     private function abandonedWorkspaces(): Collection
     {
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-        $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
         return Instance::query()
             ->select('instances.*')
             ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
-            ->where(function ($ended) use ($cutoff, $mergePrefix): void {
+            ->where(function ($ended) use ($cutoff): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
                         ->where(function ($reservation) use ($cutoff): void {
@@ -376,9 +374,10 @@ final readonly class TaskSettling
                                 ->orWhereNull('tasks.reserved_at')
                                 ->orWhere('tasks.reserved_at', '<=', $cutoff);
                         });
-                })->orWhere(function ($settling) use ($mergePrefix): void {
+                })->orWhere(function ($settling): void {
                     $settling->whereIn('tasks.status', TaskGroupStatus::awaitingCompletion())
-                        ->where('tasks.assistance_reason', 'like', $mergePrefix);
+                        ->whereNotNull('tasks.pr_url')->where('tasks.pr_url', '!=', '')
+                        ->whereIn('tasks.id', Task::topLevel()->removalFailure()->select('tasks.id'));
                 });
             })
             ->orderBy('instances.id')
@@ -545,7 +544,7 @@ final readonly class TaskSettling
             return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
-        // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
+        // Returning to settling refreshes the task metrics.
         $returning = $group->settled_at !== null;
         if ($returning && $checkReturningPullRequest) {
             $scheduler->checkReturningPullRequest($group);
@@ -563,10 +562,6 @@ final readonly class TaskSettling
         $group->save();
 
         $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-
-        if ($settled->notify_coder && ! $returning) {
-            $this->coder->notify($settled);
-        }
 
         return $settled->fresh(['tasks', 'project', 'taskable']) ?? $settled;
     }
@@ -727,9 +722,6 @@ final readonly class TaskSettling
     {
         if ($this->reviewFeedback->change($group, [$source => $reason])) {
             $this->broadcasts->groupChanged($group->id);
-            if ($group->assistance_requested && is_string($group->assistance_reason)) {
-                $this->coder->assistance($group, $group->assistance_reason);
-            }
         }
     }
 
@@ -916,7 +908,9 @@ final readonly class TaskSettling
     /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
     public function progressBlockedByAssistance(Task $group): bool
     {
-        return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
+        return $group->assistance_requested
+            && ! self::isReviewFeedbackReason($group->assistance_reason)
+            && $group->assistance_kind !== AssistanceKind::Observation;
     }
 
     /**
@@ -1262,9 +1256,7 @@ final readonly class TaskSettling
     private function requestMissingPullRequest(Task $group): void
     {
         $reason = TaskScheduler::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-            $this->coder->assistance($group, $reason);
-        }
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool
@@ -1289,7 +1281,7 @@ final readonly class TaskSettling
             && ! TaskFinalReview::isResumableReason($group->assistance_reason)) {
             return;
         }
-        $group->fill(TaskAssistance::cleared());
+        TaskAssistance::apply($group);
     }
 
     /**
@@ -1303,7 +1295,7 @@ final readonly class TaskSettling
 
         if ($health->problems === []) {
             if ($ownRequest) {
-                $group->update(TaskAssistance::cleared());
+                TaskAssistance::apply($group);
             }
 
             return;
@@ -1314,9 +1306,7 @@ final readonly class TaskSettling
             return;
         }
 
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest)) {
-            $this->coder->assistance($group, $reason);
-        }
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest);
     }
 
     private function markSubtaskCancelled(Task $task): ?string
@@ -1326,11 +1316,11 @@ final readonly class TaskSettling
             ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
 
         $assistanceReason = $task->assistance_reason;
+        TaskAssistance::apply($task);
         $task->update([
             'status' => TaskStatus::Cancelled,
             'settled_at' => now(),
             'completion_summary' => 'Cancelled by operator.',
-            ...TaskAssistance::cleared(),
         ]);
 
         return $assistanceReason;
@@ -1348,7 +1338,7 @@ final readonly class TaskSettling
             ->where('assistance_requested', true)
             ->exists();
         if (! $otherAssistance) {
-            $group->fill(TaskAssistance::cleared());
+            TaskAssistance::apply($group);
         }
     }
 

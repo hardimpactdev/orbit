@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Tasks;
 
 use App\Commands\GatewayCommand;
-use App\Services\Extensions\GatewayExtensionState;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
-use App\Support\ExtensionCommandVisibility;
 use App\Support\GatedExtensionCommand;
 use DateTimeImmutable;
 use JsonException;
@@ -39,12 +37,6 @@ use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
  */
 abstract class TaskCommand extends GatewayCommand implements GatedExtensionCommand
 {
-    public function isHidden(): bool
-    {
-        return ExtensionCommandVisibility::listing()
-            && app(GatewayExtensionState::class)->isEnabled('tasks') !== true;
-    }
-
     public function extensionSlug(): ?string
     {
         return 'tasks';
@@ -325,7 +317,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 'Merge' => $group->reviewAndMerge->mergeStatus === null ? null : $group->reviewAndMerge->mergeStatus.($group->reviewAndMerge->mergeReason === null ? '' : ': '.$group->reviewAndMerge->mergeReason),
                 ...($group->reviewAndMerge->mergedSha === null ? [] : ['Merged commit' => $group->reviewAndMerge->mergedSha]),
             ]),
-            'Notify Coder' => $group->notifyCoder,
             'Implementer model' => $group->implementerModel,
             'Reviewer model' => $group->reviewerModel,
             'Tokens' => self::tokens($group->tokens),

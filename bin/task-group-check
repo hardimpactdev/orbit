@@ -14,7 +14,7 @@ import re
 import sys
 from pathlib import Path
 
-ALLOWED_TOP = ('project_id', 'title', 'brief', 'status', 'notify_coder', 'notify_on_settle', 'tasks')
+ALLOWED_TOP = ('project_id', 'title', 'brief', 'status', 'tasks')
 DELIVERABLE_KEYS = ('id', 'type', 'description', 'path', 'change', 'command', 'directory', 'fails_on_base', 'paths')
 STATUSES = ('backlog', 'todo')
 CHANGES = ('created', 'modified', 'any')
@@ -217,9 +217,6 @@ def validate_group(payload):
     require_string(payload.get('brief'), 'brief', 8000)
     if 'status' in payload and payload['status'] not in STATUSES:
         raise ValueError('The status field must be backlog or todo.')
-    for name in ('notify_coder', 'notify_on_settle'):
-        if name in payload:
-            require_bool(payload[name], name)
     tasks = payload.get('tasks')
     if tasks is None:
         raise ValueError('The tasks field must be a nonempty ordered list.')
