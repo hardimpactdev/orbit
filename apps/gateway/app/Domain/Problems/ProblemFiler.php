@@ -184,19 +184,18 @@ final readonly class ProblemFiler
     private function readyRows(): array
     {
         $ready = [];
-        $open = $this->openStatuses();
 
         $candidates = ProblemFingerprint::query()
             ->where(function (Builder $query): void {
                 $query->whereNull('muted_until')->orWhere('muted_until', '<=', now());
             })
-            ->where(function (Builder $query) use ($open): void {
+            ->where(function (Builder $query): void {
                 $query->whereNull('task_group_id')
-                    ->orWhereNotExists(function ($subquery) use ($open): void {
+                    ->orWhereNotExists(function ($subquery): void {
                         $subquery->selectRaw('1')
                             ->from('tasks')
                             ->whereColumn('tasks.id', 'problem_fingerprints.task_group_id')
-                            ->whereIn('tasks.status', $open);
+                            ->whereNotIn('tasks.status', TaskGroupStatus::endedStatuses());
                     });
             })
             ->where(function (Builder $query): void {
@@ -311,29 +310,7 @@ final readonly class ProblemFiler
 
     private function isOpen(Task $task): bool
     {
-        return in_array($task->groupStatus(), [
-            TaskGroupStatus::Backlog,
-            TaskGroupStatus::Todo,
-            TaskGroupStatus::Reserved,
-            TaskGroupStatus::Running,
-            TaskGroupStatus::Reviewing,
-            TaskGroupStatus::Settling,
-            TaskGroupStatus::WaitingForReview,
-        ], true);
-    }
-
-    /** @return list<string> */
-    private function openStatuses(): array
-    {
-        return [
-            TaskGroupStatus::Backlog->value,
-            TaskGroupStatus::Todo->value,
-            TaskGroupStatus::Reserved->value,
-            TaskGroupStatus::Running->value,
-            TaskGroupStatus::Reviewing->value,
-            TaskGroupStatus::Settling->value,
-            TaskGroupStatus::WaitingForReview->value,
-        ];
+        return ! in_array($task->groupStatus(), TaskGroupStatus::endedStatuses(), true);
     }
 
     private function filedToday(): int

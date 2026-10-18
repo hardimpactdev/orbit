@@ -360,6 +360,16 @@ final class Task extends Model
             ->where($query->qualifyColumn('assistance_kind'), AssistanceKind::RemovalFailure);
     }
 
+    /** @param  Builder<Task>  $query */
+    public function scopeWorkspaceRemovalRetry(Builder $query): void
+    {
+        $query->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())
+            ->where(static fn (Builder $eligible) => $eligible
+                ->whereIn('status', TaskGroupStatus::endedStatuses())
+                ->orWhere(static fn (Builder $published) => $published
+                    ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()));
+    }
+
     /** @return BelongsTo<Task, $this> */
     public function parent(): BelongsTo
     {
@@ -733,7 +743,7 @@ final class Task extends Model
     }
 
     /**
-     * A task that completes or is cancelled leaves no question open or escalated. They become `superseded`.
+     * An ended group or a completed or cancelled subtask leaves no question open or escalated. They become `superseded`.
      * A query-builder update of subtask statuses skips this hook, so it relies on the task's own update.
      */
     private function settleQuestionsWhenEnded(): void
@@ -742,13 +752,14 @@ final class Task extends Model
             return;
         }
 
-        $reason = match ($this->status) {
-            TaskStatus::Completed => 'Subtask completed.',
-            TaskStatus::Cancelled => 'Subtask cancelled.',
-            TaskGroupStatus::Completed => 'Task completed.',
-            TaskGroupStatus::Cancelled => 'Task cancelled.',
-            default => null,
-        };
+        $status = $this->status;
+        $reason = $status instanceof TaskGroupStatus && in_array($status, TaskGroupStatus::endedStatuses(), true)
+            ? 'Task '.$status->value.'.'
+            : match ($status) {
+                TaskStatus::Completed => 'Subtask completed.',
+                TaskStatus::Cancelled => 'Subtask cancelled.',
+                default => null,
+            };
 
         if ($reason !== null) {
             TaskQuestions::settle($this, $reason);

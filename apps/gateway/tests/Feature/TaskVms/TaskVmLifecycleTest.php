@@ -41,6 +41,9 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
@@ -81,6 +84,7 @@ use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Http\Client\Request;
@@ -977,6 +981,81 @@ describe(DestroyTaskVm::class, function (): void {
         expect(TaskComment::query()->findOrFail($receipt->id)->body)->toBe('Stored receipt');
         expect(TaskCheck::query()->findOrFail($check->id)->output)->toBe('Stored check output');
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
+
+    it('pushes the final-reviewed approval before an ended group loses its workspace and VM', function (TaskGroupStatus $status): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => $status]);
+        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
+        $sha = str_repeat('c', 40);
+        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Final reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $events = new ArrayObject;
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->withArgs(function (Task $pushed, string $commit) use ($group, $instance, $sha, $events): bool {
+            $events->append('push');
+            expect($this->provider->calls)->toBe([]);
+            $this->assertModelExists($instance);
+
+            return $pushed->id === $group->id && $commit === $sha;
+        });
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        $scheduler = app(TaskScheduler::class);
+        $runner = Mockery::mock(app(ProjectLifecycleRunner::class));
+        $runner->shouldReceive('run')->andReturnUsing(function (Instance $ran, LifecyclePhase $phase) use ($events): bool {
+            $events->append($phase->value);
+
+            return true;
+        });
+        app()->instance(ProjectLifecycleRunner::class, $runner);
+        Log::spy();
+        Queue::fake();
+
+        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
+
+        $this->assertModelMissing($instance);
+        expect($events->getArrayCopy())->toBe(['push', 'teardown']);
+        expect($this->provider->calls)->toBe(['destroy']);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Log::shouldHaveReceived('info')->with('Pushed approved work before removing a task workspace.', Mockery::on(fn (array $context): bool => $context['task_group_id'] === $group->id && $context['commit_sha'] === $sha));
+    })->with([TaskGroupStatus::Completed, TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
+
+    it('keeps a failed group VM and workspace while its approved push fails or waits', function (bool $pending): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
+        $sha = str_repeat('c', 40);
+        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Final reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->andThrow($pending ? TaskPullRequestException::pending('Push queued.') : new TaskPullRequestException('Push refused.'))->ordered();
+        $publisher->shouldReceive('push')->once()->andReturnNull()->ordered();
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        Queue::fake();
+
+        $scheduler = app(TaskScheduler::class);
+        expect($scheduler->removeAbandonedWorkspaces())->toBe(0);
+
+        $this->assertModelExists($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+        expect($this->provider->calls)->toBe([]);
+        expect($group->fresh()->assistance_requested)->toBe(! $pending);
+        if (! $pending) {
+            expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+            expect($group->fresh()->assistance_reason)->toBe('Workspace removal failed: Push refused.');
+        }
+        Queue::assertNotPushed(DestroyTaskVm::class);
+
+        $this->travel(61)->seconds();
+        app()->instance(ProjectLifecycleRunner::class, Mockery::mock(app(ProjectLifecycleRunner::class))->shouldReceive('run')->andReturn(true)->getMock());
+        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
+
+        $this->assertModelMissing($instance);
+        expect($this->provider->calls)->toBe(['destroy']);
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    })->with(['failed' => false, 'pending' => true]);
 
     it('copies the agent transcripts to the Gateway before it deletes the VM, and skips a thread it cannot read', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);

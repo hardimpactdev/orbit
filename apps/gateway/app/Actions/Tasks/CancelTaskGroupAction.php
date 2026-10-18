@@ -10,10 +10,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
@@ -26,7 +24,6 @@ final readonly class CancelTaskGroupAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private RemoveTaskWorkspaceAction $workspace,
-        private TaskPullRequestPublisher $publisher,
         private NodeReachabilityProbe $reachability,
     ) {}
 
@@ -59,7 +56,7 @@ final readonly class CancelTaskGroupAction
         $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
-            $this->teardownWorkspace($group, $instance, $unpublished || $group->status === TaskGroupStatus::Cancelled);
+            $this->teardownWorkspace($group, $instance);
         }
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
@@ -112,25 +109,19 @@ final readonly class CancelTaskGroupAction
     }
 
     /** Cancellation owns one lifecycle admission across preservation and removal. */
-    private function teardownWorkspace(Task $group, Instance $instance, bool $pushApproved = false): void
+    private function teardownWorkspace(Task $group, Instance $instance): void
     {
         $group->setRelation('taskable', $instance);
         $leases = app(TaskWorkspaceLease::class);
         $owner = 'teardown:'.$instance->id;
         $leases->cancelQueued($group, 'cancel-push:'.$group->id);
         try {
-            $leases->run($group, 'teardown', $owner, function () use ($group, $pushApproved): void {
-                if ($pushApproved) {
-                    $this->pushApprovedWork($group);
-                }
+            $leases->run($group, 'teardown', $owner, function () use ($group): void {
                 $this->removeWorkspace($group);
             });
         } catch (Throwable $exception) {
             $current = Task::topLevel()->findOrFail($group->id);
-            $retryable = in_array($current->status, TaskGroupStatus::endedStatuses(), true)
-                || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
-                    && is_string($current->pr_url) && $current->pr_url !== ''
-                    && Task::topLevel()->whereKey($current->id)->removalFailure()->exists());
+            $retryable = Task::topLevel()->whereKey($current->id)->workspaceRemovalRetry()->exists();
             if (! $retryable) {
                 // This synchronous request did not end the group, so no scheduler path owns its waiter.
                 // The group lock prevents another cancellation from consuming or replacing it during cleanup.
@@ -154,29 +145,6 @@ final readonly class CancelTaskGroupAction
         try {
             $this->workspace->remove($group);
             $this->workspace->clearFailure($group);
-        } catch (Throwable $exception) {
-            $this->workspace->recordFailure($group, $exception);
-
-            throw $exception;
-        }
-    }
-
-    /**
-     * A settling group without a pull request can still hold approved commits that only exist in its
-     * workspace. They reach the task branch on origin before the workspace is removed.
-     */
-    private function pushApprovedWork(Task $group): void
-    {
-        if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
-            return;
-        }
-        $commit = TaskFinalReview::cancelPushCommit($group);
-        if ($commit === null) {
-            return;
-        }
-
-        try {
-            $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
             // A task VM's push runs in a queued job. Cancel fails until GitHub has the commit, so no approved work is lost.
             throw new ResourceOperationException(
@@ -186,6 +154,10 @@ final readonly class CancelTaskGroupAction
                     : __('The workspace stays because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
                 status: 502,
             );
+        } catch (Throwable $exception) {
+            $this->workspace->recordFailure($group, $exception);
+
+            throw $exception;
         }
     }
 }

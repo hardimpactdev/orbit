@@ -16,7 +16,10 @@ use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
@@ -28,6 +31,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -53,6 +57,7 @@ final readonly class RemoveTaskWorkspaceAction
 
     public function __construct(
         private InstanceRemover $remover,
+        private TaskPullRequestPublisher $publisher,
     ) {}
 
     /**
@@ -88,7 +93,15 @@ final readonly class RemoveTaskWorkspaceAction
         }
         $group->setRelation('taskable', $instance);
         $leases = app(TaskWorkspaceLease::class);
-        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
+        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance, $leases): void {
+            $commit = TaskFinalReview::removalPushCommit($group);
+            if ($commit !== null) {
+                $this->publisher->push($group, $commit);
+                Log::info('Pushed approved work before removing a task workspace.', [
+                    'task_group_id' => $group->id, 'instance_id' => $instance->id,
+                    'commit_sha' => $commit, 'branch' => TaskRemoteBranch::for($group),
+                ]);
+            }
             $lease = $leases->remoteStarted($instance);
             try {
                 $this->removeWithLease($instance);

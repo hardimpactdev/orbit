@@ -62,7 +62,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
         // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->whereIn('status', [...TaskGroupStatus::endedStatuses(), ...TaskGroupStatus::awaitingCompletion()])->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
+        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
             return;
         }
 

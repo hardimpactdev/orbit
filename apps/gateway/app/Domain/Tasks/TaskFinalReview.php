@@ -112,10 +112,10 @@ final readonly class TaskFinalReview
     }
 
     /**
-     * The approved commit that cancel pushes before it removes the workspace, or null. A review-and-merge task
+     * The approved commit that every workspace removal pushes first, or null. A review-and-merge task
      * pushes only a commit a final review approved, so unreviewed approved work is not pushed.
      */
-    public static function cancelPushCommit(Task $group): ?string
+    public static function removalPushCommit(Task $group): ?string
     {
         $commit = TaskComment::query()
             ->where('task_group_id', $group->id)

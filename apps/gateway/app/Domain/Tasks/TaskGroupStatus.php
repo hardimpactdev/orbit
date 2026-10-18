@@ -45,6 +45,16 @@ enum TaskGroupStatus: string
         return [self::Completed, self::Failed, self::Cancelled];
     }
 
+    /**
+     * Statuses whose failed workspace removal the scheduler can retry.
+     *
+     * @return list<self>
+     */
+    public static function workspaceRemovalStatuses(): array
+    {
+        return [...self::endedStatuses(), ...self::awaitingCompletion()];
+    }
+
     public function isActive(): bool
     {
         return in_array($this, self::active(), true);

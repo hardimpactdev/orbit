@@ -392,7 +392,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
+An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the group pushes its eligible stored approval to origin under the shared [removal rule](/reference/tasks#complete-and-cleanup) and logs the SHA. A failed or pending push keeps the workspace and VM. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
 2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its volumes.
