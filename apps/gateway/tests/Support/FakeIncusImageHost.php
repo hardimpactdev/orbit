@@ -8,6 +8,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\IncusGuestCall;
+use Tests\Support\RecipeProgramPayload;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
@@ -217,7 +218,7 @@ final class FakeIncusImageHost implements SshExecutor
                 default => new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false),
             },
             'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
-            'python3' => $this->answer('recipe '.json_decode($command[3], true)['profile'].':'.$command[2], static fn (): string => '{"ok":true}'),
+            'python3' => $this->answer('recipe '.RecipeProgramPayload::read($call->input)['profile'].':'.$command[2], static fn (): string => '{"ok":true}'),
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),

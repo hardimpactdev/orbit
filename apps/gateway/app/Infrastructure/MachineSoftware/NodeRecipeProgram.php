@@ -239,36 +239,38 @@ final readonly class NodeRecipeProgram
         if ($program === false) {
             throw new RuntimeException('The recipe converge program is missing.');
         }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program."\nif __name__ == '__main__':\n    sys.exit(main())\n";
+        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program;
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');
         }
-        $payload = json_encode([
+        $payload = [
             'snapshot' => $recipe->snapshot,
             'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
             'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
             'tools' => array_intersect_key($data['tools'], $tools),
-        ], JSON_THROW_ON_ERROR);
+            'vp_lock' => isset($tools['vp']) ? VitePlusRuntimeLock::read($tools['vp']) : null,
+        ];
         $result = $this->shell->run($node, new RemoteCommand(
-            $mode === 'inspect' ? ['python3', '-', $mode, $payload] : ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '840', 'python3', '-', $mode, $payload],
-            input: $program,
+            $mode === 'inspect' ? ['python3', '-', $mode] : ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '840', 'python3', '-', $mode],
+            input: RecipeProgramInput::source($program, $payload, 'main'),
             maxOutputBytes: 65536,
             timeout: 900,
         ));
         if (! $result->succeeded() || $result->truncated) {
-            // Only the fixed packages-stage envelope can expose output, after redaction and bounding.
+            // The fixed recipe failure envelope exposes command diagnostics after redaction and bounding.
+            $stagePattern = '/\Arecipe-stage:[a-z-]+(?::[A-Za-z0-9@_.:-]+)?\z/';
             $diagnostic = json_decode($result->stdout, true);
             $failure = is_array($diagnostic) ? $diagnostic['failure'] ?? null : null;
-            if (is_array($failure) && ($failure['stage'] ?? null) === 'recipe-stage:packages') {
+            if (is_array($failure) && is_string($failure['stage'] ?? null) && preg_match($stagePattern, $failure['stage']) === 1) {
                 $detail = new CommandActivityInputSanitizer()->redactText(json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
-                throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at recipe-stage:packages. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
+                throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at '.$failure['stage'].'. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
             }
             $stage = trim($result->stdout);
             if ($stage === 'recipe-stage:docker-provider:docker-ce') {
                 throw new ResourceOperationException('node.recipe_docker_provider', 'docker-provider:docker-ce: Docker CE requires an explicit planned-window migration. Run php artisan node:migrate-docker '.$node->id.' --dry-run on the Gateway. Nothing was changed by recipe convergence.', 409);
             }
-            if (preg_match('/^recipe-stage:[a-z-]+(?::[A-Za-z0-9@_.:-]+)?$/D', $stage) !== 1) {
+            if (preg_match($stagePattern, $stage) !== 1) {
                 $stage = 'recipe-stage:remote';
             }
             if (preg_match('/^recipe-stage:platform:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/D', $stage, $platform) === 1) {

@@ -841,6 +841,19 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertEqual(failure['stderr'], 'API_TOKEN=[REDACTED]\n')
         self.assertEqual(failure['command'], argv)
 
+    def test_apt_refresh_failure_keeps_its_remote_diagnostic(self):
+        result = subprocess.CompletedProcess(['apt-get', 'update'], 100, '', 'repository signature failed')
+        with patch.object(recipe, 'platform_check'), \
+             patch.object(recipe, 'packages', return_value={}), \
+             patch.object(recipe, 'apply', side_effect=recipe.RecipeFailure('apt-source', result=result)), \
+             patch.object(sys, 'argv', ['program', 'apply', '{"architecture":"amd64"}']), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(recipe.main(), 1)
+        failure = json.loads(output.getvalue())['failure']
+        self.assertEqual(failure['stage'], 'recipe-stage:apt-source')
+        self.assertEqual(failure['command'], ['apt-get', 'update'])
+        self.assertEqual(failure['stderr'], 'repository signature failed')
+
     def test_large_unicode_and_control_output_stays_within_the_ssh_response_limit(self):
         result = recipe.failure_output(('☃\n\t\x1b' * 15000))
         envelope = json.dumps({'failure': {'stdout': result, 'stderr': result}}, ensure_ascii=False)

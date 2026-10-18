@@ -8,6 +8,7 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\MaintainMachineRecipe;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -216,4 +217,48 @@ it('opens no PHP build PR when main pins the newest Sury build, and refuses a pa
     }
 
     Http::assertNotSent(static fn (Request $request): bool => in_array($request->method(), ['PUT', 'POST'], true) && str_contains($request->url(), '/repos/'));
+});
+
+it('waits without alerting for main recipe definitions and catches up on the same date only once', function (): void {
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
+    FleetFixtures::inPlace();
+    FleetFixtures::adopt(FleetFixtures::Commit);
+    $alerts = new RecordingReleaseAlertNotifier;
+    app()->instance(ReleaseAlertNotifier::class, $alerts);
+    $bump = new class extends PhpBuildBump
+    {
+        public int $calls = 0;
+
+        public function __construct() {}
+
+        public function bump(string $recipe): string
+        {
+            $this->calls++;
+
+            return $recipe;
+        }
+    };
+    app()->instance(PhpBuildBump::class, $bump);
+    $ahead = nightlyRecipeFile();
+    $document = json_decode(base64_decode($ahead['content']), true, flags: JSON_THROW_ON_ERROR);
+    $document['tools']['not-yet-deployed'] = ['source' => 'ubuntu', 'package' => 'future', 'version' => '1'];
+    $ahead['content'] = base64_encode(json_encode($document, JSON_THROW_ON_ERROR));
+    nightlyRecipeGitHub($ahead);
+
+    app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
+
+    expect($bump->calls)->toBe(0);
+    expect($alerts->alerts)->toBe([]);
+    Http::assertNotSent(static fn (Request $request): bool => $request->method() !== 'GET' && str_contains($request->url(), '/repos/'));
+    $this->travel(5)->minutes();
+    Http::swap(new Factory);
+    nightlyRecipeGitHub(nightlyRecipeFile());
+
+    app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
+
+    expect($bump->calls)->toBe(1);
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT');
+    $sent = Http::recorded()->count();
+    app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
+    expect(Http::recorded()->count())->toBe($sent);
 });

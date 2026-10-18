@@ -81,7 +81,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        GatewaySchedule::job($schedule, new MaintainMachineRecipe(snapshot: true))->dailyAt('03:00')->timezone('Europe/Amsterdam')
+        GatewaySchedule::job($schedule, new MaintainMachineRecipe(snapshot: true))->everyFiveMinutes()->between('03:00', '23:59')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         GatewaySchedule::job($schedule, new MaintainMachineRecipe)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);

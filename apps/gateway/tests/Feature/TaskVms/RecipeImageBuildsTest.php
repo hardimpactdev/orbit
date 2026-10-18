@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
+use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmSettingsBuilder;
 
 require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
@@ -123,6 +124,25 @@ it('keeps aliases for base and every role within the Incus name limit', function
     expect(array_unique($aliases))->toHaveCount(5);
 })->with([TaskVmHost::BaseImage, 'shark-task-base', str_repeat('a', 254)]);
 
+it('carries the complete base recipe over stdin without exceeding native argument limits', function (): void {
+    $node = recipeImageHost();
+    $incus = recipeImageTransport($node);
+    $host = app(TaskVmSettings::class)->hosts[0];
+    $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'recipe-builder');
+    app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), 'base', 'packages');
+    $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'python3');
+    expect($call->argv)->toBe(['python3', '-', 'packages']);
+    expect(strlen($call->input))->toBeGreaterThan(131072);
+
+    // Execute the real assembled input boundary; print its decoded document instead of running the installer.
+    $process = new Process($call->argv);
+    $process->setInput(str_replace('sys.exit(image_main())', 'print(sys.argv[2])', $call->input));
+    $process->mustRun();
+    $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    expect($payload['vp_lock'])->toBe(file_get_contents(resource_path('machine-software/vite-plus-package-lock.json')))
+        ->and($payload['php']['input']['mode'])->toBe('apply');
+});
+
 it('installs OpenTelemetry only in app-dev image profiles', function (string $profile, bool $enabled): void {
     $node = recipeImageHost();
     $incus = recipeImageTransport($node);
@@ -133,7 +153,7 @@ it('installs OpenTelemetry only in app-dev image profiles', function (string $pr
 
     $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'python3'));
     expect($calls)->toHaveCount(1);
-    $payload = json_decode($calls[0]->argv[3], true, flags: JSON_THROW_ON_ERROR);
+    $payload = RecipeProgramPayload::read($calls[0]->input);
     expect($payload['php']['input']['opentelemetry'])->toBe($enabled);
     foreach (['8.4', '8.5'] as $version) {
         expect(isset($payload['tools']["php{$version}-opentelemetry"]))->toBe($enabled);
