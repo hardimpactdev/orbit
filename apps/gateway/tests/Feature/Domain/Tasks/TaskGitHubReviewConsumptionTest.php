@@ -66,7 +66,7 @@ describe('once-only GitHub review consumption', function (): void {
         $row = DB::table('task_github_review_consumptions')->sole();
         expect($fixup->status)->toBe(TaskStatus::Todo)
             ->and($fixup->fixup_problem)->toBe('review:42')
-            ->and(array_column($fixup->deliverables, 'id'))->toBe(['review-findings', 'project-check'])
+            ->and(array_column($fixup->deliverables, 'id'))->toBe(['review-findings'])
             ->and($row->fixup_id)->toBe($fixup->id)
             ->and($row->packet)->toBe($fixup->brief)
             ->and($row->digest)->toHaveLength(64);

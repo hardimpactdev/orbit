@@ -100,6 +100,7 @@ Do not assume that every Project uses Composer, Pest, PHP, or any particular tes
 - Keep handoff evidence, such as impact reports, logs, and check output, under `.orbit-artifacts/`. Git ignores it. Do not commit evidence.
 - Build test fixtures from real output. Capture it from the real tool or its source, and do not invent it.
 - Make every new test able to fail. Confirm that it fails without the change.
+- Run `composer test:affected` in each changed project. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
 ## Review a subtask

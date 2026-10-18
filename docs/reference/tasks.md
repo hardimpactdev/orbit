@@ -301,7 +301,7 @@ Prepare a task in Backlog before any agent runs. A Backlog task has no workspace
 3. Add the ordered subtasks with their deliverables, following the Project's task policy.
 4. Move the task to `todo` with `tasks:update`.
 
-The Gateway does not check the branch contents. When `origin/task-{id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. A prompt names the Project task-check command only when one is configured.
+The Gateway does not check the branch contents. When `origin/task-{id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. The implementer prompt says that Orbit runs the configured Project check at handoff. It names the command only when one is configured.
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, both prompts add `The task started at <sha>.` and `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. The lines name no Project, branch, or policy. Any other value is left out.
 
@@ -765,7 +765,11 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 
 The topology check compares the candidate tree, including uncommitted files, with the merge base of its HEAD and the current `origin/main`. Changes inherited from `origin/main` do not require a topology. The group's own changes still do, including changes kept or made while merging main. This check uses neither the group's original start commit nor the subtask's start commit. If Orbit cannot read the merge base or diff, the handoff fails. File deliverables still use the subtask's start commit.
 
-When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
+When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends.
+
+Each attempt gets one reminder for rubric failures other than a failed handoff check. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
+
+Failed handoff checks have a separate budget per subtask. The first three consecutive failures each send a reminder with the exit code and the end of the output. The fourth asks for assistance. A passing handoff check resets the count. Baseline checks and other rubric failures keep their own rules.
 
 An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A reviewer's `blocked` receipt asks for direction at once, with the summary and the question as the reason. A `failed` acting thread asks for assistance at once, unless it is a [server restart](#recover-a-pi-server-restart).
 
@@ -914,9 +918,8 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure when Orbit reuses a check result.
+Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure.
 
-A `project-check` command deliverable with the exact current task check command at the repository root reuses that run's exit code and output on the same HEAD and tree. The evidence names the reused tree. Failure records a failed deliverable without running it again; other command deliverables still wait for a passing task check. Reuse never carries a result from an earlier handoff, and commands in other directories or with different text run separately.
 
 The check process exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Setup, the Project check, and command deliverables inherit that value, including when they invoke project-local `vp` without a login shell. An absent, conflicting, or unreadable store makes check start a communication failure, before the check launches. Orbit releases the unstarted baseline claim so the next tick can retry. Status, cancellation, and workspace snapshots do not need another Vite+ store probe.
 
@@ -1028,7 +1031,7 @@ For a delta re-review, the retrieval command stages the candidate in a temporary
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
-The implementer prompt asks the implementer to finish the brief and pass the Project task check. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
+The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
 The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`, to verify behaviour.
 
@@ -1204,9 +1207,7 @@ Project slugs and CI job names do not change that order. A task gets at most two
 
 The base may already fix a failed check. Before Orbit appends a check fixup, it reads the tip of the pull request base. When that tip is strictly ahead of its merge base with the head, and the Project's `merge_check` passed on it, the brief starts with `Merge origin/{base} first; base may already fix this.` Without a `merge_check`, Orbit reads `Required checks`. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit). The title, identity, and caps do not change. A failed read leaves the brief as shown above.
 
-Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which requires that exact command in `.`. When it equals the current Project task check, the handoff check runs it once and records that result and output as the deliverable evidence on the same tree. A failing task check fails the deliverable without a rerun. If the snapshotted command differs from the current check, it runs separately after the current check passes.
-
-Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
+Conflict and check fixups have one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The handoff runs the current Project check, as every handoff does. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables.
 
 A fixup records the head it was created for. No new fixup starts while the head is still that commit. These guards and the shared caps apply to feedback, CI, and conflict fixups together. Completing an operator subtask resets the cap window, but never resets review consumption.
 
@@ -1252,7 +1253,7 @@ Review-read failures retry after 1, 2, 5, 10, and 30 minutes and then request re
 
 Feedback fixups wait while CI has young pending checks. They also wait while infrastructure checks use their existing recovery backoff or request assistance; a requested review does not justify a speculative source repair of broken CI infrastructure. A conflict can still proceed immediately. Genuine failed checks retain priority over feedback. Capped identities can be skipped for another eligible problem, but every automatic fixup shares the two-per-identity and three-per-window limits. Cap assistance names any unhandled effective request and its review URL without consuming it.
 
-A feedback fixup always has a `review` deliverable, `review-findings`, requiring the fresh internal reviewer to confirm that every snapshotted finding was addressed or explicitly resolved within the contract. When a Project task check is configured, it also has the `project-check` command deliverable with that command snapshotted in `.`. Without one, only `review-findings` remains. Internal approval does not stand in for GitHub re-review. The reviewer reads the complete packet in `.git/orbit/context.md` when the compact review prompt cuts the brief.
+A feedback fixup has one `review` deliverable, `review-findings`, requiring the fresh internal reviewer to confirm that every snapshotted finding was addressed or explicitly resolved within the contract. Its handoff runs the Project check, as every handoff does. Internal approval does not stand in for GitHub re-review. The reviewer reads the complete packet in `.git/orbit/context.md` when the compact review prompt cuts the brief.
 
 In Gateway API and MCP results, the existing `fixup_problem` carries `review:{reviewer_id}`. The generated `brief` carries source provenance and findings through API, SDK, CLI, and MCP results. The SDK and CLI keep their existing brief/deliverable fields; they need no new fixup-identity property. There is no new Gateway API field, input, endpoint, or merge command. Response fixtures and generated contracts must still verify the Gateway identity, preserved packet, and unchanged schema.
 
@@ -1376,7 +1377,7 @@ The retry requires the same head and tree: source changes cannot inherit the ret
 
 The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
-The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. As with settling fixups, the handoff check reuses the task check result for `project-check` when its command matches and its directory is the repository root; it does not run the same check twice. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
+The fixup has one `review` deliverable, `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
 
 At most two final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). At the third set of findings, Orbit completes the final review, settles the task, and asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Append an operator subtask to continue. It resumes the task and clears that request, and its completion opens a new window. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
 
@@ -1724,7 +1725,7 @@ The base tree is an extracted archive inside `$(git rev-parse --git-path orbit)/
 
 ### One reminder, then a person
 
-An agent can repair a named list of failures in one turn, so the first failure gets one reminder that names every failed item. A second failure asks for assistance, because unlimited reminders hide a stuck subtask. A blocked agent must ask one specific question, because a vague block costs the operator a round trip.
+An agent can repair a named list of failures in one turn, so the first failure gets one reminder that names every failed item. A second rubric failure asks for assistance, because unlimited reminders hide a stuck subtask. Failed handoff checks use the separate [failed-check budget](#rubric-and-reminders), because the implementer does not run the full gate before handoff. A blocked agent must ask one specific question, because a vague block costs the operator a round trip.
 
 ### Questions go through the reviewer
 

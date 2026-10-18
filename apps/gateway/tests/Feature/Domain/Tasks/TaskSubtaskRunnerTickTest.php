@@ -472,7 +472,7 @@ describe('subtask deliverables at handoff', function (): void {
             tick_all_confirmations(),
             null,
             [$failing, $failing],
-            [FakeTaskTurnReceipts::contents('ready_for_review', 'Done.', null, tick_all_confirmations()), null, FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed it.', null, tick_all_confirmations()), null],
+            [FakeTaskTurnReceipts::contents('ready_for_review', 'Done.', null, tick_all_confirmations()), FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed it.', null, tick_all_confirmations())],
         );
 
         tick_deliverable_reminder();

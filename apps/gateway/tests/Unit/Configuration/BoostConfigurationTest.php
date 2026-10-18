@@ -321,7 +321,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
     expect($testRules)
         ->toContain(
             'Pest 5 TDD',
-            'TIA tests and project quality checks',
+            'root `AGENTS.md` check policy for task and non-task work',
             'git diff --check',
         )
         ->not->toContain('test:full');

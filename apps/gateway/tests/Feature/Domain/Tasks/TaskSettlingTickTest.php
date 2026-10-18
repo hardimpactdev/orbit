@@ -401,7 +401,7 @@ it('publishes a consumed feedback fixup once to the same PR and requires fresh e
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     $candidate = $source->reviewCandidate($group, 101)->candidate;
     expect($candidate)->not->toBeNull();
-    $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate($candidate));
+    $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate($candidate));
     $task->update(['fixup_problem' => $plan->identity, 'fixup_head_sha' => 'abc123', 'brief' => $plan->brief, 'deliverables' => $plan->deliverables]);
     DB::transaction(fn () => app(TaskGitHubReviewConsumption::class)->record($group, $task, $candidate, $group->tasks()->get()));
     $watcher = mock(TaskPullRequestWatcher::class);
@@ -833,8 +833,8 @@ it('appends one conflict fixup and reuses its turn fetch before fast-forwarding 
         ->and($fixup->brief)->toBe('Merge origin/main into the task branch and resolve the conflicts. Do not rebase and do not force-push.')
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
-            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-            'command' => 'composer check', 'directory' => '.',
+            'id' => 'fixup-review', 'type' => 'review',
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
         ]])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
@@ -862,8 +862,8 @@ it('appends one check fixup naming the failed check and its url', function (Task
         ->and($fixup->brief)->toBe('Check Custom failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
-            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-            'command' => 'composer check', 'directory' => '.',
+            'id' => 'fixup-review', 'type' => 'review',
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
         ]])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($agents->fetched)->toBe([])
@@ -918,8 +918,8 @@ it('runs make check for a fixup on a non-Orbit Project and on orbit', function (
     $fixup = Task::query()->where('fixup_problem', 'check:Rust agent')->sole();
     expect($fixup->brief)->toBe('Check Rust agent failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
         ->and($fixup->deliverables)->toBe([[
-            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-            'command' => 'make check', 'directory' => '.',
+            'id' => 'fixup-review', 'type' => 'review',
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
         ]])
         ->and($agents->spawned)->toBe([$fixup->id]);
 })->with([
@@ -980,8 +980,8 @@ it('keeps a fixup deliverable after the Project check changes', function (): voi
 
     $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
     $recorded = [[
-        'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-        'command' => 'make check', 'directory' => '.',
+        'id' => 'fixup-review', 'type' => 'review',
+        'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
     ]];
     expect($fixup->deliverables)->toBe($recorded);
 
@@ -1001,8 +1001,8 @@ it('keeps a fixup deliverable after the Project check changes', function (): voi
         ->and($next?->id)->not->toBe($fixup->id)
         ->and($next?->fixup_head_sha)->toBe('def456')
         ->and($next?->deliverables)->toBe([[
-            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-            'command' => 'npm test', 'directory' => '.',
+            'id' => 'fixup-review', 'type' => 'review',
+            'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
         ]]);
 });
 
@@ -1100,8 +1100,8 @@ it('appends the next failed check in GitHub order after the conflict cap', funct
 
     $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
     expect($fixup->deliverables)->toBe([[
-        'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
-        'command' => 'composer check', 'directory' => '.',
+        'id' => 'fixup-review', 'type' => 'review',
+        'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
     ]])
         ->and(Task::query()->where('fixup_problem', 'check:Gateway')->exists())->toBeFalse()
         ->and($agents->fetched)->toBe([])

@@ -91,8 +91,8 @@ final readonly class TaskSubtaskRunner
 
         $handoff = $scheduler->pendingReceipt($task, TaskThreadRole::Implementer);
         if ($handoff instanceof TaskComment && $scheduler->receiptOutcome($handoff) === TaskTurnOutcome::ReadyForReview
-            && $task->checks()->where('task_comment_id', $handoff->id)->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Running)->exists()) {
-            // The durable receipt already admitted this check. Observe its process before
+            && $task->checks()->where('task_comment_id', $handoff->id)->where('kind', TaskCheckKind::Handoff)->exists()) {
+            // The durable receipt already admitted this check. Handle its result before
             // asking to read another receipt from the checkout that the check still owns.
             $this->checkHandoff($scheduler, $group, $task, $implementer, $handoff, $observation);
 
@@ -207,7 +207,7 @@ final readonly class TaskSubtaskRunner
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
-            if ($scheduler->remindOrAssist($group, $task, $implementer, [$item])) {
+            if ($scheduler->remindOrAssist($group, $task, $implementer, [$item], $status === TaskCheckStatus::Failed ? $check : null)) {
                 $task->update(['completion_handoff_comment_id' => $receipt->id]);
             }
 

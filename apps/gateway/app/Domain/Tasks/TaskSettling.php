@@ -858,7 +858,7 @@ final readonly class TaskSettling
                 return false;
             }
 
-            return $this->appendFixup($dispatchGroup, TaskSettlingFixup::reviewPlan($dispatchGroup->project->taskCheckCommand(), $packet), $candidate->head, $candidate) instanceof Task;
+            return $this->appendFixup($dispatchGroup, TaskSettlingFixup::reviewPlan($packet), $candidate->head, $candidate) instanceof Task;
         }
 
         return false;
@@ -966,7 +966,7 @@ final readonly class TaskSettling
     {
         $counts = $this->fixupCountsSinceOperatorWork($group);
 
-        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans($health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }
@@ -984,7 +984,7 @@ final readonly class TaskSettling
         $counts = $this->fixupCountsSinceOperatorWork($group);
         $reasons = [];
 
-        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans($health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }

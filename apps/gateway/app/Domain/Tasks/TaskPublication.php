@@ -616,9 +616,9 @@ final readonly class TaskPublication
                 'position' => TaskFinalReview::nextPosition($tasks),
                 'title' => $gate instanceof TaskCheck ? 'Fix main merge Project gate' : 'Merge origin/'.$base,
                 'brief' => $gate instanceof TaskCheck
-                    ? 'The Project check passes on both merge parents but fails on the merged tree. Fix the integration failure (including stale generated files), then run the Project check. Check #'.$gate->id.":\n\n".$gate->output
+                    ? 'The Project check passes on both merge parents but fails on the merged tree. Fix the integration failure (including stale generated files). Orbit runs the Project check when you hand off. Check #'.$gate->id.":\n\n".$gate->output
                     : 'The mechanical main merge has a Git conflict. Merge origin/'.$base.' into the task branch and resolve the conflicting files. Do not rebase and do not force-push.'."\n\n".$this->conflictOutput($locked),
-                'deliverables' => TaskFinalReview::fixupDeliverables($locked->project->taskCheckCommand()),
+                'deliverables' => TaskFinalReview::fixupDeliverables(),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
             ]);

@@ -477,9 +477,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($fixup->brief)->toContain('Internal approval is not GitHub re-review.')
             ->and($fixup->deliverables[0]['id'])->toBe('review-findings')
             ->and($fixup->deliverables[0]['type'])->toBe('review')
-            ->and($fixup->deliverables[1])->toMatchArray([
-                'id' => 'project-check', 'type' => 'command', 'command' => 'composer check', 'directory' => '.',
-            ])
+            ->and($fixup->deliverables)->toHaveCount(1)
             ->and($fixup->toArray()['brief'])->toBe($fixup->brief)
             ->and($fixup->toArray()['deliverables'])->toBe($fixup->deliverables);
     });
