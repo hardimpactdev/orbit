@@ -38,14 +38,13 @@ class ImageRecipeTest(unittest.TestCase):
         self.files[str(path)] = content
         Path(path).write_bytes(content)
 
-    def packages(self, command=None, prepare=True):
+    def packages(self, command=None):
         with patch.object(recipe, 'POLICY', self.policy), \
              patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
              patch.object(recipe, 'packages', return_value={'curl': '1.0'}), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=command or self.run_command):
-            if prepare:
-                recipe.image_apt_source(self.payload)
+            recipe.image_apt_source(self.payload)
             recipe.image_packages(self.payload)
 
     def test_installs_exact_pins_and_upgrades_base_only_from_snapshot(self):
@@ -91,30 +90,24 @@ print(json.dumps({'outcome': 'current'}))
         self.assertIn('apt-source must run', failure.exception.detail)
         command.assert_not_called()
 
-    def test_resumed_packages_prepare_missing_snapshot_before_installing(self):
-        self.packages(prepare=False)
-        update = self.commands.index(['apt-get', 'update'])
-        install = next(i for i, command in enumerate(self.commands) if command[:2] == ['apt-get', 'install'])
-        self.assertLess(update, install)
-        self.assertEqual(self.commands.count(['apt-get', 'update']), 1)
-
-    def test_failed_snapshot_refresh_is_retried_before_resuming_packages(self):
-        with patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
-             patch.object(recipe, 'publish', side_effect=self.publish), \
-             patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('apt-source')):
-            with self.assertRaises(recipe.RecipeFailure):
-                recipe.image_apt_source(self.payload)
-        self.packages(prepare=False)
-        self.assertEqual(self.commands[0], ['apt-get', 'update'])
-
-    def test_resumed_packages_recreate_partial_snapshot_setup(self):
-        for missing in ('apt.conf', 'ubuntu.sources'):
-            with self.subTest(missing=missing):
-                self.packages()
-                (Path(self.work.name) / 'apt' / missing).unlink()
-                self.commands = []
-                self.packages(prepare=False)
-                self.assertEqual(self.commands[0], ['apt-get', 'update'])
+    def test_packages_fail_loudly_without_commands_when_snapshot_setup_is_missing_or_partial(self):
+        for present in ((), ('apt.conf',), ('ubuntu.sources',)):
+            with self.subTest(present=present):
+                directory = Path(self.work.name) / ('-'.join(present) or 'missing')
+                if present:
+                    directory.mkdir()
+                    content = (recipe.image_apt_configuration(directory) if present == ('apt.conf',)
+                               else recipe.snapshot_source(self.payload['snapshot']))
+                    (directory / present[0]).write_text(content)
+                with patch.object(recipe, 'IMAGE_APT', directory), \
+                     patch.object(recipe, 'publish', side_effect=self.publish), \
+                     patch.object(recipe, 'image_install_packages') as install, \
+                     patch.object(recipe, 'run') as command:
+                    with self.assertRaisesRegex(recipe.RecipeFailure, '^apt-source$') as failure:
+                        recipe.image_packages(self.payload)
+                    self.assertIn('apt-source must run before packages', failure.exception.detail)
+                command.assert_not_called()
+                install.assert_not_called()
 
     def test_packages_refuse_another_snapshot_before_any_install(self):
         with patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
@@ -167,6 +160,21 @@ print(json.dumps({'outcome': 'current'}))
                 recipe.image_verify(self.payload)
             self.assertEqual(os.environ['APT_CONFIG'], '/stock/apt.conf')
         self.assertFalse(any(c[:2] == ['apt-get', 'update'] for c in self.commands))
+
+    def test_verify_names_its_own_snapshot_configuration_failure(self):
+        self.payload['identity'] = 'sha256:current'
+        with self.verification(), \
+             patch.dict(os.environ, {'APT_CONFIG': '/stock/apt.conf'}), \
+             patch.object(recipe, 'image_apt_setup'), \
+             patch.object(recipe, 'inspect') as inspect, \
+             patch.object(recipe, 'run') as command:
+            with self.assertRaisesRegex(recipe.RecipeFailure, '^verify$') as failure:
+                recipe.image_verify(self.payload)
+            self.assertIn('Verification snapshot configuration', failure.exception.detail)
+            self.assertNotIn('before packages', failure.exception.detail)
+            self.assertEqual(os.environ['APT_CONFIG'], '/stock/apt.conf')
+        inspect.assert_not_called()
+        command.assert_not_called()
 
     def php_payload(self):
         pin = {'name': 'php8.5-cli', 'version': '8.5.11-1', 'architecture': 'amd64', 'url': 'https://example/x.deb', 'sha256': 'a' * 64}

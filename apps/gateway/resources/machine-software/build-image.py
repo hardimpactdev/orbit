@@ -16,13 +16,8 @@ def command_output(result):
 
 def image_apt_source(payload):
     image_apt_setup(payload, IMAGE_APT)
-    try:
-        with image_apt_environment(payload):
-            run(['apt-get', 'update'])
-    except BaseException:
-        # A resume must refresh the indexes again if this phase did not finish.
-        (IMAGE_APT / 'apt.conf').unlink(missing_ok=True)
-        raise
+    with image_apt_environment(payload):
+        run(['apt-get', 'update'])
 
 
 def image_apt_setup(payload, directory):
@@ -39,7 +34,7 @@ def image_apt_configuration(directory):
 
 
 @contextmanager
-def image_apt_environment(payload, directory=None):
+def image_apt_environment(payload, directory=None, *, phase='apt-source'):
     directory = IMAGE_APT if directory is None else directory
     config = directory / 'apt.conf'
     try:
@@ -48,7 +43,9 @@ def image_apt_environment(payload, directory=None):
     except FileNotFoundError:
         matches = False
     if not matches:
-        raise RecipeFailure('apt-source', detail='apt-source must run before packages: snapshot configuration is missing or mismatched')
+        detail = ('Verification snapshot configuration is missing or mismatched' if phase == 'verify'
+                  else 'apt-source must run before packages: snapshot configuration is missing or mismatched')
+        raise RecipeFailure(phase, detail=detail)
     previous = os.environ.get('APT_CONFIG')
     os.environ['APT_CONFIG'] = str(config)
     try:
@@ -61,8 +58,6 @@ def image_apt_environment(payload, directory=None):
 
 
 def image_packages(payload):
-    if not all((IMAGE_APT / name).is_file() for name in ('apt.conf', 'ubuntu.sources')):
-        image_apt_source(payload)
     # APT_CONFIG crosses the PHP installer's process boundary too. No image install reads stock/live indexes.
     with image_apt_environment(payload):
         image_install_packages(payload)
@@ -219,7 +214,7 @@ def image_verify(payload):
     with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
         work = Path(directory)
         image_apt_setup(payload, work)
-        with image_apt_environment(payload, work):
+        with image_apt_environment(payload, work, phase='verify'):
             selected = {name: pin for name, pin in payload['tools'].items()
                         if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
             os.environ['SUDO_USER'] = 'orbit'
