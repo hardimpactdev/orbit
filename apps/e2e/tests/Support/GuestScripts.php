@@ -77,10 +77,10 @@ final class GuestScripts
         return dirname(__DIR__, 2).'/resources/guest';
     }
 
-    public static function source(string $name): string
+    public static function source(string $name, ?string $sourceDirectory = null): string
     {
         self::requireGnuUserland();
-        $source = file_get_contents(self::directory().'/'.$name);
+        $source = file_get_contents(($sourceDirectory ?? self::directory()).'/'.$name);
 
         if ($source === false) {
             throw new RuntimeException("Unable to read the guest script {$name}.");
@@ -90,18 +90,23 @@ final class GuestScripts
     }
 
     /**
-     * Writes host copies of every guest script, so a script still finds its
-     * siblings next to itself, and returns the path of the named copy.
+     * Writes host copies of regular guest script files, so a script still finds
+     * its siblings next to itself, and returns the path of the named copy.
+     * Generated directories, such as Python bytecode caches, are not scripts.
      */
-    public static function path(string $name): string
+    public static function path(string $name, ?string $sourceDirectory = null): string
     {
         $directory = TemporaryPaths::path('orbit-guest-', 6);
         mkdir($directory, 0o700, true);
-        $scripts = glob(self::directory().'/*');
+        $scripts = glob(($sourceDirectory ?? self::directory()).'/*');
 
         foreach ($scripts === false ? [] : $scripts as $script) {
+            if (! is_file($script)) {
+                continue;
+            }
+
             $copy = $directory.'/'.basename($script);
-            file_put_contents($copy, self::source(basename($script)));
+            file_put_contents($copy, self::source(basename($script), $sourceDirectory));
             chmod($copy, fileperms($script) & 0o777);
         }
 

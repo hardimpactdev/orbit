@@ -279,12 +279,20 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role"
+                "Placement",
+                "Role",
+                "Route",
+                "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/cli/fleet.mdx",
@@ -2044,7 +2052,8 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": [
                 "0222"

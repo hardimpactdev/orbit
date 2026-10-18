@@ -20,6 +20,7 @@ use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Closure;
+use DateTimeImmutable;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
@@ -126,6 +127,43 @@ final readonly class TopologyAcquirer
             $state->writeTopology($updated);
 
             return $updated;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @param Closure(string, GuestCommand, GuestCommandResult, DateTimeImmutable, DateTimeImmutable): void $record
+     * @return array<string, mixed> */
+    public function firewallFixture(TopologyRequest $request, string $operation, Closure $record): array
+    {
+        $this->assertRequestOwnership($request);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
+        try {
+            $topology = $state->requireTopology();
+            $nodes = $topology->construction->nodes;
+            $plan = [
+                'issue' => $request->issue, 'attempt' => $topology->attempt->value,
+                'lease' => $state->attempt(), 'mount_hash' => $state->mountTokenHash(),
+                'instance' => $topology->target->instance('app-dev'),
+                'router' => $nodes['app-dev']['incus_address'] ?? null,
+                'member' => $nodes['app-prod']['incus_address'] ?? null,
+                'nonmember' => $nodes['operator']['incus_address'], 'vpn' => $nodes['gateway']['wireguard_address'],
+            ];
+            $fixture = new RouterLanFirewallFixture(function (string $node, GuestCommand $command) use ($state, $plan, $request, $record): GuestCommandResult {
+                $current = $state->requireTopology();
+                if ($state->attempt() !== $plan['lease'] || $state->mountTokenHash() !== $plan['mount_hash']) {
+                    throw new RuntimeException('The fixture lease or mount identity changed.');
+                }
+                $instance = $this->ownedInstance($current, $node, $node === 'app-dev' ? $request->worktree : null);
+                $started = new DateTimeImmutable;
+                $result = $this->host->exec($instance, $command);
+                $record($node, $command, $result, $started, new DateTimeImmutable);
+
+                return $result;
+            });
+
+            return $fixture->run($operation, $plan);
         } finally {
             $lock->release();
         }
@@ -284,7 +322,7 @@ final readonly class TopologyAcquirer
         return $state->mountTokenHash() ?? $state->writeMountToken();
     }
 
-    private function ownedInstance(TopologyRecord $topology, string $node): string
+    private function ownedInstance(TopologyRecord $topology, string $node, ?string $mountedWorktree = null): string
     {
         if (! $topology->target->recipe->hasNode($node)) {
             throw new InvalidArgumentException(
@@ -301,6 +339,11 @@ final readonly class TopologyAcquirer
             || $owned->network !== $topology->network
         ) {
             throw new RuntimeException('Incus instance identity does not match the topology record.');
+        }
+        if ($mountedWorktree !== null && ($owned->disks[TopologyRecord::SOURCE_DEVICE] ?? null) !== [
+            'source' => $mountedWorktree, 'path' => MountPath::GUEST_SOURCE,
+        ]) {
+            throw new RuntimeException('The fixture Router mount does not match this worktree.');
         }
 
         return $instance;
