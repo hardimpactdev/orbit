@@ -116,7 +116,7 @@ Every handoff of a subtask, first or rework, tests from the start commit of that
 - The option reads only the graph's edges. It ignores every stored branch baseline, its `lastRunTree`, and its results. So the implementer's own `composer test:affected`, which writes a branch baseline into the graph, cannot narrow the gate.
 - The fork already computes the changed files of a commit in `ChangedFiles::since`; the option names the commit and skips the baseline replay.
 - `bin/review-check` no longer writes Pest's graph.
-- The handoff cache stays as it is: one slot, matched by tree, holding the graph after a passed handoff. Subtask N+1 usually starts at the tree of subtask N's last passed handoff, so the cache gives it edges for the code the group added. After item 1, only handoff checks write it, because the implementer no longer runs `bin/review-check`.
+- The handoff cache stays as it is: one slot, matched by tree, holding the graph after a passed handoff. When subtask N+1 starts at the tree of subtask N's last passed handoff, the cache gives it edges for the code the group added. After item 1, only handoff checks write it, because the implementer no longer runs `bin/review-check`.
 
 The data does not show what a tree base saves. The only rework measured after #1335 is one sample, on one process, with an unread selection. So the choice rests on simplicity and a bounded cost:
 
