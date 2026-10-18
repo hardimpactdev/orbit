@@ -40,6 +40,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\UpCloudTaskVmImageBuild;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
@@ -57,6 +58,7 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
+use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -265,7 +267,7 @@ class FakeUpCloudSsh implements SshExecutor
             $this->recipeMarker = $command->input;
         }
         if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'verify']) {
-            $payload = json_decode($command->arguments[5], true, flags: JSON_THROW_ON_ERROR);
+            $payload = RecipeProgramPayload::read($command->input);
             $marker = json_decode($this->recipeMarker ?? 'null', true, flags: JSON_THROW_ON_ERROR);
             if ($marker !== ['identity' => $payload['identity'], 'profile' => $payload['profile']]) {
                 return new CommandResult(1, '', 'Missing or incorrect recipe marker.', 1, false);
@@ -772,10 +774,10 @@ describe('image build', function (): void {
         $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
         $recipe = app(RecipeImageBuilds::class)->currentRecipe();
         $packages = array_values(array_filter($this->ssh->calls, static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']))[0];
-        $payload = json_decode($packages[1][5], true, flags: JSON_THROW_ON_ERROR);
+        $payload = RecipeProgramPayload::read($packages[2]);
         expect($payload)->toMatchArray(['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'profile' => 'base', 'architecture' => 'amd64'])
             ->and(array_keys($payload['tools']))->toBe($recipe->profile('base', 'amd64'))
-            ->and($packages[2])->toContain(file_get_contents(resource_path('machine-software/build-image.py')))
+            ->and($packages[2])->toContain('def image_main():')
             ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and($this->upcloud->storages[$template]['labels'])->toBe([['key' => 'orbit.recipe', 'value' => app(RecipeImageBuilds::class)->currentRecipe()->identity]])
             ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
@@ -797,7 +799,7 @@ describe('image build', function (): void {
             ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
             ->and(end($commands))->toEndWith(' -- orbit 1000:1000 --ufw')
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
-            ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'python3 - packages ')))->toHaveCount(1)
+            ->and(array_filter($commands, static fn (string $command): bool => str_ends_with($command, 'python3 - packages')))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true))->not->toHaveKey('packages');
     });
 
@@ -895,6 +897,37 @@ describe('image build', function (): void {
         'verification is truncated' => ['verify', true],
     ]);
 
+    it('keeps redacted remote package output after deleting a failed UpCloud builder', function (): void {
+        $this->ssh = new class extends FakeUpCloudSsh
+        {
+            #[Override]
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']) {
+                    return new CommandResult(100, 'recipe-image-stage:packages', 'apt dependency conflict API_TOKEN=private-token', 1, false);
+                }
+
+                return parent::execute($connection, $command);
+            }
+        };
+        app()->instance(SshExecutor::class, $this->ssh);
+
+        try {
+            app(UpCloudTaskVmImageBuilder::class)->build();
+            test()->fail('The package error must fail the build.');
+        } catch (TaskVmException $error) {
+            expect($error->getMessage())->toContain('stage [packages]', 'exit 100');
+            expect($error->getMessage())->not->toContain('private-token');
+        }
+        expect($this->upcloud->servers)->toBe([]);
+        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
+        $failure = UpCloudTaskVmImageBuild::query()->latest('id')->firstOrFail()->failure;
+        expect($failure)->toBe(['phase' => 'base:packages', 'exit_code' => 100, 'stderr' => 'apt dependency conflict API_TOKEN=[REDACTED]']);
+        Artisan::call('task-vms:image-builds');
+        expect(Artisan::output())->toContain('base:packages', 'exit_code', 'apt dependency conflict')->not->toContain('private-token');
+
+    });
+
     it('fails the build when ufw does not turn on', function (): void {
         $this->ssh = new class extends FakeUpCloudSsh
         {
@@ -922,7 +955,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
         expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
             ->and($this->upcloud->servers)->toBe([])
-            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds']);
+            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds-optional']);
     });
 
     it('handles a serialized refresh job queued before the recipe fence', function (): void {
@@ -992,6 +1025,19 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
         $this->assertDatabaseCount('upcloud_task_vm_image_builds', 2);
         $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'succeeded']);
+    });
+
+    it('queues UpCloud below waiting Incus chain steps in the same supervisor', function (): void {
+        Queue::fake();
+        TaskVmImageBuild::query()->delete();
+
+        app(RecipeImageBuilds::class)->reconcile();
+
+        Queue::assertPushedOn('builds', BuildRecipeImageStep::class);
+        Queue::assertPushedOn('builds-optional', RefreshUpCloudTaskVmBaseImage::class);
+        expect(config('horizon.defaults.builds.queue'))->toBe(['builds', 'builds-optional'])
+            ->and(config('horizon.defaults.builds.balance'))->toBeFalse();
+        expect($this->upcloud->created)->toBe([]);
     });
 
     it('alerts once for a fenced current recipe and includes the retry command', function (string $state, int $age, bool $verified, bool $current, bool $configured, bool $alert): void {

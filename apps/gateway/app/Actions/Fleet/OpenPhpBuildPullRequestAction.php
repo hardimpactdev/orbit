@@ -27,6 +27,7 @@ final readonly class OpenPhpBuildPullRequestAction
         private GitHubApi $github,
         private RecipeLoader $loader,
         private PhpBuildBump $bump,
+        private NightlyRecipeContents $contents,
     ) {}
 
     public function execute(): ?string
@@ -45,6 +46,7 @@ final readonly class OpenPhpBuildPullRequestAction
         if (! is_string($content) || ! is_string($file['sha'] ?? null)) {
             throw new RuntimeException('GitHub did not return the recipe file.');
         }
+        $this->contents->requireDeployed($content);
         $current = $this->loader->decode($content);
         $updated = $this->bump->bump($content);
         if ($updated === $content) {

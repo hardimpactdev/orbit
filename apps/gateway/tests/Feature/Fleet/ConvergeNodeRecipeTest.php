@@ -28,6 +28,7 @@ use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\InspectsToolsIndividually;
+use Tests\Support\RecipeProgramPayload;
 
 final class RecipeVerification implements FleetNodeVerification
 {
@@ -51,8 +52,8 @@ final class RecipeVerification implements FleetNodeVerification
 function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null): ScriptedSshExecutor
 {
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', $inspection ?? static function (RemoteCommand $command): CommandResult {
-        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+    $ssh->on('/^python3 - inspect$/', $inspection ?? static function (RemoteCommand $command): CommandResult {
+        $payload = RecipeProgramPayload::read($command->input);
         $versions = [];
         foreach ($payload['tools'] as $name => $pin) {
             $versions[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '1.0.0' : $pin['version'], 'changed' => $name === 'curl', 'status' => $name === 'curl' ? 'older_than_recipe' : 'current'];
@@ -60,7 +61,7 @@ function recipeSsh(?CommandResult $application = null, ?Closure $inspection = nu
 
         return ScriptedSshExecutor::ok(json_encode($versions, JSON_THROW_ON_ERROR));
     });
-    $ssh->on('/^sudo timeout .* python3 - apply /', $application ?? ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
+    $ssh->on('/^sudo timeout .* python3 - apply$/', $application ?? ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
     app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
@@ -165,7 +166,7 @@ it('installs the PHP build with the one installer after the other tools, strictl
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
     $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
-    $payload = json_decode((string) $apply->arguments[array_key_last($apply->arguments)], true, flags: JSON_THROW_ON_ERROR);
+    $payload = RecipeProgramPayload::read($apply->input);
     expect(array_keys($payload['tools']))->not->toContain('php8.5-fpm', 'php8.5-pcov', 'php-common')->toContain('caddy', 'dpkg-repack')
         ->and(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
         ->and($php->inputs[2])->toMatchArray(['pcov' => false, 'extras' => 'refuse', 'fpm' => 'all'])
@@ -408,7 +409,7 @@ it('keeps newer Ubuntu versions visible in the plan result and recorded status',
     $recipe = new RecipeLoader()->load();
     $newer = ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]];
     recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command): CommandResult {
-        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $payload = RecipeProgramPayload::read($command->input);
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
@@ -425,10 +426,10 @@ it('keeps newer Ubuntu versions visible in the plan result and recorded status',
         ->and($node->refresh()->settings['machine_recipe']['newer_than_recipe'])->toBe($newer);
 });
 
-it('retains redacted package command output in the failed convergence result', function (): void {
+it('retains redacted package command output in the failed convergence result', function (string $stage): void {
     $node = FleetFixtures::node('recipe-package-output');
     recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
-        'stage' => 'recipe-stage:packages', 'packages' => ['curl=8.18.0-1ubuntu2.7'],
+        'stage' => 'recipe-stage:'.$stage, 'packages' => ['curl=8.18.0-1ubuntu2.7'],
         'command' => ['apt-get', 'install', 'curl=8.18.0-1ubuntu2.7'], 'exit_code' => 100,
         'stdout' => 'curl: dependency conflict',
         'stderr' => 'Failed to fetch https://user:secret@example.test/pkg API_TOKEN=private-token',
@@ -438,9 +439,26 @@ it('retains redacted package command output in the failed convergence result', f
     $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($exit)->toBe(1)
-        ->and($result['message'])->toContain('recipe-stage:packages', 'curl=8.18.0-1ubuntu2.7', 'apt-get', 'dependency conflict', '[REDACTED]')
+        ->and($result['message'])->toContain('recipe-stage:'.$stage, 'curl=8.18.0-1ubuntu2.7', 'apt-get', 'dependency conflict', '[REDACTED]')
         ->and($result['automatic_rollback'])->toBeFalse();
     expect($result['message'])->not->toContain('user:secret');
+    expect($result['message'])->not->toContain('private-token');
+    expect($node->refresh()->settings)->toBe([]);
+})->with(['packages', 'apt-source', 'tools', 'restart:nginx', 'health:php8.5-fpm']);
+
+it('retains a source validation reason without requiring command output', function (): void {
+    $node = FleetFixtures::node('recipe-source-validation');
+    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+        'stage' => 'recipe-stage:apt-source',
+        'reason' => 'Backup [/etc/apt/ubuntu.sources.orbit-snapshot-backup] differs from the source. API_TOKEN=private-token',
+    ]], JSON_THROW_ON_ERROR)));
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(1)
+        ->and($result['message'])->toContain('recipe-stage:apt-source', '/etc/apt/ubuntu.sources.orbit-snapshot-backup', 'differs from the source', '[REDACTED]')
+        ->and($result['automatic_rollback'])->toBeFalse();
     expect($result['message'])->not->toContain('private-token');
     expect($node->refresh()->settings)->toBe([]);
 });
@@ -450,7 +468,7 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
     $ssh = recipeSsh(inspection: static function (RemoteCommand $command) use ($reason): CommandResult {
         expect($command->timeout)->toBe(900.0);
-        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $payload = RecipeProgramPayload::read($command->input);
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '99.0-foreign' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'unsupported_newer' : 'current'];

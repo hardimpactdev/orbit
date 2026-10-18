@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Gateway;
 
 /**
- * The queues of the Gateway queue connection, which Laravel Horizon works with one supervisor each, so a long build
- * never holds up a short job. See docs/reference/gateway-queue.md.
+ * The queues of the Gateway queue connection. Horizon separates short jobs from builds; the build supervisor
+ * checks required work before optional work. See docs/reference/gateway-queue.md.
  */
 enum GatewayQueue: string
 {
@@ -19,8 +19,11 @@ enum GatewayQueue: string
     /** Task VM provision to destroy, the pool refill, and the host sweep, one at a time and in order. */
     case TaskVms = 'task-vms';
 
-    /** Base image jobs, UpCloud image builds, and trusted package cache fills. */
+    /** Required base image jobs and trusted package cache fills. */
     case Builds = 'builds';
+
+    /** Optional UpCloud image builds, after waiting required build jobs. */
+    case OptionalBuilds = 'builds-optional';
 
     /** Operations, such as an Instance deploy: one job runs one operation (docs/reference/operations.md). */
     case Operations = 'operations';

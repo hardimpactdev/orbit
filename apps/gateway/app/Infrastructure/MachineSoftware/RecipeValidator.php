@@ -17,6 +17,9 @@ final readonly class RecipeValidator
 
     public function validate(MachineRecipe $recipe, string $artifactDirectory): void
     {
+        if (isset($recipe->tools['vp'])) {
+            VitePlusRuntimeLock::read($recipe->tools['vp']);
+        }
         $this->snapshots->verify($recipe);
         foreach ($recipe->tools as $name => $tool) {
             foreach ($tool->artifacts as $architecture => $artifact) {

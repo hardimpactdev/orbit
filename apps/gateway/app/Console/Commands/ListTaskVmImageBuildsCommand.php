@@ -57,6 +57,9 @@ final class ListTaskVmImageBuildsCommand extends Command
         foreach ($upcloud as $attempt) {
             $this->line("UpCloud build [{$attempt->id}] | {$attempt->recipe_identity} | {$attempt->status()}");
             $this->line('  Started: '.$attempt->started_at->toIso8601String().' | finished: '.($attempt->finished_at?->toIso8601String() ?? '-').' | template: '.($attempt->template_uuid ?? '-'));
+            if ($attempt->failure !== null) {
+                $this->line('  Failure: '.json_encode($attempt->failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            }
         }
 
         return self::SUCCESS;
