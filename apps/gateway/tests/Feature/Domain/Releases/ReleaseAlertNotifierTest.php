@@ -2,22 +2,29 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertOutcome;
 use App\Domain\Releases\ReleaseAlertSubject;
+use App\Domain\Releases\ReleaseIncident;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Models\Activity;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\Fleet\FleetFixtures;
 
 const RELEASE_ALERT_URL = 'https://hooks.example.test/services/T000/B000/release-alert-token';
 
@@ -41,6 +48,7 @@ function release_alert(
         $kind,
         new ReleaseAlertSubject('gateway', 'nckrtl/orbit', RELEASE_ALERT_SHA, '17'),
         $summary,
+        new ReleaseIncident('gateway', '17', $kind->value),
         $evidenceUrl,
     );
 }
@@ -57,7 +65,7 @@ describe('a raised alert', function (): void {
 
         $receipt = app(ReleaseAlertNotifier::class)->alert(release_alert());
 
-        $fingerprint = 'release|release_failed|gateway|'.RELEASE_ALERT_SHA;
+        $fingerprint = 'release|release_failed|gateway|17|release_failed';
         $activity = release_alert_activity();
         $subject = ['target' => 'gateway', 'repository' => 'nckrtl/orbit', 'sha' => RELEASE_ALERT_SHA, 'release_id' => '17'];
 
@@ -131,12 +139,12 @@ describe('a raised alert', function (): void {
         $task = Task::topLevel()->sole();
         $activityId = release_alert_activity()->id;
 
-        expect($task->title)->toBe('Release paused for gateway at 0123456789ab')
+        expect($task->title)->toBe('Release paused for gateway, attempt 17')
             ->and($task->brief)->toContain("Symptom\nHealth check failed after migrations ran.")
             ->and($task->brief)->toContain("Count\n1")
             ->and($task->brief)->toContain("Activity ids: {$activityId}")
             ->and($task->brief)->toContain('Evidence links: https://github.com/nckrtl/orbit/actions/runs/42')
-            ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit@".RELEASE_ALERT_SHA.', release 17')
+            ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit, gateway, 17, release_paused")
             ->and(ProblemFingerprint::query()->sole()->task_group_id)->toBe($task->id);
     });
 
@@ -230,7 +238,7 @@ describe('the problem part', function (): void {
 
     it('is skipped for a suppressed fingerprint', function (): void {
         Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
-        $fingerprint = 'release|release_failed|gateway|'.RELEASE_ALERT_SHA;
+        $fingerprint = 'release|release_failed|gateway|17|release_failed';
         config()->set('orbit.problems.suppressed_fingerprints', [$fingerprint]);
 
         $receipt = app(ReleaseAlertNotifier::class)->alert(release_alert());
@@ -254,4 +262,71 @@ describe('the problem part', function (): void {
             ->and($activity->status)->toBe('failed')
             ->and($activity->error_code)->toBe('release.alert_problem_failed');
     });
+});
+
+it('keeps one incident across Gateway source changes and separates resource attempts', function (): void {
+    Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
+    foreach ([['17', RELEASE_ALERT_SHA], ['17', str_repeat('b', 40)], ['18', str_repeat('b', 40)]] as [$attempt, $sha]) {
+        app(ReleaseAlertNotifier::class)->alert(new ReleaseAlert(
+            ReleaseAlertKind::ReleaseFailed,
+            new ReleaseAlertSubject('gateway', 'nckrtl/orbit', $sha, $attempt),
+            'Smoke failed.',
+            new ReleaseIncident('gateway', $attempt, 'smoke'),
+        ));
+    }
+
+    $rows = ProblemFingerprint::query()->orderBy('id')->get();
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]->evidence['release_shas'] ?? null)->toBe([RELEASE_ALERT_SHA, str_repeat('b', 40)])
+        ->and($rows[0]->evidence['release_id'])->toBe('17')
+        ->and($rows[1]->evidence['release_id'])->toBe('18');
+});
+
+it('keeps a fenced UpCloud attempt in one problem across Gateway releases and recovers on a verified template', function (): void {
+    Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
+    Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://example.test/orbit.git', 'default_branch' => 'main']);
+    FleetFixtures::inPlace();
+    $recipe = 'sha256:'.str_repeat('a', 64);
+    $build = UpCloudTaskVmImageBuild::query()->create(['recipe_identity' => $recipe, 'state' => TaskVmImageBuildState::Failed, 'started_at' => now(), 'finished_at' => now()]);
+    foreach (['a', 'b'] as $letter) {
+        FleetFixtures::adopt(str_repeat($letter, 40));
+        app(RecipeMaintenanceAlerts::class)->halted($build->fenceMessage(), $build->id, 'machine-recipe-upcloud');
+        expect(Artisan::call('problems:file'))->toBe(0);
+    }
+    expect(ProblemFingerprint::query()->count())->toBe(1)
+        ->and(Task::topLevel()->count())->toBe(1)
+        ->and(ProblemFingerprint::query()->sole()->evidence['release_shas'])->toBe([str_repeat('a', 40), str_repeat('b', 40)]);
+    $group = Task::topLevel()->sole();
+    $retry = UpCloudTaskVmImageBuild::query()->create(['recipe_identity' => $recipe, 'state' => TaskVmImageBuildState::Succeeded, 'started_at' => now(), 'finished_at' => now()]);
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+    $retry->update(['template_uuid' => 'verified-template']);
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});
+
+it('keeps a no-build nightly cycle independent of summary text and Gateway source', function (): void {
+    $this->travelTo(Carbon::parse('2026-10-18 10:00:00', 'UTC'));
+    Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
+    Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://example.test/orbit.git', 'default_branch' => 'main']);
+    FleetFixtures::inPlace();
+    foreach (['a', 'b'] as $letter) {
+        FleetFixtures::adopt(str_repeat($letter, 40));
+        app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: '.$letter, incident: RecipeMaintenanceAlerts::mergeIncident('list'));
+        expect(Artisan::call('problems:file'))->toBe(0);
+    }
+    $row = ProblemFingerprint::query()->sole();
+    expect($row->fingerprint)->toBe('release|rollout_halted|recipe-repository:nckrtl:orbit|nightly:20261018|github_list_failed')
+        ->and(Task::topLevel()->count())->toBe(1)
+        ->and(Task::topLevel()->sole()->brief)->toContain('GitHub list failed: b');
+    $this->travel(1)->days();
+    app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: b', incident: RecipeMaintenanceAlerts::mergeIncident('list'));
+    expect(ProblemFingerprint::query()->count())->toBe(2);
+});
+
+it('rejects a no-build recipe alert without an explicit identity', function (): void {
+    FleetFixtures::inPlace();
+    FleetFixtures::adopt(RELEASE_ALERT_SHA);
+
+    expect(fn () => app(RecipeMaintenanceAlerts::class)->halted('No build exists.'))->toThrow(InvalidArgumentException::class);
 });

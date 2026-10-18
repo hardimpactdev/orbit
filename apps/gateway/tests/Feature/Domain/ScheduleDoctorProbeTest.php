@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\ScheduleDoctorProbe;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -14,12 +16,15 @@ use App\Domain\Doctor\ScheduleInspectionData;
 use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Schedule;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -241,3 +246,12 @@ it('does not scan inventory after a Node observation already proved it unreachab
     expect($this->inspector->orphanScans)->toBe(0);
     expect($report->issues)->toBeEmpty();
 });
+it('recovers an orphan only after a successful inventory proves its absence', function (string $observation): void {
+    $id = '123e4567-e89b-42d3-a456-426614174099';
+    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|schedule.orphan_artifact|schedule|'.$id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $this->node->id, 'doctor_family' => 'schedule', 'doctor_resource' => $id, 'doctor_resource_present' => false, 'doctor_observed_at' => now()->toISOString()]]);
+    $this->travel(1)->minutes();
+    $this->inspector->orphanScanFails = $observation === 'failed';
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData($observation !== 'skipped', 'linux', 'x86_64', true)));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($this->node->id, $this->node->name, [$report])]), now());
+    expect($row->refresh()->evidence['resolution'] ?? null)->toBe($observation === 'success' ? 'fresh_doctor_success' : null);
+})->with(['failed', 'skipped', 'success']);

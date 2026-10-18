@@ -20,6 +20,7 @@ use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolInventoryScan;
 use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\VersionConstraint;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\Tools\ToolCommandBudget;
@@ -41,6 +42,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         private InstalledPackageInventory $inventory,
         private VpToolManager $vp,
         private ToolCommandBudget $budget,
+        private ToolManagerRegistry $managers,
     ) {}
 
     public function family(): DoctorFamily
@@ -102,10 +104,27 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             ]);
         }
 
+        $registeredIssues = $this->registeredIssues($tools);
+        $environmentsIssues = $this->environmentIssues($environments, $context->node);
+        $checks = [ToolDoctorIssueCode::NodeUnreachable->value];
+        if ($environments->isNotEmpty() && $environmentsIssues === []) {
+            $checks = [...$checks, ToolDoctorIssueCode::VpStoreMissing->value, ToolDoctorIssueCode::VpStoreInspectionFailed->value];
+        }
+
+        $inventory = ['issues' => [], 'complete' => false];
+        if ($context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory) {
+            $inventory = $this->discoveryIssues($context, $this->tools($context->node));
+        }
+        if ($inventory['complete']) {
+            $checks = [...$checks, ToolDoctorIssueCode::InventoryScan->value, ToolDoctorIssueCode::InspectionFailed->value];
+        }
+
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Tool,
             $count,
-            [...$this->registeredIssues($tools), ...$this->environmentIssues($environments, $context->node), ...($context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory ? $this->discoveryIssues($context, $context->resources?->kind === DoctorResourceKind::Inventory ? $this->tools($context->node) : $tools) : [])],
+            [...$registeredIssues, ...$environmentsIssues, ...$inventory['issues']],
+            array_values($tools->modelKeys()),
+            ['' => $checks],
         );
     }
 
@@ -258,25 +277,25 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
     /**
      * @param  Collection<int, Tool>  $tools
-     * @return list<DoctorIssueData>
+     * @return array{issues: list<DoctorIssueData>, complete: bool}
      */
     private function discoveryIssues(DoctorNodeContext $context, Collection $tools): array
     {
         try {
             $scans = $this->inventory->inspect($context->node);
         } catch (Throwable) {
-            return [$this->inventoryInspectionFailed()];
+            return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
         }
 
         $expected = [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp];
 
         if (count($scans) !== count($expected)) {
-            return [$this->inventoryInspectionFailed()];
+            return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
         }
 
         foreach ($expected as $index => $manager) {
             if ($scans[$index]->manager !== $manager) {
-                return [$this->inventoryInspectionFailed()];
+                return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
             }
         }
 
@@ -330,7 +349,11 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             );
         }
 
-        return [...$scanIssues, ...$packageIssues];
+        $complete = array_any($scans, static fn (ToolInventoryScan $scan): bool => $scan->scanState === ToolInventoryScanState::Complete)
+            && array_all($scans, fn (ToolInventoryScan $scan): bool => $scan->scanState === ToolInventoryScanState::Complete
+                || ($scan->scanState === ToolInventoryScanState::Unsupported && $this->managers->find($scan->manager->value)?->supportsNode($context->node) === false));
+
+        return ['issues' => [...$scanIssues, ...$packageIssues], 'complete' => $complete];
     }
 
     private function scanIssue(ToolInventoryScan $scan, bool $managerIsUsed): DoctorIssueData

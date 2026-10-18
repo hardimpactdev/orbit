@@ -118,7 +118,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), $issues, [...$rules->modelKeys(), ...array_map(static fn (FirewallInspectionTarget $target): int|string => $target->resourceId, $expectations)], ['' => [FirewallDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /**

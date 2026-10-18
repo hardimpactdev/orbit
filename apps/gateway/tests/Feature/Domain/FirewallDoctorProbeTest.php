@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\FirewallDoctorProbe;
 use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
@@ -14,9 +16,12 @@ use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -349,10 +354,23 @@ it('checks a Metrics expectation with zero persisted rows and short-circuits whe
     };
     $probe = new FirewallDoctorProbe($inspector, new FirewallExpectationProviderFake([$target]));
 
+    $rows = [];
+    foreach (['firewall.rule_missing' => $target->resourceId, 'firewall.node_unreachable' => null] as $code => $resource) {
+        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|firewall|'.($resource ?? 'none'), 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'firewall', 'doctor_resource' => $resource, 'doctor_observed_at' => now()->toISOString()]]);
+    }
+    $this->travel(1)->minutes();
     $healthy = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));
     $fresh = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));
     $unreachable = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)));
 
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$unreachable])]), now());
+    foreach ($rows as $row) {
+        expect($row->refresh()->evidence)->not->toHaveKey('resolved_at');
+    }
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$fresh])]), now());
+    foreach ($rows as $row) {
+        expect($row->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    }
     expect($healthy->checked)
         ->toBe(0)
         ->and($healthy->issues)

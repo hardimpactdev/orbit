@@ -205,6 +205,10 @@ it('does not report success or comment when an expected-head branch update loses
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe($evidence['pr']['html_url']);
     expect($alerts->alerts)->toHaveCount(1);
 
+    expect($alerts->alerts[0]->incident->resource)->toBe('recipe-pr:99')
+        ->and($alerts->alerts[0]->incident->attempt)->toBe(str_repeat('b', 40))
+        ->and($alerts->alerts[0]->incident->fault)->toBe('refresh_failed');
+
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments'));
 });
 

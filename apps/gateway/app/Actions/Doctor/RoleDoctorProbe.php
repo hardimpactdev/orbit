@@ -152,6 +152,8 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             DoctorFamily::Role,
             $selected->count(),
             $this->ordered($issues),
+            array_values($roles->where('status', LifecycleStatus::Active)->modelKeys()),
+            $context->inspection->reachable && ! $context->inspectionFailed ? ['' => [RoleDoctorIssueCode::NodeUnreachable->value]] : [],
         );
     }
 

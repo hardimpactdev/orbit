@@ -9,6 +9,7 @@ use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertSubject;
+use App\Domain\Releases\ReleaseIncident;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use InvalidArgumentException;
@@ -86,6 +87,7 @@ final readonly class AutomaticDeployAlerts
                 $kind,
                 new ReleaseAlertSubject('instance:'.$instance->id, $repository->owner.'/'.$repository->name, $sha, $deployment instanceof InstanceDeployment ? 'deployment-'.$deployment->id : null),
                 $summary,
+                new ReleaseIncident('instance:'.$instance->id, $deployment instanceof InstanceDeployment ? (string) $deployment->id : 'pending:'.$sha, $deployment->error_code ?? $kind->value),
             );
 
             return ['kind' => $kind->value, ...$this->notifier->alert($alert)->toArray()];

@@ -28,7 +28,7 @@ final readonly class ProblemEvidence
 
         $evidence['observation_times'] = array_slice($times, -20);
 
-        foreach (['request_ids' => 5, 'paths' => 5, 'evidence_urls' => 5] as $key => $cap) {
+        foreach (['request_ids' => 5, 'paths' => 5, 'evidence_urls' => 5, 'release_shas' => 5] as $key => $cap) {
             if (! is_array($observation[$key] ?? null)) {
                 continue;
             }
@@ -83,7 +83,7 @@ final readonly class ProblemEvidence
             }
         }
 
-        foreach (['release_repository' => 255, 'release_id' => 64] as $key => $limit) {
+        foreach (['release_repository' => 255, 'release_id' => 64, 'incident_resource' => 100, 'incident_attempt' => 100, 'incident_fault' => 100, 'doctor_family' => 64, 'doctor_node' => 64, 'doctor_observed_at' => 64, 'release_kind' => 64, 'release_target' => 100, 'resolved_at' => 64, 'resolution' => 100] as $key => $limit) {
             $value = $observation[$key] ?? null;
 
             if (is_string($value) && $value !== '') {
@@ -91,14 +91,14 @@ final readonly class ProblemEvidence
             }
         }
 
-        foreach (['expected', 'observed'] as $key) {
+        foreach (['expected', 'observed', 'doctor_resource', 'doctor_resource_present'] as $key) {
             if (! array_key_exists($key, $observation)) {
                 continue;
             }
 
             $value = $observation[$key];
 
-            if ($value === null || is_bool($value) || is_string($value)) {
+            if ($value === null || is_bool($value) || is_int($value) || is_string($value)) {
                 $evidence[$key] = $value;
             }
         }

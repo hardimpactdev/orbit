@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Data\Doctor\DoctorFamilyReportData;
+use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
@@ -13,10 +18,12 @@ use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemEvidence;
+use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolInventoryPackageKind;
 use App\Domain\Tools\ToolInventoryScan;
@@ -154,7 +161,7 @@ it('records nothing from an interrupted doctor pass and records every issue once
 it('collects no fingerprint for an informational doctor issue', function (): void {
     problem_collector_sandbox();
     $node = problem_collector_node('informational');
-    $node->update(['status' => LifecycleStatus::Active]);
+    $node->update(['status' => LifecycleStatus::Active, 'architecture' => 'amd64', 'wireguard_ip' => '10.99.0.2', 'ssh_host_fingerprint' => 'SHA256:fixture']);
     app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
     {
         public function inspect(Node $node): NodeInspectionData
@@ -597,10 +604,103 @@ function problem_collector_run(): int
     $collector = app(ProblemCollector::class);
     $failures = $collector->collect();
     try {
-        $collector->recordDoctor(app(RunDoctorAction::class)->executeForFleet());
+        $startedAt = now();
+        $collector->recordDoctor(app(RunDoctorAction::class)->executeForFleet(), $startedAt);
     } catch (Throwable) {
         return 1;
     }
 
     return $failures === [] ? 0 : 1;
 }
+it('clears a Doctor incident only after a fresh successful observation or resource removal', function (string $recovery): void {
+    problem_collector_sandbox();
+    Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://example.test/orbit.git', 'default_branch' => 'main']);
+    $node = problem_collector_node('recovering');
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            return new NodeInspectionData(false, null, null, null);
+        }
+    });
+    problem_collector_run();
+    $this->travel(10)->minutes();
+    problem_collector_run();
+    Artisan::call('problems:file');
+    $group = Task::topLevel()->sole();
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+
+    if ($recovery === 'gone') {
+        $node->delete();
+    } else {
+        $node->update(['status' => LifecycleStatus::Active, 'architecture' => 'amd64', 'wireguard_ip' => '10.99.0.2', 'ssh_host_fingerprint' => 'SHA256:fixture']);
+        app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+        {
+            public function inspect(Node $node): NodeInspectionData
+            {
+                return new NodeInspectionData(true, 'linux', 'amd64', true);
+            }
+        });
+    }
+    $this->travel(1)->minutes();
+    problem_collector_run();
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+})->with(['healthy', 'gone']);
+
+it('keeps a Doctor incident open after an unsuccessful or skipped observation', function (string $observation): void {
+    problem_collector_sandbox();
+    Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://example.test/orbit.git', 'default_branch' => 'main']);
+    $node = problem_collector_node('still-failing');
+    problem_collector_run();
+    $this->travel(10)->minutes();
+    problem_collector_run();
+    Artisan::call('problems:file');
+    $group = Task::topLevel()->sole();
+    $issues = $observation === 'unverifiable' ? [DoctorIssueData::fromInternal(
+        DoctorFamily::Node, 'node.ssh_unreachable', DoctorIssueKind::Unverifiable, $node->id, $node->name, 'Node unreachable', true, false,
+    )] : [];
+    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Node, $observation === 'skipped' ? 0 : 1, $issues);
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
+    ]), now());
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+})->with(['unverifiable', 'skipped']);
+
+it('resolves only the successfully observed Doctor resource within a mixed family', function (): void {
+    problem_collector_sandbox();
+    $node = problem_collector_node('mixed');
+    $rows = [];
+    foreach ([101, 102, 103] as $id) {
+        $rows[$id] = ProblemFingerprint::query()->create([
+            'fingerprint' => 'doctor|instance.checkout_missing|instance|'.$id, 'source' => ProblemSource::Doctor, 'occurrences' => 0,
+            'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'instance', 'doctor_resource' => $id, 'doctor_observed_at' => now()->toISOString()],
+        ]);
+    }
+    $this->travel(1)->minutes();
+    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 3, [
+        DoctorIssueData::fromInternal(DoctorFamily::Instance, 'instance.checkout_missing', DoctorIssueKind::Drift, 102, 'failing', 'Still missing', true, false),
+    ], [101, 102]);
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
+    ]), now());
+    expect($rows[101]->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success')
+        ->and($rows[102]->refresh()->evidence)->not->toHaveKey('resolved_at')
+        ->and($rows[103]->refresh()->evidence)->not->toHaveKey('resolved_at');
+});
+
+it('ignores informational inventory while confirming a fresh resource observation', function (): void {
+    problem_collector_sandbox();
+    $node = problem_collector_node('tools');
+    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|tool.not_installed|tool|101', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => '101', 'doctor_observed_at' => now()->toISOString()]]);
+    $this->travel(1)->minutes();
+    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, 1, [
+        DoctorIssueData::fromInternal(DoctorFamily::Tool, 'tool.inventory_scan', DoctorIssueKind::Informational, null, null, 'Unused manager absent', null, null),
+    ], [101]);
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
+    ]), now());
+    expect($row->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});

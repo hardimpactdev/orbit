@@ -310,6 +310,8 @@ The Gateway files a Backlog task when the same production problem keeps returnin
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
+Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
+
 ### Fingerprints
 
 Each signal updates one row in `problem_fingerprints`. The fingerprint is unique.
@@ -337,7 +339,7 @@ Each occurrence stores the UTC time of the first signal in its 5-minute window a
 | Activity | `activity\|command\|error_code` |
 | Log | `log\|exception class\|first app frame` |
 | Assistance | `assist\|normalized reason` |
-| Release alert | `release\|kind\|target\|sha` |
+| Release alert | `release\|kind\|resource\|attempt\|fault` |
 
 A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
 
@@ -446,7 +448,7 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 | Activity | `{command} failed with {error_code}` | The command name |
 | Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
-| Release alert | `Release failed`, `Release paused`, or `Rollout halted`, then `for {target} at {first 12 characters of the sha}` | `{repository}@{sha}`, and the release id when there is one |
+| Release alert | Alert kind, then `for {resource}, attempt {attempt}` | Repository, resource, attempt, and fault |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
 

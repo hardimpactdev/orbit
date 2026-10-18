@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Doctor\DatabaseConnectionDoctorProbe;
 use App\Actions\Doctor\RunDoctorAction;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
@@ -17,6 +19,8 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemCollection;
 use App\Domain\Problems\ProblemCollector;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteProvenance;
@@ -484,4 +488,30 @@ it('still queues a Node connection when its only attachment is on a removing Ins
         },
         CollectProblemSignals::class,
     ]);
+});
+
+it('recovers attachment checks despite colliding registry ids and requires both domains for shared faults', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $collision = DatabaseConnection::query()->create(['slug' => 'unhealthy-collision', 'driver' => DatabaseDriver::Mysql, 'node_id' => $node->id]);
+    $healthy = database_connection_doctor_mysql($node, 'healthy-attachment');
+    $attachment = DatabaseConnectionTarget::query()->create(['database_connection_id' => $healthy->id, 'instance_id' => $instance->id, 'prefix' => 'DB']);
+    expect($attachment->id)->toBe($collision->id);
+    foreach ((new DatabaseConnectionEnvProjection)->project($healthy, 'DB')['values'] as $key => $value) {
+        $instance->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+    $rows = [];
+    foreach (['env_mismatch', 'unhealthy'] as $fault) {
+        $rows[$fault] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|database_connection.'.$fault.'|database_connection|'.$attachment->id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'database_connection', 'doctor_resource' => (string) $attachment->id, 'doctor_observed_at' => now()->toISOString()]]);
+    }
+    $this->travel(1)->minutes();
+    $family = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    expect($rows['env_mismatch']->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success')
+        ->and($rows['unhealthy']->refresh()->evidence)->not->toHaveKey('resolved_at');
+    $collision->update(['host' => '10.44.0.201', 'port' => 3306, 'database' => 'app', 'username' => 'app', 'password' => DATABASE_CONNECTION_DOCTOR_SECRET]);
+    $this->travel(1)->minutes();
+    $family = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    expect($rows['unhealthy']->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
 });

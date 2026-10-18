@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Problems;
 
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
@@ -38,12 +39,18 @@ final readonly class ProblemFiler
         private CreateTaskGroupAction $groups,
         private ProblemEvidence $evidence,
         private ProblemSuppression $suppression,
+        private ProblemRecovery $recovery,
+        private ProblemGroupSnapshot $snapshots,
+        private CancelTaskGroupAction $cancel,
     ) {}
 
     /** @return list<Throwable> */
     public function file(): array
     {
-        $failures = $this->suppressEnded();
+        $failures = $this->refreshIncidents();
+        foreach ($this->suppressEnded() as $failure) {
+            $failures[] = $failure;
+        }
 
         foreach ($this->settleLegacyEpisodes() as $exception) {
             $failures[] = $exception;
@@ -71,11 +78,51 @@ final readonly class ProblemFiler
     }
 
     /** @return list<Throwable> */
+    private function refreshIncidents(): array
+    {
+        $failures = [];
+        $rows = ProblemFingerprint::query()->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release])->orderBy('id')->get(['id']);
+        foreach ($rows as $row) {
+            try {
+                DB::transaction(function () use ($row): void {
+                    $locked = ProblemFingerprint::query()->lockForUpdate()->findOrFail($row->id);
+                    $reason = $this->recovery->reason($locked);
+                    if ($reason !== null) {
+                        $this->recovery->resolve($locked, $reason);
+                    }
+                    $group = $locked->task_group_id === null ? null : Task::topLevel()->lockForUpdate()->find($locked->task_group_id);
+                    if (! $group instanceof Task || ! $this->snapshots->unchanged($group, $locked->evidence['generated_group_hash'] ?? null)) {
+                        return;
+                    }
+                    if (isset($locked->evidence['resolved_at'])) {
+                        $this->cancel->execute($group);
+                        $this->clearEpisode($locked);
+                        $locked->evidence = [...$locked->evidence, 'auto_closed' => true];
+                    } elseif ($locked->occurrences > 0) {
+                        $group->update(['title' => $this->title($locked), 'brief' => $this->brief($locked, $this->symptom($locked))]);
+                        foreach ($group->tasks()->get() as $task) {
+                            $task->update(['brief' => $this->symptom($locked)]);
+                        }
+                        $this->clearEpisode($locked);
+                        $locked->evidence = [...$locked->evidence, 'generated_group_hash' => $this->snapshots->hash($group)];
+                    }
+                    $locked->save();
+                });
+            } catch (Throwable $exception) {
+                $failures[] = $exception;
+            }
+        }
+
+        return $failures;
+    }
+
+    /** @return list<Throwable> */
     private function suppressEnded(): array
     {
         $failures = [];
         $rows = ProblemFingerprint::query()
             ->whereNotNull('task_group_id')
+            ->whereNull('evidence->resolved_at')
             ->whereNull('muted_until')
             ->orderBy('id')
             ->get(['id']);
@@ -159,7 +206,7 @@ final readonly class ProblemFiler
         DB::transaction(function () use ($id): void {
             $row = ProblemFingerprint::query()->lockForUpdate()->find($id);
 
-            if (! $row instanceof ProblemFingerprint || $row->muted_until !== null || $row->task_group_id === null) {
+            if (! $row instanceof ProblemFingerprint || isset($row->evidence['resolved_at']) || $row->muted_until !== null || $row->task_group_id === null) {
                 return;
             }
 
@@ -173,8 +220,7 @@ final readonly class ProblemFiler
                 return;
             }
 
-            $cancelled = $task instanceof Task && $task->groupStatus() === TaskGroupStatus::Cancelled;
-            $row->muted_until = $this->muteFrom($task)->addDays($cancelled ? 14 : 7);
+            $row->muted_until = $this->suppression->muteUntil($task);
             $this->clearEpisode($row);
             $row->save();
         });
@@ -186,7 +232,7 @@ final readonly class ProblemFiler
         $ready = [];
         $open = $this->openStatuses();
 
-        $candidates = ProblemFingerprint::query()
+        $candidates = ProblemFingerprint::query()->whereNull('evidence->resolved_at')
             ->where(function (Builder $query): void {
                 $query->whereNull('muted_until')->orWhere('muted_until', '<=', now());
             })
@@ -249,6 +295,9 @@ final readonly class ProblemFiler
                 $group = $this->groups->execute($data);
                 $this->clearEpisode($locked);
                 $locked->task_group_id = $group->id;
+                if (in_array($locked->source, [ProblemSource::Doctor, ProblemSource::Release], true)) {
+                    $locked->evidence = [...$locked->evidence, 'generated_group_hash' => $this->snapshots->hash($group)];
+                }
                 $locked->filed_at = now();
                 $locked->muted_until = null;
                 $locked->save();
@@ -260,7 +309,7 @@ final readonly class ProblemFiler
 
     private function canFile(ProblemFingerprint $row): bool
     {
-        if ($this->suppression->blocksFiling($row) || ! $this->isReady($row)) {
+        if (isset($row->evidence['resolved_at']) || $this->suppression->blocksFiling($row) || ! $this->isReady($row)) {
             return false;
         }
 
@@ -281,6 +330,9 @@ final readonly class ProblemFiler
     {
         $occurrences = $row->occurrences;
         $evidence = $row->evidence;
+        if ($row->source === ProblemSource::Release && (! isset($evidence['incident_resource'], $evidence['incident_attempt'], $evidence['incident_fault'], $evidence['release_kind']))) {
+            return false;
+        }
         $settled = $this->evidence->legacyEpisode($evidence, $row->source);
 
         if ($settled !== null) {
@@ -522,6 +574,10 @@ final readonly class ProblemFiler
     {
         $evidence = $row->evidence;
         $lines = [];
+        $shas = $this->strings($evidence['release_shas'] ?? null);
+        if ($shas !== []) {
+            $lines[] = 'Source SHAs: '.implode(', ', $shas);
+        }
         $requestIds = $this->strings($evidence['request_ids'] ?? null);
 
         if ($requestIds !== []) {
@@ -677,43 +733,21 @@ final readonly class ProblemFiler
 
     private function releaseTitle(ProblemFingerprint $row): string
     {
-        $parts = $this->releaseParts($row);
+        $kind = ReleaseAlertKind::tryFrom($this->text($row, 'release_kind') ?? '');
+        $resource = $this->text($row, 'incident_resource');
+        $attempt = $this->text($row, 'incident_attempt');
 
-        if ($parts === null) {
-            return $row->fingerprint;
-        }
-
-        $kind = ReleaseAlertKind::tryFrom($parts['kind']);
-        $label = $kind instanceof ReleaseAlertKind ? $kind->label() : $parts['kind'];
-
-        return "{$label} for {$parts['target']} at ".substr($parts['sha'], 0, 12);
+        return $kind === null || $resource === null || $attempt === null ? $row->fingerprint : $kind->label()." for {$resource}, attempt {$attempt}";
     }
 
     private function releaseEntry(ProblemFingerprint $row): string
     {
-        $parts = $this->releaseParts($row);
-
-        if ($parts === null) {
-            return $row->fingerprint;
-        }
-
-        $repository = $this->text($row, 'release_repository');
-        $entry = $repository === null ? $parts['sha'] : "{$repository}@{$parts['sha']}";
-        $releaseId = $this->text($row, 'release_id');
-
-        return $releaseId === null ? $entry : "{$entry}, release {$releaseId}";
-    }
-
-    /** @return array{kind: string, target: string, sha: string}|null */
-    private function releaseParts(ProblemFingerprint $row): ?array
-    {
-        $pieces = $this->pieces($row, ProblemSource::Release, 3);
-
-        if ($pieces === null) {
-            return null;
-        }
-
-        return ['kind' => $pieces[0], 'target' => $pieces[1], 'sha' => $pieces[2]];
+        return implode(', ', array_filter([
+            $this->text($row, 'release_repository'),
+            $this->text($row, 'incident_resource'),
+            $this->text($row, 'incident_attempt'),
+            $this->text($row, 'incident_fault'),
+        ], static fn (?string $value): bool => $value !== null));
     }
 
     /** @return array{code: string, type: string, id: string}|null */
@@ -804,17 +838,6 @@ final readonly class ProblemFiler
         }
 
         return $time->copy()->utc()->format('Y-m-d H:i:s').' UTC';
-    }
-
-    private function muteFrom(?Task $task): Carbon
-    {
-        $stored = $task?->getAttributes()['updated_at'] ?? null;
-
-        if ($stored instanceof CarbonInterface || (is_string($stored) && $stored !== '')) {
-            return Carbon::parse($stored)->copy();
-        }
-
-        return now();
     }
 
     private function cut(string $value, int $limit, bool $ellipsis): string

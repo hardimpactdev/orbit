@@ -7,6 +7,7 @@ namespace App\Actions\Doctor;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
+use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -56,9 +57,18 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
 
         $issues = [];
         $attachmentIssues = [];
+        $observedResources = [];
+        $observedChecks = [];
 
         foreach ($attachments as $attachment) {
             $found = $this->inspection->attachment($attachment);
+            if ($found === []) {
+                $observedChecks[$attachment->id] = [DatabaseConnectionDoctorIssueCode::Missing->value, DatabaseConnectionDoctorIssueCode::EnvMismatch->value];
+                $collision = DatabaseConnection::query()->find($attachment->id);
+                if (! $collision instanceof DatabaseConnection || $this->inspection->connection($collision) === null) {
+                    $observedResources[] = $attachment->id;
+                }
+            }
             if ($found !== []) {
                 $attachmentIssues[$attachment->instance_id] = [
                     ...($attachmentIssues[$attachment->instance_id] ?? []),
@@ -85,13 +95,19 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
 
         foreach ($unattached as $connection) {
             $issue = $this->inspection->connection($connection);
+            if ($issue === null) {
+                $collision = DatabaseConnectionTarget::query()->find($connection->id);
+                if (! $collision instanceof DatabaseConnectionTarget || $this->inspection->attachment($collision) === []) {
+                    $observedResources[] = $connection->id;
+                }
+            }
 
             if ($issue instanceof DoctorIssueData) {
                 $issues[] = $issue;
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::DatabaseConnection, $checked, $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::DatabaseConnection, $checked, $issues, $observedResources, $observedChecks);
     }
 
     /** @return Collection<int, DatabaseConnectionTarget> */

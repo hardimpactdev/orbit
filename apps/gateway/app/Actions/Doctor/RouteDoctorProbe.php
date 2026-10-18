@@ -58,10 +58,17 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     {
         $routes = $context->select($this->servedRoutes($context->node));
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
+        $observedChecks = [];
+        foreach ($routes as $route) {
+            $observedChecks[$route->id] = [RouteDoctorIssueCode::LifecycleNotActive->value, RouteDoctorIssueCode::DomainReserved->value];
+        }
         $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 
+        if ($context->inspection->reachable) {
+            $observedChecks[''] = [RouteDoctorIssueCode::NodeUnreachable->value];
+        }
         if ($proxies->isEmpty()) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues, observedChecks: $observedChecks);
         }
 
         if (! $context->inspection->reachable) {
@@ -74,9 +81,10 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                 'Custom proxy Route state cannot be inspected because the node is unreachable.',
                 'reachable',
                 'unreachable',
-            )]);
+            )], observedChecks: $observedChecks);
         }
 
+        $observedResources = [];
         foreach ($proxies as $proxy) {
             $route = $proxy->route;
 
@@ -88,6 +96,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 
             try {
                 $observation = $this->inspector->inspect($proxy);
+                $observedResources[] = $route->id;
             } catch (DoctorInspectionException) {
                 $issues[] = $this->failure($proxy, $route->domain);
 
@@ -97,7 +106,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
             $issues = [...$issues, ...$this->issuesFor($proxy, $route, $observation)];
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues, $observedResources, $observedChecks);
     }
 
     /**

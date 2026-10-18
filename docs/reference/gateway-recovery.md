@@ -798,7 +798,7 @@ A failed entry is a server-class Activity row. When the webhook keeps failing, t
 
 ### Problem
 
-The alert records the fingerprint `release|{kind}|{target}|{sha}`, with the source `release`. Unlike a recurring signal, it is ready on its first occurrence. The next hourly `problems:file` run files it as a Backlog task in the `orbit` Project, ahead of every other ready fingerprint. [Outer loop](/reference/tasks#outer-loop) describes the sample, the brief, the daily cap, and the mute.
+The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source `release`. The failing resource, its attempt, and its fault identify the incident. Source SHAs stay in the evidence and never split an incident. Unlike a recurring signal, it is ready on its first occurrence. The next hourly `problems:file` run files it as a Backlog task in the `orbit` Project, ahead of every other ready fingerprint. [Outer loop](/reference/tasks#outer-loop) describes the sample, the brief, the daily cap, and the mute.
 
 | Outcome | Reason | When |
 | --- | --- | --- |
@@ -806,6 +806,12 @@ The alert records the fingerprint `release|{kind}|{target}|{sha}`, with the sour
 | `skipped` | `tasks_disabled` | The Tasks extension is disabled, so the outer loop does not run |
 | `skipped` | `suppressed` | The fingerprint is on the [suppression list](/reference/tasks#suppression) |
 | `failed` | `error` | The database write failed. The Gateway log has the exception |
+
+An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
+
+Recipe alerts without a build carry an explicit identity. A PR failure uses its PR number and head. A failed repository read uses its nightly date cycle. A failed maintenance job uses its queue job UUID. Alert wording and later Gateway releases do not prove that these incidents recovered.
+
+A migration merges the old buckets based on SHA only when retained alert evidence proves their resource, attempt, and fault. It adopts only groups whose original generated content and lack of operator activity can be confirmed. Ambiguous history stays available for an operator and cannot file a new group automatically.
 
 ### Webhook
 

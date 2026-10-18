@@ -84,6 +84,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             )]);
         }
         $issues = $leaseIssues;
+        $observed = [];
         foreach ($rows as $instance) {
             $instanceIssueOffset = count($issues);
 
@@ -206,6 +207,8 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 ...$this->publicRouteIssues($instance, $context),
             ];
 
+            $observed[] = $instance->id;
+
             if (count($issues) > $instanceIssueOffset) {
                 $current = Instance::query()->find($instance->id);
 
@@ -231,7 +234,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues, $observed, ['' => [InstanceDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /** @param Collection<int, Instance> $instances

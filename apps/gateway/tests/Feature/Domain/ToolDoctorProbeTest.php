@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\ToolDoctorProbe;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -10,6 +12,8 @@ use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolInspectionData;
@@ -39,6 +43,7 @@ use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +61,7 @@ function tool_doctor_probe(ToolInspector $inspector, ?InstalledPackageInventory 
         $inventory ?? new UnsupportedPackageInventory,
         app(VpToolManager::class),
         app(ToolCommandBudget::class),
+        app(ToolManagerRegistry::class),
     );
 }
 
@@ -1299,3 +1305,28 @@ it('groups registered Tools by manager regardless of row count', function (): vo
         ->and($resources[1]->ids)->toBe([$other->id])
         ->and($resources[2]->kind)->toBe(DoctorResourceKind::Inventory);
 });
+it('recovers global Tool inventory faults only after a complete successful scan', function (string $platform, string $state, bool $recovered): void {
+    $node = tool_probe_node();
+    $node->update(['platform' => $platform]);
+    $rows = [];
+    foreach (['tool.inventory_scan', 'tool.inspection_failed'] as $code) {
+        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|none', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => null, 'doctor_observed_at' => now()->toISOString()]]);
+    }
+    $this->travel(1)->minutes();
+    $inspector = new class implements ToolInspector
+    {
+        use InspectsToolsIndividually;
+
+        public function inspect(Tool $tool): ToolInspectionData
+        {
+            return new ToolInspectionData(true, '1.0.0');
+        }
+    };
+    $scanState = ToolInventoryScanState::from($state);
+    $inventory = tool_doctor_scans(array_map(static fn (ToolManagerName $manager): ToolInventoryScan => tool_doctor_scan($manager, $platform === 'linux' && $manager === ToolManagerName::BrewCask ? ToolInventoryScanState::Unsupported : $scanState), [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp]));
+    $report = tool_doctor_probe($inspector, $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, $platform, 'amd64', true)));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+    foreach ($rows as $row) {
+        expect($row->refresh()->evidence['resolution'] ?? null)->toBe($recovered ? 'fresh_doctor_success' : null);
+    }
+})->with([['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);

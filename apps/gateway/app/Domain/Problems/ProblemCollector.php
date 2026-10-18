@@ -38,6 +38,7 @@ final readonly class ProblemCollector
         private ProblemLogParser $parser,
         private ProblemEvidence $evidence,
         private ProblemSuppression $suppression,
+        private ProblemRecovery $recovery,
         private LogRedactor $redactor,
     ) {}
 
@@ -117,17 +118,23 @@ final readonly class ProblemCollector
         return ['fingerprint' => $fingerprint, 'stored' => true];
     }
 
-    public function recordDoctor(DoctorReportData $report): void
+    public function recordDoctor(DoctorReportData $report, Carbon $startedAt): void
     {
         $issues = $this->doctorIssues($report);
-        DB::transaction(function () use ($issues): void {
+        DB::transaction(function () use ($issues, $report, $startedAt): void {
             foreach ($issues as $issue) {
                 $this->record($issue['fingerprint'], ProblemSource::Doctor, [
                     'expected' => $issue['expected'],
                     'observed' => $issue['observed'],
                     'summary' => $issue['summary'],
+                    'doctor_node' => $issue['doctor_node'],
+                    'doctor_family' => $issue['doctor_family'],
+                    'doctor_resource' => $issue['doctor_resource'],
+                    'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource']),
+                    'doctor_observed_at' => $startedAt->toISOString(),
                 ]);
             }
+            $this->recovery->doctor($report, $startedAt);
         });
     }
 
@@ -313,7 +320,7 @@ final readonly class ProblemCollector
         });
     }
 
-    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string}> */
+    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_resource: string|null}> */
     private function doctorIssues(DoctorReportData $report): array
     {
         $issues = [];
@@ -331,6 +338,9 @@ final readonly class ProblemCollector
                         'expected' => $issue->expected,
                         'observed' => $issue->observed,
                         'summary' => $issue->summary,
+                        'doctor_node' => (string) $node->nodeId,
+                        'doctor_family' => $family->family->value,
+                        'doctor_resource' => $issue->resourceId === null ? null : (string) $issue->resourceId,
                     ];
                 }
             }
@@ -504,6 +514,11 @@ final readonly class ProblemCollector
         }
 
         $evidence = $row->evidence;
+        if (isset($evidence['auto_closed'])) {
+            $row->task_group_id = null;
+            unset($evidence['generated_group_hash'], $evidence['auto_closed']);
+        }
+        unset($evidence['resolved_at'], $evidence['resolution']);
         $occurrences = $row->occurrences;
         $settled = $this->evidence->legacyEpisode($evidence, $source);
 

@@ -92,14 +92,17 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             ? Schedule::query()->where('host_node_id', $context->node->id)->pluck('id')->all()
             : $schedules->pluck('id')->all();
         if (! $context->inspection->reachable || ($context->resources !== null && $context->resources->kind !== DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues, array_values($schedules->modelKeys()), $context->inspection->reachable ? ['' => [ScheduleDoctorIssueCode::NodeUnreachable->value]] : []);
         }
 
+        $inventories = [];
         try {
-            foreach ($this->inspector->orphanIds($context->node, array_values(array_filter(
+            $orphans = $this->inspector->orphanIds($context->node, array_values(array_filter(
                 $knownIds,
                 is_string(...),
-            ))) as $id) {
+            )));
+            $inventories[ScheduleDoctorIssueCode::OrphanArtifact->value] = $orphans;
+            foreach ($orphans as $id) {
                 $issues[] = new DoctorIssueData(
                     ScheduleDoctorIssueCode::OrphanArtifact,
                     DoctorIssueKind::Drift,
@@ -124,7 +127,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             );
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues, array_values($schedules->modelKeys()), $context->inspection->reachable ? ['' => [ScheduleDoctorIssueCode::NodeUnreachable->value, ScheduleDoctorIssueCode::InspectionFailed->value]] : [], observedInventories: $inventories);
     }
 
     /**
