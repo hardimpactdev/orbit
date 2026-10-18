@@ -22,7 +22,6 @@ final readonly class TaskReviewOutcome
         private AgentSpawner $spawner,
         private TaskWorkspaceStateReader $workspace,
         private TaskPullRequestWatcher $pullRequestWatcher,
-        private CoderSettleNotifier $coder,
         private TaskSessionActor $actor,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
@@ -370,7 +369,7 @@ final readonly class TaskReviewOutcome
                 'position' => TaskFinalReview::nextPosition($this->runner->lockedTasks($lockedGroup)),
                 'title' => $title,
                 'brief' => $brief,
-                'deliverables' => TaskFinalReview::fixupDeliverables($lockedGroup->project->taskCheckCommand()),
+                'deliverables' => TaskFinalReview::fixupDeliverables(),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
             ]);
@@ -396,23 +395,20 @@ final readonly class TaskReviewOutcome
     public function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
     {
         $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or complete the task.';
-        $stopped = DB::transaction(function () use ($group, $task, $receipt, $reason): bool {
+        DB::transaction(function () use ($group, $task, $receipt, $reason): void {
             $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
-                return false;
+                return;
             }
             TaskQuestions::answerPending($locked, $receipt);
             $locked->update(['status' => TaskStatus::Completed, 'settled_at' => $locked->settled_at ?? now(), 'review_handled_comment_id' => $receipt->id, 'communication_failures' => 0]);
             $lockedGroup->status = TaskGroupStatus::Settling;
             $lockedGroup->save();
 
-            return TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
+            TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
         });
         TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => null, 'reason' => $reason]);
-        if ($stopped) {
-            $this->coder->assistance($group, $reason);
-        }
     }
 
     /**

@@ -31,7 +31,7 @@ For focused documentation work, use [writing-documentation](.agents/skills/writi
 
 ## Checks and resources
 
-Run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
+In an Orbit task, run `composer test:affected` in each changed project. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 

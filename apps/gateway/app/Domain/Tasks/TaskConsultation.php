@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use Illuminate\Support\Carbon;
@@ -29,7 +30,6 @@ final readonly class TaskConsultation
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
-        private CoderSettleNotifier $coder,
         private TaskSessionObserver $observer,
         private TaskSessionActor $actor,
         private TaskTurnReceipts $receipts,
@@ -194,12 +194,12 @@ final readonly class TaskConsultation
     }
 
     /**
-     * Sends one reminder per attempt, then asks for assistance.
+     * Sends three failed-handoff reminders, or one ordinary reminder per attempt, then asks for assistance.
      *
      * @param  list<TaskRubricItem>  $items
      * @return bool whether the scheduler reminded the agent or asked for assistance
      */
-    public function remindOrAssist(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $thread, array $items): bool
+    public function remindOrAssist(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $thread, array $items, ?TaskCheck $failedCheck = null): bool
     {
         $failures = $this->failedItems($items);
         $implementer = $thread->role === TaskThreadRole::Implementer;
@@ -207,11 +207,17 @@ final readonly class TaskConsultation
         $reminder = $implementer ? 'completion_reminder_attempt' : 'review_reminder_attempt';
         $input = $implementer ? 'completion_reminder_input_id' : 'review_reminder_input_id';
         $pendingId = $thread->pendingUserInputId ?? $thread->pendingApprovalId;
-        if ($task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
+        if ($failedCheck === null && $task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
             return false;
         }
-        if ($task->{$reminder} !== $task->{$attempt}) {
-            $key = self::reminderKey($task, $thread->role);
+        $checkFailures = 0;
+        if ($failedCheck !== null) {
+            $lastPass = $task->checks()->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Passed)->where('id', '<', $failedCheck->id)->max('id');
+            $checkFailures = $task->checks()->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Failed)
+                ->where('id', '>', $lastPass ?? 0)->where('id', '<=', $failedCheck->id)->count();
+        }
+        if ($failedCheck !== null ? $checkFailures <= 3 : $task->{$reminder} !== $task->{$attempt}) {
+            $key = $failedCheck === null ? self::reminderKey($task, $thread->role) : 'tasks.check-reminder:'.$failedCheck->id;
             try {
                 if (! $this->runner->prepareTurn($scheduler, $group, $task, $thread->role, $thread->threadId, sendKey: $key)) {
                     return false;
@@ -223,13 +229,15 @@ final readonly class TaskConsultation
 
                 return false;
             }
-            $task->update([$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]);
+            $task->update($failedCheck === null
+                ? [$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]
+                : ['communication_failures' => 0]);
 
             return true;
         }
 
         $reasons = array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures);
-        $this->requestAssistance($task, $group, 'Checks still failed after the reminder. '.implode(' ', $reasons));
+        $this->requestAssistance($task, $group, ($failedCheck === null ? 'Checks still failed after the reminder. ' : 'The handoff check failed '.$checkFailures.' times in a row. ').implode(' ', $reasons));
 
         return true;
     }
@@ -429,10 +437,7 @@ final readonly class TaskConsultation
     {
         $observation = $this->observer->observe($group, $task);
         if (! $observation->available) {
-            $decision = $scheduler->unavailableDecision($group);
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-                $this->requestAssistance($task, $group, $decision->reason, $observation, AssistanceKind::Failure);
-            }
+            $scheduler->unavailableDecision($group);
 
             return;
         }
@@ -644,9 +649,9 @@ final readonly class TaskConsultation
             if (! TaskAssistance::sameRequest($locked, $task) || $locked->assistance_kind !== AssistanceKind::Direction) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $resolution);
+            TaskAssistance::apply($locked, source: $resolution);
             $locked->update([
-                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $resolution->id,
                 'resolution_delivered_comment_id' => $resolution->id,
@@ -826,12 +831,10 @@ final readonly class TaskConsultation
      */
     public function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
-        $notifyReason = null;
-        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source, &$notifyReason): void {
+        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source): void {
             if ($handled !== []) {
                 $task->update($handled);
             }
-            $wasAsking = (bool) DB::table('tasks')->where('id', $group->id)->value('assistance_requested');
             TaskAssistance::apply($task, $kind, $question, $reason);
             $task->refresh();
             $taskKind = $task->assistance_kind;
@@ -849,14 +852,7 @@ final readonly class TaskConsultation
                     TaskQuestions::recordBlocked($task, $source);
                 }
             }
-            $groupReason = $group->assistance_reason;
-            if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {
-                $notifyReason = $groupReason;
-            }
         });
-        if (is_string($notifyReason)) {
-            $this->coder->assistance($group, $notifyReason);
-        }
     }
 
     /**

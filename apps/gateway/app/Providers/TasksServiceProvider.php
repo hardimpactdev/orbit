@@ -7,7 +7,6 @@ namespace App\Providers;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\BriefCoverageLabeler;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
@@ -39,7 +38,6 @@ use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
-use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
@@ -84,7 +82,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
         TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
-        CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
         TaskPullRequestUpdater::class => HttpTaskPullRequestWatcher::class,
         TaskPullRequestReviewWatcher::class => HttpTaskPullRequestWatcher::class,

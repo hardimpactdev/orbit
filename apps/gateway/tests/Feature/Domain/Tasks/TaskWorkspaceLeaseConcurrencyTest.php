@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
     tick_bind_defaults();
     $first = tick_group();
-    $second = $first->replicate(['taskable_id', 'taskable_type']);
+    $second = $first->replicate(['taskable_id', 'taskable_type', ...TaskAssistance::Fields]);
     $second->title = 'Another group sharing the Instance';
     $second->save();
     $second->setRelation('taskable', $first->taskable);

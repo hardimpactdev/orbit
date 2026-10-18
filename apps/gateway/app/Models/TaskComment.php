@@ -23,7 +23,7 @@ final class TaskComment extends Model
     #[\Override]
     protected $fillable = [
         'task_group_id', 'task_id', 'agent_thread_id', 'completion_attempt', 'type', 'body', 'author',
-        'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request', 'deliverables', 'cause',
+        'request_id', 'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request', 'deliverables', 'cause',
     ];
 
     /**

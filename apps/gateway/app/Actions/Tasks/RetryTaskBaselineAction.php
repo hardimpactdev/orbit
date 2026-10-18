@@ -103,10 +103,11 @@ final readonly class RetryTaskBaselineAction
             if (! $this->retryRequested($group, $locked)) {
                 return false;
             }
-            TaskAssistance::clearResolvedParent($locked, $group);
+            $resolution = $locked->comments()->find($locked->resolution_delivered_comment_id);
+            TaskAssistance::clearResolvedParent($locked, $group, $resolution);
+            TaskAssistance::apply($locked, source: $resolution);
             $locked->update([
                 'subtask_start_commit' => $head,
-                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
             ]);
 

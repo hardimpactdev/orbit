@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -28,7 +28,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -41,8 +41,8 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `title`, `brief` | both | Short name, and the goal and acceptance |
 | `status` | both | Lifecycle state |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
-| `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. A completed or cancelled task or subtask never asks for assistance and keeps its last reason |
-| `assistance_kind`, `assistance_question` | both | `direction` when the record needs the operator's direction, with its one question. `failure` for every other cause, with no question. See [Direction requests](#direction-requests) |
+| `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. See the [assistance lifecycle](#assistance-and-resolution) for ended tasks and cleanup failures |
+| `assistance_kind`, `assistance_question` | both | The typed [assistance cause](#direction-requests) and the one question for a `direction` request. Other kinds have no question |
 | `position` | subtask | Order under the parent, gapless from 1 |
 | `deliverables` | subtask | The typed items the subtask must deliver |
 | `check` | subtask | The latest [task check](#project-check) run |
@@ -62,7 +62,6 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
-| `notify_coder` | task | Whether settle posts the [Coder webhook](#coder-settle-webhook) |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
 
@@ -119,7 +118,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`, and `notify_coder`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -301,7 +300,7 @@ Prepare a task in Backlog before any agent runs. A Backlog task has no workspace
 3. Add the ordered subtasks with their deliverables, following the Project's task policy.
 4. Move the task to `todo` with `tasks:update`.
 
-The Gateway does not check the branch contents. When `origin/task-{id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. A prompt names the Project task-check command only when one is configured.
+The Gateway does not check the branch contents. When `origin/task-{id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. The implementer prompt says that Orbit runs the configured Project check at handoff. It names the command only when one is configured.
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, both prompts add `The task started at <sha>.` and `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. The lines name no Project, branch, or policy. Any other value is left out.
 
@@ -767,13 +766,17 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 
 The topology check compares the candidate tree, including uncommitted files, with the merge base of its HEAD and the current `origin/main`. Changes inherited from `origin/main` do not require a topology. The group's own changes still do, including changes kept or made while merging main. This check uses neither the group's original start commit nor the subtask's start commit. If Orbit cannot read the merge base or diff, the handoff fails. File deliverables still use the subtask's start commit.
 
-When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
+When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends.
+
+Each attempt gets one reminder for rubric failures other than a failed handoff check. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
+
+Failed handoff checks have a separate budget per subtask. The first three consecutive failures each send a reminder with the exit code and the end of the output. The fourth asks for assistance. A passing handoff check resets the count. Baseline checks and other rubric failures keep their own rules.
 
 An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A reviewer's `blocked` receipt asks for direction at once, with the summary and the question as the reason. A `failed` acting thread asks for assistance at once, unless it is a [server restart](#recover-a-pi-server-restart).
 
 A failed read, send, commit, push, or script install is a communication failure. The tick retries it and moves on to other subtasks. The fifth consecutive failure asks for assistance with the last error.
 
-When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it posts one `task_group.escalated` webhook for that outage. A successful observation resets the wait. A thread state from before the outage never advances a subtask.
+When a driver cannot observe a thread, the tick waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default 120). Then it requests `observation` assistance on the group once for that outage and records it in Activity. This rule also applies during a consult. The request does not block observation or flag the subtask. Orbit keeps observing the thread. A successful observation clears that request and resets the wait. A thread state from before the outage never advances a subtask.
 
 Each observation also reports whether the workspace has commits since its starting commit. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
 
@@ -839,18 +842,26 @@ Closing a question never delivers a resolution, never sets or clears assistance,
 
 ### Assistance and resolution
 
-A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. Orbit posts the Coder `task_group.assistance_requested` webhook once. When the kind is `direction`, it also posts that event to [OpsBot](#opsbot-direction-webhook) so OpsBot wakes immediately. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
+A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task.
+
+Every change to assistance goes through `TaskAssistance::apply`; direct model writes are refused. It writes one Activity entry in the same transaction: `assistance requested` for a new request, `assistance changed` for a changed open request, or `assistance cleared` for a resolved request. Use `activity:list --command=tasks:assistance --json`, or `--command=tasks:comment` for a comment-driven change, and inspect these `description` values.
+
+Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity.
+
+Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on a completed or cancelled task; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
 
 #### Direction requests
 
-Every assistance request has a kind, `direction` or `failure`. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
+Every assistance request has a typed kind. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
 
 | Kind | Cause | Question |
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
-| `failure` | Every other cause, such as a failed push, check, thread, or webhook | Null |
+| `failure` | A failed push, check, thread, or other failure | Null |
+| `removal_failure` | A workspace removal or ownership refusal, including after completion or cancellation; clears when removal succeeds | Null |
+| `observation` | A driver outage beyond the grace period, including during a consult; group-only and self-clearing | Null |
 
-The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table.
+The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. An observation outage replaces no open request; direction or failure can replace an observation request. `tasks:status` lists direction requests first in its table.
 
 #### Migrate open requests
 
@@ -863,6 +874,8 @@ An open task row with no asking subtask becomes `failure` with a null question a
 It writes one `escalated` question record for each `direction` subtask and none for a `failure` subtask or for the task row. The task row receives only that subtask's `assistance_kind` and `assistance_question`. When more than one subtask asks, a `direction` subtask supplies the task row, and a `failure` subtask does not replace it.
 
 The record's `task_id` is the parent task id and its `subtask_id` is the asking subtask id. `asked_by` comes from the prefix. `attempt` is the subtask's `completion_attempt` for the implementer prefix and its `review_attempt` for the reviewer prefix. The rows do not store the original ask time, so `asked_at` and `escalated_at` are both the time `add_assistance_kind_to_tasks` runs, and `answered_at` is null. The cause is null. Closed requests get no records, so `questions` and `escalations` start with this change.
+
+`2026_11_16_000000_classify_task_removal_failures` converts open `failure` requests with a stored workspace-removal, merge-cleanup, or ownership-refusal reason to `removal_failure`. Closed requests and other kinds remain unchanged. Runtime decisions use only the open flag and typed kind; reason prefixes are human text. An ownership refusal counts as a removal failure. VM destruction still checks that the VM is stopped or absent before discarding a stranded workspace.
 
 #### Resolve a request
 
@@ -916,9 +929,8 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure when Orbit reuses a check result.
+Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure.
 
-A `project-check` command deliverable with the exact current task check command at the repository root reuses that run's exit code and output on the same HEAD and tree. The evidence names the reused tree. Failure records a failed deliverable without running it again; other command deliverables still wait for a passing task check. Reuse never carries a result from an earlier handoff, and commands in other directories or with different text run separately.
 
 The check process exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Setup, the Project check, and command deliverables inherit that value, including when they invoke project-local `vp` without a login shell. An absent, conflicting, or unreadable store makes check start a communication failure, before the check launches. Orbit releases the unstarted baseline claim so the next tick can retry. Status, cancellation, and workspace snapshots do not need another Vite+ store probe.
 
@@ -1030,7 +1042,7 @@ For a delta re-review, the retrieval command stages the candidate in a temporary
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
-The implementer prompt asks the implementer to finish the brief and pass the Project task check. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
+The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
 The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`, to verify behaviour.
 
@@ -1206,9 +1218,7 @@ Project slugs and CI job names do not change that order. A task gets at most two
 
 The base may already fix a failed check. Before Orbit appends a check fixup, it reads the tip of the pull request base. When that tip is strictly ahead of its merge base with the head, and the Project's `merge_check` passed on it, the brief starts with `Merge origin/{base} first; base may already fix this.` Without a `merge_check`, Orbit reads `Required checks`. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit). The title, identity, and caps do not change. A failed read leaves the brief as shown above.
 
-Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which requires that exact command in `.`. When it equals the current Project task check, the handoff check runs it once and records that result and output as the deliverable evidence on the same tree. A failing task check fails the deliverable without a rerun. If the snapshotted command differs from the current check, it runs separately after the current check passes.
-
-Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
+Conflict and check fixups have one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The handoff runs the current Project check, as every handoff does. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables.
 
 A fixup records the head it was created for. No new fixup starts while the head is still that commit. These guards and the shared caps apply to feedback, CI, and conflict fixups together. Completing an operator subtask resets the cap window, but never resets review consumption.
 
@@ -1254,7 +1264,7 @@ Review-read failures retry after 1, 2, 5, 10, and 30 minutes and then request re
 
 Feedback fixups wait while CI has young pending checks. They also wait while infrastructure checks use their existing recovery backoff or request assistance; a requested review does not justify a speculative source repair of broken CI infrastructure. A conflict can still proceed immediately. Genuine failed checks retain priority over feedback. Capped identities can be skipped for another eligible problem, but every automatic fixup shares the two-per-identity and three-per-window limits. Cap assistance names any unhandled effective request and its review URL without consuming it.
 
-A feedback fixup always has a `review` deliverable, `review-findings`, requiring the fresh internal reviewer to confirm that every snapshotted finding was addressed or explicitly resolved within the contract. When a Project task check is configured, it also has the `project-check` command deliverable with that command snapshotted in `.`. Without one, only `review-findings` remains. Internal approval does not stand in for GitHub re-review. The reviewer reads the complete packet in `.git/orbit/context.md` when the compact review prompt cuts the brief.
+A feedback fixup has one `review` deliverable, `review-findings`, requiring the fresh internal reviewer to confirm that every snapshotted finding was addressed or explicitly resolved within the contract. Its handoff runs the Project check, as every handoff does. Internal approval does not stand in for GitHub re-review. The reviewer reads the complete packet in `.git/orbit/context.md` when the compact review prompt cuts the brief.
 
 In Gateway API and MCP results, the existing `fixup_problem` carries `review:{reviewer_id}`. The generated `brief` carries source provenance and findings through API, SDK, CLI, and MCP results. The SDK and CLI keep their existing brief/deliverable fields; they need no new fixup-identity property. There is no new Gateway API field, input, endpoint, or merge command. Response fixtures and generated contracts must still verify the Gateway identity, preserved packet, and unchanged schema.
 
@@ -1262,7 +1272,7 @@ The fresh implementer, Project check, fresh internal reviewer, commit, and push 
 
 Only a fresh exact-head request can create another automatic fixup, subject to the same caps. Outside a review-and-merge Project, only the designated final reviewer's fresh exact-head approval can satisfy Orbit's repository merge workflow, which runs outside the Gateway. In a review-and-merge Project, an effective trusted request for changes blocks [the merge](#merge-on-green) until that account approves or the review is dismissed.
 
-When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Coder is notified only when that reason changes.
+When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Activity records the request when that reason changes.
 
 A `todo` subtask on a `settling` task, a fixup or an operator's subtask, returns the task to `running`. This works when the pull request is open, and when the task has no `pr_url`. Another assistance cause keeps the task `settling`.
 
@@ -1276,7 +1286,7 @@ When the task has no pull request and `task-{id}` is not on `origin`, there is n
 
 The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge. In a review-and-merge task, a final review follows the fixup and its approval pushes.
 
-Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics and does not post `task_group.settled` again.
+Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics.
 
 Before removing a merged task's workspace, every tick checks the latest approval against the pull request head again. If the Gateway stopped after recording `settling` but before recording the missed-approval hold, the next tick restores that hold and keeps the workspace.
 
@@ -1310,7 +1320,7 @@ A thread's `tokens` is the Pi session usage `total`. Pi reports no per-thread li
 
 ### Thread token metrics
 
-Each agent thread also records five split fields. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, the board, or the webhook.
+Each agent thread also records five split fields. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, or the board.
 
 | Field | Meaning |
 | --- | --- |
@@ -1378,7 +1388,7 @@ The retry requires the same head and tree: source changes cannot inherit the ret
 
 The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
-The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. As with settling fixups, the handoff check reuses the task check result for `project-check` when its command matches and its directory is the repository root; it does not run the same check twice. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
+The fixup has one `review` deliverable, `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
 
 At most two final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). At the third set of findings, Orbit completes the final review, settles the task, and asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Append an operator subtask to continue. It resumes the task and clears that request, and its completion opens a new window. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
 
@@ -1387,6 +1397,8 @@ At most two final-review fixups run in one window. The window ends at the latest
 In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes the feature commits. A later mechanical main merge uses the gate and inherits that review as described below.
 
 Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge that changes none of the group's paths inherits the prior head's review and is pushed without an agent or another review. Its recorded source is `base_merge`. An overlapping merge receives only a delta re-review against the earlier approved tree. CI must still pass on that exact head.
+
+A failed merge gate after the final review completes requests assistance on the active group. A resolution on that completed review retries the gate without reopening its assistance.
 
 Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the agent fixup cap. Delta-only final reviews have their own cap of three per window, after which Orbit asks for assistance. Both windows reset after completed operator-added implementation work. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
@@ -1491,26 +1503,6 @@ The read waits at most 5 seconds for the Pi server. The Gateway accepts at most 
 
 The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or sends more than 16 MiB, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
-## Coder settle webhook
-
-The Gateway posts signed events to Coder when `ORBIT_CODER_WEBHOOK_URL` and `ORBIT_CODER_WEBHOOK_SECRET` are both set. A refused or failed post changes nothing in Orbit.
-
-| Event | When | Body adds |
-| --- | --- | --- |
-| `task_group.settled` | A task with `notify_coder` first reaches `settling` with a pull request | `tokens`, `line_diff`, `duration_ms`, `questions`, `escalations`, `pull_request_url` |
-| `task_group.assistance_requested` | A task or subtask starts asking for assistance | `kind`, `question`, `reason` |
-| `task_group.escalated` | A thread stays unobservable past the grace period | `reason`, `confidence`, `thread_id`, `observation` |
-
-Every body holds `event`, `task_group_id`, and `title`. The Gateway signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends the headers `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`.
-
-## OpsBot direction webhook
-
-The Gateway posts one JSON object to OpsBot when a task or subtask starts asking for assistance of kind `direction` and both `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are set. There is no scheduled poll. A refused or failed post changes nothing in Orbit. If the URL or secret is unset, the Gateway skips that POST and leaves the rest of the task flow unchanged.
-
-The body is `event` `task_group.assistance_requested`, `task_group_id`, `title`, `kind`, `question`, and `reason`. The Gateway sends `Content-Type: application/json`, `Authorization: Bearer {secret}`, and `X-Automation-Key` set to the same secret.
-
-Settle, escalate, and assistance that is not `direction` stay on the [Coder webhook](#coder-settle-webhook) only. They do not go to OpsBot.
-
 ## Cancel a stuck task
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
@@ -1524,14 +1516,14 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It records `Workspace removal failed: The Node is unreachable.` without asking for assistance.
+- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It requests `removal_failure` assistance with `Workspace removal failed: The Node is unreachable.`
 - **Retry after an unreachable Node.** Once the Node returns, direct cancel and the sweep push eligible approved commits before removal. A failed or pending push keeps the workspace.
-- **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.
+- **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
 - **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the [claim](#claim-and-provision) removes the workspace it provisions.
 
 Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
 
-When cancel marks the task `cancelled`, it clears the assistance flags on the task and its subtasks and keeps the last reasons.
+When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 
 ## Complete and cleanup
 
@@ -1558,20 +1550,20 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on completed or cancelled tasks.
 
-When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
+When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It requests `removal_failure` assistance with the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:
 
 - of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
-- of a `settling` task whose merged pull request cleanup failed.
+- of a `settling` or `waiting_for_review` task with a published pull request whose cleanup failed. A refused cancellation of an unpublished task stays outside the sweep until cancel is retried.
 
-The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
 
-An ownership refusal keeps the workspace and records `Workspace ownership refused: `. This reason never permits offline task VM destruction.
+An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
-A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: `, `Merged pull request cleanup failed: `, or `Workspace ownership refused: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
+A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The task keeps its `removal_failure` request open, including after completion or cancellation. A tick starts no removal after 60 seconds of removals. A success clears only an open `removal_failure` request. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
 ## Configuration
 
@@ -1589,8 +1581,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
-| `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
-| `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
@@ -1726,7 +1716,7 @@ The base tree is an extracted archive inside `$(git rev-parse --git-path orbit)/
 
 ### One reminder, then a person
 
-An agent can repair a named list of failures in one turn, so the first failure gets one reminder that names every failed item. A second failure asks for assistance, because unlimited reminders hide a stuck subtask. A blocked agent must ask one specific question, because a vague block costs the operator a round trip.
+An agent can repair a named list of failures in one turn, so the first failure gets one reminder that names every failed item. A second rubric failure asks for assistance, because unlimited reminders hide a stuck subtask. Failed handoff checks use the separate [failed-check budget](#rubric-and-reminders), because the implementer does not run the full gate before handoff. A blocked agent must ask one specific question, because a vague block costs the operator a round trip.
 
 ### Questions go through the reviewer
 
@@ -1738,15 +1728,9 @@ The operator's answer goes through the reviewer, so the reviewer translates it i
 
 Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
 
-The existing `task_group.assistance_requested` webhook carries the kind and question. A separate `task_group.direction_requested` event was rejected because receivers would need a second subscription for the same assistance flag. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
+### Assistance is recorded in Activity
 
-### Direction wakes OpsBot immediately
-
-A direction request needs a person now. A scheduled poll would leave the task waiting until the next check. The Gateway already posts assistance once on the Coder path, so it posts that same event to OpsBot at that moment.
-
-OpsBot is not a second Coder. Settle and escalate stay on the HMAC-signed Coder webhook. A failure is something the operator can find on the board; it does not wake OpsBot. Sending every assistance kind would page the operator for disk-full and push failures.
-
-OpsBot's contract is Bearer plus `X-Automation-Key`, not Orbit's HMAC headers. Reusing the Coder signature would fail at OpsBot. A missing URL or secret skips the post so a Gateway without OpsBot still runs tasks.
+Each assistance change has an Activity entry, so an operator can trace the kind, question, and reason without an external notification service. Waiting on another task or pull request is not an assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
 
 ### Questions are records, not parsed comments
 

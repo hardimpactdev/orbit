@@ -818,7 +818,7 @@ Set both values in the Gateway's own `.env` to receive alerts:
 
 When either value is unset or empty, the webhook part is `skipped` with the reason `not_configured`, and the Activity entry and the problem are still recorded. The Gateway never returns the secret. It never stores the URL, the secret, or the response body, because a chat webhook URL is itself a credential. Unset both values on a disposable Gateway clone, so its alerts do not reach the operator.
 
-The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`. This is the same signature as the [Coder webhook](/reference/tasks#coder-settle-webhook). The connection timeout is 3 seconds and the whole request has 10 seconds. The Gateway follows no redirect and does not retry.
+The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`. The connection timeout is 3 seconds and the whole request has 10 seconds. The Gateway follows no redirect and does not retry.
 
 | Body field | Content |
 | --- | --- |

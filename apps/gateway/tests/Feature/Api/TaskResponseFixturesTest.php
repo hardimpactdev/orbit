@@ -103,7 +103,7 @@ describe('task response fixtures', function (): void {
     });
 
     it('records groups asking for assistance', function (): void {
-        Task::topLevel()->create([
+        test_create_task(Task::topLevel(), [
             'project_id' => $this->project->id,
             'title' => 'Blocked implementer',
             'brief' => 'Waiting on a decision.',
@@ -111,7 +111,7 @@ describe('task response fixtures', function (): void {
             'assistance_requested' => true,
             'assistance_reason' => 'The implementer is blocked.',
         ]);
-        Task::topLevel()->create([
+        test_create_task(Task::topLevel(), [
             'project_id' => $this->project->id,
             'title' => 'Settling question',
             'brief' => 'Waiting on review.',
@@ -119,7 +119,7 @@ describe('task response fixtures', function (): void {
             'assistance_requested' => true,
             'assistance_reason' => 'Which database should this use?',
         ]);
-        Task::topLevel()->create([
+        test_create_task(Task::topLevel(), [
             'project_id' => $this->project->id,
             'title' => 'Clear',
             'brief' => 'Not waiting.',
@@ -177,7 +177,7 @@ describe('task response fixtures', function (): void {
         $group = task_fixture_group($this->project);
         $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/widgets/pull/7']);
         $group->tasks()->update(['status' => TaskStatus::Completed]);
-        $plan = TaskSettlingFixup::reviewPlan('composer check', TaskReviewFindingsPacket::fromCandidate(
+        $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(
             ReviewFindings::candidate(comments: [ReviewFindings::comment()]),
         ));
         $fixup = Task::query()->create([

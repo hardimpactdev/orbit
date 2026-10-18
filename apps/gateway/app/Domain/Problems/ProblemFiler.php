@@ -355,7 +355,6 @@ final readonly class ProblemFiler
             title: $this->title($row),
             brief: $this->brief($row, $symptom),
             status: TaskGroupStatus::Backlog,
-            notifyCoder: false,
             tasks: [
                 new TaskInputData(
                     title: 'Document the owning page',

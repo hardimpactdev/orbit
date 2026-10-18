@@ -106,7 +106,7 @@ The Gateway's package-cache integration tests run real npm and Bun installs. Kee
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 
-Run these commands in each changed project, such as `apps/cli`:
+In an Orbit task, the implementer runs only `composer test:affected` in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
 
 ```bash
 composer test:affected

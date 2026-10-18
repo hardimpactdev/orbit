@@ -8,7 +8,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
@@ -21,8 +20,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
@@ -37,6 +34,7 @@ use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -55,7 +53,6 @@ use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
-use Tests\Support\NullCoderSettleNotifier;
 use Tests\Support\NullTaskWorkspaceDiffReader;
 use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\UnreachableSshExecutor;
@@ -286,11 +283,11 @@ function tick_held_relay(): array
         'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
         'body' => 'Use the public mirror.', 'author' => 'operator', 'posted_at' => now(),
     ]);
-    $task->update([
+    test_update_task($task, [
         'direction_relay_comment_id' => $resolution->id,
         'assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null,
     ]);
-    $group->update(['assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null]);
+    test_update_task($group, ['assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null]);
     $question = TaskQuestion::query()->create([
         'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Reviewer,
         'question' => 'Which mirror?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
@@ -576,7 +573,6 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -678,26 +674,12 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
     return $agents;
 }
 
-/** @return CoderSettleNotifier&object{reasons: list<string>} */
-function tick_assistance_notifier(): CoderSettleNotifier
+/** @return list<string> */
+function tick_assistance_reasons(): array
 {
-    $notifier = new class implements CoderSettleNotifier
-    {
-        /** @var list<string> */
-        public array $reasons = [];
-
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->reasons[] = $reason;
-        }
-    };
-    app()->instance(CoderSettleNotifier::class, $notifier);
-
-    return $notifier;
+    return Activity::query()->where('log_name', 'tasks')->whereIn('description', ['assistance requested', 'assistance changed'])
+        ->whereIn('subject_id', Task::topLevel()->select('id'))
+        ->orderBy('id')->get()->map(static fn (Activity $activity): mixed => $activity->properties?->get('reason'))->all();
 }
 
 /** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
@@ -865,7 +847,6 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskPullRequestPublisher::class, $publisher);
     mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     return (object) ['coverage' => $coverage, 'publisher' => $publisher];
 }
@@ -874,7 +855,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
  * A running task whose idle implementer ended its turn with ready_for_review, with the given check readings.
  *
  * @param  list<TaskCheckReading>  $readings
- * @return array{Task, Task, FakeTaskCheckRunner, object}
+ * @return array{Task, Task, FakeTaskCheckRunner}
  */
 function tick_checking(array $readings): array
 {
@@ -890,22 +871,8 @@ function tick_checking(array $readings): array
     });
     $checks = new FakeTaskCheckRunner($readings);
     app()->instance(TaskCheckRunner::class, $checks);
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?string $reason = null;
 
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->reason = $reason;
-        }
-    };
-    app()->instance(CoderSettleNotifier::class, $notifier);
-
-    return [$group, $group->tasks->sole(), $checks, $notifier];
+    return [$group, $group->tasks->sole(), $checks];
 }
 
 /**
@@ -938,16 +905,16 @@ function tick_thread_states(array $states): AgentSnapshotReader
  * @param  array<string, string>  $confirmations
  * @param  array<string, mixed>|null  $evidence
  * @param  list<TaskCheckReading>|null  $readings  the check readings; null passes once with the evidence
- * @return array{0: Task, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskTurnReceipts}
+ * @return array{Task, Task, FakeTaskCheckRunner, FakeTaskTurnReceipts}
  */
 function tick_deliverables(array $deliverables, array $confirmations, ?array $evidence, ?array $readings = null, ?array $receipts = null): array
 {
-    [$group, $task, $checks, $notifier] = tick_checking($readings ?? [FakeTaskCheckRunner::passed($evidence)]);
+    [$group, $task, $checks] = tick_checking($readings ?? [FakeTaskCheckRunner::passed($evidence)]);
     $task->update(['deliverables' => $deliverables, 'subtask_start_commit' => str_repeat('5', 40)]);
     $fake = new FakeTaskTurnReceipts($receipts ?? [FakeTaskTurnReceipts::contents('ready_for_review', 'Done.', null, $confirmations)]);
     app()->instance(TaskTurnReceipts::class, $fake);
 
-    return [$group, $task->fresh() ?? $task, $checks, $notifier, $fake];
+    return [$group, $task->fresh() ?? $task, $checks, $fake];
 }
 
 /** @return list<array<string, string>> */

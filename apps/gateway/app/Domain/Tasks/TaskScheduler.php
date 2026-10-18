@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Shared\StoredInteger;
 use App\Models\AgentThread;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Closure;
 use Illuminate\Support\Facades\Cache;
@@ -323,9 +324,9 @@ final readonly class TaskScheduler
      * @param  list<TaskRubricItem>  $items
      * @return bool whether the scheduler reminded the agent or asked for assistance
      */
-    public function remindOrAssist(Task $group, Task $task, TaskThreadObservation $thread, array $items): bool
+    public function remindOrAssist(Task $group, Task $task, TaskThreadObservation $thread, array $items, ?TaskCheck $failedCheck = null): bool
     {
-        return $this->consults->remindOrAssist($this, $group, $task, $thread, $items);
+        return $this->consults->remindOrAssist($this, $group, $task, $thread, $items, $failedCheck);
     }
 
     /** @param list<TaskRubricItem> $items

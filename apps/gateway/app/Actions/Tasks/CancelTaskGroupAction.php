@@ -72,12 +72,9 @@ final readonly class CancelTaskGroupAction
             $keepOffline = $current instanceof Instance && $current->id === $offlineId;
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
-                if (! ($locked->assistance_requested && $locked->assistance_kind === AssistanceKind::Direction)) {
-                    $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
-                }
+                TaskAssistance::apply($locked, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.', replaceFailure: true, replaceDirection: true);
             } else {
                 $locked->taskable()->dissociate();
-                $locked->assistance_requested = false;
             }
             $locked->status = TaskGroupStatus::Cancelled;
             $locked->save();
@@ -102,19 +99,14 @@ final readonly class CancelTaskGroupAction
             }
         }
 
-        $group->tasks()
-            ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
-            ->update([
-                'status' => TaskStatus::Cancelled,
-                'settled_at' => now(),
-                'assistance_requested' => false,
-            ]);
-        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        // Removal success clears the assistance flag and keeps the last reason. A cancelled task keeps the reason and does not ask.
-        if (! $cancelled->assistance_requested) {
-            $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
-            $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
+        foreach ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->get() as $task) {
+            $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
         }
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+        foreach ($group->tasks()->where('assistance_requested', true)->get() as $task) {
+            TaskAssistance::apply($task, reason: $task->assistance_reason);
+        }
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
 
         return $cancelled;
     }
@@ -137,7 +129,8 @@ final readonly class CancelTaskGroupAction
             $current = Task::topLevel()->findOrFail($group->id);
             $retryable = in_array($current->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
                 || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
-                    && is_string($current->assistance_reason) && str_starts_with($current->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
+                    && is_string($current->pr_url) && $current->pr_url !== ''
+                    && Task::topLevel()->whereKey($current->id)->removalFailure()->exists());
             if (! $retryable) {
                 // This synchronous request did not end the group, so no scheduler path owns its waiter.
                 // The group lock prevents another cancellation from consuming or replacing it during cleanup.
@@ -160,6 +153,7 @@ final readonly class CancelTaskGroupAction
     {
         try {
             $this->workspace->remove($group);
+            $this->workspace->clearFailure($group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

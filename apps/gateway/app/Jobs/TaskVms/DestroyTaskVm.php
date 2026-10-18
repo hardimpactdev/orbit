@@ -62,7 +62,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
         // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! self::removalFailed($group) || $guest->observeSettled($vm)?->running === true)) {
+        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->whereIn('status', TaskGroupStatus::endedStatuses())->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
             return;
         }
 
@@ -84,18 +84,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
             throw $exception;
         }
-    }
-
-    /**
-     * Set by a failed workspace removal of an ended group, or of a merged group's cleanup. A group that still
-     * runs keeps its workspace, even when an earlier removal failed, so the VM's death is not forgotten silently.
-     */
-    public static function removalFailed(Task $group): bool
-    {
-        $reason = (string) $group->assistance_reason;
-
-        return in_array($group->status, TaskGroupStatus::endedStatuses(), true)
-            && (str_starts_with($reason, RemoveTaskWorkspaceAction::RemovalFailedPrefix) || str_starts_with($reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
     }
 
     private function gateway(): Node

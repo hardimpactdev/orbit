@@ -9021,7 +9021,7 @@
       "name": "tasks-create",
       "extension": "tasks",
       "title": "Create a Task group",
-      "description": "Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
+      "description": "Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Returns `extension.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -9055,13 +9055,6 @@
           "preview": {
             "type": "boolean",
             "description": "Keep the sandbox running during review"
-          },
-          "notify_coder": {
-            "type": "boolean",
-            "description": "Post the Coder settle webhook when the group settles"
-          },
-          "notify_on_settle": {
-            "type": "boolean"
           },
           "tasks": {
             "type": "array",

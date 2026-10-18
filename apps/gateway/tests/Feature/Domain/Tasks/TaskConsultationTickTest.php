@@ -9,7 +9,6 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -17,8 +16,6 @@ use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
@@ -207,26 +204,6 @@ describe('transient provider retries', function (): void {
 
 it('resumes a Pi implementer restarted during the turn instead of asking for assistance', function (): void {
     $task = tick_pi_implementer();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public bool $called = false;
-
-        public function notify(Task $group): void
-        {
-            $this->called = true;
-        }
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->called = true;
-        }
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->called = true;
-        }
-    };
-    app()->instance(CoderSettleNotifier::class, $notifier);
     tick_pi_failure((object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.']);
 
     app(TaskScheduler::class)->tick();
@@ -239,7 +216,6 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
         ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->status)->toBe(TaskStatus::Running)
         ->and($task->parent->fresh()?->assistance_requested)->toBeFalse()
-        ->and($notifier->called)->toBeFalse()
         ->and($sent)->toBeInstanceOf(Request::class)
         ->and($sent['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and($sent['key'])->not->toBe('turn-key-1')
@@ -290,13 +266,13 @@ it('does not replace an open direction request when the implementer thread fails
     $task = tick_pi_implementer();
     $question = 'May the Node user run sudo?';
     $reason = "The implementer is blocked: sudo was denied.\n\nQuestion: {$question}";
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
         'assistance_reason' => $reason,
     ]);
-    $task->parent->update([
+    test_update_task($task->parent, [
         'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => $question,
@@ -686,21 +662,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?string $reason = null;
-
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->reason = $reason;
-        }
-    };
     app()->instance(AgentCommandDispatcher::class, $dispatcher);
-    app()->instance(CoderSettleNotifier::class, $notifier);
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -722,7 +684,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toBe('Checks still failed after the reminder. No turn receipt was found.')
+        ->and($group->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.')
         ->and($task->comments()->count())->toBe(0);
     Classification::assertNothingClassified();
 });
@@ -760,25 +722,6 @@ it('dispatches nothing when Jev selects noop', function (): void {
     tick_group();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public bool $called = false;
-
-        public function notify(Task $group): void
-        {
-            $this->called = true;
-        }
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->called = true;
-        }
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->called = true;
-        }
-    };
     app()->instance(AgentCommandDispatcher::class, $dispatcher);
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
@@ -787,14 +730,12 @@ it('dispatches nothing when Jev selects noop', function (): void {
             return tick_checked_thread('idle', $threadId);
         }
     });
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
         ->and($dispatcher->commands)->toBe([])
-        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running)
-        ->and($notifier->called)->toBeFalse();
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running);
 });
 
 it('runs the artisan tick while the extension is enabled', function (): void {
@@ -923,25 +864,11 @@ it('defers the idle task handoff check while another task owns the workspace rev
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
 });
 
-it('reminds the implementer with the failing check output once, then asks for assistance', function (): void {
+it('reminds three failed handoffs and asks for assistance on the fourth', function (): void {
     $group = tick_group();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?string $reason = null;
-
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(Task $group, string $reason): void
-        {
-            $this->reason = $reason;
-        }
-    };
     app()->instance(AgentCommandDispatcher::class, $dispatcher);
-    app()->instance(CoderSettleNotifier::class, $notifier);
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -950,9 +877,12 @@ it('reminds the implementer with the failing check output once, then asks for as
         }
     });
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
-    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed]));
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed, $failed, $failed]));
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
-        FakeTaskTurnReceipts::contents('ready_for_review'), null, FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed the export test.'), null,
+        FakeTaskTurnReceipts::contents('ready_for_review'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed once.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed twice.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed three times.'),
     ]));
 
     app(TaskScheduler::class)->tick();
@@ -964,14 +894,73 @@ it('reminds the implementer with the failing check output once, then asks for as
         ->and($reminder)->toContain("Orbit ran composer check, and it failed with exit code 1. The end of its output:\n\n```\nFAILED tests/Feature/ExportTest.php\n```")
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed);
 
+    for ($failure = 2; $failure <= 3; $failure++) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($dispatcher->commands)->toHaveCount($failure)
+            ->and(TaskCheck::query()->count())->toBe($failure);
+    }
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toStartWith('Checks still failed after the reminder. Orbit ran composer check, and it failed with exit code 1.')
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and(TaskCheck::query()->count())->toBe(2);
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_reason)->toStartWith('The handoff check failed 4 times in a row.')
+        ->and($group->tasks()->sole()->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($dispatcher->commands)->toHaveCount(3)
+        ->and(TaskCheck::query()->count())->toBe(4);
 });
+
+it('starts a fresh handoff failure budget after a pass and ignores other check histories', function (string $history): void {
+    $group = tick_group();
+    $task = $group->tasks()->sole();
+    $owner = $history === 'sibling'
+        ? Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Earlier work', 'brief' => 'Done.', 'status' => TaskStatus::Completed])
+        : $task;
+    $kind = $history === 'baseline' ? 'baseline' : 'handoff';
+    foreach ([1, 2, 3, 4] as $pid) {
+        TaskCheck::query()->create([
+            'task_id' => $owner->id, 'kind' => $kind, 'status' => TaskCheckStatus::Failed,
+            'pid' => $pid, 'process_started' => 'old', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now(),
+        ]);
+    }
+    if ($history === 'passed') {
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => 'handoff', 'status' => TaskCheckStatus::Passed,
+            'pid' => 5, 'process_started' => 'passed', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now(),
+        ]);
+    }
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('idle', $threadId);
+        }
+    });
+    $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "Failed again.\n");
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed, $failed]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('ready_for_review'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed once.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed twice.'),
+    ]));
+
+    foreach ([1, 2, 3] as $failure) {
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+    }
+
+    expect($task->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toHaveCount(3);
+})->with(['passed', 'sibling', 'baseline']);
 
 it('shows an unexpected check error as a failed check whose output ends with the error', function (): void {
     $group = tick_group();
@@ -1048,7 +1037,6 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int

@@ -91,7 +91,7 @@ bin/task-group-check --payload FILE [--kind auto|bug|feature]
 | `--payload` | required | A JSON object, or `-` for stdin. The body `tasks-create` accepts. |
 | `--kind` | `auto` | `bug` applies the failing-command rule. `feature` does not. `auto` treats a group as a bug when the brief starts with `Filed by the outer loop.` or the title starts with `Doctor `. |
 
-The command refuses an unsupported top-level key, a duplicate top-level key, or a body that is not one JSON object. It checks `project_id`, `title`, `brief`, optional `status`, `notify_coder`, `notify_on_settle`, and `tasks` with the same required, prohibited, length, list, and `fails_on_base` rules as create. `project_id` must be an integer of at least 1. The check does not look up the Project row.
+The command refuses an unsupported top-level key, a duplicate top-level key, or a body that is not one JSON object. It checks `project_id`, `title`, `brief`, optional `status` and `tasks` with the same required, prohibited, length, list, and `fails_on_base` rules as create. `project_id` must be an integer of at least 1. The check does not look up the Project row.
 
 The check does not read a subtask's `topology`. The Gateway validates it when it creates the group, by the rules in [Declare a topology](/reference/compute-drivers#declare-a-topology), and the same section owns admission and readiness.
 

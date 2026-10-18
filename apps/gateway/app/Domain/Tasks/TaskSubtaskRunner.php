@@ -20,7 +20,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -49,6 +48,7 @@ final readonly class TaskSubtaskRunner
         private TaskSessionActor $actor,
         private RetryTaskBaselineAction $retryBaseline,
         private ResumeDeliverableCorrectionAction $correctionResume,
+        private TaskObservationAvailability $availability,
     ) {}
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -91,8 +91,8 @@ final readonly class TaskSubtaskRunner
 
         $handoff = $scheduler->pendingReceipt($task, TaskThreadRole::Implementer);
         if ($handoff instanceof TaskComment && $scheduler->receiptOutcome($handoff) === TaskTurnOutcome::ReadyForReview
-            && $task->checks()->where('task_comment_id', $handoff->id)->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Running)->exists()) {
-            // The durable receipt already admitted this check. Observe its process before
+            && $task->checks()->where('task_comment_id', $handoff->id)->where('kind', TaskCheckKind::Handoff)->exists()) {
+            // The durable receipt already admitted this check. Handle its result before
             // asking to read another receipt from the checkout that the check still owns.
             $this->checkHandoff($scheduler, $group, $task, $implementer, $handoff, $observation);
 
@@ -207,7 +207,7 @@ final readonly class TaskSubtaskRunner
             default => null,
         };
         if ($item instanceof TaskRubricItem) {
-            if ($scheduler->remindOrAssist($group, $task, $implementer, [$item])) {
+            if ($scheduler->remindOrAssist($group, $task, $implementer, [$item], $status === TaskCheckStatus::Failed ? $check : null)) {
                 $task->update(['completion_handoff_comment_id' => $receipt->id]);
             }
 
@@ -847,11 +847,11 @@ final readonly class TaskSubtaskRunner
                 || $locked->status !== TaskStatus::Running || $this->implementerTurnStarted($locked)) {
                 return null;
             }
+            TaskAssistance::apply($locked);
             $locked->update([
                 'status' => TaskStatus::Cancelled,
                 'settled_at' => now(),
                 'completion_summary' => $reason,
-                ...TaskAssistance::cleared(),
             ]);
             $lockedGroup->update(['status' => TaskGroupStatus::Settling]);
 
@@ -1163,9 +1163,8 @@ final readonly class TaskSubtaskRunner
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
             }
 
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+            if ($decision->action === TaskSessionNextAction::RequestAssistance) {
                 if (! $observation->available) {
-                    $this->actor->execute($group, $observation, $decision);
                     $decisions[] = $decision;
 
                     continue;
@@ -1189,7 +1188,6 @@ final readonly class TaskSubtaskRunner
                 if ($task->communication_failures >= 5) {
                     $scheduler->requestAssistance($task, $group, $exception->getMessage());
                 }
-                $this->actor->execute($group, $observation, $decision);
             }
 
             $decisions[] = $decision;
@@ -1205,27 +1203,12 @@ final readonly class TaskSubtaskRunner
 
     public function clearUnavailable(Task $group): void
     {
-        Task::topLevel()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
-            'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
-        ]);
+        $this->availability->clear($group);
     }
 
     public function unavailableDecision(Task $group): TaskSessionDecision
     {
-        Task::topLevel()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
-        $group->refresh();
-        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
-        if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
-            $claimed = Task::topLevel()->whereKey($group->id)
-                ->where('agent_unavailable_since', $group->agent_unavailable_since)
-                ->whereNull('agent_unavailable_notified_at')
-                ->update(['agent_unavailable_notified_at' => now()]);
-            if ($claimed === 1) {
-                return TaskSessionDecision::escalate('Agent observation unavailable beyond the grace period.');
-            }
-        }
-
-        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
+        return $this->availability->unavailableDecision($group);
     }
 
     private function advance(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void

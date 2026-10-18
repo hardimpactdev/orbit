@@ -87,7 +87,7 @@ The SDK exposes typed status, setup, sync, and teardown requests for publishing 
 
 ## Tasks
 
-The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list and close, agent thread list and show requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Question close sends the status and the reason. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Agent thread show sends an optional cursor as `after_sequence`. It returns one redacted read of the conversation: a `snapshot` of the whole transcript, or a `delta` with only the entries after the cursor. The read carries the next cursor and whether it is the saved transcript. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
+The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list and close, agent thread list and show requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Question close sends the status and the reason. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Agent thread show sends an optional cursor as `after_sequence`. It returns one redacted read of the conversation: a `snapshot` of the whole transcript, or a `delta` with only the entries after the cursor. The read carries the next cursor and whether it is the saved transcript. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
 
 ## Logs
 
@@ -99,6 +99,8 @@ The SDK exposes typed one-shot log reads for Instances and Processes, and create
 - Composer 2
 
 ## Quality
+
+Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only `composer test:affected` in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
 
 ```bash
 composer test       # Pest suite with TIA (parallel)

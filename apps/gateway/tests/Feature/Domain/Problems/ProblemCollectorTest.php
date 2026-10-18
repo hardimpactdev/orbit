@@ -477,7 +477,7 @@ it('collects fingerprints for one open assistance reason until that request clea
         'repository_url' => 'https://example.test/problem-collector.git',
         'default_branch' => 'main',
     ]);
-    $task = Task::topLevel()->create([
+    $task = test_create_task(Task::topLevel(), [
         'project_id' => $project->id,
         'title' => 'Needs help',
         'brief' => 'The collector should count this once while it stays open.',
@@ -496,10 +496,10 @@ it('collects fingerprints for one open assistance reason until that request clea
         ->and($fingerprint->occurrences)->toBe(1)
         ->and($fingerprint->evidence['assistance_task_ids'])->toBe([$task->id]);
 
-    $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+    test_update_task($task, ['assistance_requested' => false, 'assistance_reason' => null]);
     problem_collector_run();
     $this->travel(5)->minutes();
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true,
         'assistance_reason' => 'Restart node 123e4567-e89b-12d3-a456-426614174000 after 9 failures',
     ]);

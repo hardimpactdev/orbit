@@ -584,8 +584,8 @@ describe('final review before every push', function (): void {
             ->and($fixup->title)->toBe(TaskFinalReview::FixupTitle)
             ->and($fixup->brief)->toContain('app/Models/Task.php: the scope misses legacy rows.')
             ->and($fixup->brief)->toContain('Address each blocking finding of final review subtask #'.$final->id.' with the smallest change', 'List follow-ups in the handoff instead of implementing them.')
-            ->and($fixup->deliverables[1]['description'])->toBe('Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.')
-            ->and(array_column($fixup->deliverables ?? [], 'id'))->toBe(['project-check', 'final-review-findings'])
+            ->and($fixup->deliverables[0]['description'])->toBe('Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.')
+            ->and(array_column($fixup->deliverables ?? [], 'id'))->toBe(['final-review-findings'])
             ->and($runtime->implementers)->toBe([$fixup->id])
             ->and($runtime->pushes)->toBe([])
             ->and($runtime->reviews)->toBe([])
@@ -622,7 +622,7 @@ describe('final review before every push', function (): void {
         $models = $group->tasks->firstWhere('title', 'Models');
         $models->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$models->id, $models)->id]);
         TaskComment::query()->create(['task_id' => $models->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
-        $group->update(['assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure, 'assistance_reason' => TaskFinalReview::FixupCapPrefix.'Read the findings.']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure, 'assistance_reason' => TaskFinalReview::FixupCapPrefix.'Read the findings.']);
         $operator = Task::query()->create([
             'parent_id' => $group->id, 'position' => 3, 'title' => 'Rework the scope', 'brief' => 'Do it the other way.', 'status' => TaskStatus::Todo,
             'deliverables' => [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']],
@@ -888,7 +888,7 @@ describe('merge on green', function (): void {
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
         Task::query()->whereKey($operator->id)->update(['status' => TaskStatus::Cancelled->value]);
-        $group->refresh()->update(['status' => TaskGroupStatus::Settling, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
+        test_update_task($group->refresh(), ['status' => TaskGroupStatus::Settling, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
             'assistance_reason' => TaskFinalReview::UnreviewedHeadPrefix.'someone pushed.']);
         rm_watch(rm_open(RM_HEAD));
 
@@ -1798,7 +1798,8 @@ describe('main moving during final review', function (): void {
 
         $failed = $final->checks()->where('kind', TaskCheckKind::BaseMerge)->sole();
         expect($final->fresh()?->status)->toBe(TaskStatus::Completed)
-            ->and($final->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($final->fresh()?->assistance_kind)->toBeNull()
+            ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
             ->and($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($failed->failed_step)->toBe('environment');
         if ($newMain) {

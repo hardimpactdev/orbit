@@ -3439,7 +3439,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
+         * @description Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -4745,10 +4745,9 @@ export interface components {
             watched_pr_url?: string | null;
             watched_pr_number?: number | null;
             watched_pr_state?: string | null;
-            notify_coder?: boolean;
             assistance_requested?: boolean;
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
@@ -4791,7 +4790,7 @@ export interface components {
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
@@ -4904,7 +4903,7 @@ export interface components {
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
         };
@@ -18781,9 +18780,6 @@ export interface operations {
                     status?: "backlog" | "todo";
                     /** @description Keep the sandbox running during review */
                     preview?: boolean;
-                    /** @description Post the Coder settle webhook when the group settles */
-                    notify_coder?: boolean;
-                    notify_on_settle?: boolean;
                     tasks?: {
                         title: string;
                         brief: string;

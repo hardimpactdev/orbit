@@ -53,7 +53,7 @@ final readonly class UpdateTaskGroupAction
 
                 $locked->status = $data->status;
                 if ($locked->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
-                    $locked->fill(TaskAssistance::cleared());
+                    TaskAssistance::apply($locked);
                 }
             }
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -81,9 +80,7 @@ final readonly class ParkIdleTaskVmsAction
             ->whereNotNull('pr_url')->where('pr_url', '!=', '')
             ->whereNull('watched_pr_completion')
             // Removal and merge cleanup retry on the tick and need the VM; DestroyTaskVm would wake it again.
-            ->where(static fn (Builder $reason): Builder => $reason->whereNull('assistance_reason')->orWhere(static fn (Builder $other): Builder => $other
-                ->where('assistance_reason', 'not like', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'%')
-                ->where('assistance_reason', 'not like', RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%')))
+            ->whereNot(static fn (Builder $request): Builder => $request->removalFailure())
             ->where(static fn (Builder $preview): Builder => $preview->whereNull('preview')->orWhere('preview', false))
             ->whereDoesntHave('tasks', static fn (Builder $tasks): Builder => $tasks->whereIn('status', self::OpenSubtasks));
     }

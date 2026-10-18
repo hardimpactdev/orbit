@@ -71,8 +71,8 @@ describe('task transport', function (): void {
     it('sends create fields and omits only absent optional values', function (): void {
         expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', false, tasks: [new SubtaskInput('One', 'First.')])->body()->all())
-            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","notify_coder":false,"tasks":[{"title":"One","brief":"First."}]}')
+            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', tasks: [new SubtaskInput('One', 'First.')])->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."}]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', tasks: [])->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief","tasks":[]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))
@@ -285,14 +285,14 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'project_code' => 'ORB',
                 'title' => 'Blocked implementer',
                 'status' => 'running',
-                'assistance_kind' => null,
+                'assistance_kind' => 'failure',
                 'assistance_question' => null,
                 'assistance_reason' => 'The implementer is blocked.',
             ])
             ->and($assisted->toArray()['assistance'][1])->toMatchArray([
                 'title' => 'Settling question',
                 'status' => 'settling',
-                'assistance_kind' => null,
+                'assistance_kind' => 'failure',
                 'assistance_question' => null,
                 'assistance_reason' => 'Which database should this use?',
             ])
@@ -477,9 +477,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($fixup->brief)->toContain('Internal approval is not GitHub re-review.')
             ->and($fixup->deliverables[0]['id'])->toBe('review-findings')
             ->and($fixup->deliverables[0]['type'])->toBe('review')
-            ->and($fixup->deliverables[1])->toMatchArray([
-                'id' => 'project-check', 'type' => 'command', 'command' => 'composer check', 'directory' => '.',
-            ])
+            ->and($fixup->deliverables)->toHaveCount(1)
             ->and($fixup->toArray()['brief'])->toBe($fixup->brief)
             ->and($fixup->toArray()['deliverables'])->toBe($fixup->deliverables);
     });
