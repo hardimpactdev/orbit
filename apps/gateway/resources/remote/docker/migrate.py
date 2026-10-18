@@ -159,9 +159,21 @@ def inventory(payload):
     info = api('GET', '/info')
     raw = daemon_bytes()
     config = json.loads(raw) if raw else {}
-    if (info['DockerRootDir'] != '/var/lib/docker' or any(key in config for key in ('data-root', 'hosts', 'containerd'))
+    if (any(key in config for key in ('hosts', 'containerd'))
             or DROPIN.exists()):
         raise RecipeFailure('custom-daemon')
+    for unit in ('docker.service', 'containerd.service'):
+        if run(['systemctl', 'show', '--property=DropInPaths', '--value', unit]).stdout.strip():
+            raise RecipeFailure('custom-daemon')
+    docker_root = storage_root(info.get('DockerRootDir'), 'storage-root')
+    if 'data-root' in config and storage_root(config['data-root'], 'storage-root') != docker_root:
+        raise RecipeFailure('storage-root')
+    # config dump resolves defaults and imports without opening the containerd socket.
+    dump = run(['containerd', 'config', 'dump'], required=False)
+    if dump.returncode:
+        raise RecipeFailure('containerd-root')
+    match = re.search(r'''^root\s*=\s*(['"])(.+)\1\s*$''', dump.stdout, re.MULTILINE)
+    containerd_root = storage_root(match[2] if match else None, 'containerd-root')
     containers = [inspect_container(item['Id']) for item in api('GET', '/containers/json?all=1')]
     images = [api('GET', '/images/' + item['Id'] + '/json') for item in api('GET', '/images/json?all=1')]
     image_refs = {}
@@ -198,10 +210,20 @@ def inventory(payload):
             container['Config'].pop('Env', None)
     return {'recipe': payload['recipe'], 'containers': containers, 'volumes': volumes, 'networks': networks,
             'images': images, 'image_refs': image_refs, 'driver': info.get('Driver'),
-            'defaults': {key: info.get(key) for key in ('DefaultRuntime', 'LoggingDriver', 'CgroupDriver')},
+            'metadata_roots': {'docker': str(docker_root), 'containerd': str(containerd_root)},
+            'defaults': daemon_defaults(info),
             'archives': {}, 'committed': {}, 'stage': 'inventory',
             'daemon': None if raw is None else raw.hex(),
             'fallback': False, 'swapped': False, 'prepared': False, 'stopped': False}
+
+
+def storage_root(value, failure):
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise RecipeFailure(failure)
+    root = Path(value).resolve()
+    if root == Path('/') or not root.is_dir():
+        raise RecipeFailure(failure)
+    return root
 
 
 def daemon_defaults(info):
@@ -316,16 +338,14 @@ def preserve_images(state, *, shutdown=False):
             archive_image(state, state['committed'][key])
 
 
-METADATA_ROOTS = [Path('/var/lib/docker'), Path('/var/lib/containerd')]
-
-
 def backup_metadata(state):
     if state.get('metadata_backed_up'):
         return
     stage(state, 'metadata-backup')
     target = JOURNAL / 'metadata'
     target.mkdir(mode=0o700, exist_ok=True)
-    for root in METADATA_ROOTS:
+    for name, value in state['metadata_roots'].items():
+        root = Path(value)
         if not root.exists():
             continue
         candidates = [*root.glob('volumes/metadata.db'), *root.glob('network/files/local-kv.db'),
@@ -345,7 +365,7 @@ def backup_metadata(state):
                         or (parts[0] == 'image' and ('imagedb' in parts or 'layerdb' in parts)))
             if not selected or '_data' in parts:
                 continue
-            destination = target / root.name / relative
+            destination = target / name / relative
             destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             with source.open('rb') as incoming, destination.open('wb') as outgoing:
                 shutil.copyfileobj(incoming, outgoing)
@@ -444,7 +464,8 @@ def readable(state):
     try:
         start_daemon()
         info = api('GET', '/info')
-        if info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {}):
+        if (str(storage_root(info.get('DockerRootDir'), 'storage-root')) != state['metadata_roots']['docker']
+                or info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {})):
             return False
         if any(inspect_container(c['Id'], missing=True) is None for c in state['containers']):
             return False
@@ -483,9 +504,15 @@ def network_request(network):
 
 def fresh_engine(state):
     stop_loaded(['docker.service', 'docker.socket'])
+    # dockerd refuses an option present in both JSON and argv. Keep the original
+    # config intact for native startup/restore; only the fresh engine uses this copy.
+    config = json.loads(bytes.fromhex(state['daemon'])) if state['daemon'] is not None else {}
+    config.pop('data-root', None)
+    config_path = JOURNAL / 'daemon.json'
+    publish(config_path, json.dumps(config, sort_keys=True).encode(), 0o600)
     content = ('[Unit]\nRequires=\nRequires=docker.socket\nWants=\nWants=network-online.target\n'
                '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd --host=fd:// --data-root='
-               + str(JOURNAL / 'engine') + '\n').encode()
+               + str(JOURNAL / 'engine') + ' --config-file=' + str(config_path) + '\n').encode()
     if DROPIN.exists() and DROPIN.read_bytes() != content:
         raise RecipeFailure('custom-daemon')
     DROPIN.parent.mkdir(parents=True, exist_ok=True)
@@ -603,6 +630,7 @@ def migrate(payload, mode):
                 'source_backups': [str(APT_ETC / (p.name + '.orbit-docker-backup')) for p, _, _ in sources],
                 'resuming': path.exists(), 'daemon_json': 'unchanged', 'volume_data': 'never deleted',
                 'storage_driver': state.get('driver'), 'fallback_authorized': payload.get('fallback', False),
+                'metadata_roots': state['metadata_roots'],
                 'space': image_space(state),
                 'local_images': list(archive_images(state)),
                 'changed_layers': [c['Name'].lstrip('/') for c in state['containers']

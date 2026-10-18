@@ -32,6 +32,10 @@ class DockerMigrationTest(unittest.TestCase):
         self.daemon = self.root / 'daemon.json'
         self.daemon.write_text('{"runtimes":{"nvidia":{"path":"nvidia-container-runtime","runtimeArgs":[]}}}')
         self.daemon_before = self.daemon.read_bytes()
+        self.docker_root = self.root / 'docker'
+        self.docker_root.mkdir()
+        self.containerd_root = self.root / 'containerd'
+        self.containerd_root.mkdir()
         self.data = self.root / 'volumes/mysql/_data'
         self.data.mkdir(parents=True)
         (self.data / 'database').write_text('irreplaceable')
@@ -74,7 +78,6 @@ class DockerMigrationTest(unittest.TestCase):
         replacements = {'APT_ETC': self.apt, 'JOURNAL': self.journal, 'DAEMON': self.daemon,
                         'DROPIN': self.dropin, 'POLICY': self.policy, 'api': self.api, 'run': self.command,
                         'packages': lambda: dict(self.installed), 'snapshot_options': lambda payload, work: ['-o', 'fixture-snapshot=1'],
-                        'METADATA_ROOTS': [self.root / 'docker', self.root / 'containerd'],
                         'publish': lambda path, content, mode=0o644: original_publish(path, content, mode, os.getuid(), os.getgid())}
         for name, value in replacements.items():
             fixture = patch.object(module, name, value)
@@ -99,7 +102,7 @@ class DockerMigrationTest(unittest.TestCase):
         if not self.service:
             raise OSError('service unavailable')
         if path == '/info':
-            return {'DockerRootDir': '/var/lib/docker'}
+            return {'DockerRootDir': str(self.journal / 'engine' if getattr(self, 'fresh', False) else self.docker_root)}
         if path.endswith('/update'):
             reference = path.split('/')[2]
             c = next(c for c in self.containers.values() if reference in (c['Id'], c['Name'].lstrip('/')))
@@ -162,7 +165,9 @@ class DockerMigrationTest(unittest.TestCase):
                 self.installed = {'docker.io': self.payload['docker_version'], 'containerd': '2.2.2-0ubuntu1.1',
                                   'docker-buildx': 'fixture', 'docker-compose-v2': 'fixture'}
         elif argv[:2] == ['systemctl', 'show']:
-            stdout = 'loaded'
+            stdout = '' if '--property=DropInPaths' in argv else 'loaded'
+        elif argv == ['containerd', 'config', 'dump']:
+            stdout = "version = 4\nroot = '" + str(self.containerd_root) + "'\nstate = '/run/containerd'\n"
         elif argv[:2] == ['docker', 'commit']:
             stdout = 'sha256:' + 'b' * 64
         elif argv[:2] == ['docker', 'save']:
@@ -215,8 +220,115 @@ class DockerMigrationTest(unittest.TestCase):
         self.assertEqual(report['source_backups'], [str(self.apt / 'docker.sources.orbit-docker-backup')])
         self.assertIn('reconcile Orbit Processes from stored specs', report['steps'])
         self.assertNotIn('secret', json.dumps(report))
-        self.assertTrue(all(argv[:3] == ['docker', 'manifest', 'inspect'] for argv in self.commands))
+        self.assert_read_only_commands()
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+
+    def custom_root(self):
+        self.docker_root = self.root / 'fast/containerd'
+        self.docker_root.mkdir(parents=True)
+        config = json.loads(self.daemon_before)
+        config.update({'data-root': str(self.docker_root), 'storage-driver': 'overlay2',
+                       'log-driver': 'json-file', 'log-opts': {'max-file': '3', 'max-size': '10m'}})
+        self.daemon_before = json.dumps(config).encode()
+        self.daemon.write_bytes(self.daemon_before)
+
+    def assert_read_only_commands(self):
+        self.assertTrue(all(argv[:3] == ['docker', 'manifest', 'inspect']
+                            or argv[:2] == ['systemctl', 'show']
+                            or argv == ['containerd', 'config', 'dump'] for argv in self.commands))
+
+    def test_custom_root_inventory_and_native_verification_use_effective_root(self):
+        self.custom_root()
+        plan = module.migrate(self.payload, 'plan')
+        self.assertEqual(plan['metadata_roots'], {'docker': str(self.docker_root), 'containerd': str(self.containerd_root)})
+        self.assertFalse((self.journal / 'inventory.json').exists())
+
+        module.migrate(self.payload, 'prepare')
+        state = json.loads((self.journal / 'inventory.json').read_text())
+        self.assertEqual(state['metadata_roots'], plan['metadata_roots'])
+        self.assertTrue(module.readable(state))
+        self.assertTrue(any(path == '/containers/two/changes' for _, path, _ in self.requests))
+        self.docker_root = self.root / 'wrong-root'
+        self.assertFalse(module.readable(state))
+        self.assertEqual(self.daemon.read_bytes(), self.daemon_before)
+
+    def test_custom_root_metadata_copy_records_unambiguous_restore_destinations(self):
+        # Docker and system containerd may share a basename; backup names must not collide.
+        self.custom_root()
+        relative = 'io.containerd.metadata.v1.bolt/meta.db'
+        for root, content in ((self.docker_root, b'docker'), (self.containerd_root, b'containerd')):
+            path = root / relative
+            path.parent.mkdir(parents=True)
+            path.write_bytes(content)
+        state = module.inventory(self.payload)
+        module.backup_metadata(state)
+        for label, content in (('docker', b'docker'), ('containerd', b'containerd')):
+            backup = self.journal / 'metadata' / label / relative
+            self.assertEqual(backup.read_bytes(), content)
+            destination = Path(state['metadata_roots'][label]) / relative
+            self.assertEqual(destination.read_bytes(), content)
+            destination.write_bytes(b'changed')
+            destination.write_bytes(backup.read_bytes())
+            self.assertEqual(destination.read_bytes(), content)
+
+    def test_custom_root_fallback_preserves_config_and_original_restore_root_on_resume(self):
+        self.custom_root()
+        self.incompatible = True
+        module.migrate(self.payload, 'prepare')
+        state = json.loads((self.journal / 'inventory.json').read_text())
+        fallback_config = self.journal / 'daemon.json'
+        expected = json.loads(self.daemon_before)
+        del expected['data-root']
+        self.assertEqual(json.loads(fallback_config.read_text()), expected)
+        self.assertEqual(fallback_config.stat().st_mode & 0o777, 0o600)
+        self.assertIn('--config-file=' + str(fallback_config), self.dropin.read_text())
+        self.assertIn('--data-root=' + str(self.journal / 'engine'), self.dropin.read_text())
+        self.assertNotIn('--containerd', self.dropin.read_text())
+        module.migrate(self.payload, 'prepare')
+        self.assertEqual(state['metadata_roots']['docker'], json.loads(self.daemon.read_text())['data-root'])
+        self.assertEqual(self.daemon.read_bytes(), self.daemon_before)
+
+    def test_host_and_containerd_overrides_still_refuse_before_mutation(self):
+        self.custom_root()
+        for key, value in (('hosts', ['unix:///run/docker.sock']), ('containerd', '/run/other.sock')):
+            with self.subTest(key=key):
+                self.daemon.write_text(json.dumps(dict(json.loads(self.daemon_before), **{key: value})))
+                with self.assertRaisesRegex(module.RecipeFailure, 'custom-daemon'):
+                    module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+
+    def test_foreign_service_dropins_refuse_before_mutation(self):
+        command = self.command
+        for unit in ('docker.service', 'containerd.service'):
+            def foreign(argv, unit=unit, **kwargs):
+                if '--property=DropInPaths' in argv and argv[-1] == unit:
+                    return subprocess.CompletedProcess(argv, 0, '/etc/systemd/system/' + unit + '.d/custom.conf', '')
+                return command(argv, **kwargs)
+            with self.subTest(unit=unit), patch.object(module, 'run', foreign):
+                with self.assertRaisesRegex(module.RecipeFailure, 'custom-daemon'):
+                    module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+
+    def test_mismatched_or_invalid_root_refuses_before_mutation(self):
+        for root in (str(self.root / 'different'), 'relative', '/'):
+            with self.subTest(root=root):
+                self.daemon.write_text(json.dumps({'data-root': root}))
+                with self.assertRaisesRegex(module.RecipeFailure, 'storage-root'):
+                    module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
+
+    def test_unreadable_containerd_root_refuses_before_mutation(self):
+        for output in ('', 'root = "relative"\n', 'root = "/"\n'):
+            def dump(argv, output=output, **kwargs):
+                if argv == ['containerd', 'config', 'dump']:
+                    return subprocess.CompletedProcess(argv, 0, output, '')
+                return self.command(argv, **kwargs)
+            with self.subTest(output=output), patch.object(module, 'run', dump):
+                with self.assertRaisesRegex(module.RecipeFailure, 'containerd-root'):
+                    module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
 
     def test_refuses_unrecreatable_container_before_stopping_or_recording(self):
         for key, value in [('AutoRemove', True), ('NetworkMode', 'container:other'), ('VolumesFrom', ['other'])]:
@@ -225,7 +337,7 @@ class DockerMigrationTest(unittest.TestCase):
                 with self.assertRaises(module.RecipeFailure):
                     module.migrate(self.payload, 'prepare')
                 del self.containers['one']['HostConfig'][key]
-        self.assertEqual(self.commands, [])
+        self.assert_read_only_commands()
         self.assertFalse((self.journal / 'inventory.json').exists())
 
     def test_success_keeps_daemon_and_volume_data_and_retires_sources_with_backup(self):
@@ -279,7 +391,7 @@ class DockerMigrationTest(unittest.TestCase):
         self.containers['one']['HostConfig']['FutureStorageMode'] = 'not-supported'
         with self.assertRaisesRegex(module.RecipeFailure, 'newer-engine-configuration'):
             module.migrate(self.payload, 'prepare')
-        self.assertEqual(self.commands, [])
+        self.assert_read_only_commands()
         del self.containers['one']['HostConfig']['FutureStorageMode']
         self.payload['process_specs']['7']['volumes'] = []
         with self.assertRaisesRegex(module.RecipeFailure, 'orbit-unrecorded-mount'):
@@ -388,7 +500,7 @@ class DockerMigrationTest(unittest.TestCase):
         (self.apt / 'docker.list.orbit-docker-backup').write_text('different original')
         with self.assertRaisesRegex(module.RecipeFailure, 'apt-source'):
             module.migrate(self.payload, 'prepare')
-        self.assertTrue(all(argv[:3] == ['docker', 'manifest', 'inspect'] for argv in self.commands))
+        self.assert_read_only_commands()
 
     def test_beast_like_inventory_passes_preflight_with_cuda_tmpfs_local_images_and_orbit_layers(self):
         for identifier, name in [('one', 'diction-whisper'), ('four', 'ofide'), ('five', 'ohdear'), ('six', 'dngdmt')]:
@@ -486,7 +598,7 @@ class DockerMigrationTest(unittest.TestCase):
             with self.assertRaisesRegex(module.RecipeFailure, 'insufficient-space'):
                 module.migrate(self.payload, 'prepare')
         self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
-        self.assertFalse(any(c[0] in ('apt-get', 'systemctl') or c[:2] in
+        self.assertFalse(any(c[0] == 'apt-get' or (c[0] == 'systemctl' and c[1] != 'show') or c[:2] in
                              (['docker', 'stop'], ['docker', 'save'], ['docker', 'commit']) for c in self.commands))
         self.assertEqual(self.containers, self.original)
         self.assertEqual(self.source.read_bytes(), self.source_before)
