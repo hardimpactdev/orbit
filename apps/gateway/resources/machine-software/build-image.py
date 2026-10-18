@@ -3,6 +3,7 @@
 import traceback
 
 IMAGE_LOG = None
+IMAGE_APT = Path('/var/tmp/orbit-image-apt')
 
 
 def command_output(result):
@@ -13,15 +14,46 @@ def command_output(result):
         IMAGE_LOG.flush()
 
 
+def image_apt_source(payload):
+    IMAGE_APT.mkdir(parents=True, mode=0o755, exist_ok=True)
+    publish(IMAGE_APT / 'ubuntu.sources', snapshot_source(payload['snapshot']).encode())
+    publish(IMAGE_APT / 'apt.conf', image_apt_configuration().encode())
+    with image_apt_environment(payload):
+        run(['apt-get', 'update'])
+
+
+def image_apt_configuration():
+    return ('Dir::Etc::parts "-";\nDir::Etc::main "-";\n'
+            f'Dir::Etc::sourcelist "{IMAGE_APT}/ubuntu.sources";\nDir::Etc::sourceparts "-";\n'
+            'APT::Get::List-Cleanup "false";\n'
+            'APT::Update::Error-Mode "any";\nDPkg::Lock::Timeout "300";\n')
+
+
+@contextmanager
+def image_apt_environment(payload):
+    config = IMAGE_APT / 'apt.conf'
+    if (config.read_text() != image_apt_configuration()
+            or (IMAGE_APT / 'ubuntu.sources').read_text() != snapshot_source(payload['snapshot'])):
+        raise RecipeFailure('apt-source')
+    previous = os.environ.get('APT_CONFIG')
+    os.environ['APT_CONFIG'] = str(config)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop('APT_CONFIG', None)
+        else:
+            os.environ['APT_CONFIG'] = previous
+
+
 def image_packages(payload):
-    with tempfile.TemporaryDirectory(prefix='orbit-image-source-') as directory:
-        options = snapshot_options(payload, Path(directory))
-        image_install_packages(payload, options)
+    # APT_CONFIG crosses the PHP installer's process boundary too. No image install reads stock/live indexes.
+    with image_apt_environment(payload):
+        image_install_packages(payload, [])
 
 
 def image_install_packages(payload, options):
     options = [*options, '-o', 'DPkg::Lock::Timeout=300']
-    run(['apt-get', 'update', *options])
     environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
     if POLICY.exists() or POLICY.is_symlink():
         raise RecipeFailure()
@@ -219,7 +251,7 @@ def image_main():
     try:
         payload = json.loads(document)
         profile = payload['profile']
-        if not re.fullmatch(r'[a-z-]+', profile) or phase not in ('packages', 'javascript', 'rust', 'agent', 'verify'):
+        if not re.fullmatch(r'[a-z-]+', profile) or phase not in ('apt-source', 'packages', 'javascript', 'rust', 'agent', 'verify'):
             raise RecipeFailure('Invalid image phase')
         directory = Path('/var/log/orbit/recipe-images')
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -229,7 +261,7 @@ def image_main():
         os.chmod(path, 0o600)
         print('Recipe image phase: ' + profile + ':' + phase, file=IMAGE_LOG, flush=True)
         platform_check(payload['architecture'])
-        {'packages': image_packages, 'javascript': image_javascript, 'rust': image_rust,
+        {'apt-source': image_apt_source, 'packages': image_packages, 'javascript': image_javascript, 'rust': image_rust,
          'agent': image_agent, 'verify': image_verify}[phase](payload)
         print('{"ok":true}')
         return 0
