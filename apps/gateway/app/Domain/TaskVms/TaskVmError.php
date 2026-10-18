@@ -62,7 +62,6 @@ enum TaskVmError: string
     case ImageSyncFailed = 'task_vm.image_sync_failed';
 
     // Shared package cache.
-    case PackageCacheIntegrityConflict = 'task_vm.package_cache_integrity_conflict';
     case PackageCacheLockInvalid = 'task_vm.package_cache_lock_invalid';
     case PackageCacheInvalidLimit = 'task_vm.package_cache_invalid_limit';
     case PackageCacheInvalidResult = 'task_vm.package_cache_invalid_result';

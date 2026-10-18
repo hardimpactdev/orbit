@@ -16,7 +16,7 @@ Principle: [Lean](/mission#principles). The image build keeps its result and dro
 
 ## Context
 
-Before this decision, [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) used one job for a nightly base build and sync to other hosts. On beast the build takes about 3.5 minutes. It may run up to 25 minutes, and a sync up to about 24 more.
+Before this decision, the task VM image build used one job for a nightly base build and sync to other hosts. On beast the build takes about 3.5 minutes. It may run up to 25 minutes, and a sync up to about 24 more.
 
 An audit on 13 Oct 2026 found these problems in the former build:
 
@@ -30,13 +30,13 @@ Off-the-shelf tools were considered first. See [Rejected alternatives](#rejected
 
 ## Decision
 
-The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) and the manifest skip in [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
+The Gateway owns the image build. This decision changes [task VM image builds](/reference/compute-drivers#build-the-base-image) and the manifest skip in [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
 
 ### The build is a chain of jobs
 
 A base image build is one Laravel job chain (`Bus::chain`) on `builds`. A failed step stops the chain and records its error. The build row reports the whole build; Horizon shows individual jobs.
 
-**Build phases superseded by ADR 0207.** The old enrollment-program steps are replaced by [recipe phases](/reference/compute-drivers#build-the-base-image). Every host builds the current recipe from stock. [ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed) adds the phase `topology-seed` after `smoke`: it builds the host's [topology seed](/reference/compute-drivers#the-topology-seed) of the base in the smoke VM, and promotion requires it. Two [build workers](/reference/gateway-queue#queues) can serve different hosts in parallel; each chain preserves its step order.
+**Build phases superseded by ADR 0207.** The old enrollment-program steps are replaced by [recipe phases](/reference/compute-drivers#build-the-base-image). Every host builds the current recipe from stock. The phase `topology-seed` follows `smoke` and builds the host's [topology seed](/reference/compute-drivers#the-topology-seed) in the smoke VM; promotion requires it. Two [build workers](/reference/gateway-queue#queues) can serve different hosts in parallel; each chain preserves its step order.
 
 ### The build row holds the state
 
@@ -92,7 +92,7 @@ The remaining step is to move the [UpCloud builder](/reference/compute-drivers#b
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm), item 1 (image), the manifest, and the enrollment skip in [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds)
+- ADRs: none in progress. Task VM image builds and enrollment are documented in [Build the base image](/reference/compute-drivers#build-the-base-image) and [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
 - Detail: [Compute drivers: Build the base image](/reference/compute-drivers#build-the-base-image), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
 - Verify: The proofs on beast check these outcomes.
   - A build on beast runs each step as its own job on the `builds` queue, and the row lists each step with its seconds.

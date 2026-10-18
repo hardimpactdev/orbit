@@ -1630,9 +1630,7 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 ### Every task group runs on its own task VM
 
-Each task group gets its own [task VM](#task-vm-workspace). Inside it, one user, `orbit`, runs the agents, the setup steps, the checks, and teardown, so agents and checks see the same environment. The VM edge is the boundary. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records that choice.
-
-Groups once shared host Nodes, and agents ran there as a separate account without sudo. That account needed checkout ACLs, a second Git trust list, and a worker handoff in every check, and tests that need sudo failed for agents but passed in the gate. Orbit deleted that shared mode once every Project ran on task VMs. No fallback to a host Node exists: a task waits for its VM.
+Each task group gets its own [task VM](#task-vm-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
 
 ### Backlog before Todo
 
