@@ -15,26 +15,40 @@ def command_output(result):
 
 
 def image_apt_source(payload):
-    IMAGE_APT.mkdir(parents=True, mode=0o755, exist_ok=True)
-    publish(IMAGE_APT / 'ubuntu.sources', snapshot_source(payload['snapshot']).encode())
-    publish(IMAGE_APT / 'apt.conf', image_apt_configuration().encode())
-    with image_apt_environment(payload):
-        run(['apt-get', 'update'])
+    image_apt_setup(payload, IMAGE_APT)
+    try:
+        with image_apt_environment(payload):
+            run(['apt-get', 'update'])
+    except BaseException:
+        # A resume must refresh the indexes again if this phase did not finish.
+        (IMAGE_APT / 'apt.conf').unlink(missing_ok=True)
+        raise
 
 
-def image_apt_configuration():
+def image_apt_setup(payload, directory):
+    directory.mkdir(parents=True, mode=0o755, exist_ok=True)
+    publish(directory / 'ubuntu.sources', snapshot_source(payload['snapshot']).encode())
+    publish(directory / 'apt.conf', image_apt_configuration(directory).encode())
+
+
+def image_apt_configuration(directory):
     return ('Dir::Etc::parts "-";\nDir::Etc::main "-";\n'
-            f'Dir::Etc::sourcelist "{IMAGE_APT}/ubuntu.sources";\nDir::Etc::sourceparts "-";\n'
+            f'Dir::Etc::sourcelist "{directory}/ubuntu.sources";\nDir::Etc::sourceparts "-";\n'
             'APT::Get::List-Cleanup "false";\n'
             'APT::Update::Error-Mode "any";\nDPkg::Lock::Timeout "300";\n')
 
 
 @contextmanager
-def image_apt_environment(payload):
-    config = IMAGE_APT / 'apt.conf'
-    if (config.read_text() != image_apt_configuration()
-            or (IMAGE_APT / 'ubuntu.sources').read_text() != snapshot_source(payload['snapshot'])):
-        raise RecipeFailure('apt-source')
+def image_apt_environment(payload, directory=None):
+    directory = IMAGE_APT if directory is None else directory
+    config = directory / 'apt.conf'
+    try:
+        matches = (config.read_text() == image_apt_configuration(directory)
+                   and (directory / 'ubuntu.sources').read_text() == snapshot_source(payload['snapshot']))
+    except FileNotFoundError:
+        matches = False
+    if not matches:
+        raise RecipeFailure('apt-source', detail='apt-source must run before packages: snapshot configuration is missing or mismatched')
     previous = os.environ.get('APT_CONFIG')
     os.environ['APT_CONFIG'] = str(config)
     try:
@@ -47,13 +61,14 @@ def image_apt_environment(payload):
 
 
 def image_packages(payload):
+    if not all((IMAGE_APT / name).is_file() for name in ('apt.conf', 'ubuntu.sources')):
+        image_apt_source(payload)
     # APT_CONFIG crosses the PHP installer's process boundary too. No image install reads stock/live indexes.
     with image_apt_environment(payload):
-        image_install_packages(payload, [])
+        image_install_packages(payload)
 
 
-def image_install_packages(payload, options):
-    options = [*options, '-o', 'DPkg::Lock::Timeout=300']
+def image_install_packages(payload):
     environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
     if POLICY.exists() or POLICY.is_symlink():
         raise RecipeFailure()
@@ -62,20 +77,20 @@ def image_install_packages(payload, options):
         installed = packages()
         tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu' or name in git_packages(payload)}
         check_git_siblings(payload)
-        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, options, git_names=git_packages(payload))
+        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, git_names=git_packages(payload))
         supported(assessment)
         configure_git(payload, apply=True)
         if payload['profile'] == 'base':
-            run(['apt-get', 'full-upgrade', '--yes', *options], env=environment)
-        # full-upgrade may have installed a newer same-release version; inspect again with the same options.
+            run(['apt-get', 'full-upgrade', '--yes'], env=environment)
+        # full-upgrade may have installed a newer same-release version; inspect again under the same configuration.
         installed = packages()
-        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, options, git_names=git_packages(payload))
+        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, git_names=git_packages(payload))
         supported(assessment)
         ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items() if pin['source'] == 'ubuntu' and assessment[name]['changed']]
         # Install the recipe's curl and CA packages before fetching third-party artifacts on a stock image.
         if ubuntu:
             run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
-                 *options, '--', *ubuntu], env=environment)
+                 '--', *ubuntu], env=environment)
         with tempfile.TemporaryDirectory(prefix='orbit-image-packages-') as directory:
             work = Path(directory)
             debs = []
@@ -94,7 +109,7 @@ def image_install_packages(payload, options):
                     raise RecipeFailure()
                 debs.append(str(deb))
             if debs:
-                install_exact_debs(debs, payload['tools'], packages(), options, environment)
+                install_exact_debs(debs, payload['tools'], packages(), [], environment)
         run(['apt-get', 'check'], env=environment)
         audit_packages(environment)
         record_git(payload, packages())
@@ -200,46 +215,45 @@ def image_verify(payload):
     marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
     if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
         raise RecipeFailure()
-    selected = {name: pin for name, pin in payload['tools'].items()
-                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
-    os.environ['SUDO_USER'] = 'orbit'
-    observed = inspect(selected)
-    # Snapshot-only versions may no longer appear in the normal rolling indexes. Reuse the cached
-    # authenticated snapshot metadata too, without refreshing any index during verification.
-    if any(pin['source'] == 'ubuntu' for pin in selected.values()):
-        with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
-            assessment = assess(selected, observed, snapshot_options(payload, Path(directory)), git_names=git_packages(payload))
-    else:
-        assessment = assess(selected, observed, git_names=git_packages(payload))
-    if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
-        raise RecipeFailure()
-    if 'pnpm' in selected:
-        result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
-                      '/usr/local/bin/pnpm', '--version'])
-        if result.stdout.strip() != selected['pnpm']['version']:
-            raise RecipeFailure()
-    if 'incus' in payload['tools'] and 'incus-admin' not in run(['id', '-nG', 'orbit']).stdout.split():
-        raise RecipeFailure()
-    for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
-        if name in payload['tools']:
-            artifact = payload['tools'][name]['artifacts'][payload['architecture']]
-            algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
-            with open(path, 'rb') as stream:
-                if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
+    # Cleanup removed the build configuration, but authenticated snapshot lists remain. Never refresh here.
+    with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
+        work = Path(directory)
+        image_apt_setup(payload, work)
+        with image_apt_environment(payload, work):
+            selected = {name: pin for name, pin in payload['tools'].items()
+                        if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
+            os.environ['SUDO_USER'] = 'orbit'
+            observed = inspect(selected)
+            assessment = assess(selected, observed, git_names=git_packages(payload))
+            if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
+                raise RecipeFailure()
+            if 'pnpm' in selected:
+                result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                              '/usr/local/bin/pnpm', '--version'])
+                if result.stdout.strip() != selected['pnpm']['version']:
                     raise RecipeFailure()
-    # The installer finds nothing to change and checks the CLI's loaded extensions against the recipe.
-    if payload.get('php') and php_install(payload) != 'current':
-        raise RecipeFailure()
-    rust_pins = {name: payload['tools'][name]['artifacts'][payload['architecture']]
-                 for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
-    if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:
-        raise RecipeFailure()
-    for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
-        if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
-            raise RecipeFailure()
-    for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
-        if Path(path).exists():
-            raise RecipeFailure()
+            if 'incus' in payload['tools'] and 'incus-admin' not in run(['id', '-nG', 'orbit']).stdout.split():
+                raise RecipeFailure()
+            for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
+                if name in payload['tools']:
+                    artifact = payload['tools'][name]['artifacts'][payload['architecture']]
+                    algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+                    with open(path, 'rb') as stream:
+                        if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
+                            raise RecipeFailure()
+            # The installer finds nothing to change and checks the CLI's loaded extensions against the recipe.
+            if payload.get('php') and php_install(payload) != 'current':
+                raise RecipeFailure()
+            rust_pins = {name: payload['tools'][name]['artifacts'][payload['architecture']]
+                         for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
+            if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:
+                raise RecipeFailure()
+            for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
+                if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
+                    raise RecipeFailure()
+            for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
+                if Path(path).exists():
+                    raise RecipeFailure()
 
 
 def image_main():
@@ -251,7 +265,9 @@ def image_main():
     try:
         payload = json.loads(document)
         profile = payload['profile']
-        if not re.fullmatch(r'[a-z-]+', profile) or phase not in ('apt-source', 'packages', 'javascript', 'rust', 'agent', 'verify'):
+        phases = {'apt-source': image_apt_source, 'packages': image_packages, 'javascript': image_javascript,
+                  'rust': image_rust, 'agent': image_agent, 'verify': image_verify}
+        if not re.fullmatch(r'[a-z-]+', profile) or phase not in phases:
             raise RecipeFailure('Invalid image phase')
         directory = Path('/var/log/orbit/recipe-images')
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -261,8 +277,7 @@ def image_main():
         os.chmod(path, 0o600)
         print('Recipe image phase: ' + profile + ':' + phase, file=IMAGE_LOG, flush=True)
         platform_check(payload['architecture'])
-        {'apt-source': image_apt_source, 'packages': image_packages, 'javascript': image_javascript, 'rust': image_rust,
-         'agent': image_agent, 'verify': image_verify}[phase](payload)
+        phases[phase](payload)
         print('{"ok":true}')
         return 0
     except Exception as error:

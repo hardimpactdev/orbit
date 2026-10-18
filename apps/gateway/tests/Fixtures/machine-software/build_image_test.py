@@ -38,16 +38,17 @@ class ImageRecipeTest(unittest.TestCase):
         self.files[str(path)] = content
         Path(path).write_bytes(content)
 
-    def packages(self, command=None):
+    def packages(self, command=None, prepare=True):
         with patch.object(recipe, 'POLICY', self.policy), \
              patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
              patch.object(recipe, 'packages', return_value={'curl': '1.0'}), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=command or self.run_command):
-            recipe.image_apt_source(self.payload)
+            if prepare:
+                recipe.image_apt_source(self.payload)
             recipe.image_packages(self.payload)
 
-    def test_installs_exact_pins_only_from_snapshot_and_upgrades_base_from_stock(self):
+    def test_installs_exact_pins_and_upgrades_base_only_from_snapshot(self):
         self.packages()
         self.assertIn(b'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/',
                       next(content for path, content in self.files.items() if path.endswith('/ubuntu.sources')))
@@ -56,9 +57,10 @@ class ImageRecipeTest(unittest.TestCase):
         config = next(content for path, content in self.files.items() if path.endswith('/apt.conf'))
         self.assertIn(b'Dir::Etc::sourceparts "-";', config)
         self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
+        self.assertEqual(self.commands.count(['apt-get', 'update']), 1)
         self.assertFalse(self.policy.exists())
 
-    def test_php_subprocess_uses_the_same_snapshot_as_image_packages_and_post_clean_verification(self):
+    def snapshot_php_probe(self):
         self.php_payload()
         # Use a real child and APT's parser, with no update or install. A stock/live source must be invisible.
         self.payload['php']['bootstrap'] = '''
@@ -68,20 +70,51 @@ config = subprocess.run(['apt-config', 'dump'], capture_output=True, text=True, 
 root = Path(os.environ['APT_CONFIG']).parent
 assert f'Dir::Etc::sourcelist "{root}/ubuntu.sources";' in config
 assert 'Dir::Etc::sourceparts "-";' in config
+assert 'Dir::Etc::parts "-";' in config
 assert 'Dir::State::lists "lists/";' in config
 assert 'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/' in (root / 'ubuntu.sources').read_text()
 print(json.dumps({'outcome': 'current'}))
 '''
+
+    def test_php_subprocess_uses_the_same_snapshot_as_image_packages(self):
+        self.snapshot_php_probe()
         with patch.dict(os.environ, {'APT_CONFIG': '/stock/apt.conf'}):
             self.packages()
             self.assertEqual(os.environ['APT_CONFIG'], '/stock/apt.conf')
 
-    def test_packages_refuse_missing_snapshot_setup_before_any_install(self):
+    def test_missing_snapshot_setup_names_the_required_phase(self):
         with patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'missing'), \
              patch.object(recipe, 'run') as command:
-            with self.assertRaises(FileNotFoundError):
-                recipe.image_packages(self.payload)
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failure:
+                with recipe.image_apt_environment(self.payload):
+                    self.fail('Missing configuration was accepted')
+        self.assertIn('apt-source must run', failure.exception.detail)
         command.assert_not_called()
+
+    def test_resumed_packages_prepare_missing_snapshot_before_installing(self):
+        self.packages(prepare=False)
+        update = self.commands.index(['apt-get', 'update'])
+        install = next(i for i, command in enumerate(self.commands) if command[:2] == ['apt-get', 'install'])
+        self.assertLess(update, install)
+        self.assertEqual(self.commands.count(['apt-get', 'update']), 1)
+
+    def test_failed_snapshot_refresh_is_retried_before_resuming_packages(self):
+        with patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
+             patch.object(recipe, 'publish', side_effect=self.publish), \
+             patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('apt-source')):
+            with self.assertRaises(recipe.RecipeFailure):
+                recipe.image_apt_source(self.payload)
+        self.packages(prepare=False)
+        self.assertEqual(self.commands[0], ['apt-get', 'update'])
+
+    def test_resumed_packages_recreate_partial_snapshot_setup(self):
+        for missing in ('apt.conf', 'ubuntu.sources'):
+            with self.subTest(missing=missing):
+                self.packages()
+                (Path(self.work.name) / 'apt' / missing).unlink()
+                self.commands = []
+                self.packages(prepare=False)
+                self.assertEqual(self.commands[0], ['apt-get', 'update'])
 
     def test_packages_refuse_another_snapshot_before_any_install(self):
         with patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
@@ -89,9 +122,51 @@ print(json.dumps({'outcome': 'current'}))
              patch.object(recipe, 'run', side_effect=self.run_command):
             recipe.image_apt_source(self.payload)
             self.payload['snapshot'] = '20261015T000000Z'
-            with self.assertRaises(recipe.RecipeFailure):
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source') as failure:
                 recipe.image_packages(self.payload)
+        self.assertIn('apt-source must run', failure.exception.detail)
         self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
+
+    @contextlib.contextmanager
+    def verification(self):
+        original_read = Path.read_text
+        original_exists = Path.exists
+        def read_text(path, *args, **kwargs):
+            if path == Path('/etc/orbit-machine-recipe.json'):
+                return json.dumps({'identity': self.payload['identity'], 'profile': self.payload['profile']})
+            return original_read(path, *args, **kwargs)
+        def exists(path):
+            if str(path) in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
+                return False
+            return original_exists(path)
+        with patch.object(recipe.Path, 'read_text', read_text), \
+             patch.object(recipe.Path, 'exists', exists), \
+             patch.object(recipe, 'publish', side_effect=self.publish):
+            yield
+
+    def test_verify_after_cleanup_gives_assessment_and_php_the_same_snapshot_without_refresh(self):
+        self.snapshot_php_probe()
+        self.payload['identity'] = 'sha256:current'
+        def assessment(selected, observed, *args, **kwargs):
+            config = Path(os.environ['APT_CONFIG'])
+            self.assertIn('Dir::Etc::parts "-";', config.read_text())
+            self.assertIn(self.payload['snapshot'], (config.parent / 'ubuntu.sources').read_text())
+            self.assertEqual(args, ())
+            return {'curl': {'status': 'current'}}
+        with self.verification(), \
+             patch.dict(os.environ, {'APT_CONFIG': '/stock/apt.conf'}), \
+             patch.object(recipe, 'inspect', return_value={'curl': '2.0'}), \
+             patch.object(recipe, 'assess', side_effect=assessment) as assess, \
+             patch.object(recipe, 'run', side_effect=self.run_command):
+            recipe.image_verify(self.payload)
+            self.assertEqual(os.environ['APT_CONFIG'], '/stock/apt.conf')
+            temporary = Path(next(path for path in self.files if path.endswith('/apt.conf'))).parent
+            self.assertFalse(temporary.exists())
+            assess.side_effect = recipe.RecipeFailure('assessment')
+            with self.assertRaises(recipe.RecipeFailure):
+                recipe.image_verify(self.payload)
+            self.assertEqual(os.environ['APT_CONFIG'], '/stock/apt.conf')
+        self.assertFalse(any(c[:2] == ['apt-get', 'update'] for c in self.commands))
 
     def php_payload(self):
         pin = {'name': 'php8.5-cli', 'version': '8.5.11-1', 'architecture': 'amd64', 'url': 'https://example/x.deb', 'sha256': 'a' * 64}
@@ -204,8 +279,7 @@ print(json.dumps({'outcome': 'current'}))
 
     def test_smoke_rejects_broken_pnpm_even_when_its_package_metadata_matches(self):
         self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'source': 'artifact', 'version': '12.11.2'}}})
-        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
-        with patch.object(recipe.Path, 'read_text', return_value=marker), \
+        with self.verification(), \
              patch.object(recipe, 'inspect', return_value={'pnpm': '12.11.2'}), \
              patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('pnpm executable failed')) as command:
             with self.assertRaises(recipe.RecipeFailure):
@@ -225,15 +299,13 @@ print(json.dumps({'outcome': 'current'}))
 
     def verify_incus_admin(self, groups):
         self.payload.update({'identity': 'sha256:current', 'tools': {'incus': {'source': 'ubuntu', 'version': '6.0.5-8', 'package': 'incus'}}})
-        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
 
         def command(argv, **kwargs):
             self.commands.append(argv)
             return subprocess.CompletedProcess(argv, 0, groups + '\n' if argv == ['id', '-nG', 'orbit'] else '', '')
-        with patch.object(recipe.Path, 'read_text', return_value=marker), \
+        with self.verification(), \
              patch.object(recipe, 'inspect', return_value={'incus': '6.0.5-8'}), \
              patch.object(recipe, 'assess', return_value={'incus': {'status': 'current'}}), \
-             patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe.Path, 'exists', return_value=False), \
              patch.object(recipe, 'run', side_effect=command):
             recipe.image_verify(self.payload)

@@ -820,6 +820,8 @@ class RecipeVersionsTest(unittest.TestCase):
                 image.image_packages(payload)
             self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
             self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
+            # Each of the two assessments checks origin once under APT_CONFIG, without duplicate argv options.
+            self.assertEqual(self.commands.count(['apt-cache', 'policy', 'curl:amd64']), 2)
             original_read = Path.read_text
             def read_text(path, *args, **kwargs):
                 if path == Path('/etc/orbit-machine-recipe.json'):
