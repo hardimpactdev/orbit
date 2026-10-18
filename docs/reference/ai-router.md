@@ -241,6 +241,12 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `ai_router.keys_busy` | 409 | A model key operation holds the lock for more than 60 seconds. Teardown changes nothing. Run it again. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
+## Collector convergence
+
+The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
+
+`ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota reads resume when the tick renames the previous snapshot. The window includes up to one minute for dispatch, queue wait, and retirement of the old collector. When no snapshot exists, reads wait for the first successful poll. Cache key renames preserve TTLs, backoff deadlines, and account schedules; the old collector lock is deleted. Queue and upstream failures can extend it. Missing quota is unknown, never zero.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -267,9 +273,3 @@ A window the provider did not return is unknown. Showing it as zero use would te
 - [`extension`](/cli/extension)
 - [Database role](/reference/database-role)
 - [Private DNS](/reference/private-dns)
-
-## Collector convergence
-
-The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
-
-`ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota is unavailable until the collector writes a fresh snapshot. The window includes up to one minute for dispatch, queue wait, publication, startup, and the first successful poll. Queue and upstream failures can extend it. Missing quota is unknown, never zero.

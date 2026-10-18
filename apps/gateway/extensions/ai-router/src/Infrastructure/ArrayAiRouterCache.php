@@ -19,7 +19,7 @@ final class ArrayAiRouterCache implements AiRouterCache
             return null;
         }
 
-        if ($item['expires'] !== null && $item['expires'] <= time()) {
+        if ($item['expires'] !== null && $item['expires'] <= now()->getTimestamp()) {
             unset($this->items[$key]);
 
             return null;
@@ -28,10 +28,14 @@ final class ArrayAiRouterCache implements AiRouterCache
         return $item['value'];
     }
 
-    public function forgetPrefix(string $prefix): void
+    public function renameCollectorKeys(string $from, string $to): void
     {
         foreach (array_keys($this->items) as $key) {
-            if (str_starts_with($key, $prefix)) {
+            if (str_starts_with($key, $from)) {
+                $suffix = substr($key, strlen($from));
+                if ($suffix !== 'lock') {
+                    $this->items[$to.$suffix] = $this->items[$key];
+                }
                 unset($this->items[$key]);
             }
         }
@@ -41,7 +45,7 @@ final class ArrayAiRouterCache implements AiRouterCache
     {
         $this->items[$key] = [
             'value' => $value,
-            'expires' => $seconds === null ? null : time() + $seconds,
+            'expires' => $seconds === null ? null : now()->getTimestamp() + $seconds,
         ];
     }
 }

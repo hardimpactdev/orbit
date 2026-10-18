@@ -21,23 +21,29 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
         return is_string($reply) ? $reply : null;
     }
 
-    public function forgetPrefix(string $prefix): void
+    public function renameCollectorKeys(string $from, string $to): void
     {
-        // The old collector has stopped. A single script finishes deletion before the new one can start.
+        // No collector runs while this script renames state. RENAME keeps each key's remaining TTL.
         $script = <<<'LUA'
             local cursor = '0'
-            local removed = 0
+            local renamed = 0
             repeat
                 local page = redis.call('SCAN', cursor, 'MATCH', ARGV[1] .. '*', 'COUNT', 100)
                 cursor = page[1]
                 for _, key in ipairs(page[2]) do
-                    removed = removed + redis.call('DEL', key)
+                    local suffix = string.sub(key, string.len(ARGV[1]) + 1)
+                    if suffix == 'lock' then
+                        redis.call('DEL', key)
+                    else
+                        redis.call('RENAME', key, ARGV[2] .. suffix)
+                        renamed = renamed + 1
+                    end
                 end
             until cursor == '0'
-            return removed
+            return renamed
             LUA;
-        if (! is_int($this->command(['EVAL', $script, '0', $prefix]))) {
-            throw new RuntimeException('Could not clear the obsolete collector cache.');
+        if (! is_int($this->command(['EVAL', $script, '0', $from, $to]))) {
+            throw new RuntimeException('Could not rename the collector cache.');
         }
     }
 

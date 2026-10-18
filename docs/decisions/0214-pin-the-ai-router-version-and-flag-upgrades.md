@@ -6,7 +6,7 @@ description: "In progress. The ai-router extension pins the driver version, a da
 
 # ADR 0214: Pin the AI router version and flag upgrades
 
-The `ai-router` extension of [ADR 0212](/decisions/0212-build-the-ai-router-extension) pins its driver version. A daily check stores the latest upstream release. Doctor reports `role.update_available` as an informational finding, and the problem collector records it as a named exception. The operator upgrades with `ai-router:update VERSION`, also while task groups run. Orbit never upgrades the router by itself.
+The `ai-router` extension of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) pins its driver version. A daily check stores the latest upstream release. Doctor reports `role.update_available` as an informational finding, and the problem collector records it as a named exception. The operator upgrades with `ai-router:update VERSION`, also while task groups run. Orbit never upgrades the router by itself.
 
 ## Status
 
@@ -16,7 +16,7 @@ Principle: [Agents operate, humans steer](/mission#principles). Orbit reports a 
 
 ## Context
 
-[ADR 0212](/decisions/0212-build-the-ai-router-extension) makes the AI router an Orbit-managed Process on the `ai-router` role Node, run by the `cliproxyapi` driver. A new router installs the version in the Gateway variable `ORBIT_AI_ROUTER_VERSION`. An adopted router, such as Process 103 on `services`, keeps the version it runs. ADR 0212 has no way to change that version, and no way to see that a newer one exists.
+[ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) makes the AI router an Orbit-managed Process on the `ai-router` role Node, run by the `cliproxyapi` driver. A new router installs the version in the Gateway variable `ORBIT_AI_ROUTER_VERSION`. An adopted router, such as Process 103 on `services`, keeps the version it runs. ADR 0212 has no way to change that version, and no way to see that a newer one exists.
 
 CLIProxyAPI publishes its releases on [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI/releases). Several releases can appear in one week. The [analytics role](/reference/analytics#update-and-remove-the-role) is the precedent for a pinned upstream version: `analytics:update VERSION` changes the pinned Plausible version and replaces its Process.
 
@@ -30,7 +30,7 @@ The extension pins the driver version, checks upstream once a day, reports a new
 
 ### Names
 
-These names follow the vocabulary of [ADR 0212](/decisions/0212-build-the-ai-router-extension#one-name-the-ai-router). `update VERSION` follows `analytics:update`, and it becomes the second family action of `ai-router` beside `status`.
+These names follow the vocabulary of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#one-name-the-ai-router). `update VERSION` follows `analytics:update`, and it becomes the second family action of `ai-router` beside `status`.
 
 | Surface | Name |
 | --- | --- |
@@ -59,7 +59,7 @@ A daily extension schedule asks the driver for the latest release and stores it 
 
 Doctor's `role` family reports `role.update_available` on the `ai-router` assignment when the latest release is newer than the pin. Its expected value is the latest version, and its observed value is the pin. The kind is `informational`, so `orbit doctor` stays healthy and exits 0 while a newer release exists. A failed release check is not a finding.
 
-The finding reaches Doctor through a new plug-in point, the role version report. [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) does not list it, and it replaces no hard-coded call. The extension tags it, as it tags the points in [ADR 0212](/decisions/0212-build-the-ai-router-extension#plug-in-points).
+The finding reaches Doctor through a new plug-in point, the role version report. [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) does not list it, and it replaces no hard-coded call. The extension tags it, as it tags the points in [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#plug-in-points).
 
 ### The collector exception
 
@@ -75,11 +75,11 @@ The first update of an adopted router, such as Process 103, replaces it as the P
 
 ### Build order
 
-This record is built in one pull request, after the five build steps of [ADR 0212](/decisions/0212-build-the-ai-router-extension#build-order). It adds the pin, the driver's release report, the daily check, the role version report, the informational `role.update_available`, the collector exception, and `ai-router:update` with its MCP tool and API operation.
+This record is built in one pull request, after the five build steps of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order). It adds the pin, the driver's release report, the daily check, the role version report, the informational `role.update_available`, the collector exception, and `ai-router:update` with its MCP tool and API operation.
 
 ### Acceptance test
 
-The pull request passes the [acceptance test of ADR 0212](/decisions/0212-build-the-ai-router-extension#acceptance-test) and these checks on the live fleet after its Gateway release:
+The pull request passes the [acceptance test of ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#acceptance-test) and these checks on the live fleet after its Gateway release:
 
 1. `ai-router:update` to the current pin changes nothing, and an update to a newer release passes the canary task group.
 2. An `ai-router:update` while the canary's Pi turn is running restarts the router mid-turn. The turn fails with a transient provider error, the [provider retry](/reference/tasks#retry-a-transient-provider-error) posts a `provider_retry` comment and retries on the same thread, and the group then settles normally with only the anchor key left.
@@ -101,6 +101,6 @@ The pull request passes the [acceptance test of ADR 0212](/decisions/0212-build-
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: builds on [ADR 0212](/decisions/0212-build-the-ai-router-extension). It adds a driver capability, a plug-in point, and the second `ai-router` family action to that record's design.
+- ADRs: builds on [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension). It adds a driver capability, a plug-in point, and the second `ai-router` family action to that record's design.
 - Detail: the upgrade section of the AI router reference page that ADR 0212 creates; the `ai-router` CLI page; [doctor](/cli/doctor); [Tasks: Outer loop](/reference/tasks#outer-loop); [CLI command vocabulary](/reference/cli-command-vocabulary).
 - Verify: the [Acceptance test](#acceptance-test); tests for the release check, the informational finding, the collector exception, and `ai_router.version_unknown`.

@@ -663,7 +663,7 @@
               "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
               "decisions/0211-ship-node-changes-as-remote-programs",
-              "decisions/0212-build-the-ai-router-extension",
+              "decisions/0212-turn-proxycli-into-the-ai-router-extension",
               "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
               "decisions/0215-start-development-processes-from-project-definitions",
@@ -1590,18 +1590,6 @@
     {
       "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
       "destination": "/reference/tasks#workspace-lease"
-    },
-    {
-      "source": "/reference/proxycli",
-      "destination": "/reference/ai-router"
-    },
-    {
-      "source": "/cli/proxycli",
-      "destination": "/cli/ai-router"
-    },
-    {
-      "source": "/decisions/0212-turn-proxycli-into-the-ai-router-extension",
-      "destination": "/decisions/0212-build-the-ai-router-extension"
     }
   ]
 }

@@ -106,7 +106,7 @@ After saving the password, the Gateway revokes every other `default` session to 
 
 ### The collector gets its own user later
 
-The AI router collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-build-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, Nick creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
+The AI router collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, Nick creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
 
 ## Rejected alternatives
 
@@ -131,6 +131,6 @@ The AI router collector and the Gateway's snapshot reads keep using `services-va
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-build-the-ai-router-extension) binds the collector's own connection at step 4
+- ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) binds the collector's own connection at step 4
 - Detail: [Database servers](/reference/database-servers), [Database connections](/reference/database-connections), [Gateway queue: ACL users](/reference/gateway-queue#acl-users), [`doctor`](/cli/doctor)
 - Verify: Gateway tests for Valkey server creation, retry, repair, adoption, the ACL user create and destroy, the `process:update` refusal, and the Doctor family; tests against a real `valkey/valkey:8.1` container that CI runs with `ORBIT_TEST_DOCKER=1`

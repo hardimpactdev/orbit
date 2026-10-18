@@ -17,7 +17,10 @@ return new class extends Migration
                 $table->foreignId('process_id')->primary()->constrained('processes')->cascadeOnDelete();
             });
             $nodeId = DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'proxycli.node_id')->value('value');
-            $collectors = DB::table('processes')->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', 'cli-proxy-api-collector')->get();
+            $enabled = DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'proxycli.enabled')->value('value') === '1';
+            $collectors = $enabled
+                ? DB::table('processes')->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', 'cli-proxy-api-collector')->get()
+                : collect();
             foreach ($collectors as $collector) {
                 $config = json_decode($collector->runtime_config, true, flags: JSON_THROW_ON_ERROR);
                 if (! is_array($config) || $collector->runtime !== 'systemd' || ($config['command'] ?? null) !== ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py']) {
@@ -53,32 +56,8 @@ return new class extends Migration
             DB::table('settings')->where('key', 'caddy.certificate.proxycli')->delete();
 
             foreach ($collectors as $collector) {
-                $config = json_decode($collector->runtime_config, true, flags: JSON_THROW_ON_ERROR);
-                if (! is_array($config) || ! is_array($config['environment'] ?? null)) {
-                    throw new RuntimeException('The stored collector environment is malformed.');
-                }
-                $environment = [];
-                foreach ($config['environment'] as $key => $value) {
-                    if (! is_string($key) || ! is_string($value)) {
-                        throw new RuntimeException('The stored collector environment must contain string names and values.');
-                    }
-                    $renamed = str_starts_with($key, 'PROXYCLI_')
-                        ? 'AI_ROUTER_'.substr($key, strlen('PROXYCLI_')) : $key;
-                    if (array_key_exists($renamed, $environment)) {
-                        throw new RuntimeException('Collector environment names conflict.');
-                    }
-                    $environment[$renamed] = $value;
-                }
                 DB::table('ai_router_cutovers')->insert(['process_id' => $collector->id]);
-                $config['environment'] = $environment;
-                $config['command'] = ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'];
-                DB::table('processes')->where('id', $collector->id)->update([
-                    'name' => 'ai-router-collector',
-                    'working_directory' => '/var/lib/orbit/ai-router',
-                    'runtime_config' => json_encode($config, JSON_THROW_ON_ERROR),
-                    'systemd_activation_hash' => null,
-                    'systemd_activation_pending' => false,
-                ]);
+                DB::table('processes')->where('id', $collector->id)->update(['name' => 'ai-router-collector']);
             }
 
             DB::statement('ALTER TABLE task_vms RENAME COLUMN model_proxy_origin TO ai_router_origin');

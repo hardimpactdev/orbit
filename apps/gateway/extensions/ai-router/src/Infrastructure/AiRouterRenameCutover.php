@@ -7,9 +7,7 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +20,6 @@ final readonly class AiRouterRenameCutover
     public function __construct(
         private ProcessRuntimeLease $lease,
         private AiRouterCache $cache,
-        private NodeShell $shell,
         private RemoteProgramRunner $programs,
     ) {}
 
@@ -43,25 +40,26 @@ final readonly class AiRouterRenameCutover
     public function retire(Process $process): void
     {
         $this->lease->run($process, function (Process $fresh): void {
-            $node = Node::query()->findOrFail($fresh->owner_id);
-            $program = new RemoteProgramCatalog(base_path('extensions/ai-router/resources/remote'))
-                ->program('ai-router.retire-collector', user: 'root');
-            $result = $this->programs->run($node, $program, [(string) $fresh->id]);
-            if ($result->outcome !== 'succeeded') {
-                throw new RuntimeException('Could not retire the owned collector unit.');
-            }
+            $this->run($fresh, 'retire');
             $fresh->update(['status' => 'provisioning']);
         });
-        $this->cache->forgetPrefix('orbit:proxycli:');
+        $this->cache->renameCollectorKeys('orbit:proxycli:', 'orbit:ai-router:');
     }
 
     public function complete(Process $process): void
     {
-        $node = Node::query()->findOrFail($process->owner_id);
-        $result = $this->shell->run($node, new RemoteCommand(arguments: ['sudo', 'rm', '-rf', '--', '/var/lib/orbit/proxycli', '/etc/caddy/orbit-proxycli-cert-current']));
-        if (! $result->succeeded()) {
-            throw new RuntimeException('Could not remove the old collector files after cutover.');
-        }
+        $this->run($process, 'complete');
         DB::table('ai_router_cutovers')->where('process_id', $process->id)->delete();
+    }
+
+    private function run(Process $process, string $phase): void
+    {
+        $node = Node::query()->findOrFail($process->owner_id);
+        $program = new RemoteProgramCatalog(base_path('extensions/ai-router/resources/remote'))
+            ->program('ai-router.retire-collector', user: 'root');
+        $result = $this->programs->run($node, $program, [(string) $process->id, $phase]);
+        if ($result->outcome !== 'succeeded') {
+            throw new RuntimeException('Could not finish collector cutover phase ['.$phase.'].');
+        }
     }
 }

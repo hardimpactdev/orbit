@@ -10,6 +10,7 @@ use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 
 beforeEach(function (): void {
     Schema::drop('ai_router_cutovers');
@@ -61,6 +62,7 @@ it('refuses conflicting settings and rolls back earlier renames', function (): v
 it('records an automatic cutover for a running collector without stopping it in the migration', function (): void {
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
     app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.node_id', (string) $node->id);
+    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.enabled', '1');
     $id = DB::table('processes')->insertGetId([
         'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'cli-proxy-api-collector',
         'runtime' => 'systemd', 'runtime_config' => json_encode(['command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'], 'environment' => []], JSON_THROW_ON_ERROR), 'desired_state' => 'running', 'status' => 'active',
@@ -74,6 +76,7 @@ it('renames only the stopped configured collector and preserves every environmen
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
     $other = Node::query()->create(['name' => 'other', 'status' => 'active', 'public_ssh_host' => '192.0.2.4', 'wireguard_ip' => '10.44.0.4']);
     app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.node_id', (string) $node->id);
+    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.enabled', '1');
     $oldEnvironment = ['PROXYCLI_READ_TOKEN' => 'unchanged-read-token', 'PROXYCLI_PORT' => '8787'];
     $config = ['command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'], 'environment' => $oldEnvironment];
     $id = DB::table('processes')->insertGetId([
@@ -94,8 +97,8 @@ it('renames only the stopped configured collector and preserves every environmen
     $renamed = json_decode($process->runtime_config, true, flags: JSON_THROW_ON_ERROR);
     expect($process->name)->toBe('ai-router-collector')
         ->and($process->desired_state)->toBe('stopped')
-        ->and($renamed['environment'])->toBe(['AI_ROUTER_READ_TOKEN' => 'unchanged-read-token', 'AI_ROUTER_PORT' => '8787'])
-        ->and($renamed['command'])->toBe(['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'])
+        ->and($renamed['environment'])->toBe($oldEnvironment)
+        ->and($renamed)->toBe($config)
         ->and(DB::table('ai_router_process_sources')->where('process_id', $id)->first())->toEqual($source)
         ->and(DB::table('processes')->where('id', $unrelatedId)->first())->toEqual($unrelated);
 });
@@ -133,4 +136,23 @@ it('renames stored error codes and invalidates only the retired footprint receip
     } finally {
         DB::statement('DROP TABLE rename_error_records');
     }
+});
+
+it('leaves disabled setup without pending intent so setup and teardown remain available', function (): void {
+    $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3']);
+    $settings = app(SettingRepository::class);
+    $scope = new SettingScope(SettingScopeType::Gateway);
+    $settings->put($scope, 'proxycli.node_id', (string) $node->id);
+    $settings->put($scope, 'proxycli.enabled', '0');
+    $id = DB::table('processes')->insertGetId([
+        'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'cli-proxy-api-collector',
+        'runtime' => 'systemd', 'runtime_config' => '{}', 'desired_state' => 'stopped', 'status' => 'active',
+    ]);
+    $before = DB::table('processes')->where('id', $id)->first();
+
+    ai_router_rename_migration()->up();
+
+    expect(DB::table('ai_router_cutovers')->count())->toBe(0)
+        ->and(DB::table('processes')->where('id', $id)->first())->toEqual($before);
+    app(AiRouterRenameCutover::class)->assertComplete();
 });

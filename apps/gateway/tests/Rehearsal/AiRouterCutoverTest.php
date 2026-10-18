@@ -109,7 +109,6 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $connection = DatabaseConnection::query()->create(['name' => 'Disposable Valkey', 'slug' => 'cache', 'driver' => 'redis', 'host' => '127.0.0.1', 'port' => 6379]);
         $cache = new ValkeyAiRouterCache($connection);
         app()->instance(AiRouterCache::class, $cache);
-        $cache->forgetPrefix('orbit:ai-router:');
         $cache->put('unrelated-rehearsal', 'keep');
         $collector = RecordedAiRouterState::seed($node, $connection, 'http://127.0.0.1:8317');
         $slug = 'proxycli';

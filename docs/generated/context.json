@@ -931,8 +931,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0212-build-the-ai-router-extension.md",
-            "title": "ADR 0212: Build the AI router extension",
+            "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
+            "title": "ADR 0212: Turn ProxyCli into the AI router extension",
             "kind": "decision",
             "components": [
                 "apps/cli",
