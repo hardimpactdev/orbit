@@ -119,7 +119,7 @@ it('does not let a stale failure writer replace a direction request or keep its 
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
-it('requests assistance for a new failure even when the task has ended', function (string $level, string $status, AssistanceKind $kind): void {
+it('accepts only removal failures after a task has ended', function (string $level, string $status, AssistanceKind $kind): void {
     $group = assistance_kind_group();
     $record = $level === 'group' ? $group : $group->tasks->sole();
     $stale = clone $record;
@@ -128,11 +128,12 @@ it('requests assistance for a new failure even when the task has ended', functio
 
     $applied = TaskAssistance::apply($stale, $kind, $kind === AssistanceKind::Direction ? 'Which mirror?' : null, $reason);
 
-    expect($applied)->toBeTrue()
-        ->and($stale->status->value)->toBe($status)
-        ->and($stale->assistance_requested)->toBeTrue()
-        ->and($stale->assistance_reason)->toBe($reason);
-})->with(['group', 'subtask'])->with(['completed', 'cancelled'])->with([AssistanceKind::Direction, AssistanceKind::Failure]);
+    $allowed = $kind === AssistanceKind::RemovalFailure;
+    expect($applied)->toBe($allowed)
+        ->and($record->fresh()?->status->value)->toBe($status)
+        ->and($stale->assistance_requested)->toBe($allowed)
+        ->and($stale->assistance_reason)->toBe($allowed ? $reason : null);
+})->with(['group', 'subtask'])->with(['completed', 'cancelled'])->with([AssistanceKind::Direction, AssistanceKind::Failure, AssistanceKind::RemovalFailure]);
 
 it('records each assistance change once in Activity', function (): void {
     $group = assistance_kind_group();

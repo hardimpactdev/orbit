@@ -1798,7 +1798,8 @@ describe('main moving during final review', function (): void {
 
         $failed = $final->checks()->where('kind', TaskCheckKind::BaseMerge)->sole();
         expect($final->fresh()?->status)->toBe(TaskStatus::Completed)
-            ->and($final->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($final->fresh()?->assistance_kind)->toBeNull()
+            ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
             ->and($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($failed->failed_step)->toBe('environment');
         if ($newMain) {

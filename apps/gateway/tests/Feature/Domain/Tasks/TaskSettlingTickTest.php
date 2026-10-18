@@ -570,7 +570,7 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect(tick_vm_destroyed())->toHaveCount(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
-        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
         ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('Merged pull request cleanup failed: disk full');
 
@@ -739,8 +739,8 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($settling->fresh()?->taskable_id)->toBeNull()
         ->and($settling->fresh()?->assistance_requested)->toBeFalse()
         ->and(Instance::query()->find($otherWorkspace->id))->toBeNull()
-        ->and($other->fresh()?->assistance_requested)->toBeTrue()
-        ->and($other->fresh()?->assistance_reason)->toBe($hold)
+        ->and($other->fresh()?->assistance_requested)->toBeFalse()
+        ->and($other->fresh()?->assistance_reason)->toBeNull()
         ->and(Instance::query()->find($workspace->id))->not->toBeNull();
 });
 
@@ -757,7 +757,7 @@ it('replaces its pull request assistance request with the cleanup failure when a
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'removal_failure', 'assistance_question' => null, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
 });
 
 it('does not replace an open direction request when merged pull request cleanup fails', function (): void {

@@ -1393,6 +1393,8 @@ In a review-and-merge task, an approved subtask is committed and not pushed. Con
 
 Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge that changes none of the group's paths inherits the prior head's review and is pushed without an agent or another review. Its recorded source is `base_merge`. An overlapping merge receives only a delta re-review against the earlier approved tree. CI must still pass on that exact head.
 
+A failed merge gate after the final review completes requests assistance on the active group. A resolution on that completed review retries the gate without reopening its assistance.
+
 Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the agent fixup cap. Delta-only final reviews have their own cap of three per window, after which Orbit asks for assistance. Both windows reset after completed operator-added implementation work. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.

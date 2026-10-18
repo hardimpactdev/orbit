@@ -768,6 +768,7 @@ describe('the abandoned workspace sweep', function (): void {
             'status' => TaskGroupStatus::Cancelled,
             'reserved_at' => now()->subSeconds(30),
             'assistance_requested' => true,
+            'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.',
         ]);
         $removed = claim_hol_recording_remover();
@@ -789,6 +790,7 @@ describe('the abandoned workspace sweep', function (): void {
             'status' => TaskGroupStatus::Settling,
             'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
             'assistance_requested' => true,
+            'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
         ]);
         $removed = claim_hol_recording_remover();
