@@ -205,70 +205,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     {
         $this->guardPackage($package);
 
-        $result = $this->commands->execute($node, [
-            'dpkg-query',
-            '--show',
-            '--showformat=${Status}\n${Version}\n',
-            '--',
-            $package,
-        ]);
-
-        if (
-            $result->exitCode === 1
-            && $result->stdout === ''
-            && $result->stderr === "dpkg-query: no packages found matching {$package}\n"
-        ) {
-            return null;
-        }
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'installed-version',
-            message: 'The APT installed version probe failed.',
-        );
-
-        $splitLines = preg_split('/\R/', $result->stdout);
-        $lines = is_array($splitLines) ? $splitLines : [];
-
-        while ($lines !== [] && end($lines) === '') {
-            array_pop($lines);
-        }
-
-        if ($lines === ['unknown ok not-installed']) {
-            return null;
-        }
-
-        if (count($lines) !== 2) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The APT installed version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        $version = $lines[1];
-
-        if (! $this->isSafeVersion($version)) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The APT installed version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        if (in_array($lines[0], self::REMOVED_STATUSES, strict: true)) {
-            return null;
-        }
-
-        if ($lines[0] !== 'install ok installed') {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The APT installed version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $version;
+        return $this->installedInventory($node)->versionFor($package);
     }
 
     public function normalizeVersion(string $rawVersion): ?string

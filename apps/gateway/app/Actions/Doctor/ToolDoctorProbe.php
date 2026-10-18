@@ -52,7 +52,14 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
     public function resources(Node $node): array
     {
         return [
-            ...$this->tools($node)->groupBy('tool_manager_id')->map(static fn (Collection $tools): DoctorResources => new DoctorResources(DoctorResourceKind::Rows, array_values($tools->modelKeys())))->values()->all(),
+            ...$this->tools($node)
+                ->groupBy('tool_manager_id')
+                ->map(static fn (Collection $tools): DoctorResources => new DoctorResources(
+                    DoctorResourceKind::Rows,
+                    array_values($tools->modelKeys()),
+                ))
+                ->values()
+                ->all(),
             ...($this->environments($node)->isEmpty() ? [] : [new DoctorResources(DoctorResourceKind::Environments)]),
             new DoctorResources(DoctorResourceKind::Inventory),
         ];

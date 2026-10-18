@@ -207,28 +207,8 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     public function installedVersion(Node $node, string $package): ?string
     {
         $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $prefix = $this->mac->resolvePrefix($node);
-        $result = $this->commands->execute($node, $this->mac->command($prefix, false, [
-            'list',
-            '--versions',
-            '--cask',
-            $package,
-        ]));
 
-        if ($result->succeeded()) {
-            return $this->listedVersion($result, $package);
-        }
-
-        if (! $this->isSilentListMiss($result)) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The Homebrew cask installed version probe failed.',
-                result: $result,
-            );
-        }
-
-        return $this->versionFromInstalledIndex($node, $prefix, $package);
+        return $this->installedInventory($node)->versionFor($package);
     }
 
     public function normalizeVersion(string $rawVersion): ?string
@@ -240,7 +220,6 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->mac->resolvePrefix($node);
         $installed = $this->installedVersion($node, $package);
 
         if ($installed === null) {
@@ -1062,80 +1041,6 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             || str_contains($output, "Cask \"{$coordinate}\"")
             || str_contains($output, "Cask '{$package}'")
             || str_contains($output, "Cask \"{$package}\"");
-    }
-
-    private function listedVersion(CommandResult $result, string $package): string
-    {
-        $line = trim($result->stdout);
-        $matched = preg_match('/\A'.preg_quote($package, '/').' ([^\s]+)\z/D', $line, $matches);
-
-        if ($matched !== 1 || strlen($line) > self::MAX_RESULT_LENGTH || ! $this->isSafeVersion($matches[1])) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The Homebrew cask installed version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $matches[1];
-    }
-
-    /**
-     * A silent exit 1 is what Homebrew prints for an absent cask, but it is not absence by itself.
-     */
-    private function isSilentListMiss(CommandResult $result): bool
-    {
-        return $result->exitCode === 1
-            && ! $result->truncated
-            && $result->stdout === ''
-            && $result->stderr === '';
-    }
-
-    private function versionFromInstalledIndex(Node $node, string $prefix, string $package): ?string
-    {
-        $result = $this->commands->execute($node, $this->mac->command($prefix, false, [
-            'info',
-            '--json=v2',
-            '--cask',
-            '--installed',
-        ]));
-        $this->guardSuccessfulResult($result, 'installed-version', 'The Homebrew cask installed version probe failed.');
-        $decoded = $this->decode(
-            $result,
-            'installed-version',
-            'The Homebrew cask installed version probe returned malformed output.',
-            self::MAX_INVENTORY_LENGTH,
-        );
-
-        if (! is_array($decoded->casks ?? null)) {
-            throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed version probe returned malformed output.');
-        }
-
-        $found = null;
-
-        foreach ($decoded->casks as $cask) {
-            if (! $cask instanceof stdClass || ($cask->token ?? null) !== $package) {
-                continue;
-            }
-
-            if ($found instanceof stdClass) {
-                throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed version probe returned malformed output.');
-            }
-
-            $found = $cask;
-        }
-
-        if (! $found instanceof stdClass || ($found->tap ?? null) !== 'homebrew/cask') {
-            return null;
-        }
-
-        $installed = $this->readableInstalledVersion($found);
-
-        if ($installed === null) {
-            throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed version probe returned malformed output.');
-        }
-
-        return $installed;
     }
 
     /**

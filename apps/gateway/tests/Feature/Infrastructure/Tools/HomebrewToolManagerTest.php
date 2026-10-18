@@ -243,7 +243,7 @@ describe(HomebrewToolManager::class, function (): void {
             [...$prefix, '--version'],
             ['/usr/bin/uname', '-m'],
             [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
-            [...$prefix, 'list', '--versions', '--formula', 'homebrew/core/ripgrep'],
+            [...$prefix, 'list', '--versions', '--formula'],
             ['/usr/bin/uname', '-m'],
             [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
             [...$prefix, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
@@ -276,7 +276,7 @@ describe(HomebrewToolManager::class, function (): void {
                 stderr: "Error: No available formula with the name \"homebrew/core/missing\".\n",
             ),
         ]);
-        [$installedManager] = homebrew_tool_manager([homebrew_result(exitCode: 1)]);
+        [$installedManager] = homebrew_tool_manager([homebrew_result()]);
 
         expect($candidateManager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))
             ->toBeNull()
@@ -390,7 +390,7 @@ describe(HomebrewToolManager::class, function (): void {
         expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'ripgrep'))
             ->toThrow(ToolManagerException::class);
     })->with([
-        'wrong package' => [homebrew_result("other 0.9.0\n")],
+        'missing version' => [homebrew_result("ripgrep\n")],
         'multiple versions' => [homebrew_result("ripgrep 0.8.2 0.9.0\n")],
         'unknown failure' => [homebrew_result(exitCode: 1, stderr: 'unexpected')],
         'truncated' => [homebrew_result('secret', truncated: true)],
@@ -612,7 +612,7 @@ describe(HomebrewToolManager::class, function (): void {
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$formula],
             ['/bin/bash', '-su', '--', 'mini'],
-            [...$brew, 'list', '--versions', '--formula', 'homebrew/core/ripgrep'],
+            [...$brew, 'list', '--versions', '--formula'],
             ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$formula],
@@ -940,9 +940,12 @@ function adopt_formula_json(
     ], JSON_THROW_ON_ERROR);
 }
 
-it('reads one fresh formula inventory per Node with scope verification in the same call', function (string $platform): void {
+it('reads one fresh formula inventory per Node after the normal scope probe', function (string $platform): void {
+    $scope = $platform === 'macos' ? [homebrew_result("/opt/homebrew\n")] : [];
     [$manager, $ssh] = homebrew_tool_manager([
+        ...$scope,
         homebrew_result("jq 1.7.1\ngh 2.88.1\nambiguous 1.0 2.0\n"),
+        ...$scope,
         homebrew_result("jq 1.8.0\n"),
     ]);
     $node = homebrew_tool_node($platform, architecture: 'arm64');
@@ -952,9 +955,10 @@ it('reads one fresh formula inventory per Node with scope verification in the sa
         ->and($first->versionFor('absent'))->toBeNull();
     expect(fn () => $first->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
     expect($manager->installedInventory($node)->versionFor('jq'))->toBe('1.8.0');
-    expect($ssh->commands)->toHaveCount(2);
+    expect($ssh->commands)->toHaveCount($platform === 'macos' ? 4 : 2);
     if ($platform === 'macos') {
-        expect($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch', 'HOMEBREW_NO_AUTO_UPDATE=1', "'list' '--versions' '--formula'");
+        expect($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch');
+        expect($ssh->commands[1]->arguments)->toBe([...homebrew_mac_arguments('/opt/homebrew'), 'list', '--versions', '--formula']);
     }
 })->with(['linux', 'macos']);
 

@@ -366,46 +366,8 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     public function installedVersion(Node $node, string $package): ?string
     {
         $this->guardPackage($package);
-        $this->guardSupportedNode($node);
 
-        $result = $this->commands->execute($node, $this->brewArguments($node, false, [
-            'list',
-            '--versions',
-            '--formula',
-            $this->coordinate($package),
-        ]));
-
-        if (! $result->succeeded()) {
-            if ($result->exitCode === 1 && $result->stdout === '' && $result->stderr === '') {
-                return null;
-            }
-
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The Homebrew installed version probe failed.',
-                result: $result,
-            );
-        }
-
-        $line = trim($result->stdout);
-        $pattern = '/\A'.preg_quote($package, '/').' ([^\s]+)\z/D';
-        $matched = preg_match($pattern, $line, $matches);
-        $version = $matches[1] ?? null;
-
-        if (
-            strlen($line) > self::MAX_RESULT_LENGTH
-            || $matched !== 1
-            || ! is_string($version)
-            || ! $this->isSafeVersion($version)
-        ) {
-            throw new ToolManagerException(
-                step: 'installed-version',
-                message: 'The Homebrew installed version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $version;
+        return $this->installedInventory($node)->versionFor($package);
     }
 
     public function normalizeVersion(string $rawVersion): ?string

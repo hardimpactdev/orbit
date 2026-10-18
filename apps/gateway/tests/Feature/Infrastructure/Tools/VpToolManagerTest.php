@@ -429,7 +429,7 @@ describe(VpToolManager::class, function (): void {
             ['/bin/bash', '-seu', '--', 'orbit'],
             ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'info', 'typescript', 'version', '--json'],
             ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', '--json'],
             ['/bin/bash', '-seu', '--', 'orbit'],
             [
                 'env',
@@ -477,7 +477,7 @@ describe(VpToolManager::class, function (): void {
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
             ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', '--json'],
         ]);
     });
 
@@ -742,9 +742,9 @@ describe(VpToolManager::class, function (): void {
             ['/bin/bash', '-su', '--', 'mini'],
             ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'info', '@openai/codex', 'version', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '@openai/codex', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', 'pnpm', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
             ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
             ['/bin/bash', '-su', '--', 'mini'],
@@ -1050,8 +1050,10 @@ function vp_tool_known_hosts(): KnownHostsStore
     };
 }
 
-it('reads all global packages and verifies their scope in one SSH call', function (string $platform): void {
+it('reads all global packages after the normal scope probe', function (string $platform): void {
+    $binary = $platform === 'macos' ? '/Users/mini/.vite-plus/bin/vp' : '/opt/orbit/vite-plus/bin/vp';
     [$manager, $ssh] = vp_tool_manager([
+        vp_result($binary."\n"),
         vp_result('[{"name":"@openai/codex","version":"0.156.1"},{"name":"pnpm","version":"10.0.0"},{"name":"dup","version":"1.0.0"},{"name":"dup","version":"2.0.0"}]'),
     ]);
     $inventory = $manager->installedInventory(vp_tool_node($platform));
@@ -1059,16 +1061,46 @@ it('reads all global packages and verifies their scope in one SSH call', functio
         ->and($inventory->versionFor('pnpm'))->toBe('10.0.0')
         ->and($inventory->versionFor('absent'))->toBeNull();
     expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
-    expect($ssh->commands)->toHaveCount(1)
-        ->and($ssh->commands[0]->input)->toContain('Orbit Vite Plus account mismatch', '"$binary" list -g --json');
+    expect($ssh->commands)->toHaveCount(2)
+        ->and($ssh->commands[0]->input)->toContain('Orbit Vite Plus account mismatch');
+    expect($ssh->commands[1]->arguments)->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
 })->with(['linux', 'macos']);
 
 it('refuses an unverifiable global inventory instead of reporting absent Tools', function (CommandResult $result): void {
-    [$manager] = vp_tool_manager([$result]);
+    [$manager] = vp_linux_tool_manager([$result]);
 
     expect(fn () => $manager->installedInventory(vp_tool_node()))->toThrow(ToolManagerException::class);
 })->with([
     'failed command' => [new CommandResult(1, '', '', 10, false)],
     'truncated list' => [new CommandResult(0, '[]', '', 10, true)],
     'malformed entry' => [new CommandResult(0, '[{}]', '', 10, false)],
+]);
+
+it('keeps manageable Vite+ tools verifiable beside unmanageable global entries', function (): void {
+    $packages = vp_result('[{"name":"JSONStream","version":"1.3.5"},{"name":"typescript","version":"5.7.3"},{"name":"unreadable","version":null}]');
+    [$manager] = vp_linux_tool_manager([$packages, $packages]);
+
+    $inventory = $manager->installedInventory(vp_tool_node());
+
+    expect($inventory->versionFor('typescript'))->toBe('5.7.3')
+        ->and($inventory->versionFor('JSONStream'))->toBeNull()
+        ->and($manager->installedVersion(vp_tool_node(), 'typescript'))->toBe('5.7.3');
+    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+});
+
+it('uses the normal Vite+ scope checks before reading installed packages', function (string $platform, CommandResult $scope, string $step): void {
+    [$manager, $ssh] = vp_tool_manager([$scope]);
+
+    expect(fn () => $manager->installedInventory(vp_tool_node($platform)))
+        ->toThrow(function (ToolManagerException $exception) use ($step): void {
+            expect($exception->step)->toBe($step);
+        });
+    expect($ssh->commands)->toHaveCount(1);
+})->with([
+    'Linux absent scope' => ['linux', new CommandResult(42, '', '', 10, false), 'manager-absent'],
+    'macOS conflicting scope' => ['macos', new CommandResult(43, '', '', 10, false), 'manager-conflict'],
+    'Linux unsafe binary' => ['linux', new CommandResult(0, "/tmp/vp\n", '', 10, false), 'manager-probe'],
+    'macOS unsafe binary' => ['macos', new CommandResult(0, "/tmp/vp\n", '', 10, false), 'manager-probe'],
+    'extra output' => ['linux', new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\nextra\n", '', 10, false), 'manager-probe'],
+    'truncated scope' => ['macos', new CommandResult(0, "/Users/mini/.vite-plus/bin/vp\n", '', 10, true), 'ssh'],
 ]);

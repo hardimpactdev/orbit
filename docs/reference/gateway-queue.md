@@ -77,9 +77,9 @@ Each probe group shares one 12-second command deadline. The worker timeout is 13
 
 Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline.
 
-Each Tool rows job owns one manager on one Node. It reads that manager’s installed inventory once, then compares every selected Tool locally. The read also resolves the enrolled macOS account’s existing manager scope in the same SSH call. Tool environment checks keep one batch read per Node; discovery inventory is separate.
+Each Tool rows job owns one manager on one Node. It reads that manager’s installed inventory once, then compares every selected Tool locally. Homebrew on macOS and Vite+ first use the normal scope probe, including its output checks, then read the inventory. Both calls share the job deadline. Tool environment checks keep one batch read per Node; discovery inventory is separate.
 
-Three read-only Mini measurements of the collection jobs took 0.84–2.50 seconds for five Brew Tools, 0.86–0.88 seconds for one cask, and 0.60–0.61 seconds for one Vite+ Tool. Each manager job made one SSH call. The separate discovery job took 4.69–5.43 seconds. Grouping by manager bounds the remote work independently of the number of registered Tools.
+Three read-only Mini measurements of the collection jobs took 1.20–2.85 seconds for five Brew Tools, 1.22–1.26 seconds for one cask, and 0.96–0.97 seconds for one Vite+ Tool. Each manager job made two SSH calls: the normal scope probe and one inventory read. The separate discovery job took 4.54–5.19 seconds. Grouping by manager bounds the remote work independently of the number of registered Tools.
 
 Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
 
