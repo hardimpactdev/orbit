@@ -753,8 +753,15 @@ Whole-gate measurements on Beast used disposable task VMs from base image `46ccd
 | --- | --- | --- | --- | --- | --- | --- |
 | Normal: 2 CPUs, 4 GiB | None | 2 | 1.699 GiB | 1.525 GiB | 1.707 GiB | 226.9 MiB |
 | Medium: 4 CPUs, 8 GiB | Gateway, operator, app-dev | 1 | 1.173 GiB | 1.226 GiB | 1.843 GiB | 266.3 MiB |
+| Large: 6 CPUs, 12 GiB | Gateway, operator, app-dev, app-prod | 4 | 2.618 GiB | 2.151 GiB | 3.662 GiB | 501.6 MiB |
 
-The sampler ran in a separate systemd service and summed every process in the gate's cgroup about every 200 ms. Summed RSS counts shared pages more than once. The kernel cgroup peak accounts for the gate's charged memory, including its descendants. Controller PSS divides shared pages between processes and excludes tool workers and their descendants. It measures the fixed overhead that the reserve covers.
+All three gates passed on 2026-10-18 UTC, with no OOM events. These are samples at the recorded starting memory, not fixed worker counts for each VM size.
+
+The sampler ran in a separate systemd service and summed every process in the gate's cgroup at a nominal 200 ms interval. Its longest intervals were 0.387, 3.882, and 3.784 seconds on normal, medium, and large. Sampling can be delayed under load, so RSS is a sampled peak. Summed RSS counts shared pages more than once. The continuous kernel cgroup peak accounts for the gate's charged memory, including its descendants. Controller PSS divides shared pages between processes and excludes tool workers and their descendants. It measures the fixed overhead that the reserve covers.
+
+The initial 512 MiB reserve covered the normal and medium controllers, but a four-worker large run reached 513.4 MiB. Rounding up to the next 128 MiB gives the final 640 MiB reserve, about 25% above that peak. The normal and medium rows used the initial reserve; applying the final rule to their recorded starting resources still gives 2 and 1 workers. The reserve only changes that initial count, so their lane allocations remain the same. The large row uses the final reserve.
+
+These warm selections do not prove every possible test selection. A supplementary cold normal run finished the Gateway suite with 13,856 passes, 21 skips, and one failure at an existing five-second child-start wait, then stopped before the remaining projects. Its RSS sampling had a 186.887-second gap; the kernel memory peak and OOM counters remained continuous. Its worker high-water mark supplies the larger per-worker sample above. The failed file passed unchanged afterward. A first large run also hit an unchanged three-second, 22-child barrier fixture; that fixture passed unchanged on the same topology before the complete repeat.
 
 ### Findings are fixed, not silenced
 
