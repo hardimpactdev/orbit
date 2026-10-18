@@ -87,12 +87,6 @@ current branch does not contain it, replace the incomplete checkout. Then run
 Boost cannot recreate deleted project-owned rules. Never silently continue when
 the required project guidance is incomplete.
 
-## Test Enforcement
-
-- Test every code change by adding or updating a test.
-- Run the affected tests and important failure modes.
-- Read the `testing-best-practices` skill before writing tests.
-
 ## JavaScript toolchain
 
 Use `vp` for generic project package and script work. Vite+ defaults projects without a manager signal to pnpm.

@@ -9,7 +9,6 @@ Orbit contains nine projects. Five are separate Composer projects: CLI, Gateway,
 - Keep one rule in one place.
 - Guard against a race or crash window only when the [blocking rule](docs/reference/tasks.md#reviewer-outcomes) would block on it.
 - Every behaviour change has a test that fails without it. The documentation changes with the code.
-- Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`.
 
 A breach of this bar blocks a review under the [blocking rule](docs/reference/tasks.md#reviewer-outcomes).
 
@@ -42,7 +41,7 @@ For focused documentation work, use [writing-documentation](.agents/skills/writi
 
 ## Checks and resources
 
-In an Orbit task, run the affected tests of each changed project: `composer test:affected` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
+In an Orbit task, run the affected tests of each changed project: `composer test:affected` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`. CI checks the five Composer projects, the web app, the Pi server, and the Rust agent; root `composer check` also runs checks across projects locally.
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 

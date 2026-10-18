@@ -1056,9 +1056,9 @@ When the change adds or alters runtime behaviour, the reviewer first traces the 
 - (b) Data loss, a security issue, or a state that no supported command can recover.
 - (c) An unmet brief item or deliverable.
 - (d) A regression of existing behaviour.
-- (e) A breach of the quality bar in the repository's instructions.
+- (e) A breach of the quality bar that the repository's instructions define.
 
-A fallback, a legacy or compatibility path, and a rule kept in two places are such breaches. The Orbit repository defines its quality bar in the root `AGENTS.md`. This list is the one statement of when a finding blocks. Repository instructions refer to it and do not restate it.
+The reviewer prompt is the one statement of when a finding blocks, and this list mirrors it. Repository instructions refer to it and do not restate it. The Orbit repository defines its quality bar in the root `AGENTS.md`. That bar rules out fallbacks, legacy or compatibility paths, and rules kept in two places.
 
 Each blocking finding names its file and line, the rule it meets, and what must change. A finding under (a) also names its normal-operation trigger. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window; an operator recovery command is enough.
 

@@ -362,7 +362,7 @@ it('preserves project and installed testing guidance', function (): void {
             'Use Pest 5 with `describe()` and `it()`.',
             'Use Pint for formatting and Larastan for static analysis.',
             '## Skills Activation',
-            'Test every code change by adding or updating a test.',
+            'Add or update tests for behavior and logic changes',
             'Read the `testing-best-practices` skill before writing tests.',
         );
 

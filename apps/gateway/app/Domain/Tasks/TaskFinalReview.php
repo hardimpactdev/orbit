@@ -65,7 +65,7 @@ final readonly class TaskFinalReview
     {
         $previous = $group->tasks()->reorder('position', 'desc')->first();
         if ($previous instanceof Task && $previous->fixup_problem === self::FixupProblem) {
-            return 'Re-review only the change since the last final review. Confirm that its findings are resolved and look for new blocking defects in that change. '
+            return 'Re-review only the change since the last final review. Confirm that its findings are resolved and look for new blocking findings in that change. '
                 .'Orbit applies unresolved findings in a new subtask.';
         }
         $default = $group->project->default_branch ?? 'the default branch';

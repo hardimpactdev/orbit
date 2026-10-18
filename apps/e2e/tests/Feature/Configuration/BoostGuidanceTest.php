@@ -80,9 +80,12 @@ describe('Boost guidance', function (): void {
 
         expect($composer)->toBeInstanceOf(E2EGuidelineComposer::class);
 
+        $composed = $composer->compose();
+        $committed = (string) file_get_contents(base_path('AGENTS.md'));
+
         foreach ($removed as $heading) {
-            expect($composer->compose())->not->toContain($heading)
-                ->and((string) file_get_contents(base_path('AGENTS.md')))->not->toContain($heading);
+            expect($composed)->not->toContain($heading)
+                ->and($committed)->not->toContain($heading);
         }
     });
 });
