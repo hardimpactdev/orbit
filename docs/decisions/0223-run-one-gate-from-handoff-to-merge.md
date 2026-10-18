@@ -82,7 +82,9 @@ Measured cases:
   - Since 2026-10-17 the Orbit Project's task check is `ORBIT_CHECK_PROCESSES=1 composer check`, after an OOM.
   - Every check now runs one lane and one Pest process. Gateway affected runs take about twice as long.
   - The default in `bin/check-processes` and `tools/check-processes.php` allows four workers of up to 1 GB. Its comment cites 2 GB VMs.
-  - A normal task VM on beast and shark has 2 CPUs and 4 GiB. Medium has 4 CPUs and 8 GiB. Large has 6 CPUs and 12 GiB.
+  - A normal task VM on beast and shark has 2 CPUs and 4 GiB.
+  - A medium task VM has 4 CPUs and 8 GiB.
+  - A large task VM has 6 CPUs and 12 GiB.
   - A medium VM's topology takes about 2.7 GiB of that memory.
 - **An alias.** `bin/test` still reads `ORBIT_TEST_PROCESSES`.
 - **A Project special case.** `TaskSubtaskRunner::handoffCheck` sends `test_base` only when `$group->project->slug === 'orbit'`. The engine must stay generic.
@@ -117,7 +119,12 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 - A failed `Required checks` already creates a `check:*` fixup. Its "merge the base first" variant (`mergingBaseFirst`) goes. CI tested the merge ref, so main at that time was already in the tested tree.
 - Merge on green requires final-review evidence on the head. A reviewed commit with source `base_merge` no longer exists, so a head inherits no review.
 - Review and merge supports only base branches that do not require an up-to-date branch. Orbit's `main` does not: its ruleset has `strict_required_status_checks_policy: false`.
-- `project:update --review-and-merge=true` reads the base branch's rules (`GET /repos/{owner}/{repo}/rules/branches/{branch}`). It refuses a base whose rules require an up-to-date branch.
+- `project:update --review-and-merge=true` reads both sources of branch rules, because GitHub applies rulesets and classic branch protection together:
+  - the rulesets, with `GET /repos/{owner}/{repo}/rules/branches/{branch}`, which needs `Metadata: read`;
+  - the classic branch protection, with `GET /repos/{owner}/{repo}/branches/{branch}/protection`, which needs `Administration: read`. A 404 there means that the branch has no classic protection.
+- It refuses when either source requires an up-to-date branch: `strict_required_status_checks_policy` in a ruleset, or `required_status_checks.strict` in classic protection.
+- It also refuses when it cannot read either source, because then the policy is unknown.
+- The GitHub App manifest adds `Administration: read`. An installation that has not accepted the new permission cannot turn review and merge on until it does. Projects that already have it on are not read again.
 - Rules can change after that. When GitHub refuses a merge because the branch is behind, Orbit records `refused`, merges nothing, and asks for assistance once, with that reason. So the pull request never waits without a signal.
 - Projects without review and merge keep GitHub's branch update, as today.
 
@@ -139,7 +146,11 @@ The Pest fork that Orbit owns gets one documented option, `--tia-base`, with two
 
 - It passes `--tia-base=COMMIT` only when its graph comes from a passed run on the tree of `COMMIT`. That graph is the handoff cache entry for that tree.
 - In every other case it passes `--tia-base=graph`. That covers the baseline check, a handoff without a matching cache entry, and a local `composer check`.
-- So the baseline check selects every change since the imported graph's commit. It still finds a red main, and its run refreshes the edges for those changes.
+- So the baseline check selects every change since the imported graph's commit. Its run refreshes the edges for those changes.
+- When the imported graph is older than the start commit, the baseline runs the tests of the changes between them. A red main shows there.
+- When the imported graph is at the start commit, the delta is empty and the baseline runs no tests. That is correct: CI publishes a cache ref only after `Required checks` passed on that exact commit.
+- A red main commit gets no cache ref, so its baseline imports an older ancestor and tests the changes since then.
+- When no graph fits, the fork records a fresh graph with the full suite, as today.
 - `bin/review-check` no longer writes Pest's graph.
 
 The handoff cache stays: one slot, matched by tree, holding the graph after a passed run.
@@ -161,7 +172,11 @@ The data does not show what a tree base saves. The only rework measured after #1
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
 - For a PHP project, the file holds `composer validate --strict`, `composer check`, and the architecture tests, which both gates run. It also holds `composer test:affected`, which only the local gate runs.
 - The test step of a PHP project in CI stays in `ci.yml`, because CI runs sharded Pest with its own TIA plan.
-- `bin/review-check` reads it. The local gate runs a check when a changed path matches its triggers.
+- `bin/review-check` reads it.
+- Path triggers select only the checks that TIA cannot narrow: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
+- Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today. TIA narrows their tests.
+- A handoff and a local `composer check` run a triggered check when a changed path matches its triggers.
+- The baseline check uses no path triggers. Its branch diff is empty, so triggers would select nothing.
 - CI reads the same file through `bin/review-check`.
 - A CI job runs a check's commands with `bin/review-check run CHECK`.
 - The architecture-test step runs `bin/review-check architecture PROJECT`.
@@ -212,7 +227,11 @@ The data does not show what a tree base saves. The only rework measured after #1
 - A reboot still reads as `interrupted`. An unreachable VM gives no reading, and the holder stays.
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
-- The check exports `ORBIT_CHECK_RECEIPT`, a file path. A Project check may write a JSON list there: for each command, its name, its seconds, its exit code, and a free `detail` text. Orbit stores the list in a new JSON column of the check row. Orbit's `bin/review-check` writes it from `result.json`, with the selected test count as `detail`. The 16 KiB output tail stays.
+- The check exports `ORBIT_CHECK_RECEIPT`, a file path.
+- A Project check may write a JSON list to that file: for each command, its name, its seconds, its exit code, and a free `detail` text.
+- Orbit stores the list in a new JSON column of the check row.
+- Orbit's `bin/review-check` writes the list from `result.json`, with the selected test count as `detail`.
+- The 16 KiB output tail stays.
 
 ### Build order
 
@@ -230,7 +249,8 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - It deletes every `base_merge` check row, of open and ended groups.
    - It converts every `base_merge` reviewed commit to `orbit_push`. The head of an open group may be such a commit, and it inherited its review, so `mergeWhenReady` keeps accepting it.
    - Deploy it when no `base_merge` check is running.
-   - Add the strict-base refusal to `project:update` and the assistance on a behind refusal to `mergeWhenReady`.
+   - Add the strict-base refusal to `project:update`, with both rule reads and `Administration: read` in `GitHubAppManifestPage` and [GitHub App](/reference/github-app).
+   - Add the assistance on a behind refusal to `mergeWhenReady`.
    - Delete `TaskCheckKind::BaseMerge` and `TaskReviewedCommitSource::BaseMerge`.
    - Delete `TaskPublication::appendBaseMerge`, `prepareBaseMerge`, `queueBaseMergeRetry`, `appendAgentBaseMerge`, `appendDeltaReview`, and `conflictOutput`, with the repair, retry, and lost states of the gate.
    - Delete the main merge before the final review and before the push, and their callers: `StoreTaskCommentAction`, `TaskReviewOutcome` (`:303`, `:473`, `:489-493`), `TaskSettling` (`:110-121`), `TaskSubtaskRunner` (`:269`), `TaskScheduler` (`:231-249`), `TaskWorkspaceLease` (`:521`), and `TaskReviewBase` (`:58-73`), with their test fakes.
@@ -298,9 +318,14 @@ Each step is one small pull request. Docs change with the code in the same pull 
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
 - ADRs: [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): item 6 (main caches) of its Orbit Project section imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type
-- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches). [Environment variables](/reference/environment-variables)
+- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches). [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
   - In the Pest fork, the `--tia-base` tests, including a dirty branch baseline.
-  - On the live Gateway, after the build: no new `base_merge` check rows; the median rework handoff stays within 1.2 times the median first handoff; no baseline records a fresh graph while an ancestor cache ref exists; and the check row of each handoff holds its command list.
+  - In apps/e2e, baseline cases of `bin/review-check` for an older graph (the changes since it run), a graph at the start commit (no tests run), and a missing graph (the full suite runs).
+  - In apps/gateway, the `project:update` preflight cases: a strict ruleset, strict classic protection, no protection, and an unreadable source.
+  - On the live Gateway, after the build, no new `base_merge` check row appears.
+  - The median rework handoff stays within 1.2 times the median first handoff.
+  - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.
+  - The check row of each handoff holds its command list.
