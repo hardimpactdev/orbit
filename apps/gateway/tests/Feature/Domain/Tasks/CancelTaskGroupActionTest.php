@@ -299,6 +299,32 @@ it('does not push a settling group without approved subtasks', function (): void
         ->and($cancelled->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
+it('keeps a refused unpublished cancellation out of the cleanup sweep until cancel is retried', function (TaskGroupStatus $status, ?string $prUrl): void {
+    app(TaskExtensionState::class)->enable();
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
+    {
+        public function execute(Instance $instance, bool $force): InstanceRemoval
+        {
+            throw new ResourceOperationException('instance.force_failed', 'The checkout could not be inspected.', 409);
+        }
+    });
+    $group = cancellable_task_group($status, $prUrl);
+    $instance = $group->taskable;
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(ResourceOperationException::class, 'The checkout could not be inspected.');
+    expect($group->fresh())->status->toBe($status)->assistance_kind->toBe(AssistanceKind::RemovalFailure);
+    $remover = cancel_recording_remover();
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
+        ->and($remover->calls)->toBe([])
+        ->and($group->fresh())->status->toBe($status)->taskable_id->toBe($instance->id)->assistance_requested->toBeTrue();
+    $this->assertModelExists($instance);
+
+    expect(app(CancelTaskGroupAction::class)->execute($group))->status->toBe(TaskGroupStatus::Cancelled)
+        ->and($remover->calls)->toBe([[$instance->id, true]]);
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])->with([null, '']);
+
 it('asks for assistance and keeps the clone when removal of a source-resolved workspace is refused', function (): void {
     app(TaskExtensionState::class)->enable();
     app()->instance(InstanceRemover::class, new class implements InstanceRemover

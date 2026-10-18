@@ -414,7 +414,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 #### A VM that dies before its group ends
 
-Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
+Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for `removal_failure` assistance. An ownership refusal has the same kind. Runtime decisions use the open request and kind, not its reason text. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
 The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
@@ -559,7 +559,7 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 
 - The group is `waiting_for_review` and has a pull request.
 - The group has no `todo`, `reserved`, `running`, or `reviewing` subtask, and it is not `preview`.
-- The group's reason does not start with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. Those removals retry on the tick and need the VM.
+- The group has no open `removal_failure` assistance request. Those removals retry on the tick and need the VM. A cleared request's stored reason does not prevent parking.
 - The group and all of its subtasks settled more than `task_vms.park_after_minutes` minutes ago. The default is 30 minutes.
 - The VM has been `ready` for at least as long.
 

@@ -730,17 +730,12 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($completed->taskable_id)->toBe($kept->id)
         ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
 
-    $other = $ended('Other cause', TaskGroupStatus::Cancelled, ['assistance_requested' => true, 'assistance_reason' => $hold]);
-    $otherWorkspace = $other->taskable;
     $failing = ['tvm-'.$cancelled->id];
 
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
         ->and(Instance::query()->find($kept->id))->toBeNull()
         ->and($settling->fresh()?->taskable_id)->toBeNull()
         ->and($settling->fresh()?->assistance_requested)->toBeFalse()
-        ->and(Instance::query()->find($otherWorkspace->id))->toBeNull()
-        ->and($other->fresh()?->assistance_requested)->toBeFalse()
-        ->and($other->fresh()?->assistance_reason)->toBeNull()
         ->and(Instance::query()->find($workspace->id))->not->toBeNull();
 });
 

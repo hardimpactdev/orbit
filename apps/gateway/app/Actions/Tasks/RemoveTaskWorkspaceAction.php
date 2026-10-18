@@ -172,7 +172,7 @@ final readonly class RemoveTaskWorkspaceAction
     public function clearFailure(Task $group): void
     {
         $group->refresh();
-        if ($group->assistance_kind !== AssistanceKind::RemovalFailure) {
+        if (! Task::topLevel()->whereKey($group->id)->removalFailure()->exists()) {
             return;
         }
 

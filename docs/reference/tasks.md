@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -28,7 +28,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -852,7 +852,7 @@ Every assistance request has a typed kind. The task and the subtask store `assis
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
 | `failure` | A failed push, check, thread, or other failure | Null |
-| `removal_failure` | A workspace removal failure, including after completion or cancellation; clears when removal succeeds | Null |
+| `removal_failure` | A workspace removal or ownership refusal, including after completion or cancellation; clears when removal succeeds | Null |
 | `observation` | A driver outage beyond the grace period, including during a consult; group-only and self-clearing | Null |
 
 The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. An observation outage replaces no open request; direction or failure can replace an observation request. `tasks:status` lists direction requests first in its table.
@@ -868,6 +868,8 @@ An open task row with no asking subtask becomes `failure` with a null question a
 It writes one `escalated` question record for each `direction` subtask and none for a `failure` subtask or for the task row. The task row receives only that subtask's `assistance_kind` and `assistance_question`. When more than one subtask asks, a `direction` subtask supplies the task row, and a `failure` subtask does not replace it.
 
 The record's `task_id` is the parent task id and its `subtask_id` is the asking subtask id. `asked_by` comes from the prefix. `attempt` is the subtask's `completion_attempt` for the implementer prefix and its `review_attempt` for the reviewer prefix. The rows do not store the original ask time, so `asked_at` and `escalated_at` are both the time `add_assistance_kind_to_tasks` runs, and `answered_at` is null. The cause is null. Closed requests get no records, so `questions` and `escalations` start with this change.
+
+`2026_11_16_000000_classify_task_removal_failures` converts open `failure` requests with a stored workspace-removal, merge-cleanup, or ownership-refusal reason to `removal_failure`. Closed requests and other kinds remain unchanged. Runtime decisions use only the open flag and typed kind; reason prefixes are human text. An ownership refusal counts as a removal failure. VM destruction still checks that the VM is stopped or absent before discarding a stranded workspace.
 
 #### Resolve a request
 
@@ -1511,14 +1513,14 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It records `Workspace removal failed: The Node is unreachable.` without asking for assistance.
+- **Node unreachable.** Cancel ends the task and keeps its Instance attached. It requests `removal_failure` assistance with `Workspace removal failed: The Node is unreachable.`
 - **Retry after an unreachable Node.** Once the Node returns, direct cancel and the sweep push eligible approved commits before removal. A failed or pending push keeps the workspace.
-- **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.
+- **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
 - **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the [claim](#claim-and-provision) removes the workspace it provisions.
 
 Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
 
-When cancel marks the task `cancelled`, it clears the assistance flags on the task and its subtasks and keeps the last reasons.
+When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 
 ## Complete and cleanup
 
@@ -1545,20 +1547,20 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on completed or cancelled tasks.
 
-When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
+When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It requests `removal_failure` assistance with the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:
 
 - of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
-- of a `settling` task whose merged pull request cleanup failed.
+- of a `settling` or `waiting_for_review` task with a published pull request whose cleanup failed. A refused cancellation of an unpublished task stays outside the sweep until cancel is retried.
 
-The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
 
-An ownership refusal keeps the workspace and records `Workspace ownership refused: `. This reason never permits offline task VM destruction.
+An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
-A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: `, `Merged pull request cleanup failed: `, or `Workspace ownership refused: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
+A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The task keeps its `removal_failure` request open, including after completion or cancellation. A tick starts no removal after 60 seconds of removals. A success clears only an open `removal_failure` request. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
 ## Configuration
 

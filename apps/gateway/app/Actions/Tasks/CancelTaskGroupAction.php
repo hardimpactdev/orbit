@@ -129,7 +129,8 @@ final readonly class CancelTaskGroupAction
             $current = Task::topLevel()->findOrFail($group->id);
             $retryable = in_array($current->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
                 || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
-                    && is_string($current->assistance_reason) && str_starts_with($current->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
+                    && is_string($current->pr_url) && $current->pr_url !== ''
+                    && Task::topLevel()->whereKey($current->id)->removalFailure()->exists());
             if (! $retryable) {
                 // This synchronous request did not end the group, so no scheduler path owns its waiter.
                 // The group lock prevents another cancellation from consuming or replacing it during cleanup.

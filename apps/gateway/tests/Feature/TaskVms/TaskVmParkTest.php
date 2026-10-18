@@ -153,7 +153,7 @@ describe('park', function (): void {
         Queue::fake();
         Sleep::fake();
         $this->provider->observation = new VmObservation(true, null);
-        [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_reason' => $prefix.'disk full']);
+        [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_kind' => AssistanceKind::RemovalFailure, 'assistance_reason' => $prefix.'disk full']);
         tvm_park_workspace($group, $vm);
 
         foreach ([1, 2, 3] as $tick) {
@@ -164,7 +164,18 @@ describe('park', function (): void {
         }
         Queue::assertNotPushed(ParkTaskVm::class);
         Queue::assertNotPushed(ResumeTaskVm::class);
-    })->with([RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix, RemoveTaskWorkspaceAction::RemovalFailedPrefix]);
+    })->with([RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix, RemoveTaskWorkspaceAction::RemovalFailedPrefix, RemoveTaskWorkspaceAction::OwnershipRefusedPrefix, 'No prefix: ']);
+
+    it('parks after a removal request clears even when its historical reason remains', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
+        TaskAssistance::apply($group, reason: $group->assistance_reason);
+
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+        Queue::assertPushed(ParkTaskVm::class);
+    });
 
     it('keeps a VM that was started again running for park_after_minutes before it parks again', function (): void {
         Queue::fake();

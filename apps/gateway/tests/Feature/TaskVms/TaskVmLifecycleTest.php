@@ -791,7 +791,7 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('never makes an ownership refusal eligible for offline VM destruction', function (): void {
+    it('handles an ownership refusal as a removal failure when the ended groups VM is gone', function (): void {
         Queue::fake();
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
         $instance = tvm_life_workspace($vm->group, $vm->node);
@@ -808,12 +808,11 @@ describe(DestroyTaskVm::class, function (): void {
         app(DestroyEndedTaskVmsAction::class)->execute();
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->provider->calls)->toBe([]);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        $this->assertModelExists($instance);
-        Queue::assertNotPushed(DestroyTaskVm::class);
-        app(RemoveTaskWorkspaceAction::class)->clearFailure($vm->group);
-        expect($vm->group->fresh()->assistance_reason)->toBeNull();
+        expect($this->provider->calls)->toBe(['observe', 'destroy'])
+            ->and($vm->fresh()->state)->toBe(TaskVmState::Destroyed)
+            ->and($vm->group->fresh()->assistance_requested)->toBeFalse();
+        $this->assertModelMissing($instance);
+        Queue::assertPushed(DestroyTaskVm::class);
     });
 
     it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {

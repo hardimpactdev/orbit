@@ -353,6 +353,13 @@ final class Task extends Model
         $query->withoutGlobalScope('subtask')->whereNull('parent_id');
     }
 
+    /** @param  Builder<Task>  $query */
+    public function scopeRemovalFailure(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('assistance_requested'), true)
+            ->where($query->qualifyColumn('assistance_kind'), AssistanceKind::RemovalFailure);
+    }
+
     /** @return BelongsTo<Task, $this> */
     public function parent(): BelongsTo
     {

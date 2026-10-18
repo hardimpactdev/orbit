@@ -272,8 +272,8 @@ final readonly class TaskSettling
         }
 
         return in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
-            && is_string($group->assistance_reason)
-            && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
+            && is_string($group->pr_url) && $group->pr_url !== ''
+            && Task::topLevel()->whereKey($group->id)->removalFailure()->exists();
     }
 
     private function releaseRemovedWorkspace(Task $group, int $instanceId): void
@@ -362,12 +362,11 @@ final readonly class TaskSettling
     private function abandonedWorkspaces(): Collection
     {
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-        $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
         return Instance::query()
             ->select('instances.*')
             ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
-            ->where(function ($ended) use ($cutoff, $mergePrefix): void {
+            ->where(function ($ended) use ($cutoff): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
                         ->where(function ($reservation) use ($cutoff): void {
@@ -375,9 +374,10 @@ final readonly class TaskSettling
                                 ->orWhereNull('tasks.reserved_at')
                                 ->orWhere('tasks.reserved_at', '<=', $cutoff);
                         });
-                })->orWhere(function ($settling) use ($mergePrefix): void {
+                })->orWhere(function ($settling): void {
                     $settling->whereIn('tasks.status', TaskGroupStatus::awaitingCompletion())
-                        ->where('tasks.assistance_reason', 'like', $mergePrefix);
+                        ->whereNotNull('tasks.pr_url')->where('tasks.pr_url', '!=', '')
+                        ->whereIn('tasks.id', Task::topLevel()->removalFailure()->select('tasks.id'));
                 });
             })
             ->orderBy('instances.id')
