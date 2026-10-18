@@ -20,7 +20,7 @@ beforeEach(function (): void {
 
 function lifecycleHost(string $remote = 'local'): IncusHost
 {
-    return new IncusHost($remote, 'orbit', 'orbit-e2e');
+    return new IncusHost($remote, 'orbit');
 }
 
 /** @return list<string> */

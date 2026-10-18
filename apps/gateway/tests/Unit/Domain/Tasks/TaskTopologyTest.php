@@ -80,7 +80,7 @@ it('sizes a VM by its test nodes, not by their roles', function (array $topology
     'two' => [['app-dev', 'app-prod'], TaskVmSize::Large],
 ]);
 
-it('holds a topology only in a VM at least its size, with its inner pool', function (): void {
+it('holds a topology only in a VM at least its size', function (): void {
     $topology = static fn (array $entries): TaskTopology => TaskTopology::fromInput($entries);
 
     expect(TaskVmSize::Normal->holds($topology(['app-dev'])))->toBeFalse()
@@ -89,7 +89,7 @@ it('holds a topology only in a VM at least its size, with its inner pool', funct
         ->and(TaskVmSize::Large->holds($topology(['app-prod', 'app-prod-2+ingress'])))->toBeTrue()
         ->and(TaskVmSize::Normal->holds(new TaskTopology))->toBeTrue()
         ->and(TaskVmSize::forTopology(TaskTopology::fromStored(['app-dev', 'app-prod', 'app-prod-2'])))->toBe(TaskVmSize::Large)
-        ->and(array_map(static fn (TaskVmSize $size): ?string => $size->resources()->topologyPool, TaskVmSize::cases()))->toBe([null, '25GiB', '45GiB']);
+        ->and(array_map(static fn (TaskVmSize $size): int => $size->resources()->testNodes, TaskVmSize::cases()))->toBe([0, 1, 2]);
 });
 
 /** One JSON line of `.e2e/evidence.jsonl` in the harness's shape. */

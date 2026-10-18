@@ -24,6 +24,7 @@ final readonly class DocsImpact
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'tasks:tick' => 'docs/reference/tasks.md',
+        'tasks:lease:release' => 'docs/reference/tasks.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',

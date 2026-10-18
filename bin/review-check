@@ -213,14 +213,172 @@ def paths_since(root, base, head, committed):
     return git(root, 'diff', '--name-only', base, working_tree(root)).splitlines()
 
 
-def scope_tia_graph(destination, base):
-    """Reuse real dependency edges without claiming cached test verdicts at a new base."""
+def scope_tia_graph(root, project, destination, base):
+    """Reuse dependency edges at the handoff identity without replaying verdicts from another tree."""
     path = destination / 'graph.json'
+    if git(root, 'cat-file', '-t', base) != 'tree':
+        if not path.is_file():
+            return None
+        graph = json.loads(path.read_text())
+        graph['baselines'] = {'main': {'sha': base, 'tree': {}, 'results': {}, 'complete': False}}
+        path.write_text(json.dumps(graph, separators=(',', ':')))
+        return None
+    return scope_tree_baseline(root, project, path, base)
+
+
+TREE_BASELINE_NO_GRAPH = 'Handoff tree baseline has no Pest dependency graph; the full suite will record one.'
+TREE_BASELINE_UNREADABLE = 'Handoff tree baseline Pest graph cannot be read; the full suite will record one.'
+TREE_BASELINE_NO_EDGES = 'Handoff tree baseline Pest graph has no dependency edges; the full suite will record one.'
+TREE_BASELINE_SNAPSHOT = 'Handoff tree baseline could not be snapshotted with Pest content hashes; the full suite will record one.'
+
+# Hashes blobs from the comparison tree with the project's installed Pest ContentHash.
+# A tree object is not a commit Pest can walk, so the caller stores HEAD as the SHA.
+TREE_SNAPSHOT_PHP = r'''<?php
+declare(strict_types=1);
+$autoload = $argv[1];
+$repository = $argv[2];
+$tree = $argv[3];
+$prefix = $argv[4];
+require $autoload;
+if (!class_exists(\Pest\Plugins\Tia\ContentHash::class)) {
+    fwrite(STDERR, "ContentHash missing\n");
+    exit(2);
+}
+$paths = json_decode(stream_get_contents(STDIN), true);
+if (!is_array($paths)) {
+    fwrite(STDERR, "path list is not an array\n");
+    exit(3);
+}
+$process = proc_open(['git', '-C', $repository, 'cat-file', '--batch'], [
+    0 => ['pipe', 'r'],
+    1 => ['pipe', 'w'],
+    2 => ['pipe', 'w'],
+], $pipes);
+if (!is_resource($process)) {
+    fwrite(STDERR, "git cat-file failed to start\n");
+    exit(4);
+}
+$hashes = [];
+foreach ($paths as $path) {
+    if (!is_string($path) || str_contains($path, "\n") || str_contains($path, "\0")) {
+        fwrite(STDERR, "path is not a single line\n");
+        exit(5);
+    }
+    fwrite($pipes[0], $tree.':'.$path."\n");
+    fflush($pipes[0]);
+    $header = fgets($pipes[1]);
+    if ($header === false) {
+        fwrite(STDERR, "git cat-file ended early\n");
+        exit(6);
+    }
+    $header = rtrim($header, "\r\n");
+    $relative = $prefix === '' ? $path : substr($path, strlen($prefix));
+    if (str_ends_with($header, ' missing')) {
+        $hashes[$relative] = '';
+        continue;
+    }
+    $parts = explode(' ', $header);
+    if (count($parts) !== 3 || !ctype_digit($parts[2])) {
+        fwrite(STDERR, "unexpected git header {$header}\n");
+        exit(7);
+    }
+    $size = (int) $parts[2];
+    $bytes = $size === 0 ? '' : stream_get_contents($pipes[1], $size);
+    if (!is_string($bytes) || strlen($bytes) !== $size) {
+        fwrite(STDERR, "short blob for {$path}\n");
+        exit(8);
+    }
+    if (fgets($pipes[1]) === false) {
+        fwrite(STDERR, "missing blob trailer\n");
+        exit(9);
+    }
+    if ($parts[1] !== 'blob') {
+        $hashes[$relative] = '';
+        continue;
+    }
+    $hashes[$relative] = \Pest\Plugins\Tia\ContentHash::ofContent($relative, $bytes);
+}
+fclose($pipes[0]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+if (proc_close($process) !== 0) {
+    fwrite(STDERR, "git cat-file failed\n");
+    exit(10);
+}
+echo json_encode($hashes, JSON_UNESCAPED_SLASHES | JSON_FORCE_OBJECT);
+'''
+
+
+def scope_tree_baseline(root, project, path, tree):
+    """Point Pest at HEAD plus a comparison-tree snapshot, or drop the graph and say why."""
     if not path.is_file():
-        return
-    graph = json.loads(path.read_text())
-    graph['baselines'] = {'main': {'sha': base, 'tree': {}, 'results': {}, 'complete': False}}
+        return TREE_BASELINE_NO_GRAPH
+    try:
+        graph = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        path.unlink(missing_ok=True)
+        return TREE_BASELINE_UNREADABLE
+    if not isinstance(graph, dict) or not isinstance(graph.get('edges'), dict) or graph['edges'] == {}:
+        path.unlink(missing_ok=True)
+        return TREE_BASELINE_NO_EDGES if isinstance(graph, dict) else TREE_BASELINE_UNREADABLE
+    snapshot = comparison_tree_snapshot(root, project, tree)
+    if snapshot is None:
+        path.unlink(missing_ok=True)
+        return TREE_BASELINE_SNAPSHOT
+    graph['baselines'] = {
+        'main': {'sha': git(root, 'rev-parse', 'HEAD'), 'tree': snapshot, 'results': {}, 'complete': False},
+    }
     path.write_text(json.dumps(graph, separators=(',', ':')))
+    return None
+
+
+def git_nul(root, *args):
+    raw = subprocess.check_output(['git', '-C', str(root), *args])
+    return [item.decode() for item in raw.split(b'\0') if item]
+
+
+def comparison_tree_snapshot(root, project, tree):
+    """Return project-relative Pest content hashes of comparison-tree blobs, or none when hashing fails."""
+    try:
+        paths = set(git_nul(root, 'diff', '-z', '--name-only', '--no-renames', 'HEAD'))
+        paths.update(git_nul(root, 'ls-files', '-z', '--others', '--exclude-standard'))
+        paths.update(git_nul(root, 'diff', '-z', '--name-only', '--no-renames', tree, 'HEAD'))
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
+        return None
+    prefix = project.rstrip('/') + '/'
+    project_paths = sorted(path for path in paths if path.startswith(prefix))
+    if project_paths == []:
+        return {}
+    autoload = root / project / 'vendor' / 'autoload.php'
+    if not autoload.is_file():
+        return None
+    with tempfile.NamedTemporaryFile('w', suffix='.php', delete=False) as handle:
+        handle.write(TREE_SNAPSHOT_PHP)
+        script = handle.name
+    try:
+        completed = subprocess.run(
+            ['php', script, str(autoload), str(root), tree, prefix],
+            input=json.dumps(project_paths),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        os.unlink(script)
+    if completed.returncode != 0:
+        return None
+    try:
+        snapshot = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+    expected = {path[len(prefix):] for path in project_paths}
+    if set(snapshot) != expected:
+        return None
+    if any(not isinstance(key, str) or key == '' or not isinstance(value, str) for key, value in snapshot.items()):
+        return None
+    return snapshot
 
 
 def handoff_cache(root):
@@ -325,7 +483,9 @@ def prepare_tia_directory(root, project, destination, test_base=None):
         shutil.copytree(source, destination, dirs_exist_ok=True)
         keep_main_baseline(destination)
     if test_base is not None:
-        scope_tia_graph(destination, test_base)
+        reason = scope_tia_graph(root, project, destination, test_base)
+        if reason:
+            print(f'[{project}] {reason}', flush=True)
     (destination / 'affected.json').unlink(missing_ok=True)
 
 

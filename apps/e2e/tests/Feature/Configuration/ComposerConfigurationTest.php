@@ -740,12 +740,12 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         'ci.yml:docs-merge-ref', 'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
-        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"')
+        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"')
         ->and($steps['Restore the PHP packages']['with']['path'])->toBe('/var/cache/orbit/php-packages')
         ->and($steps['Restore the PHP packages']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Restore the PHP packages']['with']['key'])->toBe('orbit-php-build-${{ steps.key.outputs.key }}')
         ->and($steps['Verify the recipe PHP build'])->not->toHaveKey('if')
-        ->and($steps['Verify the recipe PHP build']['run'])->toBe('python3 bin/php-build verify');
+        ->and($steps['Verify the recipe PHP build']['run'])->toBe('python3 bin/php-build verify --profile=ci-runner');
 });
 
 it('runs the bin/php-build unit tests', function (): void {

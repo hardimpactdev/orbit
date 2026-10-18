@@ -78,6 +78,7 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
+require_once __DIR__.'/Helpers/PlugInAssertions.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
@@ -157,7 +158,8 @@ pest()->tia()->watch([
     'resources/tasks/metadata' => 'tests/Feature/Infrastructure/Tasks',
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
     'resources/mcp/tools.json' => 'tests/Feature/Mcp',
-    'resources/machine-software/converge-node.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
+    'resources/remote/lib/recipe.py' => 'tests/Feature/Fleet',
+    'resources/remote/docker/*.py' => 'tests/Feature/Fleet/DockerMigrationTest.php',
     'tests/Fixtures/machine-software/converge_node_test.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
     'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',

@@ -15,7 +15,7 @@ shared, image = sys.argv[1:]
 sys.argv = sys.argv[:1]
 spec = importlib.util.spec_from_file_location('image_recipe', shared)
 recipe = importlib.util.module_from_spec(spec)
-exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
+exec(compile((Path(spec.origin).parent / 'artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
 exec(compile(Path(image).read_text(), image, 'exec'), recipe.__dict__)
 
@@ -174,6 +174,38 @@ class ImageRecipeTest(unittest.TestCase):
             with self.assertRaises(recipe.RecipeFailure):
                 recipe.image_verify(self.payload)
         self.assertEqual(command.call_args.args[0][-2:], ['/usr/local/bin/pnpm', '--version'])
+
+    def test_puts_orbit_in_incus_admin_after_the_packages_only_when_the_profile_installs_incus(self):
+        self.packages()
+        self.assertNotIn(['usermod', '--append', '--groups', 'incus-admin', 'orbit'], self.commands)
+
+        self.commands = []
+        self.payload['tools']['incus'] = {'source': 'ubuntu', 'version': '6.0.5-8', 'package': 'incus'}
+        self.packages()
+        install = next(i for i, c in enumerate(self.commands) if c[:2] == ['apt-get', 'install'])
+        self.assertIn('incus=6.0.5-8', self.commands[install])
+        self.assertGreater(self.commands.index(['usermod', '--append', '--groups', 'incus-admin', 'orbit']), install)
+
+    def verify_incus_admin(self, groups):
+        self.payload.update({'identity': 'sha256:current', 'tools': {'incus': {'source': 'ubuntu', 'version': '6.0.5-8', 'package': 'incus'}}})
+        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
+
+        def command(argv, **kwargs):
+            self.commands.append(argv)
+            return subprocess.CompletedProcess(argv, 0, groups + '\n' if argv == ['id', '-nG', 'orbit'] else '', '')
+        with patch.object(recipe.Path, 'read_text', return_value=marker), \
+             patch.object(recipe, 'inspect', return_value={'incus': '6.0.5-8'}), \
+             patch.object(recipe, 'assess', return_value={'incus': {'status': 'current'}}), \
+             patch.object(recipe, 'publish', side_effect=self.publish), \
+             patch.object(recipe.Path, 'exists', return_value=False), \
+             patch.object(recipe, 'run', side_effect=command):
+            recipe.image_verify(self.payload)
+
+    def test_smoke_requires_orbit_in_incus_admin_when_the_image_has_incus(self):
+        self.verify_incus_admin('orbit incus-admin')
+        self.assertIn(['id', '-nG', 'orbit'], self.commands)
+        with self.assertRaises(recipe.RecipeFailure):
+            self.verify_incus_admin('orbit sudo')
 
     def test_smoke_rejects_wrong_recipe_identity_before_checking_software(self):
         self.payload.update({'identity': 'sha256:current'})

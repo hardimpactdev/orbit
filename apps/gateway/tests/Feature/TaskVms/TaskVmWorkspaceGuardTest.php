@@ -34,9 +34,9 @@ function task_vm_row(Task $group, Node $host, ?Node $node, TaskVmState $state = 
 }
 
 /** An unsaved Instance: placement reads only its Node, Project and name. */
-function task_vm_instance(Project $project, Node $node, string $name): Instance
+function task_vm_instance(Project $project, Node $node, string $name, ?int $owner = null): Instance
 {
-    return new Instance()->forceFill(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name]);
+    return new Instance()->forceFill(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'task_workspace_owner_id' => $owner]);
 }
 
 beforeEach(function (): void {
@@ -69,22 +69,26 @@ describe('assertInstance', function (): void {
     it('allows the group workspace on its task VM and any Instance on other Nodes', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode, TaskVmState::Provisioning);
 
-        TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
+        TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id, $this->group->id));
         TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->other, $this->shared, 'main'));
 
         expect(true)->toBeTrue();
     });
 
-    it('refuses any other Instance on a task VM Node', function (string $project, string $name): void {
+    it('refuses any other Instance on a task VM Node', function (string $project, ?string $owner): void {
         task_vm_row($this->group, $this->host, $this->vmNode);
-        $instance = task_vm_instance($this->{$project}, $this->vmNode, str_replace('{group}', (string) $this->group->id, $name));
+        $instance = task_vm_instance($this->{$project}, $this->vmNode, 'task-'.$this->group->id, match ($owner) {
+            'group' => $this->group->id,
+            'other' => $this->group->id + 1,
+            default => null,
+        });
 
         expect(fn () => TaskVmWorkspaceGuard::assertInstance($instance))
             ->toThrow(TaskVmException::class, "Node [{$this->vmNode->id}] is a task VM and serves only the workspace of task group [{$this->group->id}].");
     })->with([
-        'other Project' => ['other', 'task-{group}'],
-        'other name' => ['project', 'main'],
-        'other group workspace' => ['project', 'task-999'],
+        'other Project' => ['other', 'group'],
+        'named and branched like the workspace without an owner' => ['project', null],
+        'other group workspace' => ['project', 'other'],
     ]);
 
     it('still protects a task VM that is being destroyed or failed', function (TaskVmState $state): void {
@@ -99,24 +103,24 @@ describe('assertWorkspace', function (): void {
     it('accepts a vm group workspace on its ready task VM', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode);
 
-        TaskVmWorkspaceGuard::assertWorkspace($this->group, task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
+        TaskVmWorkspaceGuard::assertWorkspace($this->group, task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id, $this->group->id));
 
         expect(true)->toBeTrue();
     });
 
-    it('refuses a vm group workspace that is not on its ready task VM', function (?TaskVmState $state, string $node, string $name): void {
+    it('refuses a vm group workspace that is not on its ready task VM', function (?TaskVmState $state, string $node, bool $owned): void {
         if ($state instanceof TaskVmState) {
             task_vm_row($this->group, $this->host, $this->vmNode, $state);
         }
-        $workspace = task_vm_instance($this->project, $this->{$node}, str_replace('{group}', (string) $this->group->id, $name));
+        $workspace = task_vm_instance($this->project, $this->{$node}, 'task-'.$this->group->id, $owned ? $this->group->id : null);
 
         expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($this->group, $workspace))
             ->toThrow(TaskVmException::class, "Task group [{$this->group->id}] has no workspace on its ready task VM.");
     })->with([
-        'no task VM' => [null, 'vmNode', 'task-{group}'],
-        'still provisioning' => [TaskVmState::Provisioning, 'vmNode', 'task-{group}'],
-        'failed' => [TaskVmState::Failed, 'vmNode', 'task-{group}'],
-        'shared Node' => [TaskVmState::Ready, 'shared', 'task-{group}'],
-        'wrong name' => [TaskVmState::Ready, 'vmNode', 'main'],
+        'no task VM' => [null, 'vmNode', true],
+        'still provisioning' => [TaskVmState::Provisioning, 'vmNode', true],
+        'failed' => [TaskVmState::Failed, 'vmNode', true],
+        'shared Node' => [TaskVmState::Ready, 'shared', true],
+        'named like the workspace without an owner' => [TaskVmState::Ready, 'vmNode', false],
     ]);
 });

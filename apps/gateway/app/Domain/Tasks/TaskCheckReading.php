@@ -24,6 +24,7 @@ final readonly class TaskCheckReading
         public ?string $treeBefore = null,
         public ?string $failedStep = null,
         public ?array $deliverables = null,
+        public bool $causalityUncertain = false,
     ) {}
 
     public static function running(): self
@@ -38,9 +39,14 @@ final readonly class TaskCheckReading
      * @param  string|null  $failedStep  the setup step that failed, so the task check did not run
      * @param  array<array-key, mixed>|null  $deliverables  the evidence for the subtask's deliverables (ADR 0133)
      */
-    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null): self
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null, bool $causalityUncertain = false): self
     {
-        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables);
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables, $causalityUncertain);
+    }
+
+    public static function interrupted(string $output): self
+    {
+        return new self('finished', exitCode: 1, output: $output, failedStep: 'check_error', causalityUncertain: true);
     }
 
     public static function lost(string $output): self

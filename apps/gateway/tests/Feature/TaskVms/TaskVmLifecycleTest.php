@@ -48,6 +48,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
@@ -56,6 +57,7 @@ use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
@@ -80,6 +82,7 @@ use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -133,7 +136,7 @@ function tvm_life_stranded_workspace(bool $removalFailed): array
     $group = tvm_life_group(TaskGroupStatus::Cancelled);
     $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
     $instance = Instance::query()->create([
-        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-'.$group->id,
         'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public',
         'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40), 'task_workspace_routed' => true,
         'status' => InstanceState::SourceResolved,
@@ -393,7 +396,7 @@ describe('claim', function (): void {
 
     it('makes a subtask whose topology needs a larger VM wait with its cause', function (): void {
         $group = tvm_life_group(TaskGroupStatus::Running);
-        $group->update(['taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
+        $group->update(['taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
         $vm->update(['node_id' => $this->host->id, 'recipe_identity' => TaskVmRecipeImages::ready($this->host->id)->recipe_identity]);
         $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
@@ -782,11 +785,52 @@ describe(DestroyTaskVm::class, function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Cancelled);
         $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
-        Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
+        Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
+    });
+
+    it('never makes an ownership refusal eligible for offline VM destruction', function (): void {
+        Queue::fake();
+        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
+        $instance = tvm_life_workspace($vm->group, $vm->node);
+        $this->provider->observations = [null];
+        try {
+            TaskVmWorkspaceGuard::assertWorkspace($vm->group, Instance::query()->make([
+                'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            ]));
+            throw new RuntimeException('Expected ownership refusal.');
+        } catch (TaskVmException $exception) {
+            app(RemoveTaskWorkspaceAction::class)->recordFailure($vm->group, $exception);
+        }
+
+        app(DestroyEndedTaskVmsAction::class)->execute();
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        expect($this->provider->calls)->toBe([]);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+        $this->assertModelExists($instance);
+        Queue::assertNotPushed(DestroyTaskVm::class);
+        app(RemoveTaskWorkspaceAction::class)->clearFailure($vm->group);
+        expect($vm->group->fresh()->assistance_reason)->toBeNull();
+    });
+
+    it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {
+        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
+        $group = tvm_life_group(TaskGroupStatus::Cancelled);
+        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+        // An Instance its group does not own, such as a row the backfill left without an owner because its group held
+        // two Instances. The guard refuses such a row today.
+        $leftover = Instance::withoutEvents(fn (): Instance => Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]));
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        expect($this->provider->calls)->toBe(['destroy'])
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)
+            ->and(Instance::query()->find($leftover->id))->toBeNull()
+            ->and(Node::query()->find($node->id))->toBeNull();
     });
 
     it('keeps the row destroying with the error when a step fails, and retries until it succeeds', function (): void {
@@ -862,7 +906,7 @@ describe(DestroyTaskVm::class, function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Running);
         $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
-        $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+        $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id,
             'branch_override' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public',
             'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved]);
         $group->taskable()->associate($instance);
@@ -914,7 +958,7 @@ describe(DestroyTaskVm::class, function (): void {
         app()->instance(ProjectLifecycleRunner::class, $runner);
         Queue::fake();
 
-        $removal->remove($instance);
+        $removal->remove($group);
 
         expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
             ->and($this->provider->calls)->toBe(['destroy'])
@@ -953,11 +997,18 @@ describe(DestroyTaskVm::class, function (): void {
         $kept = $thread('example', 'session-one');
         $broken = $thread('unreadable', 'session-two');
         $pending = $thread('example', TaskAgentSpawner::PendingPrefix.'not-started');
+        // This actor completed under an earlier lease. A later unreadable transcript
+        // does not make its proven completion uncertain.
+        TaskWorkspaceLeaseRecord::query()->create([
+            'instance_id' => $instance->id, 'group_id' => $group->id, 'kind' => 'reviewer',
+            'owner' => 'thread:'.$broken->id, 'thread_id' => $broken->id,
+            'status' => 'released', 'released_at' => now(),
+        ]);
         Queue::fake();
 
-        $removal->remove($instance);
+        $removal->remove($group);
 
-        expect($readable->providerCalls)->toBe([[]])
+        expect($readable->providerCalls)->toBe([[], []])
             ->and($this->provider->calls)->toBe(['destroy'])
             ->and(json_decode((string) Storage::disk('local')->get(ArchiveAgentTranscriptsAction::path($kept)), true))
             ->toMatchArray(['state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']]])
@@ -966,12 +1017,32 @@ describe(DestroyTaskVm::class, function (): void {
             ->and(Instance::query()->find($instance->id))->toBeNull();
     });
 
+    it('keeps the VM and workspace when an unreadable actor has no authoritative completion', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([new FakeAgentDriver('unreadable')]));
+        $thread = AgentThread::query()->create([
+            'task_group_id' => $group->id, 'node_id' => $vm->node_id, 'role' => 'reviewer',
+            'external_id' => 'unknown-session', 'driver' => 'unreadable', 'runtime_key' => 'node:'.$vm->node_id,
+        ]);
+        Queue::fake();
+
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
+            ->toThrow(TaskWorkspaceWaiting::class);
+
+        expect($this->provider->calls)->toBe([])
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+            ->and(TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $instance->id)->sole()->thread_id)->toBe($thread->id)
+            ->and(TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)->where('kind', 'teardown')->sole()->status)->toBe('queued');
+        Queue::assertNothingPushed();
+    });
+
     it('keeps the workspace and records the error on the VM when the VM cannot be deleted', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $this->provider->onDestroy = static fn () => throw new TaskVmException('task_vm.delete_failed', 'The VM could not be deleted.', 502);
         Queue::fake();
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance))->toThrow(TaskVmException::class);
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskVmException::class);
 
         expect(Instance::query()->find($instance->id))->not->toBeNull()
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying)
@@ -987,7 +1058,7 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         $failed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed, wireguardIp: '10.44.0.130');
         $running = tvm_life_vm(tvm_life_group(TaskGroupStatus::Running), TaskVmState::Ready, tvm_life_node('tvm-b', '10.44.0.131'));
         $withWorkspace = tvm_life_vm($group = tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready, $node = tvm_life_node('tvm-c', '10.44.0.132'));
-        Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
+        Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
         $claimed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Provisioning, wireguardIp: '10.44.0.133');
         $claimed->group->update(['reserved_at' => now()]);
         $destroyed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Destroyed);
@@ -995,8 +1066,16 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(2);
 
         $queued = Queue::pushed(DestroyTaskVm::class)->map(fn (DestroyTaskVm $job): int => $job->taskVmId)->sort()->values()->all();
-        expect($queued)->toBe([$ended->id, $failed->id])
-            ->and([$running->id, $withWorkspace->id, $claimed->id, $destroyed->id])->not->toContain(...$queued);
+        expect($queued)->toBe([$ended->id, $failed->id]);
+    });
+
+    it('queues destruction past an Instance on the Node that the ended group does not own', function (): void {
+        Queue::fake();
+        $vm = tvm_life_vm($group = tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, $node = tvm_life_node('tvm-a', '10.44.0.129'));
+        Instance::withoutEvents(fn (): Instance => Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]));
+
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('queues destruction for a workspace whose removal failed after its group ended, so the job can check the VM', function (bool $removalFailed, TaskGroupStatus $status): void {
@@ -1128,7 +1207,7 @@ function tvm_life_provision(Closure $provision): void
 function tvm_life_workspace(Task $group, Node $node): Instance
 {
     return Instance::query()->create([
-        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-'.$group->id,
         'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public', 'branch' => 'task-'.$group->id,
         'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);

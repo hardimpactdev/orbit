@@ -29,7 +29,9 @@ function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status
         'repository_url' => 'git@example.test:agent-workspaces.git',
         'default_branch' => 'main',
     ]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
@@ -37,7 +39,6 @@ function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status
         'status' => 'source_resolved',
         'starting_commit' => $start,
     ]);
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
     $group->taskable()->associate($instance);
     $group->save();
 

@@ -28,9 +28,6 @@ final readonly class TaskVmHostAudit
 {
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
 
-    /** A legacy claim clone still attached to its VM. */
-    private const string VolumeName = '/\Atvm-[0-9]+-workspace\z/D';
-
     public const int FailedBuildHours = 24;
 
     /** A `ready` or `parked` row without an open group for longer than this is a stray. */
@@ -62,9 +59,10 @@ final readonly class TaskVmHostAudit
     /**
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
-     * against their rows), running and retained failed build VMs and,
-     * in the host's pool, legacy claim clones. The host's `operator_owned` entries are the
-     * operator's. Everything else is a stray. Nothing here deletes or changes anything.
+     * against their rows), running and retained failed build VMs and, in the host's pool, the volumes of
+     * {@see TaskVmVolumes::owns()}: VM clones and the topology seeds of the images the project keeps.
+     * The host's `operator_owned` entries are the operator's. Everything else is a stray. Nothing here deletes or
+     * changes anything.
      *
      * @return array{instances: list<string>, volumes: list<string>, records: list<TaskVm>} instances as `project/name`,
      *                                                                                      volumes as `project/pool/name`
@@ -79,8 +77,9 @@ final readonly class TaskVmHostAudit
             }
         }
         $volumes = [];
+        $fingerprints = array_keys($this->incus->images($host, $node));
         foreach ($inventory['volumes'] as ['project' => $project, 'pool' => $pool, 'name' => $name]) {
-            $owned = $project === $host->project && $pool === $host->pool && preg_match(self::VolumeName, $name) === 1;
+            $owned = $project === $host->project && $pool === $host->pool && TaskVmVolumes::owns($name, $fingerprints);
             if (! $owned && ! $host->operatorOwns($project, $name)) {
                 $volumes[] = "{$project}/{$pool}/{$name}";
             }

@@ -24,8 +24,15 @@ final readonly class OrbitCaCurlFactory implements CurlFactoryInterface
 
     private string $caDirectory;
 
+    private int $ownerPid;
+
     public function __construct()
     {
+        $ownerPid = getmypid();
+        if ($ownerPid === false) {
+            throw new RuntimeException('Could not determine the CA directory owner process.');
+        }
+        $this->ownerPid = $ownerPid;
         $this->factory = new CurlFactory(0);
         $this->caDirectory = sys_get_temp_dir().'/orbit-ca-'.bin2hex(random_bytes(16));
 
@@ -59,7 +66,8 @@ final readonly class OrbitCaCurlFactory implements CurlFactoryInterface
 
     public function __destruct()
     {
-        if (is_dir($this->caDirectory)) {
+        // A fork inherits this object, but the parent still owns and uses its directory.
+        if (getmypid() === $this->ownerPid && is_dir($this->caDirectory)) {
             @rmdir($this->caDirectory);
         }
     }

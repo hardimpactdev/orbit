@@ -40,6 +40,8 @@ Project Document fixtures record a complete file lifecycle, reads of earlier ver
 
 Gateway rollback fixtures record a queued code switch with `force: false` and no force member in the rollback phase. The request is bodyless. The crossing-refusal fixture is removed because Laravel owns migration discovery; [Gateway recovery](/reference/gateway-recovery#laravel-owns-migrations) explains the decision.
 
+Tasks status fixtures cover `workspace_leases` with an empty list, a holder, FIFO waiters, and `remote_uncertain`. Keep thread and check identities in the Gateway recording and SDK/CLI replay. These fields describe workspace ownership separately from task status and VM power; the [Tasks contract](/reference/tasks#workspace-lease) owns their meaning.
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.

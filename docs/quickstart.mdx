@@ -61,7 +61,7 @@ Check each checkpoint before you continue to the next step.
     ```bash Gateway machine · orbit
     git clone https://github.com/nckrtl/orbit.git /home/orbit/orbit
     cd /home/orbit/orbit
-    sudo bin/php-build install
+    sudo bin/php-build install --profile=gateway
     composer --working-dir=apps/cli install --prefer-dist --no-interaction
     composer --working-dir=apps/cli check-platform-reqs
     composer --working-dir=apps/gateway install --prefer-dist --no-interaction
@@ -74,7 +74,7 @@ Check each checkpoint before you continue to the next step.
 
     This installs the current `main`. When a release tag exists, check it out with `git checkout --detach <TAG>` before you run Composer. Record the commit from `git rev-parse HEAD` and report it to the user at the end; it belongs in every [bug report](/reference/alpha#feedback).
 
-    `bin/php-build install` installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins and a pinned Composer release, and checks the result. Every Orbit machine runs this one PHP build, and later recipe convergence keeps the Gateway on it. Like CI, this first install loads PCOV in the PHP CLI; the Gateway's first recipe convergence unloads it.
+    `bin/php-build install` installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins and a pinned Composer release, and checks the result. Every Orbit machine runs this one PHP build, and later recipe convergence keeps the Gateway on it. The `gateway` profile keeps PCOV installed and disabled from the first install.
 
     If `bin/php-build` or a platform check fails, stop and report the error. Do not install with `--ignore-platform-reqs`.
 

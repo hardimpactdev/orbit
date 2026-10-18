@@ -9,6 +9,11 @@ use App\Models\Task;
 
 final readonly class NullAgentSpawner implements AgentSpawner
 {
+    public function reserveReviewer(Task $task): ?int
+    {
+        return null;
+    }
+
     public function spawnReviewer(Task $task): ?int
     {
         return null;

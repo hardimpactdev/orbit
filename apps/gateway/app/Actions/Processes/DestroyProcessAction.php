@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
-use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
@@ -43,9 +42,9 @@ final readonly class DestroyProcessAction
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
             if (! $removedByOwningRole) {
-                app(AnalyticsProcessOwnership::class)->assertRemovable($fresh);
-                app(ProxyCliProcessOwnership::class)->assertRemovable($fresh);
-                app(DatabaseServerProcessOwnership::class)->assertRemovable($fresh);
+                foreach (app(Contributions::class)->of(ProcessRemovalGuard::class) as $guard) {
+                    $guard->assertRemovable($fresh);
+                }
             }
 
             if (RouteCustomProxy::query()->where('process_id', $fresh->id)->exists()) {

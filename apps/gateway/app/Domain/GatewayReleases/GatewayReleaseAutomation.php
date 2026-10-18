@@ -45,7 +45,7 @@ final readonly class GatewayReleaseAutomation
     public const string PauseKey = 'gateway.release.auto.pause';
 
     /** @var list<string> */
-    public const array PauseReasons = ['migration_failure', 'rollback', 'manual_deploy', 'interrupted', 'marker'];
+    public const array PauseReasons = ['held', 'migration_failure', 'rollback', 'manual_deploy', 'interrupted', 'marker'];
 
     public function __construct(
         private SettingRepository $settings,
@@ -131,6 +131,7 @@ final readonly class GatewayReleaseAutomation
     /** Ends a pause without a resume point, because a release went live. */
     public function clearPause(): void
     {
+        GatewayReleaseHold::assertNone();
         if ($this->settings->get($this->scope(), self::PauseKey) !== null) {
             $this->settings->delete($this->scope(), self::PauseKey);
         }

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Prepares a task group's declared E2E topology nested in its task VM, as the managed user.
 #
-#   topology.sh start RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET   install this script and start the unit for RUN
-#   topology.sh status RUN                                 print the state of RUN as one JSON line; a ready run from
-#                                                          an earlier boot of the VM is `stale`
-#   topology.sh run RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET     the unit's work: host setup, role images, acquire
+#   topology.sh start RUN CHECKOUT ISSUE NODES VPN_SUBNET   install this script and start the unit for RUN
+#   topology.sh status RUN                                  print the state of RUN as one JSON line; a ready run from
+#                                                           an earlier boot of the VM is `stale`
+#   topology.sh run RUN CHECKOUT ISSUE NODES VPN_SUBNET     the unit's work: host setup, then acquire
 #
 # The Gateway runs it with `bash -c`, and sends it on stdin too to `start`, which installs it for the unit. `run`
 # writes exactly one result file per run, so a unit that stops without one was killed. Every harness command runs from
@@ -21,9 +21,9 @@ valid_run() { [[ $1 =~ ^[a-z0-9]{8,40}$ ]]; }
 
 case ${1-} in
     start)
-        [[ $# -eq 8 ]] && valid_run "$2" || exit 64
+        [[ $# -eq 6 ]] && valid_run "$2" || exit 64
         [[ $3 == /* && -d $3 ]] || { echo "topology: the checkout $3 does not exist." >&2; exit 66; }
-        [[ $4 =~ ^TASK-[1-9][0-9]{0,8}$ && $5 =~ ^[a-z0-9+,-]*$ && $6 =~ ^[1-9][0-9]*GiB$ && $7 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || exit 64
+        [[ $4 =~ ^TASK-[1-9][0-9]{0,8}$ && $5 =~ ^[a-z0-9+,-]*$ && $6 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || exit 64
         install -d -m 0700 "$(dirname "$self")" "$state"
         cat >"$self.new"
         chmod 0700 "$self.new"
@@ -40,7 +40,7 @@ case ${1-} in
         exec sudo -n systemd-run --quiet --collect --unit="$unit_prefix$2" \
             --uid="$(id -un)" --gid="$(id -gn)" --working-directory="$3" \
             --setenv=HOME="$HOME" --property=RuntimeMaxSec="$max_seconds" \
-            -- "$self" run "$2" "$3" "$4" "$5" "$6" "$7" "${8-}"
+            -- "$self" run "$2" "$3" "$4" "$5" "$6"
         ;;
     status)
         [[ $# -eq 2 ]] && valid_run "$2" || exit 64
@@ -60,8 +60,8 @@ case ${1-} in
         fi
         ;;
     run)
-        [[ $# -eq 8 ]] && valid_run "$2" || exit 64
-        run=$2 checkout=$3 issue=$4 nodes=$5 pool_size=$6 vpn_subnet=$7
+        [[ $# -eq 6 ]] && valid_run "$2" || exit 64
+        run=$2 checkout=$3 issue=$4 nodes=$5 vpn_subnet=$6
         log="$state/$run.log"
         exec >>"$log" 2>&1
         step=start
@@ -89,11 +89,9 @@ case ${1-} in
         printf 'topology: preparing %s with nodes [%s]\n' "$issue" "$nodes"
 
         step=host-setup
-        # The input rule keeps topology guests off this VM's own address in the fleet's VPN subnet.
-        sudo -n bin/e2e-topology-host-setup --pool-size="$pool_size" --wireguard-subnet="$vpn_subnet"
-
-        step=images
-        bin/e2e-topology-images ensure --nodes="$nodes" --recipe-images="$8"
+        # Adopts the VM's clone of the topology seed. The input rule keeps topology guests off this VM's own address
+        # in the fleet's VPN subnet.
+        sudo -n bin/e2e-topology-host-setup --wireguard-subnet="$vpn_subnet"
 
         step=acquire
         # A nested guest can miss its readiness window. Acquire removes what it created, and --replace releases a

@@ -60,7 +60,7 @@ it('reads tracked and untracked review diff without updating the index', functio
     file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    $instance = test_ready_task_workspace($project, $node, ['name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14']);
     $reader = new RemoteTaskReviewDiff(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
@@ -235,16 +235,12 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
             return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
         }
     };
-    $instance = review_diff_instance($checkout);
-    $group = Task::topLevel()->create([
-        'project_id' => $instance->project_id,
+    $instance = review_diff_instance($checkout, group: [
         'title' => 'Unread diff',
         'brief' => 'Git cannot produce the diff.',
         'status' => TaskGroupStatus::Running,
     ]);
-    $group->taskable()->associate($instance);
-    $group->save();
-    test_vm_group($group);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $task = Task::query()->create([
         'parent_id' => $group->id,
         'position' => 1,
@@ -281,12 +277,13 @@ function review_diff_checkout(): string
     return $checkout;
 }
 
-function review_diff_instance(string $checkout): Instance
+/** @param  array<string, mixed>  $group */
+function review_diff_instance(string $checkout, array $group = []): Instance
 {
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit-'.bin2hex(random_bytes(3)), 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-'.bin2hex(random_bytes(3)), 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
 
-    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    return test_ready_task_workspace($project, $node, ['name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14'], $group);
 }
 
 function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff

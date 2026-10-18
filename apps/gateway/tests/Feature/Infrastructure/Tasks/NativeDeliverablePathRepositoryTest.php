@@ -87,7 +87,7 @@ function deliverable_workspace_fixture(): array
     // Stored origins need a host. The reader passes this one to Git unchanged, so a local bare repository stands in.
     $project->setRawAttributes([...$project->getAttributes(), 'repository_url' => $git['origin']]);
     $node = Node::query()->create(['name' => 'workspace-base-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.131', 'wireguard_ip' => '10.44.0.131']);
-    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'workspace-base', 'checkout_path' => $git['checkout'], 'status' => 'source_resolved']);
+    $workspace = test_ready_task_workspace($project, $node, ['name' => 'workspace-base', 'checkout_path' => $git['checkout']]);
 
     return [$project, $workspace, $git];
 }

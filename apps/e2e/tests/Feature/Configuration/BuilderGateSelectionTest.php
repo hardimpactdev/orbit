@@ -861,3 +861,473 @@ describe('handoff tree test selection', function (): void {
         expect($fallbacks)->toHaveCount($ci ? 1 : 0);
     })->with(['handoff' => false, 'CI' => true]);
 });
+
+function orb1803_clear_reports(string $root): void
+{
+    $checks = $root.'/.git/orbit-checks';
+    if (is_dir($checks)) {
+        (new Process(['rm', '-rf', $checks]))->mustRun();
+    }
+}
+
+function orb1803_clear_handoff_cache(string $root): void
+{
+    $cache = $root.'/.git/orbit-handoff-tia';
+    if (is_dir($cache)) {
+        (new Process(['rm', '-rf', $cache]))->mustRun();
+    }
+}
+
+/** @param array{root: string, main: string, candidate: string, path: string} $fixture */
+function orb1803_run(array $fixture, ?string $testBase, int $expectedExit, bool $ci = false): array
+{
+    orb1803_clear_reports($fixture['root']);
+    $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
+        'ORBIT_GATE_UNSELECTED' => 'apps/cli',
+        'ORBIT_GATE_FAIL_INSTALL' => '',
+        'ORBIT_GATE_HIDE_TESTS' => '',
+        'ORBIT_TIA_DIRECTORY' => false,
+        'PATH' => $fixture['path'],
+        'ORBIT_TASK_CHECK_BASE' => $testBase ?? false,
+        'CI' => $ci ? 'true' : false,
+        'GITHUB_ACTIONS' => false,
+        'ORBIT_CHECK_PROCESSES' => '1',
+        'ORBIT_CHECK_SCOPE' => false,
+        'COLLISION_PRINTER' => false,
+        'PARATEST' => false,
+        'PEST_TIA' => false,
+        'PEST_TIA_BASELINED' => false,
+        'PEST_TIA_FILTERED' => false,
+        'PEST_TIA_LOCALLY' => false,
+        'TEST_TOKEN' => false,
+        'UNIQUE_TEST_TOKEN' => false,
+    ]);
+    $process->setTimeout(120);
+    $process->run();
+
+    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $fixture['root']))->mustRun()->getOutput());
+    $paths = glob("{$fixture['root']}/.git/orbit-checks/{$head}/review-*/result.json");
+
+    expect($process->getExitCode())->toBe($expectedExit, $process->getOutput().$process->getErrorOutput());
+    expect($paths)->toBeArray()->toHaveCount(1);
+
+    return [
+        'process' => $process,
+        'receipt' => json_decode((string) file_get_contents($paths[0]), true, flags: JSON_THROW_ON_ERROR),
+    ];
+}
+
+/** @param array<string, mixed> $receipt */
+function orb1803_log(array $receipt, string $project, string $script): string
+{
+    $check = orb277_check($receipt, $project, $script);
+
+    return (string) file_get_contents($check['log']);
+}
+
+function orb1803_widget(string $root, int $value, int $expected): void
+{
+    file_put_contents($root.'/apps/gateway/src/Widget.php', <<<PHP
+<?php
+
+function widget_value(): int
+{
+    return {$value};
+}
+
+PHP);
+    file_put_contents($root.'/apps/gateway/tests/WidgetTest.php', <<<PHP
+<?php
+
+require_once __DIR__.'/../src/Widget.php';
+
+it('reads the widget', function () {
+    expect(widget_value())->toBe({$expected});
+});
+
+PHP);
+}
+
+function orb1803_install_native_pest(string $root): void
+{
+    $project = $root.'/apps/gateway';
+    $vendor = $project.'/vendor';
+    mkdir($project.'/src', 0700, true);
+    mkdir($project.'/tests', 0700, true);
+    $pest = base_path('vendor/nckrtl/pestphp-monorepo/bin/pest');
+    $autoload = base_path('vendor/autoload.php');
+    file_put_contents($root.'/.gitignore', ".orbit-tia/\nvendor/\n.phpunit.result.cache\n.phpunit.cache/\n");
+    file_put_contents($vendor.'/autoload.php', "<?php\n\nrequire '{$autoload}';\n");
+    file_put_contents($vendor.'/pest-plugins.json', (string) file_get_contents(base_path('vendor/pest-plugins.json')));
+    file_put_contents($vendor.'/bin/pest', <<<'SH'
+#!/usr/bin/env sh
+cd "$(dirname "$0")/../.." || exit 1
+for argument in "$@"; do
+    case "$argument" in
+        tests/*)
+            if [ ! -e "$argument" ]; then
+                exit 0
+            fi
+            ;;
+    esac
+done
+project=$(pwd)
+repo=$(CDPATH= cd -- "$project/../.." && pwd)
+exec php -d "pcov.directory=$repo" -d pcov.enabled=1 "$project/vendor/bin/pest-native.php" "$@"
+SH);
+    file_put_contents($vendor.'/bin/pest-native.php', <<<PHP
+<?php
+
+declare(strict_types=1);
+
+\$GLOBALS['_composer_bin_dir'] = __DIR__;
+\$GLOBALS['_composer_autoload_path'] = __DIR__.'/../autoload.php';
+require '{$pest}';
+
+PHP);
+    chmod($vendor.'/bin/pest', 0700);
+    file_put_contents($project.'/phpunit.xml', <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit cacheResult="false" colors="false">
+    <testsuites>
+        <testsuite name="Widget">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+XML);
+    file_put_contents($project.'/tests/Pest.php', <<<'PHP'
+<?php
+
+pest()->tia()->locally()->filtered()->defaultBranch('main');
+$directory = getenv('ORBIT_TIA_DIRECTORY');
+pest()->tia()->directory(is_string($directory) && $directory !== '' ? $directory : dirname(__DIR__).'/.orbit-tia');
+
+PHP);
+    file_put_contents($root.'/tooling/composer', <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$command = $argv[1] ?? '';
+$cwd = str_replace('\\', '/', getcwd() ?: '');
+if ($command === 'test:affected' && str_ends_with($cwd, 'apps/gateway')) {
+    $process = proc_open(['vendor/bin/pest', '--tia', '--colors=never', '--compact'], [1 => STDOUT, 2 => STDOUT], $pipes, $cwd);
+    exit(is_resource($process) ? proc_close($process) : 1);
+}
+
+$segments = explode('/', $cwd);
+$project = implode('/', array_slice($segments, -2));
+$unselected = array_filter(explode(',', (string) getenv('ORBIT_GATE_UNSELECTED')));
+if ($command === 'test:affected') {
+    $selectedTests = in_array($project, $unselected, true) ? [] : ['tests/ExampleTest.php'];
+    $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
+    $tiaDirectory = is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : '.orbit-tia';
+    if (! str_starts_with($tiaDirectory, DIRECTORY_SEPARATOR)) {
+        $tiaDirectory = getcwd().DIRECTORY_SEPARATOR.$tiaDirectory;
+    }
+    if (! is_dir($tiaDirectory)) {
+        mkdir($tiaDirectory, 0700, true);
+    }
+    file_put_contents($tiaDirectory.'/affected.json', json_encode($selectedTests, JSON_THROW_ON_ERROR));
+    fwrite(STDOUT, $selectedTests === [] ? "\n  INFO  No affected tests found.\n\n" : "\n  Tests:    3 passed (9 assertions)\n\n");
+}
+
+exit(0);
+PHP);
+    chmod($root.'/tooling/composer', 0700);
+}
+
+/** @param array<string, mixed> $graph */
+function orb1803_poison(string $root, string $tree, array $graph): void
+{
+    orb1803_clear_handoff_cache($root);
+    $cache = $root.'/.git/orbit-handoff-tia/apps-gateway';
+    mkdir($cache, 0700, true);
+    $graph['baselines']['main']['sha'] = $tree;
+    $graph['baselines']['main']['tree'] = [];
+    $graph['baselines']['main']['results'] = [
+        'Tests\WidgetTest::__pest_evaluable_it_reads_the_widget' => [
+            'status' => 0, 'message' => '', 'time' => 0.01, 'assertions' => 1, 'file' => 'tests/WidgetTest.php',
+        ],
+    ];
+    file_put_contents($cache.'/graph.json', json_encode($graph, JSON_THROW_ON_ERROR));
+    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+    file_put_contents($root.'/.git/orbit-handoff-tia/receipt.json', json_encode([
+        'tree' => $tree, 'candidate' => $head,
+    ], JSON_THROW_ON_ERROR));
+}
+
+function orb1803_record_pest(string $root): string
+{
+    $record = new Process(['vendor/bin/pest', '--tia', '--colors=never', '--compact'], $root.'/apps/gateway', [
+        'ORBIT_TIA_DIRECTORY' => false,
+        'COLLISION_PRINTER' => false,
+        'PARATEST' => false,
+        'PEST_TIA' => false,
+        'PEST_TIA_BASELINED' => false,
+        'PEST_TIA_FILTERED' => false,
+        'PEST_TIA_LOCALLY' => false,
+        'TEST_TOKEN' => false,
+        'UNIQUE_TEST_TOKEN' => false,
+    ]);
+    $record->setTimeout(60);
+    $record->run();
+    expect($record->getExitCode())->toBe(0, $record->getOutput().$record->getErrorOutput());
+
+    return (string) file_get_contents($root.'/apps/gateway/.orbit-tia/graph.json');
+}
+
+function orb1803_reader(string $root, int $expected, bool $present): void
+{
+    file_put_contents($root.'/apps/gateway/src/Reader.php', <<<'PHP'
+<?php
+
+function reader_value(): int
+{
+    $path = dirname(__DIR__).'/config/value.php';
+
+    return is_file($path) ? require $path : 2;
+}
+
+PHP);
+    if ($present) {
+        mkdir($root.'/apps/gateway/config', 0700, true);
+        file_put_contents($root.'/apps/gateway/config/value.php', "<?php\n\nreturn 1;\n");
+    } elseif (is_file($root.'/apps/gateway/config/value.php')) {
+        unlink($root.'/apps/gateway/config/value.php');
+    }
+    file_put_contents($root.'/apps/gateway/tests/ReaderTest.php', <<<PHP
+<?php
+
+require_once __DIR__.'/../src/Reader.php';
+
+it('reads the config', function () {
+    expect(reader_value())->toBe({$expected});
+});
+
+PHP);
+}
+
+function orb1803_other(string $root, int $value): void
+{
+    file_put_contents($root.'/apps/gateway/src/Other.php', <<<PHP
+<?php
+
+function other_value(): int
+{
+    return {$value};
+}
+
+PHP);
+    file_put_contents($root.'/apps/gateway/tests/OtherTest.php', <<<'PHP'
+<?php
+
+require_once __DIR__.'/../src/Other.php';
+
+it('reads the other value', function () {
+    expect(other_value())->toBeGreaterThan(0);
+});
+
+PHP);
+}
+
+describe('native handoff tree baseline', function (): void {
+    it('selects changes since the native handoff tree baseline with installed Pest', function (): void {
+        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $root = $fixture['root'];
+        orb1803_install_native_pest($root);
+        orb1803_widget($root, 1, 1);
+        foreach ([
+            ['git', 'add', '.'],
+            ['git', 'commit', '--quiet', '-m', 'Record the widget'],
+        ] as $arguments) {
+            (new Process($arguments, $root))->mustRun();
+        }
+
+        $record = new Process(['vendor/bin/pest', '--tia', '--colors=never', '--compact'], $root.'/apps/gateway', [
+            'ORBIT_TIA_DIRECTORY' => false,
+            'COLLISION_PRINTER' => false,
+            'PARATEST' => false,
+            'PEST_TIA' => false,
+            'PEST_TIA_BASELINED' => false,
+            'PEST_TIA_FILTERED' => false,
+            'PEST_TIA_LOCALLY' => false,
+            'TEST_TOKEN' => false,
+            'UNIQUE_TEST_TOKEN' => false,
+        ]);
+        $record->setTimeout(60);
+        $record->run();
+        expect($record->getExitCode())->toBe(0, $record->getOutput().$record->getErrorOutput());
+
+        $graphPath = $root.'/apps/gateway/.orbit-tia/graph.json';
+        $graph = json_decode((string) file_get_contents($graphPath), true, flags: JSON_THROW_ON_ERROR);
+        expect($graph['files'] ?? [])->toContain('src/Widget.php')
+            ->and($graph['edges'] ?? [])->toHaveKey('tests/WidgetTest.php');
+        $original = (string) file_get_contents($graphPath);
+
+        orb1803_widget($root, 2, 2);
+        (new Process(['git', 'add', 'apps/gateway/src/Widget.php', 'apps/gateway/tests/WidgetTest.php'], $root))->mustRun();
+        $tree = trim((new Process(['git', 'write-tree'], $root))->mustRun()->getOutput());
+        (new Process(['git', 'reset', '--quiet'], $root))->mustRun();
+        file_put_contents($root.'/docs/later.md', "A docs-only follow-up.\n");
+        orb1803_poison($root, $tree, $graph);
+
+        $docs = orb1803_run($fixture, $tree, 0);
+        $docsLog = orb1803_log($docs['receipt'], 'apps/gateway', 'test:affected');
+        expect($docsLog)->not->toContain('no longer reachable')
+            ->and($docsLog)->toContain('No affected tests found')
+            ->and($docs['process']->getOutput())->not->toContain('[apps/gateway] Handoff tree baseline');
+        expect(collect($docs['receipt']['checks'])->contains(
+            static fn (array $check): bool => $check['project'] === 'apps/gateway' && in_array('--no-tia', $check['command'], true),
+        ))->toBeFalse();
+
+        orb1803_widget($root, 3, 2);
+        orb1803_poison($root, $tree, $graph);
+        $edited = orb1803_run($fixture, $tree, 1);
+        $editedLog = orb1803_log($edited['receipt'], 'apps/gateway', 'test:affected');
+        expect($editedLog)->not->toContain('no longer reachable')
+            ->and($editedLog)->toContain('Failed asserting');
+
+        orb1803_widget($root, 1, 1);
+        orb1803_poison($root, $tree, $graph);
+        $reverted = orb1803_run($fixture, $tree, 0);
+        $revertedLog = orb1803_log($reverted['receipt'], 'apps/gateway', 'test:affected');
+        expect($revertedLog)->not->toContain('no longer reachable')
+            ->and($revertedLog)->toContain('affected test file')
+            ->and($revertedLog)->not->toContain('No affected tests found');
+
+        orb1803_widget($root, 3, 2);
+        orb1803_clear_handoff_cache($root);
+        (new Process(['rm', '-rf', $root.'/apps/gateway/.orbit-tia']))->mustRun();
+        $missing = orb1803_run($fixture, $tree, 1);
+        expect($missing['process']->getOutput())->toContain('Handoff tree baseline has no Pest dependency graph')
+            ->and($missing['process']->getOutput())->not->toContain('JSONDecodeError')
+            ->and(orb1803_log($missing['receipt'], 'apps/gateway', 'test:affected'))->toContain('Failed asserting');
+
+        mkdir($root.'/apps/gateway/.orbit-tia', 0700, true);
+        file_put_contents($graphPath, "{\n");
+        $unreadable = orb1803_run($fixture, $tree, 1);
+        expect($unreadable['process']->getOutput())->toContain('Handoff tree baseline Pest graph cannot be read')
+            ->and($unreadable['process']->getErrorOutput().$unreadable['process']->getOutput())->not->toContain('JSONDecodeError');
+
+        file_put_contents($graphPath, json_encode(['edges' => [], 'baselines' => ['main' => ['sha' => $tree, 'tree' => [], 'results' => ['kept' => ['status' => 0]]]]], JSON_THROW_ON_ERROR));
+        $emptyEdges = orb1803_run($fixture, $tree, 1);
+        expect($emptyEdges['process']->getOutput())->toContain('Handoff tree baseline Pest graph has no dependency edges');
+
+        file_put_contents($graphPath, $original);
+        file_put_contents($root.'/apps/gateway/vendor/autoload.php', "<?php\n\nfwrite(STDERR, \"no hash\\n\");\nexit(1);\n");
+        $snapshot = orb1803_run($fixture, $tree, 1);
+        expect($snapshot['process']->getOutput())->toContain('could not be snapshotted with Pest content hashes');
+        file_put_contents($root.'/apps/gateway/vendor/autoload.php', "<?php\n\nrequire '".base_path('vendor/autoload.php')."';\n");
+
+        $drifted = json_decode($original, true, flags: JSON_THROW_ON_ERROR);
+        $drifted['fingerprint']['structural']['composer_lock'] = 'stale';
+        file_put_contents($graphPath, json_encode($drifted, JSON_THROW_ON_ERROR));
+        orb1803_clear_handoff_cache($root);
+        $drift = orb1803_run($fixture, $tree, 1);
+        $driftLog = orb1803_log($drift['receipt'], 'apps/gateway', 'test:affected');
+        expect($driftLog)->toContain('composer.lock changed')
+            ->and($driftLog)->not->toContain('no longer reachable')
+            ->and($driftLog)->toContain('Failed asserting');
+
+        file_put_contents($graphPath, $original);
+        orb1803_widget($root, 2, 2);
+        orb1803_clear_handoff_cache($root);
+        $ci = orb1803_run($fixture, $tree, 0, true);
+        expect($ci['receipt']['test_base'])->toBe($fixture['main'])
+            ->and(orb1803_log($ci['receipt'], 'apps/gateway', 'test:affected'))->not->toContain('no longer reachable');
+
+        foreach ([
+            ['git', 'checkout', '--quiet', '--', 'apps/gateway/src/Widget.php', 'apps/gateway/tests/WidgetTest.php'],
+            ['git', 'clean', '-fd', '--', 'docs'],
+        ] as $arguments) {
+            (new Process($arguments, $root))->mustRun();
+        }
+        $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+        $commit = orb1803_run($fixture, $head, 0);
+        expect($commit['process']->getOutput())->not->toContain('Handoff tree baseline')
+            ->and(orb1803_log($commit['receipt'], 'apps/gateway', 'test:affected'))->not->toContain('no longer reachable')
+            ->and(orb1803_log($commit['receipt'], 'apps/gateway', 'test:affected'))->toContain('No affected tests found');
+    });
+
+    it('selects a file restored to HEAD after the passed handoff tree deleted it', function (): void {
+        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $root = $fixture['root'];
+        orb1803_install_native_pest($root);
+        file_put_contents($root.'/apps/gateway/tests/Pest.php', <<<'PHP'
+<?php
+
+pest()->tia()->locally()->filtered()->defaultBranch('main')->watch([
+    'config/*' => 'tests',
+]);
+$directory = getenv('ORBIT_TIA_DIRECTORY');
+pest()->tia()->directory(is_string($directory) && $directory !== '' ? $directory : dirname(__DIR__).'/.orbit-tia');
+
+PHP);
+        orb1803_reader($root, 1, true);
+        orb1803_other($root, 1);
+        foreach ([
+            ['git', 'add', '.'],
+            ['git', 'commit', '--quiet', '-m', 'Record the reader'],
+        ] as $arguments) {
+            (new Process($arguments, $root))->mustRun();
+        }
+
+        orb1803_reader($root, 2, false);
+        foreach ([
+            ['git', 'add', '-A', '--', 'apps/gateway'],
+            ['git', 'write-tree'],
+        ] as $arguments) {
+            $written = (new Process($arguments, $root))->mustRun();
+        }
+        $deletedTree = trim($written->getOutput());
+        (new Process(['git', 'reset', '--quiet'], $root))->mustRun();
+        $deletedGraph = json_decode(orb1803_record_pest($root), true, flags: JSON_THROW_ON_ERROR);
+        expect($deletedGraph['files'] ?? [])->not->toContain('config/value.php')
+            ->and($deletedGraph['edges'] ?? [])->toHaveKey('tests/ReaderTest.php')
+            ->and($deletedGraph['edges'] ?? [])->toHaveKey('tests/OtherTest.php');
+
+        file_put_contents($root.'/docs/later.md', "A docs-only follow-up.\n");
+        orb1803_poison($root, $deletedTree, $deletedGraph);
+        $unchangedDeletion = orb1803_run($fixture, $deletedTree, 0);
+        $unchangedLog = orb1803_log($unchangedDeletion['receipt'], 'apps/gateway', 'test:affected');
+        expect($unchangedLog)->toContain('No affected tests found')
+            ->and($unchangedLog)->not->toContain('no longer reachable');
+
+        $committed = (new Process(['git', 'show', 'HEAD:apps/gateway/config/value.php'], $root))->mustRun()->getOutput();
+        file_put_contents($root.'/apps/gateway/config/value.php', $committed);
+        orb1803_other($root, 2);
+        orb1803_poison($root, $deletedTree, $deletedGraph);
+        $restored = orb1803_run($fixture, $deletedTree, 1);
+        $restoredLog = orb1803_log($restored['receipt'], 'apps/gateway', 'test:affected');
+        expect($restoredLog)->toContain('tests/ReaderTest.php')
+            ->and($restoredLog)->toContain('tests/OtherTest.php')
+            ->and($restoredLog)->toContain('Failed asserting')
+            ->and($restoredLog)->not->toContain('No affected tests found')
+            ->and($restoredLog)->not->toContain('no longer reachable');
+
+        (new Process(['git', 'checkout', '--quiet', '--', 'apps/gateway/config/value.php', 'apps/gateway/src/Reader.php', 'apps/gateway/src/Other.php', 'apps/gateway/tests/ReaderTest.php', 'apps/gateway/tests/OtherTest.php'], $root))->mustRun();
+        (new Process(['rm', '-rf', $root.'/apps/gateway/.orbit-tia']))->mustRun();
+        $presentGraph = json_decode(orb1803_record_pest($root), true, flags: JSON_THROW_ON_ERROR);
+        expect($presentGraph['files'] ?? [])->toContain('config/value.php');
+        foreach ([
+            ['git', 'add', '-A', '--', 'apps/gateway'],
+            ['git', 'write-tree'],
+        ] as $arguments) {
+            $written = (new Process($arguments, $root))->mustRun();
+        }
+        $presentTree = trim($written->getOutput());
+        (new Process(['git', 'reset', '--quiet'], $root))->mustRun();
+        orb1803_reader($root, 1, false);
+        orb1803_other($root, 2);
+        orb1803_poison($root, $presentTree, $presentGraph);
+        $deletedLater = orb1803_run($fixture, $presentTree, 1);
+        $deletedLaterLog = orb1803_log($deletedLater['receipt'], 'apps/gateway', 'test:affected');
+        expect($deletedLaterLog)->toContain('tests/ReaderTest.php')
+            ->and($deletedLaterLog)->toContain('tests/OtherTest.php')
+            ->and($deletedLaterLog)->toContain('Failed asserting')
+            ->and($deletedLaterLog)->not->toContain('no longer reachable');
+    });
+});

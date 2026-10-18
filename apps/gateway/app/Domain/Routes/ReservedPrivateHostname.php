@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\Analytics\AnalyticsHostname;
+use App\Domain\Extensions\ConfigValue;
 use App\Domain\Extensions\Contributions;
+use App\Domain\Extensions\ReservedNames;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WireGuard\VpnSettings;
 use LogicException;
 
@@ -21,7 +21,7 @@ final class ReservedPrivateHostname
     public const string Metrics = 'metrics.'.self::PrivateSpace;
 
     /** @var list<string> */
-    public const array CoreNames = [self::Gateway, self::Metrics, WebSocketHostname::Value, AnalyticsHostname::Value];
+    public const array CoreNames = ReservedNames::PrivateDnsNames;
 
     /** A lowercase DNS name in the private space: one or more labels, then the private space. */
     private const string OrbitName = '/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'.self::PrivateSpace.'\z/';
@@ -81,7 +81,7 @@ final class ReservedPrivateHostname
             return 'is not lowercase';
         }
 
-        if (strlen($hostname) > 253 || preg_match(self::OrbitName, $hostname) !== 1) {
+        if (! ConfigValue::dnsName($hostname) || preg_match(self::OrbitName, $hostname) !== 1) {
             return 'is not a DNS name under .'.self::PrivateSpace;
         }
 

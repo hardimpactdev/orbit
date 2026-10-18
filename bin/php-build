@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Install, verify, and bump the one PHP build that the machine software recipe pins. See ADR 0216.
 
-  bin/php-build verify [--recipe PATH] [--version X.Y]
-  sudo bin/php-build install [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
+  bin/php-build verify --profile PROFILE [--recipe PATH] [--version X.Y]
+  sudo bin/php-build install --profile PROFILE [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
   bin/php-build mirror --directory DIR # download external pinned Debian files for the php-build-mirror release
   bin/php-build key [--all]            # digest of the pins, for a download cache key
   bin/php-build describe               # the upstream PHP releases the recipe pins
@@ -40,7 +40,7 @@ COMPOSER_VERSION = '2.10.3'
 COMPOSER_SHA256 = '7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6'
 FIX = ('Fix the host: on a GitHub-hosted runner the PHP action installs the build; on Sabre run '
        '`php artisan node:converge-recipe sabre --profile=ci-runner` on the Gateway; in a shard container run '
-       '`tools/ci-runners/setup.sh container NAME` on its host; elsewhere run `sudo bin/php-build install`.')
+       '`tools/ci-runners/setup.sh container NAME` on its host; elsewhere run `sudo bin/php-build install --profile=PROFILE`.')
 
 
 class BuildError(Exception):
@@ -60,15 +60,27 @@ def upstream(version):
     return re.sub(r'^[0-9]+:', '', version).split('-', 1)[0]
 
 
-def build(recipe, version=None, architecture=None):
+def profile_policy(recipe, profile, version):
+    """Select PHP policy from the recipe profile; there is no implicit machine role."""
+    profiles = {**recipe['roles'], 'base': recipe['base']}
+    if profile not in profiles:
+        raise BuildError(f'The recipe has no profile {profile}.')
+    if f'php:{version}' not in profiles[profile]:
+        raise BuildError(f'The recipe profile {profile} does not declare PHP {version}.')
+    return {'pcov': profile in recipe['php']['pcov'],
+            'opentelemetry': profile in recipe['php']['opentelemetry']}
+
+
+def build(recipe, version=None, architecture=None, *, profile):
     """The recipe's PHP set of one version: its pins for one architecture and the CLI extensions."""
     php = recipe['php']
     version = version or php['ci']
     if version not in php['versions']:
         raise BuildError(f'The recipe has no PHP {version} build.')
     selected = php['versions'][version]
-    # CI and base images exclude the app-dev-only instrumentation extension.
-    names = sorted((set(selected['packages']) | set(php['shared'])) - {f'php{version}-opentelemetry'})
+    policy = profile_policy(recipe, profile, version)
+    excluded = set() if policy['opentelemetry'] else {f'php{version}-opentelemetry'}
+    names = sorted((set(selected['packages']) | set(php['shared'])) - excluded)
     pins = {}
     for name in names:
         tool = recipe['tools'][name]
@@ -78,7 +90,8 @@ def build(recipe, version=None, architecture=None):
                 raise BuildError(f'The recipe has no {architecture} package for {name}.')
             pins[name] = {'version': tool['version'], 'url': artifact['url'], 'sha256': artifact['sha256']}
     return {'version': version, 'php_version': upstream(recipe['tools'][f'php{version}-common']['version']),
-            'packages': names, 'extensions': [name for name in selected['extensions'] if name != 'opentelemetry'], 'pins': pins}
+            'packages': names, 'extensions': [name for name in selected['extensions']
+                                             if name != 'opentelemetry' and (name != 'pcov' or policy['pcov'])], 'pins': pins}
 
 
 def modules(text):
@@ -106,7 +119,7 @@ def compare(expected, php_version, loaded, installed):
 def pins_digest(recipe, architecture, versions):
     lines = []
     for version in versions:
-        for name, pin in sorted(build(recipe, version, architecture)['pins'].items()):
+        for name, pin in sorted(build(recipe, version, architecture, profile='base')['pins'].items()):
             lines.append(f'{name} {pin["version"]} {pin["sha256"]}')
     return hashlib.sha256('\n'.join(sorted(set(lines))).encode()).hexdigest()
 
@@ -140,8 +153,8 @@ def host_build(php='php'):
     return version, loaded
 
 
-def verify(recipe, version):
-    expected = build(recipe, version, architecture())
+def verify(recipe, version, profile):
+    expected = build(recipe, version, architecture(), profile=profile)
     php_version, loaded = host_build()
     problems = compare(expected, php_version, loaded, installed_versions())
     if problems:
@@ -171,19 +184,21 @@ def download(url, destination, digest, *, algorithm='sha256'):
     partial.rename(destination)
 
 
-def installer_input(recipe, versions, *, mode='apply', pcov=True, extras='refuse', fpm='shared'):
+def installer_input(recipe, versions, *, profile, mode='apply', extras='refuse', fpm='shared'):
     """The input of php.install-build, as PhpBuildInstaller::input() builds it in the Gateway."""
     sets = {}
     for version in versions:
+        selected = build(recipe, version, profile=profile)
         packages = []
-        for name in build(recipe, version)['packages']:
+        for name in selected['packages']:
             tool = recipe['tools'][name]
             for architecture, artifact in tool['artifacts'].items():
                 packages.append({'name': name, 'version': tool['version'], 'architecture': architecture,
                                  'url': artifact['url'], 'sha256': artifact['sha256']})
-        sets[version] = {'packages': packages, 'extensions': build(recipe, version)['extensions']}
+        sets[version] = {'packages': packages, 'extensions': selected['extensions']}
+    policy = profile_policy(recipe, profile, versions[0])
     rollback = recipe['php']['rollback']
-    return {'mode': mode, 'versions': sets, 'mirror': recipe['artifact_mirror'], 'pcov': pcov, 'opentelemetry': False, 'extras': extras,
+    return {'mode': mode, 'versions': sets, 'mirror': recipe['artifact_mirror'], **policy, 'extras': extras,
             'fpm': fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
             'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
 
@@ -210,12 +225,12 @@ def run_installer(payload):
     return result['outcome'], result['data'], log
 
 
-def install(recipe, version, ci, coverage, composer, purge):
+def install(recipe, version, ci, coverage, composer, purge, profile):
     if os.geteuid() != 0:
-        raise BuildError('Install needs root: run `sudo bin/php-build install`.')
+        raise BuildError('Install needs root: run `sudo bin/php-build install --profile=PROFILE`.')
     version = version or recipe['php']['ci']
     # A CI machine purges the PHP packages outside the recipe only when asked: --purge-extras.
-    outcome, data, log = run_installer(installer_input(recipe, [version], extras='purge' if purge else 'refuse'))
+    outcome, data, log = run_installer(installer_input(recipe, [version], profile=profile, extras='purge' if purge else 'refuse'))
     if outcome not in ('current', 'applied'):
         details = ', '.join(f'{key}: {value}' for key, value in data.items())
         hint = ' Rerun with --purge-extras on a CI machine to remove them.' if outcome in ('extra_packages', 'unowned_extensions', 'conflicting_source') else ''
@@ -227,7 +242,7 @@ def install(recipe, version, ci, coverage, composer, purge):
     conf = Path(f'/etc/php/{version}/cli/conf.d')
     ci_ini, coverage_ini = conf / '99-orbit-ci.ini', conf / '99-orbit-coverage.ini'
     ci_ini.write_text('zend.exception_ignore_args=0\n') if ci else ci_ini.unlink(missing_ok=True)
-    # Without coverage the extension stays loaded, so the loaded set still matches the recipe.
+    # Coverage collection does not change which modules the profile loads.
     coverage_ini.write_text('pcov.enabled=0\n') if coverage == 'none' else coverage_ini.unlink(missing_ok=True)
     if Path(f'/usr/bin/php{version}').exists():
         run(['update-alternatives', '--set', 'php', f'/usr/bin/php{version}'])
@@ -239,7 +254,7 @@ def install(recipe, version, ci, coverage, composer, purge):
         if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != COMPOSER_SHA256:
             shutil.copyfile(phar, target)
         target.chmod(0o755)
-    verify(recipe, version)
+    verify(recipe, version, profile)
 
 
 def mirror(recipe, directory, published=()):
@@ -418,6 +433,8 @@ def main(argv=None):
         command.add_argument('--recipe', default=str(RECIPE))
         if name in ('verify', 'install', 'key'):
             command.add_argument('--version')
+        if name in ('verify', 'install'):
+            command.add_argument('--profile', required=True, help='Recipe profile for packages and loaded extensions.')
     commands.choices['install'].add_argument('--ci', action='store_true', help='Set zend.exception_ignore_args=0 for the CLI.')
     commands.choices['install'].add_argument('--coverage', choices=('pcov', 'none'), default='pcov')
     commands.choices['install'].add_argument('--purge-extras', action='store_true',
@@ -431,16 +448,16 @@ def main(argv=None):
     try:
         recipe = load(arguments.recipe)
         if arguments.command == 'verify':
-            verify(recipe, arguments.version)
+            verify(recipe, arguments.version, arguments.profile)
         elif arguments.command == 'install':
-            install(recipe, arguments.version, arguments.ci, arguments.coverage, not arguments.no_composer, arguments.purge_extras)
+            install(recipe, arguments.version, arguments.ci, arguments.coverage, not arguments.no_composer, arguments.purge_extras, arguments.profile)
         elif arguments.command == 'mirror':
             mirror(recipe, Path(arguments.directory), Path(arguments.published).read_text().splitlines() if arguments.published else ())
         elif arguments.command == 'key':
             versions = sorted(recipe['php']['versions']) if arguments.all else [arguments.version or recipe['php']['ci']]
             print(pins_digest(recipe, architecture(), versions))
         elif arguments.command == 'describe':
-            print(', '.join(f'PHP {build(recipe, v)["php_version"]}' for v in recipe['php']['versions']))
+            print(', '.join(f'PHP {upstream(recipe["tools"][f"php{v}-common"]["version"])}' for v in recipe['php']['versions']))
         else:
             bump(arguments.recipe, arguments.dry_run)
     except BuildError as error:

@@ -906,7 +906,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0222"
             ]
         },
         {
@@ -1171,6 +1172,38 @@
             ]
         },
         {
+            "path": "docs/decisions/0219-answer-cluster-names-from-a-dns-on-the-router.md",
+            "title": "ADR 0219: Answer Cluster names from a DNS server on the Router",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0210",
+                "0211",
+                "0212",
+                "0218",
+                "0219"
+            ]
+        },
+        {
             "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
             "title": "ADR 0222: Give task VMs a cloned topology seed",
             "kind": "decision",
@@ -1257,6 +1290,7 @@
                 "0215",
                 "0217",
                 "0218",
+                "0219",
                 "0222"
             ]
         },
@@ -1596,6 +1630,7 @@
                 "apps/cli"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -1645,7 +1680,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0222"
             ]
         },
         {
@@ -1814,6 +1850,24 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/docker-provider-migration.md",
+            "title": "Docker CE migration",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/environment-variables.md",
             "title": "Instance environment variables",
             "kind": "reference",
@@ -1878,6 +1932,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1954,6 +2009,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Placement",
                 "Process",
                 "Project",
                 "Role",
@@ -2088,7 +2144,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/reference/instance-analytics-stats.md",
@@ -2533,7 +2591,9 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/reference/processes-and-schedules.md",
@@ -2833,6 +2893,7 @@
             "concepts": [
                 "Activity",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -2931,10 +2992,11 @@
                 "Extension",
                 "Gateway",
                 "Node",
-                "Role",
                 "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0222"
+            ]
         },
         {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
