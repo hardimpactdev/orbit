@@ -880,6 +880,45 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertIn('differs from the source', failure['reason'])
         self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
 
+    def test_publish_refusals_name_the_target_and_reason_without_changing_it(self):
+        target = self.apt / 'original-source'
+        target.write_bytes(LEGACY_SOURCE)
+        link = self.apt / 'source-link'
+        link.symlink_to(target)
+        directory = self.apt / 'source-directory'
+        directory.mkdir()
+        cases = [
+            (link, os.getuid(), False, 'symlink replacement is not allowed'),
+            (link, os.getuid() + 1, True, 'not owned by UID'),
+            (directory, os.getuid(), False, 'not a regular file'),
+            (target, os.getuid() + 1, False, 'not owned by UID'),
+        ]
+        for path, uid, replace_link, reason in cases:
+            with self.subTest(path=path, uid=uid, replace_link=replace_link), self.assertRaises(recipe.RecipeFailure) as failed:
+                recipe.publish(path, b'replacement', uid=uid, replace_link=replace_link)
+            self.assertIn(str(path), failed.exception.detail)
+            self.assertIn(reason, failed.exception.detail)
+        self.assertEqual(target.read_bytes(), LEGACY_SOURCE)
+        self.assertTrue(link.is_symlink())
+        self.assertTrue(directory.is_dir())
+        self.assertEqual(list(self.apt.glob('.orbit-recipe-*')), [])
+
+    def test_unexpected_apt_source_exception_keeps_its_type_and_message(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_bytes(b'\xff')
+        with patch.object(recipe, 'platform_check'), \
+             patch.object(recipe, 'POLICY', self.apt / 'policy'), \
+             patch.object(recipe, 'packages', return_value={}), \
+             patch.object(recipe, 'repair_ubuntu_sources', side_effect=lambda architecture: source.read_text(encoding='utf-8')), \
+             patch.object(sys, 'argv', ['program', 'apply', '{"architecture":"amd64","tools":{}}']), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(recipe.main(), 1)
+        failure = json.loads(output.getvalue())['failure']
+        self.assertEqual(failure['stage'], 'recipe-stage:apt-source')
+        self.assertIn('UnicodeDecodeError:', failure['reason'])
+        self.assertIn('invalid start byte', failure['reason'])
+        self.assertEqual(source.read_bytes(), b'\xff')
+
     def test_validation_reason_is_sanitized_through_the_node_and_image_entrypoints(self):
         error = recipe.RecipeFailure('apt-source', detail='Provider source https://user:password@example.test/ API_TOKEN=private-token')
         with patch.object(recipe, 'platform_check', side_effect=error), \

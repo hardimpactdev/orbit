@@ -688,8 +688,14 @@ def safe_directory(path, uid=0, gid=0):
 
 def publish(path, content, mode=0o644, uid=0, gid=0, replace_link=False):
     path = Path(path)
-    if (path.is_symlink() and (not replace_link or path.lstat().st_uid != uid)) or (not path.is_symlink() and path.exists() and (not path.is_file() or path.stat().st_uid != uid)):
-        raise RecipeFailure()
+    if path.is_symlink() and not replace_link:
+        raise RecipeFailure(detail=f'Refusing to publish [{path}]: symlink replacement is not allowed.')
+    if path.exists() or path.is_symlink():
+        if not path.is_symlink() and not path.is_file():
+            raise RecipeFailure(detail=f'Refusing to publish [{path}]: target is not a regular file.')
+        owner = path.lstat().st_uid
+        if owner != uid:
+            raise RecipeFailure(detail=f'Refusing to publish [{path}]: target owned by UID [{owner}], not owned by UID [{uid}].')
     fd, candidate = tempfile.mkstemp(prefix='.orbit-recipe-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as stream:
@@ -1021,7 +1027,7 @@ def apply_recipe(payload, snapshots):
     except Exception as error:
         if isinstance(error, RecipeFailure):
             raise RecipeFailure(str(error) or stage, result=error.result, packages=error.packages, detail=error.detail) from error
-        raise RecipeFailure(stage) from error
+        raise RecipeFailure(stage, detail=f'{type(error).__name__}: {error}') from error
 
 
 def interrupted(signum, frame):

@@ -184,6 +184,7 @@ describe('Horizon', function (): void {
             ->and(config('horizon.fast_termination'))->toBeFalse()
             ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
             ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds', 'builds-optional'], 2, 2])
+            ->and(config('horizon.waits.gateway:builds-optional'))->toBe(3600)
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);
