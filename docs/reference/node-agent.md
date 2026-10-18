@@ -392,6 +392,8 @@ Before merging an agent version bump, wait for its Rust tests and both static bu
 
 Update `NodeAgentFootprint::Version` and its release manifest to the same version and digests; provisioning and the desired fleet state read that pin, and the Gateway recipe tests check that both pins agree. Download both binaries and verify their digests, then run `php artisan orbit:machine-recipe --validate` from `apps/gateway`. Include the pin updates in the version bump pull request and have its final diff reviewed before merging. If review changes the published agent code, release a new version; never move a published tag.
 
+Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
+
 Every CI run checks that the Cargo version matches the recipe pin and a published stable release with both binaries and `SHA256SUMS`. It checks both recipe URLs and compares their SHA-256 pins with the published checksum file. Run `python3 tools/check_agent_release.py` from the repository root with Python 3.11 or newer and an authenticated GitHub CLI to check this delivery step locally. A version bump stays red until its release and recipe pin are complete.
 
 ## Limits
