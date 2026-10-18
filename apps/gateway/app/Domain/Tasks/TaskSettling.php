@@ -544,7 +544,7 @@ final readonly class TaskSettling
             return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
-        // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
+        // Returning to settling refreshes the task metrics.
         $returning = $group->settled_at !== null;
         if ($returning && $checkReturningPullRequest) {
             $scheduler->checkReturningPullRequest($group);

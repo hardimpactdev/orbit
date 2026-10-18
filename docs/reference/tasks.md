@@ -836,7 +836,7 @@ Closing a question never delivers a resolution, never sets or clears assistance,
 
 ### Assistance and resolution
 
-A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. 
+A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task.
 
 Every change to assistance goes through `TaskAssistance::apply`. It writes one Activity entry with the task id, kind, question, and reason in the same transaction as the change. Repeating the same request writes no new entry. Clearing assistance writes one `assistance cleared` entry; the earlier request remains in Activity. `tasks:status` lists every task that still asks for assistance. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
 
@@ -847,7 +847,7 @@ Every assistance request has a kind, `direction` or `failure`. The task and the 
 | Kind | Cause | Question |
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
-| `failure` | Every other cause, such as a failed push, check, thread, or webhook | Null |
+| `failure` | Every other cause, such as a failed push, check, or thread | Null |
 
 The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table.
 
@@ -1275,7 +1275,7 @@ When the task has no pull request and `task-{id}` is not on `origin`, there is n
 
 The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge. In a review-and-merge task, a final review follows the fixup and its approval pushes.
 
-Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics and does not post `task_group.settled` again.
+Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics.
 
 Before removing a merged task's workspace, every tick checks the latest approval against the pull request head again. If the Gateway stopped after recording `settling` but before recording the missed-approval hold, the next tick restores that hold and keeps the workspace.
 
@@ -1309,7 +1309,7 @@ A thread's `tokens` is the Pi session usage `total`. Pi reports no per-thread li
 
 ### Thread token metrics
 
-Each agent thread also records five split fields. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, the board, or the webhook.
+Each agent thread also records five split fields. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, or the board.
 
 | Field | Meaning |
 | --- | --- |
@@ -1715,7 +1715,7 @@ The operator's answer goes through the reviewer, so the reviewer translates it i
 
 Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
 
-The existing `task_group.assistance_requested` webhook carries the kind and question. A separate `task_group.direction_requested` event was rejected because receivers would need a second subscription for the same assistance flag. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
+Each assistance change has an Activity entry, so an operator can trace the kind, question, and reason without an external notification service. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
 
 ### Questions are records, not parsed comments
 
