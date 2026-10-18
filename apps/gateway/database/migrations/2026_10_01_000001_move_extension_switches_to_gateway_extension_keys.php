@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    /** Retired slug used only by this historical migration. */
+    private const string RetiredSlug = 'proxycli';
+
     public function up(): void
     {
         $now = now();
@@ -24,12 +27,12 @@ return new class extends Migration
             $store('tasks');
         }
 
-        $proxyCliEnabled = $setting('proxycli.enabled')?->value === '1';
-        $proxyCliNode = $setting('proxycli.node_id')?->value;
-        if ($proxyCliEnabled && is_string($proxyCliNode) && ctype_digit($proxyCliNode)
-            && DB::table('processes')->where('owner_type', Node::class)->where('owner_id', (int) $proxyCliNode)
+        $routerEnabled = $setting(self::RetiredSlug.'.enabled')?->value === '1';
+        $routerNode = $setting(self::RetiredSlug.'.node_id')?->value;
+        if ($routerEnabled && is_string($routerNode) && ctype_digit($routerNode)
+            && DB::table('processes')->where('owner_type', Node::class)->where('owner_id', (int) $routerNode)
                 ->where('name', 'cli-proxy-api-collector')->where('desired_state', 'running')->exists()) {
-            $store('proxycli');
+            $store(self::RetiredSlug);
         }
 
         DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'tasks.enabled')->delete();
@@ -48,7 +51,7 @@ return new class extends Migration
             );
         }
 
-        foreach (['tasks', 'proxycli'] as $extension) {
+        foreach (['tasks', self::RetiredSlug] as $extension) {
             DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)
                 ->where('key', "extension.{$extension}.enabled")->delete();
         }

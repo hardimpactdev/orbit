@@ -85,8 +85,6 @@ const InlineRemoteScriptFiles = [
     'app/Infrastructure/Processes/RemoteProcessRuntimeManager.php',
     'app/Infrastructure/Processes/SystemdVpnOrderingDropIn.php',
     'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
-    'app/Infrastructure/ProxyCli/ProxyCliCertificatePublisher.php',
-    'app/Infrastructure/ProxyCli/ProxyCliSourcePublisher.php',
     'app/Infrastructure/Schedules/RemoteScheduleRuntimeManager.php',
     'app/Infrastructure/SharedOrbitDirectory.php',
     'app/Infrastructure/TaskVms/TaskVmGit.php',
@@ -106,6 +104,8 @@ const InlineRemoteScriptFiles = [
     'app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php',
     'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
     'app/Infrastructure/WireGuard/NativeWireGuardPeerConverger.php',
+    'extensions/ai-router/src/Infrastructure/AiRouterCertificatePublisher.php',
+    'extensions/ai-router/src/Infrastructure/AiRouterSourcePublisher.php',
     'extensions/documents/src/Infrastructure/DocumentsServiceStartHook.php',
 ];
 

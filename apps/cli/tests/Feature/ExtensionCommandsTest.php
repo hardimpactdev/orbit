@@ -38,7 +38,7 @@ afterEach(function (): void {
 it('follows the gateway switch through the public command kernel', function (): void {
     $mock = MockClient::global([
         ListExtensionsRequest::class => MockResponse::make([
-            'data' => ['tasks' => false, 'proxycli' => false], 'meta' => ['request_id' => 'list-id'],
+            'data' => ['tasks' => false, 'ai-router' => false], 'meta' => ['request_id' => 'list-id'],
         ]),
         EnableExtensionRequest::class => MockResponse::make([
             'data' => ['name' => 'tasks', 'enabled' => true], 'meta' => ['request_id' => 'enable-id'],
@@ -61,16 +61,16 @@ it('follows the gateway switch through the public command kernel', function (): 
 
     expect($listExit)->toBe(0)
         ->and($taskCommands)->toBe(['tasks:status'])
-        ->and($names)->not->toContain('proxycli:models', 'proxycli:status', 'proxycli:setup', 'proxycli:teardown');
+        ->and($names)->not->toContain('ai-router:model:list', 'ai-router:status', 'ai-router:setup', 'ai-router:teardown');
 
     [$defaultExit, $defaultOutput] = extension_commands_run([]);
     expect($defaultExit)->toBe(0)
         ->and($defaultOutput)->toContain('tasks:status')
-        ->not->toContain('tasks:create', 'proxycli:setup', 'proxycli:teardown');
+        ->not->toContain('tasks:create', 'ai-router:setup', 'ai-router:teardown');
 
     foreach ([['list', '--raw'], ['list', '--format=xml']] as $arguments) {
         [, $output] = extension_commands_run($arguments);
-        expect($output)->not->toContain('tasks:create', 'tasks:list', 'proxycli:setup', 'proxycli:teardown');
+        expect($output)->not->toContain('tasks:create', 'tasks:list', 'ai-router:setup', 'ai-router:teardown');
     }
 
     foreach ([['help', 'tasks:list'], ['tasks:list', '--help']] as $arguments) {
@@ -108,20 +108,20 @@ function extension_commands_run(array $arguments): array
 it('renders Gateway extension state as JSON', function (): void {
     MockClient::global([
         ListExtensionsRequest::class => MockResponse::make([
-            'data' => ['tasks' => true, 'proxycli' => false], 'meta' => ['request_id' => 'list-id'],
+            'data' => ['tasks' => true, 'ai-router' => false], 'meta' => ['request_id' => 'list-id'],
         ]),
     ]);
 
     $exit = Artisan::call('extension:list', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(0)
-        ->and(trim($output))->toBe('{"extensions":[{"extension":"tasks","enabled":true},{"extension":"proxycli","enabled":false}]}');
+        ->and(trim($output))->toBe('{"extensions":[{"extension":"tasks","enabled":true},{"extension":"ai-router","enabled":false}]}');
 });
 
 it('renders Gateway extension state as a human table', function (): void {
     MockClient::global([
         ListExtensionsRequest::class => MockResponse::make([
-            'data' => ['tasks' => true, 'proxycli' => false], 'meta' => ['request_id' => 'list-id'],
+            'data' => ['tasks' => true, 'ai-router' => false], 'meta' => ['request_id' => 'list-id'],
         ]),
     ]);
 
@@ -152,7 +152,7 @@ it('preserves correlation and safe details for a Gateway switch refusal', functi
 it('returns the Gateway refusal when a disabled extension command is invoked directly', function (): void {
     $mock = MockClient::global([
         ListExtensionsRequest::class => MockResponse::make([
-            'data' => ['tasks' => false, 'proxycli' => false], 'meta' => ['request_id' => 'list-id'],
+            'data' => ['tasks' => false, 'ai-router' => false], 'meta' => ['request_id' => 'list-id'],
         ]),
         ListTaskGroupsRequest::class => MockResponse::make([
             'error' => [
@@ -174,7 +174,7 @@ it('replays the recorded extension API responses as CLI contracts', function ():
     run_extension_contract('extensions/extensions-list/disabled', 'extension:list', [], 'extensions/extensions-list/disabled');
     run_extension_contract('extensions/extensions-enable/enabled', 'extension:enable', ['extension' => 'tasks'], 'extensions/extensions-enable/enabled');
     run_extension_contract('extensions/extensions-enable/unknown-slug', 'extension:enable', ['extension' => 'unknown'], 'extensions/extensions-enable/unknown-slug', 1);
-    run_extension_contract('extensions/extensions-disable/disabled', 'extension:disable', ['extension' => 'proxycli'], 'extensions/extensions-disable/disabled');
+    run_extension_contract('extensions/extensions-disable/disabled', 'extension:disable', ['extension' => 'ai-router'], 'extensions/extensions-disable/disabled');
 });
 
 /** @param array<string, mixed> $arguments */

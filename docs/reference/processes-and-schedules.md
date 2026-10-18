@@ -89,7 +89,7 @@ Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty st
 
 The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker keeps the image's `WORKDIR`, and Node systemd Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
 
-A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd.
+A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the ai-router collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [ai-router](/reference/ai-router) collector. The public create API does not accept one for systemd.
 
 The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the SSR keys when the Instance has an SSR port.
 
@@ -132,7 +132,7 @@ Creating or starting an Instance Process needs an active Instance on an active N
 
 Removing a systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and resets the unit's failed state. A crashed unit therefore leaves no `failed` entry in `systemctl list-units`.
 
-Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and ProxyCli keep their ownership checks through this point. A refusal leaves the Process in place.
+Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and AiRouter keep their ownership checks through this point. A refusal leaves the Process in place.
 
 ### Update in place
 

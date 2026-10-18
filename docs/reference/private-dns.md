@@ -123,7 +123,7 @@ This matters during these commands:
 - `node:add` on an existing `gateway` or `vpn` Node marks the Node `provisioning` and keeps its assignments active.
 - `node:role:add NODE ROLE --converge` marks the assignment `provisioning` and keeps the Node active.
 
-In both cases, publication still finds the `vpn` Node and publishes there over SSH. The reserved records also keep their holder: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, the analytics tracking hosts, and `collector.cli-proxy-api.orbit`.
+In both cases, publication still finds the `vpn` Node and publishes there over SSH. The reserved records also keep their holder: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, the analytics tracking hosts, and `collector.ai-router.orbit`.
 
 ## Cluster Router addresses
 
@@ -147,9 +147,9 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 | `metrics.orbit` | The same address as `gateway.orbit`, and only while a Node holds the `metrics` role |
 | `reverb.orbit` | The Node that holds `websocket` |
 | `analytics.orbit` | The Node that holds `analytics` |
-| `collector.cli-proxy-api.orbit` | The ProxyCli collector Node, while setup holds the collector. See [proxycli](/reference/proxycli). |
+| `collector.ai-router.orbit` | The AiRouter collector Node, while setup holds the collector. See [ai-router](/reference/ai-router). |
 
-New Routes and Route domain changes cannot take these reserved platform names. Existing conflicts remain published until an operator changes or removes the Route; Doctor reports `route.domain_reserved`. Core reserves and publishes `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. The proxycli extension reserves and publishes `collector.cli-proxy-api.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it.
+New Routes and Route domain changes cannot take these reserved platform names. Existing conflicts remain published until an operator changes or removes the Route; Doctor reports `route.domain_reserved`. Core reserves and publishes `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. The ai-router extension reserves and publishes `collector.ai-router.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it.
 
 No Cluster or Node TLD can equal, contain, or sit below either private zone: `orbit` and the configured VPN domain. Overlap is checked at DNS label boundaries. For example, a VPN domain of `vpn.corp` or `VPN.CORP.` also reserves `corp`, `vpn.corp`, and `n1.vpn.corp`; `beast.orbit` is always reserved. Unrelated suffixes such as `test`, `orp`, and `notvpn.corp` remain valid. This comparison ignores case and the optional DNS root dot, including in existing configured domains. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
 

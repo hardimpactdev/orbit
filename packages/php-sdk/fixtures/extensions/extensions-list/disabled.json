@@ -6,7 +6,7 @@
     "body": {
         "data": {
             "tasks": false,
-            "proxycli": false,
+            "ai-router": false,
             "documents": false,
             "vault": false,
             "conn": false

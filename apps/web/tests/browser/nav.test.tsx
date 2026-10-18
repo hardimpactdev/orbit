@@ -29,7 +29,7 @@ it("hides disabled extensions from both desktop and phone navigation", async () 
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
@@ -38,7 +38,7 @@ it("hides disabled extensions from both desktop and phone navigation", async () 
     await page.getByTestId("nav-menu").click();
     const menu = document.querySelector("[data-mobile-menu]");
     expect(menu?.textContent).not.toContain("Tasks");
-    expect(menu?.textContent).not.toContain("Quota");
+    expect(menu?.textContent).not.toContain("AI router");
     await page.getByTestId("nav-close").click();
     await expect.poll(app.url).toBe("/");
 });

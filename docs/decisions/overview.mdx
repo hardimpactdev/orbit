@@ -32,11 +32,11 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) | Run long operations as durable queued operations | In progress |
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
 | [0211](/decisions/0211-ship-node-changes-as-remote-programs) | Ship Node changes as remote programs | In progress |
-| [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the model proxy origin of [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
+| [0212](/decisions/0212-build-the-ai-router-extension) | Turn AiRouter into the AI router extension | In progress; changes the model proxy origin of [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress |
-| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
+| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-build-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
-| [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
+| [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-build-the-ai-router-extension) |
 | [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress |
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
 | [0222](/decisions/0222-give-task-vms-a-cloned-topology-seed) | Give task VMs a cloned topology seed | In progress; changes items 4 and 5 of the Orbit Project section of [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm); adds a `topology-seed` phase to [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) |
@@ -150,12 +150,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0101 | Keep one Route publication field and terminate public Ingress with Let's Encrypt | [Routes: Publish a public Route](/reference/routes#publish-a-public-route) |
 | 0102 | Read Instance analytics through a fleet driver | [Instance analytics stats](/reference/instance-analytics-stats) |
 | 0103 | Absorb Commander tasks as a Gateway extension | [Tasks: An optional, generic extension](/reference/tasks#an-optional-generic-extension) |
-| 0104 | Own CLIProxyAPI quota through the proxycli extension | [proxycli: Why it works this way](/reference/proxycli#why-it-works-this-way) |
+| 0104 | Own CLIProxyAPI quota through the ai-router extension | [ai-router: Why it works this way](/reference/ai-router#why-it-works-this-way) |
 | 0105 | Name applications as Project and Instance | [Projects: Project and Instance](/reference/projects#project-and-instance) |
 | 0106 | Derive instance capabilities from Project type | [Projects: Project types](/reference/projects#project-types) |
 | 0107 | Key isolation and releases to Node role | [Instance environment variables: Laravel mode](/reference/environment-variables#laravel-mode), [Production release layout](/reference/deployments), and [Instance cloning](/reference/instance-cloning) |
 | 0108 | Persist managed environment on systemd Processes | [Processes and schedules: Environment of a systemd Process](/reference/processes-and-schedules#environment-of-a-systemd-process) |
-| 0109 | Publish the proxycli collector on a subdomain | [proxycli: A reserved name, not a Route](/reference/proxycli#a-reserved-name-not-a-route) |
+| 0109 | Publish the ai-router collector on a subdomain | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
 | 0110 | Route task sessions with Laravel AI Jev | [Tasks: Session routing (Jev routing removed)](/reference/tasks#session-routing) |
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
@@ -192,12 +192,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
 | 0143 | Record topology evidence and sync without verification | [Incus topologies: Evidence log](/reference/incus-topologies#evidence-log) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
-| 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [proxycli: A reserved name, not a Route](/reference/proxycli#a-reserved-name-not-a-route) |
+| 0145 | Publish the ai-router collector on collector.ai-router.orbit | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
 | 0147 | Retire orbit top | [Web app: One live fleet view](/reference/web-app#one-live-fleet-view) |
 | 0148 | Keep a Gateway view of Node agent state | [Node agent: Gateway view](/reference/node-agent#gateway-view) |
 | 0149 | Install the private DNS listener from the Gateway | [Private DNS: Release and sockets](/reference/private-dns#release-and-sockets) |
-| 0150 | Keep extension commands local and confirm the proxycli fleet stop | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
+| 0150 | Keep extension commands local and confirm the ai-router fleet stop | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0151 | Push task and Process usage changes over realtime | [Realtime events: Tasks](/reference/events#tasks) |
 | 0152 | Sample successful read activity | [activity: What the Gateway records](/cli/activity#what-the-gateway-records) |
 | 0153 | Tail Instance and Process logs live through the Node agent | [Live logs](/reference/live-logs) |

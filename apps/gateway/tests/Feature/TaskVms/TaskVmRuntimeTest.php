@@ -6,7 +6,6 @@ use App\Actions\TaskVms\PrepareTaskVmRuntimeAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
@@ -26,6 +25,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -96,7 +96,7 @@ beforeEach(function (): void {
     app()->instance(SshExecutor::class, $this->transport);
     $this->processes = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->processes);
-    app(ProxyCliState::class)->enable(1, 'cache', TVM_RUNTIME_ORIGIN, 'management-key', 'read-token', 'control-token');
+    app(AiRouterState::class)->enable(1, 'cache', TVM_RUNTIME_ORIGIN, 'management-key', 'read-token', 'control-token');
     $this->artifact = tempnam(sys_get_temp_dir(), 'pi-artifact');
     file_put_contents($this->artifact, 'pi-server executable');
     tvm_runtime_settings($this->artifact, hash_file('sha256', $this->artifact));
@@ -226,13 +226,13 @@ describe('model router readiness', function (): void {
     it('stores no model key while the router holds no management key, under the lock its teardown takes', function (): void {
         Http::fake();
         app(ExtensionStore::class)->set('tasks', true);
-        app(ProxyCliState::class)->disable();
+        app(AiRouterState::class)->disable();
         $vm = tvm_runtime_vm();
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
             ->toThrow(fn (TaskVmException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['task_vm.model_key_failed', 409]));
         expect($vm->fresh()?->model_key)->toBeNull()
-            ->and($vm->fresh()?->model_proxy_origin)->toBeNull()
+            ->and($vm->fresh()?->ai_router_origin)->toBeNull()
             ->and($this->transport->commands)->toBe([])
             ->and(Cache::lock(ModelKeyIssuer::Lock, 10)->get())->toBeTrue();
         Http::assertNothingSent();
@@ -240,9 +240,9 @@ describe('model router readiness', function (): void {
 });
 
 describe('model proxy origin', function (): void {
-    it('refuses an origin that is not the proxycli CLIProxyAPI', function (): void {
+    it('refuses an origin that is not the ai-router CLIProxyAPI', function (): void {
         Http::fake();
-        app(ProxyCliState::class)->enable(1, 'cache', 'http://10.44.0.9:8317', 'management-key', 'read-token', 'control-token');
+        app(AiRouterState::class)->enable(1, 'cache', 'http://10.44.0.9:8317', 'management-key', 'read-token', 'control-token');
         $vm = tvm_runtime_vm();
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
@@ -254,7 +254,7 @@ describe('model proxy origin', function (): void {
     it('refuses to prepare again after the origin changed under a stored key', function (): void {
         Http::fake();
         $vm = tvm_runtime_vm();
-        $vm->update(['model_key' => str_repeat('k', 64), 'model_proxy_origin' => 'http://10.44.0.9:8317']);
+        $vm->update(['model_key' => str_repeat('k', 64), 'ai_router_origin' => 'http://10.44.0.9:8317']);
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm->fresh()))
             ->toThrow(TaskVmException::class, 'model_proxy_origin changed while task VM [tvm-1] holds a key at [http://10.44.0.9:8317].');
@@ -293,7 +293,7 @@ describe('release', function (): void {
         $keys = tvm_runtime_cliproxy();
         $vm = tvm_runtime_vm();
         app(TaskVmRuntime::class)->prepare($vm);
-        expect($vm->fresh()?->model_proxy_origin)->toBe(TVM_RUNTIME_ORIGIN);
+        expect($vm->fresh()?->ai_router_origin)->toBe(TVM_RUNTIME_ORIGIN);
         TaskVmSettingsBuilder::bind(['modelProxyOrigin' => 'http://10.44.0.9:8317']);
 
         app(TaskVmRuntime::class)->release($vm->fresh());

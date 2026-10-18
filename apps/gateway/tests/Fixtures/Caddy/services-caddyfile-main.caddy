@@ -65,15 +65,15 @@ analytics.orbit {
     reverse_proxy 10.44.0.3:8000
 }
 
-# orbit: proxycli collector.cli-proxy-api.orbit
-# Managed by Orbit: proxycli
-collector.cli-proxy-api.orbit {
+# orbit: ai-router collector.ai-router.orbit
+# Managed by Orbit: ai-router
+collector.ai-router.orbit {
     bind 10.44.0.3
     @orbit_outside not remote_ip 10.44.0.0/24
     abort @orbit_outside
     @orbit_task_vms remote_ip 10.44.0.128/25
     abort @orbit_task_vms
-    tls /etc/caddy/orbit-proxycli-cert-current/proxycli.pem /etc/caddy/orbit-proxycli-cert-current/proxycli.key
+    tls /etc/caddy/orbit-ai-router-cert-current/ai_router.pem /etc/caddy/orbit-ai-router-cert-current/ai_router.key
     reverse_proxy 127.0.0.1:8787 {
         lb_try_duration 5s
     }

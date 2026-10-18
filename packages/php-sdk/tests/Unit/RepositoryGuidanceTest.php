@@ -3,6 +3,14 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
+use Orbit\Sdk\Requests\AiRouter\EnableAiRouterAccountRequest;
+use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
+use Orbit\Sdk\Requests\AiRouter\ListAiRouterProvidersRequest;
+use Orbit\Sdk\Requests\AiRouter\SetupAiRouterRequest;
+use Orbit\Sdk\Requests\AiRouter\ShowAiRouterProviderRequest;
+use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
+use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
@@ -67,13 +75,6 @@ use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
-use Orbit\Sdk\Requests\ProxyCli\ListProxyCliModelsRequest;
-use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
-use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
-use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
-use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliStatusRequest;
-use Orbit\Sdk\Requests\ProxyCli\TeardownProxyCliRequest;
-use Orbit\Sdk\Requests\ProxyCli\UpdateProxyCliAccountRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
@@ -252,14 +253,15 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\GatewayReleases\\ResumeGatewayReleaseAutomationRequest',
             'Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest',
         ];
-        $proxycliRequests = [
-            SetupProxyCliRequest::class,
-            TeardownProxyCliRequest::class,
-            ShowProxyCliStatusRequest::class,
-            ListProxyCliProvidersRequest::class,
-            ShowProxyCliProviderRequest::class,
-            UpdateProxyCliAccountRequest::class,
-            ListProxyCliModelsRequest::class,
+        $aiRouterRequests = [
+            SetupAiRouterRequest::class,
+            TeardownAiRouterRequest::class,
+            ShowAiRouterStatusRequest::class,
+            ListAiRouterProvidersRequest::class,
+            ShowAiRouterProviderRequest::class,
+            DisableAiRouterAccountRequest::class,
+            EnableAiRouterAccountRequest::class,
+            ListAiRouterModelsRequest::class,
         ];
         $vaultRequests = [
             ShowVaultStatusRequest::class,
@@ -319,7 +321,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Projects\\UpdateProjectDevelopmentDeployStepRequest',
             'Orbit\\Sdk\\Requests\\Projects\\DestroyProjectDevelopmentDeployStepRequest',
         ];
-        $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
+        $aiRouterSwitchRequests = [SetupAiRouterRequest::class, TeardownAiRouterRequest::class];
         $operationRequests = [
             'Orbit\\Sdk\\Requests\\Operations\\ListOperationsRequest',
             'Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest',
@@ -331,7 +333,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -434,7 +436,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$logRequests)
             ->toContain(...$extensionRequests)
             ->toContain(...$gatewayReleaseRequests)
-            ->toContain(...$proxycliSwitchRequests)
+            ->toContain(...$aiRouterSwitchRequests)
             ->toContain(...$fleetRequests)
             ->toContain(...$operationRequests)
             ->toContain(CloneInstanceRequest::class)
@@ -495,10 +497,10 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(array_values(array_filter(
             $requestClasses,
-            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\ProxyCli\\'),
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\AiRouter\\'),
         )))
-            ->toHaveCount(count($proxycliRequests))
-            ->toEqualCanonicalizing($proxycliRequests);
+            ->toHaveCount(count($aiRouterRequests))
+            ->toEqualCanonicalizing($aiRouterRequests);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -524,7 +526,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
-            ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
+            ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(
                 '- Node: list, show, add, rename, settings update, WireGuard key set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
@@ -585,7 +587,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Attach and detach send an Instance ID-or-domain selector, the connection slug, and an optional prefix.',
             )
             ->toContain(
-                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update. Status, disable, provider list, and model list are bodyless.',
+                'Keep ai-router transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on setup; a provider slug on show; and an account identity on account enable and disable. Status, teardown, provider list, provider show, model list, and account enable and disable are bodyless.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -596,7 +598,7 @@ describe('repository guidance bootstrap', function (): void {
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
                 'The SDK exposes exactly 214 public Gateway operations.',
-                'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
+                'The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',

@@ -2,7 +2,7 @@
  │ EXTENSION │ STATE    │ DETAIL │
  ├───────────┼──────────┼────────┤
  │ tasks     │ disabled │ —      │
- │ proxycli  │ disabled │ —      │
+ │ ai-router │ disabled │ —      │
  │ documents │ disabled │ —      │
  │ vault     │ disabled │ —      │
  │ conn      │ disabled │ —      │

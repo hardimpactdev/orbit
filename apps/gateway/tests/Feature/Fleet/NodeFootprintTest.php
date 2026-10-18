@@ -14,7 +14,7 @@ describe('Node footprint', function (): void {
     it('applies every artifact the first time and records their digests', function (): void {
         $caddy = new FakeFootprintArtifact('caddy', 'c1');
         $agent = new FakeFootprintArtifact('agent', 'a1', changes: null);
-        $proxy = new FakeFootprintArtifact('proxycli', 'p1', applies: false);
+        $proxy = new FakeFootprintArtifact('ai-router', 'p1', applies: false);
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
 
         $result = new NodeFootprint([$caddy, $agent, $proxy])->converge($node);

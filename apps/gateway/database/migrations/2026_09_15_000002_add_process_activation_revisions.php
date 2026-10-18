@@ -8,18 +8,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /** Retired slug used only by this historical migration. */
+    private const string RetiredSlug = 'proxycli';
+
     public function up(): void
     {
         Schema::table('processes', function (Blueprint $table): void {
             $table->string('systemd_activation_hash', 64)->nullable();
-            $table->string('proxycli_source_revision', 64)->nullable();
+            $table->string(self::RetiredSlug.'_source_revision', 64)->nullable();
         });
     }
 
     public function down(): void
     {
         Schema::table('processes', function (Blueprint $table): void {
-            $table->dropColumn(['systemd_activation_hash', 'proxycli_source_revision']);
+            $table->dropColumn(['systemd_activation_hash', self::RetiredSlug.'_source_revision']);
         });
     }
 };

@@ -87,6 +87,188 @@
       }
     },
     {
+      "name": "ai-router-account-disable",
+      "extension": "ai-router",
+      "title": "Disable an AI router account",
+      "description": "Disables one CLIProxyAPI account and recompiles cached pools without fetching quota.",
+      "method": "POST",
+      "path": "/api/v1/ai-router/accounts/{account}/disable",
+      "path_inputs": [
+        "account"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "account"
+        ]
+      }
+    },
+    {
+      "name": "ai-router-account-enable",
+      "extension": "ai-router",
+      "title": "Enable an AI router account",
+      "description": "Enables one CLIProxyAPI account and recompiles cached pools without fetching quota.",
+      "method": "POST",
+      "path": "/api/v1/ai-router/accounts/{account}/enable",
+      "path_inputs": [
+        "account"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "account"
+        ]
+      }
+    },
+    {
+      "name": "ai-router-model-list",
+      "extension": "ai-router",
+      "title": "List ai-router models",
+      "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `ai_router.disabled` while the collector is not set up.",
+      "method": "GET",
+      "path": "/api/v1/ai-router/models",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ai-router-provider-list",
+      "extension": "ai-router",
+      "title": "List ai-router providers",
+      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
+      "method": "GET",
+      "path": "/api/v1/ai-router/providers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ai-router-provider-show",
+      "extension": "ai-router",
+      "title": "Show a ai-router provider",
+      "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
+      "method": "GET",
+      "path": "/api/v1/ai-router/providers/{provider}",
+      "path_inputs": [
+        "provider"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider"
+        ]
+      }
+    },
+    {
+      "name": "ai-router-setup",
+      "extension": "ai-router",
+      "title": "Set up ai-router",
+      "description": "Deploys one collector Process and publishes https://collector.ai-router.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with ai_router.hostname_taken. The response never includes tokens or the management key.",
+      "method": "POST",
+      "path": "/api/v1/ai-router",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cache_connection": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Redis Database connection slug for shared Valkey"
+          },
+          "cliproxy_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "CLIProxyAPI Management API origin"
+          },
+          "cliproxy_management_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "cache_connection",
+          "cliproxy_url",
+          "cliproxy_management_key"
+        ]
+      }
+    },
+    {
+      "name": "ai-router-status",
+      "extension": "ai-router",
+      "title": "Show ai-router status",
+      "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
+      "method": "GET",
+      "path": "/api/v1/ai-router",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ai-router-teardown",
+      "extension": "ai-router",
+      "title": "Tear down ai-router",
+      "description": "Stops the collector Process for the whole fleet, withdraws collector.ai-router.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with ai_router.keys_outstanding (409) while a task VM holds a model key, and with ai_router.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.",
+      "method": "DELETE",
+      "path": "/api/v1/ai-router",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "analytics-credentials",
       "extension": null,
       "title": "Show analytics Stats API credentials",
@@ -2430,13 +2612,13 @@
           "extension": {
             "type": "string",
             "enum": [
+              "ai-router",
               "conn",
               "documents",
-              "proxycli",
               "tasks",
               "vault"
             ],
-            "description": "Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`."
+            "description": "Extension slug: `ai-router`, `conn`, `documents`, `tasks`, or `vault`."
           }
         },
         "additionalProperties": false,
@@ -2463,13 +2645,13 @@
           "extension": {
             "type": "string",
             "enum": [
+              "ai-router",
               "conn",
               "documents",
-              "proxycli",
               "tasks",
               "vault"
             ],
-            "description": "Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`."
+            "description": "Extension slug: `ai-router`, `conn`, `documents`, `tasks`, or `vault`."
           }
         },
         "additionalProperties": false,
@@ -8007,168 +8189,6 @@
         "additionalProperties": false,
         "required": [
           "project"
-        ]
-      }
-    },
-    {
-      "name": "proxycli-list",
-      "extension": "proxycli",
-      "title": "List proxycli providers",
-      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
-      "method": "GET",
-      "path": "/api/v1/proxycli/providers",
-      "path_inputs": [],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "proxycli-models",
-      "extension": "proxycli",
-      "title": "List proxycli models",
-      "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.",
-      "method": "GET",
-      "path": "/api/v1/proxycli/models",
-      "path_inputs": [],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "proxycli-setup",
-      "extension": "proxycli",
-      "title": "Set up proxycli",
-      "description": "Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.",
-      "method": "POST",
-      "path": "/api/v1/proxycli",
-      "path_inputs": [],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "node_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "cache_connection": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Redis Database connection slug for shared Valkey"
-          },
-          "cliproxy_url": {
-            "type": "string",
-            "format": "uri",
-            "maxLength": 512,
-            "description": "CLIProxyAPI Management API origin"
-          },
-          "cliproxy_management_key": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "node_id",
-          "cache_connection",
-          "cliproxy_url",
-          "cliproxy_management_key"
-        ]
-      }
-    },
-    {
-      "name": "proxycli-show",
-      "extension": "proxycli",
-      "title": "Show a proxycli provider",
-      "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
-      "method": "GET",
-      "path": "/api/v1/proxycli/providers/{provider}",
-      "path_inputs": [
-        "provider"
-      ],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "provider": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "provider"
-        ]
-      }
-    },
-    {
-      "name": "proxycli-status",
-      "extension": "proxycli",
-      "title": "Show proxycli status",
-      "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
-      "method": "GET",
-      "path": "/api/v1/proxycli",
-      "path_inputs": [],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "proxycli-teardown",
-      "extension": "proxycli",
-      "title": "Tear down proxycli",
-      "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with proxycli.keys_outstanding (409) while a task VM holds a model key, and with proxycli.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.",
-      "method": "DELETE",
-      "path": "/api/v1/proxycli",
-      "path_inputs": [],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "proxycli-update",
-      "extension": "proxycli",
-      "title": "Update a proxycli account",
-      "description": "Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.",
-      "method": "PATCH",
-      "path": "/api/v1/proxycli/accounts/{account}",
-      "path_inputs": [
-        "account"
-      ],
-      "query_inputs": [],
-      "starts_operation": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "account": {
-            "type": "string"
-          },
-          "disabled": {
-            "type": "boolean",
-            "description": "Disable the account"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "account",
-          "disabled"
         ]
       }
     },

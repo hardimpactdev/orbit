@@ -34,7 +34,7 @@ afterEach(function (): void {
 
 it('hides the Project Document commands according to the Gateway documents switch', function (bool $enabled): void {
     MockClient::global([ListExtensionsRequest::class => MockResponse::make([
-        'data' => ['tasks' => false, 'proxycli' => false, 'documents' => $enabled], 'meta' => ['request_id' => 'extensions-id'],
+        'data' => ['tasks' => false, 'ai-router' => false, 'documents' => $enabled], 'meta' => ['request_id' => 'extensions-id'],
     ])]);
 
     foreach ([ListProjectDocumentCommand::class, ShowProjectDocumentStorageCommand::class] as $class) {

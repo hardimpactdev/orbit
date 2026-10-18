@@ -146,7 +146,7 @@ The Gateway validates a definition on every write and refuses an invalid one wit
 
 A name that the Project already uses returns HTTP 409 `tasks.definition_exists`. Starting a definition with a missing or wrongly typed parameter returns HTTP 422 `tasks.parameters_invalid`.
 
-An empty model name is refused. Any other model name is not checked against ProxyCli's list, because that list changes over time. When that list is available, the web app reports a model that no driver can run as a finding. A model is known when ProxyCli offers it through a provider Pi runs. A Claude model is not known. [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) explains why Claude is unavailable for task agents. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+An empty model name is refused. Any other model name is not checked against AiRouter's list, because that list changes over time. When that list is available, the web app reports a model that no driver can run as a finding. A model is known when AiRouter offers it through a provider Pi runs. A Claude model is not known. [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) explains why Claude is unavailable for task agents. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### API
 
@@ -161,7 +161,7 @@ An empty model name is refused. Any other model name is not checked against Prox
 
 Update replaces the whole definition, so an agent edits one by reading it, changing it, and writing it back. The update body may omit `name`; the path supplies it. A body `name` that differs from the path is refused. Every operation refuses with HTTP 409 `extension.disabled` while the extension is off, the same code as the other task operations. The CLI commands take a definition as a JSON file, and the MCP tools are generated from these operations. The existing task operations keep working on top-level tasks, and the subtask operations work on subtasks.
 
-`GET /api/v1/proxycli/models` (`proxycli:models`) lists the models that CLIProxyAPI offers, as `{id, provider}`. On each poll the collector reads `GET /v0/management/auth-files/models` for each auth file, with the management key, and stores the union in its snapshot. When one auth file's request fails, that file keeps the models from the previous poll. It does not call `GET /v1/models`: that route checks a client API key, and the management key is not one. `provider` is the ProxyCli provider that serves the model: `owned_by` `openai` is `codex`, `anthropic` is `claude`, `xai` is `grok`, `moonshot` is `kimi`, and any other value keeps its name. `google` and `meta` keep their names, and no ProxyCli provider serves them. When `owned_by` is absent, the collector maps the auth file's `provider` with that same table. The management list sets `provider` and `type` to one value. A model with neither `owned_by` nor an auth-file provider is omitted. The route refuses with `proxycli.disabled` while the fleet feature is off.
+`GET /api/v1/ai-router/models` (`ai-router:model:list`) lists the models that CLIProxyAPI offers, as `{id, provider}`. On each poll the collector reads `GET /v0/management/auth-files/models` for each auth file, with the management key, and stores the union in its snapshot. When one auth file's request fails, that file keeps the models from the previous poll. It does not call `GET /v1/models`: that route checks a client API key, and the management key is not one. `provider` is the AiRouter provider that serves the model: `owned_by` `openai` is `codex`, `anthropic` is `claude`, `xai` is `grok`, `moonshot` is `kimi`, and any other value keeps its name. `google` and `meta` keep their names, and no AiRouter provider serves them. When `owned_by` is absent, the collector maps the auth file's `provider` with that same table. The management list sets `provider` and `type` to one value. A model with neither `owned_by` nor an auth-file provider is omitted. The route refuses with `ai_router.disabled` while the fleet feature is off.
 
 ### Definition view
 
@@ -172,7 +172,7 @@ The web app lists definitions on the Tasks page and on each Project page, and dr
 - each phase as one card that opens into a frame around its subtasks;
 - the engine's fixed stages around the definition: starting the workspace before the first subtask, the implementer, handoff check, and reviewer inside each `agent` subtask, and the pull request, the merge by a person unless the definition has a `merge` subtask, and the cleanup after the last subtask;
 - the schedule in words, such as "Weekly on Monday at 03:00 UTC";
-- findings: a `decide` subtask whose options all lead to one subtask, and, when the ProxyCli model list is available, a model that no driver can run. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition. A missing, empty, or refused list is one notice and no driver findings. The drawing opens at full size, and a side path is reached by panning.
+- findings: a `decide` subtask whose options all lead to one subtask, and, when the AiRouter model list is available, a model that no driver can run. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition. A missing, empty, or refused list is one notice and no driver findings. The drawing opens at full size, and a side path is reached by panning.
 
 The Tasks board shows scheduled tasks in Backlog with their `scheduled_at`.
 
@@ -187,7 +187,7 @@ Each slice is one task and one pull request. This record stays until the last sl
 | Slice | Delivers |
 | --- | --- |
 | 1. One task model | `tasks` with `parent_id` replaces task groups and their tasks; the turn receipt; totals on the top-level row. No behavior changes |
-| 2. Store and show definitions | Definition records, validation, API, CLI, SDK, and MCP; the ProxyCli model list; the definition view on live data |
+| 2. Store and show definitions | Definition records, validation, API, CLI, SDK, and MCP; the AiRouter model list; the definition view on live data |
 | 3. Start tasks from definitions | Starting now and at a time, parameters, schedules, and scheduled tasks on the board, for definitions made only of `agent` subtasks; every task starts from a definition |
 | 4. Kind contract and routes | The scheduler runs subtasks through the kind contract, adds `check`, and follows routes and outcomes |
 | 5. `merge` and `action` | The two kinds and the task-action marks |
@@ -236,5 +236,5 @@ The definition has an `app` parameter and the schedule `0 3 * * 1` with that App
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
 - ADRs: amends [project-owned task policy](/reference/tasks#project-owned-task-policy)
-- Detail: [Tasks](/reference/tasks), [proxycli](/reference/proxycli), [Web app](/reference/web-app), [Tasks CLI](/cli/tasks), [Concepts](/concepts)
-- Verify: slice 1: the migration test on a copy of the task tables and the existing task suite on the one model; slice 2: tests for each validation rule and definition operation, the proxycli models route, CLI and SDK fixtures, and web screenshots; slice 3: tests for starting now, `scheduled_at`, the upcoming task, the three schedule rules, and parameters; slices 4 to 6: tests for each kind and its outcomes and the `decide` threshold, and an Incus proof of the maintenance example, including the `skipped` path and a forced rollback
+- Detail: [Tasks](/reference/tasks), [ai-router](/reference/ai-router), [Web app](/reference/web-app), [Tasks CLI](/cli/tasks), [Concepts](/concepts)
+- Verify: slice 1: the migration test on a copy of the task tables and the existing task suite on the one model; slice 2: tests for each validation rule and definition operation, the ai-router models route, CLI and SDK fixtures, and web screenshots; slice 3: tests for starting now, `scheduled_at`, the upcoming task, the three schedule rules, and parameters; slices 4 to 6: tests for each kind and its outcomes and the `decide` threshold, and an Incus proof of the maintenance example, including the `skipped` path and a forced rollback

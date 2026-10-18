@@ -409,7 +409,7 @@ it('hides optional command families when Gateway extension state is unknown', fu
         ->keys()
         ->all());
 
-    expect($visibleCommands)->not->toContain('tasks:create', 'proxycli:status', 'project:document:list', 'project:document-storage:show', 'vault:status')
+    expect($visibleCommands)->not->toContain('tasks:create', 'ai-router:status', 'project:document:list', 'project:document-storage:show', 'vault:status')
         ->and($visibleCommands)->toContain('tasks:status');
 });
 

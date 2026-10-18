@@ -334,7 +334,7 @@ When another race occurs, it gets its own decision with its data.
 1. Steps 1 to 9 below are merged. The lease and operation tables are then dropped, so the move carries no recovery code.
 2. Both architecture tests pass: the one sender, and no remote call in the tick.
 3. No Tasks service calls back through `TaskScheduler`. The tick is its only entry.
-4. Step 3 of the AI router move ([ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension)) is done, because Tasks depends on it.
+4. Step 3 of the AI router move ([ADR 0212](/decisions/0212-build-the-ai-router-extension)) is done, because Tasks depends on it.
 5. The plan of group 1775 decides three open points:
    - whether the `TaskVms` namespace moves too;
    - whether `ModelKeyIssuer` stays in core, or Tasks imports the AI router;

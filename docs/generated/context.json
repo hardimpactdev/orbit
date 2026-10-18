@@ -129,6 +129,24 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/ai-router.mdx",
+            "title": "ai-router",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/analytics.mdx",
             "title": "analytics",
             "kind": "product",
@@ -509,24 +527,6 @@
                 "Task",
                 "Task check",
                 "Task workspace"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/cli/proxycli.mdx",
-            "title": "proxycli",
-            "kind": "product",
-            "components": [
-                "apps/cli",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Placement",
-                "Process",
-                "Task"
             ],
             "governing_adrs": []
         },
@@ -930,8 +930,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
-            "title": "ADR 0212: Turn ProxyCli into the AI router extension",
+            "path": "docs/decisions/0212-build-the-ai-router-extension.md",
+            "title": "ADR 0212: Build the AI router extension",
             "kind": "decision",
             "components": [
                 "apps/cli",
@@ -1405,6 +1405,30 @@
                 "Project",
                 "Role",
                 "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/ai-router.md",
+            "title": "AI router",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2692,29 +2716,6 @@
                 "Task check",
                 "Task workspace",
                 "Tool"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/proxycli.md",
-            "title": "proxycli",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Activity",
-                "Database server",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Placement",
-                "Process",
-                "Role",
-                "Route",
-                "Schedule",
-                "Task"
             ],
             "governing_adrs": []
         },

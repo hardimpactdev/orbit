@@ -14,7 +14,7 @@ export const SECTIONS = [
     "schedules",
     "databases",
     "firewall",
-    "quota",
+    "ai-router",
     "tasks",
     "activity",
 ] as const;
@@ -37,8 +37,8 @@ export function extensionSectionVisible(
     if (section === "tasks") {
         return extensions?.tasks === true;
     }
-    if (section === "quota") {
-        return extensions?.proxycli === true;
+    if (section === "ai-router") {
+        return extensions?.["ai-router"] === true;
     }
 
     return true;
@@ -51,7 +51,7 @@ export function useNav(): readonly Section[] {
     return useMemo(() => {
         const sections = NAV.filter((section) => extensionSectionVisible(section, extensions));
 
-        return extensions?.proxycli === true ? [...sections, "quota"] : sections;
+        return extensions?.["ai-router"] === true ? [...sections, "ai-router"] : sections;
     }, [extensions]);
 }
 
@@ -90,7 +90,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     schedules: "Schedules",
     databases: "Databases",
     firewall: "Firewall",
-    quota: "Quota",
+    "ai-router": "AI router",
     tasks: "Tasks",
     activity: "Activity",
 };
@@ -111,11 +111,11 @@ export function useGo() {
                     ? router.navigate({ to: "/" })
                     : router.navigate({ to: "/$section", params: { section } }));
             },
-            quota(provider: string): void {
+            aiRouter(provider: string): void {
                 reset();
                 void router.navigate({
                     to: "/$section/$id",
-                    params: { section: "quota", id: provider },
+                    params: { section: "ai-router", id: provider },
                 });
             },
             record(kind: Kind, row: AnyRecord): void {

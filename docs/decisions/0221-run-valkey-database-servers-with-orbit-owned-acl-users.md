@@ -16,7 +16,7 @@ Principle: [security fits the real threat model](/mission#principles) and [one w
 
 ## Context
 
-The Valkey on `services` is Docker Process 162, an operator-made Process with the Database connection `services-valkey`. The [Gateway queue](/reference/gateway-queue) and the [ProxyCli collector](/reference/proxycli) both log in with its one password, so each client can read and delete the keys of the other. The Process writes that password from its environment into `requirepass` at each start. The environment is stored as plain JSON in the Gateway and shows in `docker inspect`.
+The Valkey on `services` is Docker Process 162, an operator-made Process with the Database connection `services-valkey`. The [Gateway queue](/reference/gateway-queue) and the [AiRouter collector](/reference/ai-router) both log in with its one password, so each client can read and delete the keys of the other. The Process writes that password from its environment into `requirepass` at each start. The environment is stored as plain JSON in the Gateway and shows in `docker inspect`.
 
 A first version of pull request #1296 documented a manual ACL file with a separate user for the queue. The review blocked it: the users and passwords lived outside Orbit, so Doctor had nothing to check them against, and the setup failed open. With an ACL file, Valkey ignores `requirepass`. Without a `default` line in the file, or without `--aclfile` in the command, Valkey accepts every client without a password. A `process:update` without `--aclfile` opens the server to every WireGuard peer.
 
@@ -106,7 +106,7 @@ After saving the password, the Gateway revokes every other `default` session to 
 
 ### The collector gets its own user later
 
-The ProxyCli collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, Nick creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
+The AiRouter collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-build-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, Nick creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
 
 ## Rejected alternatives
 
@@ -131,6 +131,6 @@ The ProxyCli collector and the Gateway's snapshot reads keep using `services-val
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) binds the collector's own connection at step 4
+- ADRs: [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) gains a driver; [0212](/decisions/0212-build-the-ai-router-extension) binds the collector's own connection at step 4
 - Detail: [Database servers](/reference/database-servers), [Database connections](/reference/database-connections), [Gateway queue: ACL users](/reference/gateway-queue#acl-users), [`doctor`](/cli/doctor)
 - Verify: Gateway tests for Valkey server creation, retry, repair, adoption, the ACL user create and destroy, the `process:update` refusal, and the Doctor family; tests against a real `valkey/valkey:8.1` container that CI runs with `ORBIT_TEST_DOCKER=1`

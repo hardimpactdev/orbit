@@ -120,7 +120,7 @@
               "reference/service-metrics",
               "reference/analytics",
               "reference/extensions",
-              "reference/proxycli",
+              "reference/ai-router",
               "reference/gateway-queue",
               "reference/operations",
               "reference/tasks",
@@ -213,7 +213,7 @@
               "cli/extension",
               "cli/fleet",
               "cli/tasks",
-              "cli/proxycli"
+              "cli/ai-router"
             ]
           }
         ]
@@ -577,16 +577,17 @@
             ]
           },
           {
-            "group": "proxycli",
+            "group": "ai-router",
             "openapi": "/openapi.json",
             "pages": [
-              "DELETE /api/v1/proxycli",
-              "GET /api/v1/proxycli",
-              "POST /api/v1/proxycli",
-              "PATCH /api/v1/proxycli/accounts/{account}",
-              "GET /api/v1/proxycli/models",
-              "GET /api/v1/proxycli/providers",
-              "GET /api/v1/proxycli/providers/{provider}"
+              "DELETE /api/v1/ai-router",
+              "GET /api/v1/ai-router",
+              "POST /api/v1/ai-router",
+              "POST /api/v1/ai-router/accounts/{account}/disable",
+              "POST /api/v1/ai-router/accounts/{account}/enable",
+              "GET /api/v1/ai-router/models",
+              "GET /api/v1/ai-router/providers",
+              "GET /api/v1/ai-router/providers/{provider}"
             ]
           },
           {
@@ -662,7 +663,7 @@
               "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
               "decisions/0211-ship-node-changes-as-remote-programs",
-              "decisions/0212-turn-proxycli-into-the-ai-router-extension",
+              "decisions/0212-build-the-ai-router-extension",
               "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
               "decisions/0215-start-development-processes-from-project-definitions",
@@ -1564,19 +1565,19 @@
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
-      "destination": "/reference/proxycli#why-it-works-this-way"
+      "destination": "/reference/ai-router#why-it-works-this-way"
     },
     {
       "source": "/decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
-      "destination": "/reference/proxycli#a-reserved-name-not-a-route"
+      "destination": "/reference/ai-router#a-reserved-name-not-a-route"
     },
     {
       "source": "/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-      "destination": "/reference/proxycli#a-reserved-name-not-a-route"
+      "destination": "/reference/ai-router#a-reserved-name-not-a-route"
     },
     {
       "source": "/solutions/cutover-proxycli",
-      "destination": "/reference/proxycli#check-the-collector"
+      "destination": "/reference/ai-router#check-the-collector"
     },
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
@@ -1589,6 +1590,18 @@
     {
       "source": "/decisions/0220-serialize-task-workspaces-with-one-lease",
       "destination": "/reference/tasks#workspace-lease"
+    },
+    {
+      "source": "/reference/proxycli",
+      "destination": "/reference/ai-router"
+    },
+    {
+      "source": "/cli/proxycli",
+      "destination": "/cli/ai-router"
+    },
+    {
+      "source": "/decisions/0212-turn-proxycli-into-the-ai-router-extension",
+      "destination": "/decisions/0212-build-the-ai-router-extension"
     }
   ]
 }

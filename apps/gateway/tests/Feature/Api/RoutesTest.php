@@ -714,7 +714,7 @@ it('refuses a reserved domain for a pending Route before the replacement Route e
 
     expect($route->fresh(['targets'])->toArray())->toBe($before)
         ->and(Route::query()->count())->toBe(1);
-})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+})->with(['gateway.orbit', 'collector.ai-router.orbit']);
 
 it('refuses a reserved domain for an active Route before Route or projection state changes', function (string $domain): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
@@ -743,7 +743,7 @@ it('refuses a reserved domain for an active Route before Route or projection sta
 
     expect($route->fresh(['targets'])->toArray())->toBe($before)
         ->and(Route::query()->count())->toBe(1);
-})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+})->with(['gateway.orbit', 'collector.ai-router.orbit']);
 
 it('refuses a reserved explicit domain for an Instance Route before the Route exists', function (string $domain): void {
     expect(fn (): Route => app(CreateRouteAction::class)->ensureForInstance($this->target, $domain))
@@ -751,7 +751,7 @@ it('refuses a reserved explicit domain for an Instance Route before the Route ex
             ->and($exception->getMessage())->toBe("Route domain [{$domain}] is reserved."));
 
     expect(Route::query()->count())->toBe(0);
-})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+})->with(['gateway.orbit', 'collector.ai-router.orbit']);
 
 it('returns 409 instance.source_profile_missing for an explicit domain change without a recorded profile', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(

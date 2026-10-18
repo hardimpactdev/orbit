@@ -8,10 +8,12 @@ use App\Services\Extensions\GatewayExtensionState;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
 
 beforeEach(function (): void {
@@ -70,6 +72,10 @@ it('retains gateway trust guidance when discovery cannot verify the certificate'
                 $request,
             );
         },
+        ShowAiRouterStatusRequest::class => MockResponse::make([
+            'data' => ['enabled' => false, 'hostname' => 'collector.ai-router.orbit', 'node_id' => null, 'cache_connection' => null, 'collected_at' => null],
+            'request_id' => 'status-direct-request',
+        ]),
     ]);
 
     $exit = Artisan::call('extension:list', ['--json' => true]);
@@ -78,14 +84,15 @@ it('retains gateway trust guidance when discovery cannot verify the certificate'
         ->and($output)->toContain('gateway.ca_untrusted')
         ->and($output)->toContain('orbit gateway:trust');
 
-    $exit = Artisan::call('proxycli:status', ['--json' => true]);
+    $exit = Artisan::call('ai-router:status', ['--json' => true]);
     $output = Artisan::output();
-    expect($exit)->toBe(1)
-        ->and($output)->toContain('extension.state_unknown')
-        ->and($output)->toContain('orbit gateway:trust');
+    expect($exit)->toBe(0)
+        ->and($output)->not->toContain('extension.state_unknown')
+        ->and($output)->toContain('collector.ai-router.orbit');
 
     expect($discoveryCalls)->toBe(1);
     $mock->assertSentCount(0, ListExtensionsRequest::class);
+    $mock->assertSentCount(1, ShowAiRouterStatusRequest::class);
 });
 
 it('reports a bounded unknown state when discovery times out', function (): void {

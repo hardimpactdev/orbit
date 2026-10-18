@@ -101,11 +101,11 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         return 'Runs planned work with coding agents and delivers it as a pull request.';
     }
 
-    /** Pi on a task VM reaches models only through the proxycli CLIProxyAPI. */
+    /** Pi on a task VM reaches models only through the ai-router CLIProxyAPI. */
     #[\Override]
     public function dependencies(): array
     {
-        return ['proxycli'];
+        return ['ai-router'];
     }
 
     /** A task VM writes its model key before the router registers it, so Tasks starts only once the router can revoke keys. */

@@ -24,7 +24,7 @@ The SDK models exactly 214 concrete public Gateway API operations:
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
-- proxycli: enable, disable, status, provider list, provider show, account update, and model list.
+- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.
 - Vault: status, setup, sync, and teardown.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
 
@@ -105,10 +105,10 @@ operations. Keep the public API typed and small.
   responses omit passwords and redact credential-shaped values. The Gateway
   owns validation, encryption, persistence, Process execution, stored-environment writes, and
   inspection execution.
-- Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI
-  URL, and management key on enable; a provider slug on show; and an account
-  identity plus disabled flag on update. Status, disable, provider list, and model list are
-  bodyless. Item and collection responses omit tokens and the management key.
+- Keep ai-router transport limited to Node ID, Redis connection slug, CLIProxyAPI
+  URL, and management key on setup; a provider slug on show; and an account
+  identity on account enable and disable. Status, teardown, provider list, provider show, model list,
+  and account enable and disable are bodyless. Item and collection responses omit tokens and the management key.
   The Gateway owns Valkey placement, collection, publication, and pooling.
 - Keep Vault transport limited to the Vaultwarden URL, client ID, client
   secret, master password, organization, and collection on setup, and the

@@ -6,7 +6,6 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\RoleName;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -24,7 +23,9 @@ use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Orbit\Extensions\Vault\VaultServiceProvider;
+use Illuminate\Support\ServiceProvider;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
@@ -41,17 +42,28 @@ describe('footprint digests', function (): void {
             'app/Infrastructure/Caddy/Build/Sources/RouteCaddySiteSource.php',
             'app/Infrastructure/AppDev/DevelopmentSite.php',
             'app/Domain/Nodes/CaddyRelease.php',
-            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteSource.php',
-            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteRenderer.php',
+            'extensions/ai-router/src/Infrastructure/AiRouterCaddySiteSource.php',
+            'extensions/ai-router/src/Infrastructure/AiRouterCaddySiteRenderer.php',
         )
             ->and(array_filter($inputs, static fn (string $path): bool => str_starts_with($path, 'app/Models/')))->toBe([])
             ->and($artifact->digest($node))->toBe(SourceDigest::of($inputs))
             ->and($artifact->digest($node))->not->toBe(app(NodeCaddyfileRenderer::class)->render($node)->version);
     });
 
-    it('refuses a start class outside app/, so a contributed site source never drops out of the Caddy digest', function (): void {
-        expect(fn (): array => SourceClosure::of(['app/Infrastructure/Caddy'], [VaultServiceProvider::class]))
-            ->toThrow(LogicException::class, 'The source closure reads only classes under app/, not [Orbit\\Extensions\\Vault\\VaultServiceProvider].');
+    it('walks extension source imports and same-namespace references', function (): void {
+        $files = SourceClosure::of([], [AiRouterCaddySiteSource::class]);
+        expect($files)->toContain(
+            'extensions/ai-router/src/Infrastructure/AiRouterCaddySiteSource.php',
+            'extensions/ai-router/src/Infrastructure/AiRouterCaddySiteRenderer.php',
+            'extensions/ai-router/src/Domain/AiRouterState.php',
+            'app/Domain/Settings/SettingRepository.php',
+        );
+        expect(array_filter($files, static fn (string $file): bool => str_contains($file, '/Models/')))->toBe([]);
+    });
+
+    it('refuses a start class outside core and extensions', function (): void {
+        expect(fn (): array => SourceClosure::of([], [ServiceProvider::class]))
+            ->toThrow(LogicException::class, 'The source closure reads only core and extension classes');
     });
 
     it('pins the private-DNS digest to the publication code and the record sources that extensions contribute', function (): void {
@@ -63,9 +75,9 @@ describe('footprint digests', function (): void {
 
         expect(app(PrivateDnsFootprintArtifact::class)->inputs())->toContain(
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
-            'app/Infrastructure/ProxyCli/ProxyCliPrivateHostnames.php',
-            'app/Domain/ProxyCli/ProxyCliState.php',
-            'app/Domain/ProxyCli/ProxyCliHostname.php',
+            'extensions/ai-router/src/Infrastructure/AiRouterPrivateHostnames.php',
+            'extensions/ai-router/src/Domain/AiRouterState.php',
+            'extensions/ai-router/src/Domain/AiRouterHostname.php',
         )
             ->and($artifact->digest($vpn))->toBe(hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of(app(PrivateDnsFootprintArtifact::class)->inputs())));
     });
@@ -73,11 +85,11 @@ describe('footprint digests', function (): void {
     it('carries the contributed collector script on the collector Node only', function (): void {
         $services = FleetFixtures::node('services', [RoleName::AppDev]);
         $other = FleetFixtures::node('other', [RoleName::AppDev]);
-        app(ProxyCliState::class)->enable($services->id, 'valkey', 'http://127.0.0.1:8317', 'management', 'read', 'control');
+        app(AiRouterState::class)->enable($services->id, 'valkey', 'http://127.0.0.1:8317', 'management', 'read', 'control');
         $footprint = app(NodeFootprint::class);
 
-        expect($footprint->expected($services)->artifacts)->toHaveKey('proxycli', hash('sha256', (string) file_get_contents(resource_path('proxycli/server.py'))))
-            ->and($footprint->expected($other)->artifacts)->not->toHaveKey('proxycli');
+        expect($footprint->expected($services)->artifacts)->toHaveKey('ai-router', hash('sha256', (string) file_get_contents(base_path('extensions/ai-router/resources/collector.py'))))
+            ->and($footprint->expected($other)->artifacts)->not->toHaveKey('ai-router');
     });
 
     it('keeps the private-DNS digest when a Node joins and the records change', function (): void {

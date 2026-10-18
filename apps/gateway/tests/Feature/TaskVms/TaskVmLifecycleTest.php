@@ -28,7 +28,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -91,6 +90,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
@@ -717,7 +717,7 @@ describe(DestroyTaskVm::class, function (): void {
         $this->provider->onDestroy = static function (TaskVm $vm) use ($events): void {
             $events->append('vm deletion: '.$vm->fresh()?->state->value);
         };
-        app(ProxyCliState::class)->enable(1, 'cache', TVM_LIFE_ORIGIN, 'management-key', 'read-token', 'control-token');
+        app(AiRouterState::class)->enable(1, 'cache', TVM_LIFE_ORIGIN, 'management-key', 'read-token', 'control-token');
         $keys = new ArrayObject([str_repeat('a', 64)]);
         Http::fake([TVM_LIFE_ORIGIN.'/*' => function (Request $request) use ($events, $keys) {
             if (parse_url($request->url(), PHP_URL_PATH) === '/v0/management/api-keys') {
@@ -745,7 +745,7 @@ describe(DestroyTaskVm::class, function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, $node);
-        $vm->update(['model_key' => str_repeat('a', 64), 'model_proxy_origin' => TVM_LIFE_ORIGIN]);
+        $vm->update(['model_key' => str_repeat('a', 64), 'ai_router_origin' => TVM_LIFE_ORIGIN]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 

@@ -13,12 +13,12 @@ use Saloon\Http\Faking\MockResponse;
 it('lists extension switches', function (): void {
     $connector = new GatewayConnector('https://gateway.orbit', caPemPath: '/tmp/root.pem');
     MockClient::global([ListExtensionsRequest::class => MockResponse::make([
-        'data' => ['tasks' => false, 'proxycli' => true], 'meta' => ['request_id' => 'extensions-id'],
+        'data' => ['tasks' => false, 'ai-router' => true], 'meta' => ['request_id' => 'extensions-id'],
     ])]);
 
     $response = $connector->send(new ListExtensionsRequest)->dto();
 
-    expect($response->extensions)->toBe(['tasks' => false, 'proxycli' => true]);
+    expect($response->extensions)->toBe(['tasks' => false, 'ai-router' => true]);
 });
 
 it('enables and disables named Gateway extensions', function (string $request, string $path, Method $method): void {

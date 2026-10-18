@@ -11,7 +11,6 @@ use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Certificates\OrbitCaCurlFactory;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
-use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Models\Node;
 use App\Models\Schedule;
 use GuzzleHttp\Handler\CurlHandler;
@@ -19,6 +18,7 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
 use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
@@ -125,7 +125,7 @@ it('keeps the owner CA directory when an inherited factory exits in a child proc
     ]);
 });
 
-it('uses the checked state CA in place for proxycli account updates', function (): void {
+it('uses the checked state CA in place for ai-router account updates', function (): void {
     $verify = null;
     Http::fake(function ($request, array $options) use (&$verify) {
         $verify = $options['verify'];
@@ -133,11 +133,11 @@ it('uses the checked state CA in place for proxycli account updates', function (
         return Http::response([], 200);
     });
 
-    (new HttpProxyCliAccountControlClient($this->signer))->setDisabled('127.0.0.1', 443, 'control-token', 'account', true);
+    (new HttpAiRouterAccountControlClient($this->signer))->setDisabled('127.0.0.1', 443, 'control-token', 'account', true);
 
     expect($verify)->toBe($this->directory.'/ca/root.pem');
     Http::assertSent(fn ($request): bool => $request->method() === 'PATCH'
-        && $request->hasHeader('Host', 'collector.cli-proxy-api.orbit')
+        && $request->hasHeader('Host', 'collector.ai-router.orbit')
         && $request->hasHeader('Authorization', 'Bearer control-token')
         && $request['disabled'] === true);
 });
@@ -189,8 +189,8 @@ it('accepts Orbit certificates and rejects a different CA for internal HTTPS', f
     expect(Http::withOptions(['verify' => $this->systemRoot])->get("https://127.0.0.1:{$untrusted}")->status())->toBe(200);
 
     $send = function (int $port) use ($client): void {
-        if ($client === 'proxycli') {
-            (new HttpProxyCliAccountControlClient($this->signer))->setDisabled('127.0.0.1', $port, 'control-token', 'account', true);
+        if ($client === 'ai-router') {
+            (new HttpAiRouterAccountControlClient($this->signer))->setDisabled('127.0.0.1', $port, 'control-token', 'account', true);
         } elseif ($client === 'reverb') {
             $connection = new RealtimeConnectionData('reverb.orbit', $port, 'https', 'app', 'key', 'secret', $this->orbitRoot, '127.0.0.1');
             app(RealtimeConnection::class)->configureBroadcasting($connection);
@@ -204,7 +204,7 @@ it('accepts Orbit certificates and rejects a different CA for internal HTTPS', f
 
     $send($trusted);
     expect(fn () => $send($untrusted))->toThrow(Exception::class);
-})->with(['proxycli', 'reverb', 'release']);
+})->with(['ai-router', 'reverb', 'release']);
 
 it('sends Schedule callbacks only to an Orbit certificate and cleans up the private CA directory', function (): void {
     $trusted = orbit_https_server($this->servers, $this->directory, 'orbit', 'ok');

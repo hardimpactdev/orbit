@@ -163,7 +163,7 @@ pest()->tia()->watch([
     'tests/Fixtures/machine-software/converge_node_test.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
     'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
-    'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',
+    'extensions/ai-router/resources/*.py' => 'tests/Unit/Extensions/AiRouter/Infrastructure/AiRouterCollectorValkeyClientTest.php',
     'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
     'resources/instances/tia-baseline.py' => 'tests/Feature/Domain/TiaBaselineSetupTest.php',
     'resources/instances/ci-caches.sh' => 'tests/Feature/Domain/CiCacheSetupTest.php',
