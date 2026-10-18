@@ -56,7 +56,7 @@ def api(method, path, body=None, *, missing=False):
 
 
 def inspect_container(name, *, missing=False):
-    return api('GET', '/containers/' + quote(name, safe='') + '/json', missing=missing)
+    return api('GET', '/containers/' + quote(name.lstrip('/'), safe='') + '/json', missing=missing)
 
 
 def record(name, value):
@@ -164,6 +164,9 @@ def inventory(payload):
         raise RecipeFailure('custom-daemon')
     for unit in ('docker.service', 'containerd.service'):
         if run(['systemctl', 'show', '--property=DropInPaths', '--value', unit]).stdout.strip():
+            raise RecipeFailure('custom-daemon')
+        fragment = run(['systemctl', 'show', '--property=FragmentPath', '--value', unit]).stdout.strip()
+        if fragment and fragment not in ('/usr/lib/systemd/system/' + unit, '/lib/systemd/system/' + unit):
             raise RecipeFailure('custom-daemon')
     docker_root = storage_root(info.get('DockerRootDir'), 'storage-root')
     if 'data-root' in config and storage_root(config['data-root'], 'storage-root') != docker_root:
@@ -503,7 +506,8 @@ def network_request(network):
 
 
 def fresh_engine(state):
-    stop_loaded(['docker.service', 'docker.socket'])
+    # Without --containerd, dockerd still reuses a running system containerd socket.
+    stop_loaded(['docker.service', 'docker.socket', 'containerd.service'])
     # dockerd refuses an option present in both JSON and argv. Keep the original
     # config intact for native startup/restore; only the fresh engine uses this copy.
     config = json.loads(bytes.fromhex(state['daemon'])) if state['daemon'] is not None else {}

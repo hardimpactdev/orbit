@@ -17,6 +17,7 @@ RESOURCE = Path(__file__).resolve().parents[2] / 'resources/machine-software'
 module = types.ModuleType('migration')
 exec(compile((RESOURCE.parent / 'remote/lib/recipe.py').read_text().split("if __name__ == '__main__':")[0]
              + '\n' + (RESOURCE.parent / 'remote/docker/migrate.py').read_text(), str(RESOURCE.parent / 'remote/docker/migrate.py'), 'exec'), module.__dict__)
+real_api = module.api
 
 
 class DockerMigrationTest(unittest.TestCase):
@@ -165,7 +166,12 @@ class DockerMigrationTest(unittest.TestCase):
                 self.installed = {'docker.io': self.payload['docker_version'], 'containerd': '2.2.2-0ubuntu1.1',
                                   'docker-buildx': 'fixture', 'docker-compose-v2': 'fixture'}
         elif argv[:2] == ['systemctl', 'show']:
-            stdout = '' if '--property=DropInPaths' in argv else 'loaded'
+            if '--property=DropInPaths' in argv:
+                stdout = ''
+            elif '--property=FragmentPath' in argv:
+                stdout = '/usr/lib/systemd/system/' + argv[-1]
+            else:
+                stdout = 'loaded'
         elif argv == ['containerd', 'config', 'dump']:
             stdout = "version = 4\nroot = '" + str(self.containerd_root) + "'\nstate = '/run/containerd'\n"
         elif argv[:2] == ['docker', 'commit']:
@@ -267,9 +273,59 @@ class DockerMigrationTest(unittest.TestCase):
             self.assertEqual(backup.read_bytes(), content)
             destination = Path(state['metadata_roots'][label]) / relative
             self.assertEqual(destination.read_bytes(), content)
-            destination.write_bytes(b'changed')
-            destination.write_bytes(backup.read_bytes())
-            self.assertEqual(destination.read_bytes(), content)
+
+    def test_fallback_stops_system_containerd_before_starting_managed_containerd(self):
+        self.incompatible = True
+        system_containerd = True
+        command = self.command
+
+        def services(argv, **kwargs):
+            nonlocal system_containerd
+            if argv[:2] == ['systemctl', 'stop'] and 'containerd.service' in argv:
+                system_containerd = False
+            if argv[:2] == ['systemctl', 'start']:
+                if self.dropin.exists():
+                    self.assertFalse(system_containerd, 'dockerd would reuse the system containerd socket')
+                else:
+                    system_containerd = True  # Stock Docker unit Wants=containerd.service.
+            return command(argv, **kwargs)
+
+        with patch.object(module, 'run', services):
+            self.assertTrue(module.migrate(self.payload, 'prepare')['fallback'])
+
+    def test_report_looks_up_real_docker_names_without_a_redirect(self):
+        state = module.inventory(self.payload)
+        # Fallback recreates containers with new IDs, so reports must still use names.
+        for container in self.containers.values():
+            container['Id'] = 'replacement-' + container['Id']
+        paths = []
+        api = self.api
+
+        class Connection:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def request(self, method, path, body, headers):
+                self.path = path
+                paths.append(path)
+
+            def getresponse(self):
+                if '%2F' in self.path:
+                    wire = b'HTTP/1.1 301 Moved Permanently\r\nLocation: /containers/mailpit/json\r\nContent-Length: 0\r\n\r\n'
+                else:
+                    body = json.dumps(api('GET', self.path)).encode()
+                    wire = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(body)).encode() + b'\r\n\r\n' + body
+                response = module.http.client.HTTPResponse(types.SimpleNamespace(makefile=lambda *args: io.BytesIO(wire)))
+                response.begin()
+                return response
+
+            def close(self):
+                pass
+
+        with patch.object(module, 'api', real_api), patch.object(module, 'DockerSocket', Connection):
+            report = module.public_report(state)
+        self.assertEqual(paths, ['/containers/mailpit/json', '/containers/orbit-process-7-mysql/json', '/containers/stopped/json'])
+        self.assertEqual([c['state'] for c in report['containers']], ['running', 'running', 'exited'])
 
     def test_custom_root_fallback_preserves_config_and_original_restore_root_on_resume(self):
         self.custom_root()
@@ -318,6 +374,33 @@ class DockerMigrationTest(unittest.TestCase):
                 with self.assertRaisesRegex(module.RecipeFailure, 'storage-root'):
                     module.migrate(self.payload, 'prepare')
         self.assertFalse((self.journal / 'inventory.json').exists())
+
+    def test_foreign_service_unit_fragments_refuse_before_mutation(self):
+        for unit in ('docker.service', 'containerd.service'):
+            for directory in ('/etc/systemd/system', '/run/systemd/system'):
+                def foreign(argv, unit=unit, directory=directory, **kwargs):
+                    if '--property=FragmentPath' in argv and argv[-1] == unit:
+                        return subprocess.CompletedProcess(argv, 0, directory + '/' + unit, '')
+                    return self.command(argv, **kwargs)
+                with self.subTest(unit=unit, directory=directory), patch.object(module, 'run', foreign):
+                    with self.assertRaisesRegex(module.RecipeFailure, 'custom-daemon'):
+                        module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+        self.assert_read_only_commands()
+
+    def test_failed_containerd_config_dump_refuses_even_with_a_root_in_stdout(self):
+        def failed_dump(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv == ['containerd', 'config', 'dump']:
+                result.returncode = 1
+            return result
+
+        with patch.object(module, 'run', failed_dump), self.assertRaisesRegex(module.RecipeFailure, 'containerd-root'):
+            module.migrate(self.payload, 'prepare')
+        self.assertFalse((self.journal / 'inventory.json').exists())
+        self.assertFalse(any(method == 'POST' for method, _, _ in self.requests))
+        self.assert_read_only_commands()
 
     def test_unreadable_containerd_root_refuses_before_mutation(self):
         for output in ('', 'root = "relative"\n', 'root = "/"\n'):
