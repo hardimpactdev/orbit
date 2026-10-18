@@ -101,7 +101,7 @@ final readonly class TaskFinalReview
             $findings = mb_substr($findings, 0, self::FindingsLimit)."\n\n[Cut. The full findings are comment #".$receipt->id.' on subtask #'.$finalReview->id.'.]';
         }
 
-        return 'Fix each blocking finding of final review subtask #'.$finalReview->id.' at its root cause, or explain in your handoff why it does not apply within the task brief. List follow-ups in the handoff instead of implementing them.'
+        return 'Fix each blocking finding of final review subtask #'.$finalReview->id.' at its root cause, or explain in your handoff why it does not apply within the task brief. List follow-ups in the handoff instead of implementing them. Do not rebase.'
             ."\n\nFindings:\n\n".$findings;
     }
 

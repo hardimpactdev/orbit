@@ -23,7 +23,7 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit> --paths <planned-path>` for every planned path, including paths that do not exist yet; the start commit is the merge base with `origin/main`. The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask.
 
-Record a significant decision in an ADR with the status `In progress.`. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
+Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
 ### Topology and web UI
 
@@ -33,7 +33,7 @@ A subtask that changes the web UI gets a `review` deliverable for the phone and 
 
 ### Bugs
 
-The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true` and list the test files in `paths`. Give it one test path, or one path plus `--filter`:
+The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. `pest --parallel` takes one path, so give it one test path, or one path plus `--filter`:
 
 ```json
 {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
@@ -54,6 +54,8 @@ Use this shape for every subtask brief:
 
 **Risk:** what this change could break, for the reviewer to check first.
 
+**Acceptance:** the tests that must fail on the start commit and pass after the change, and the checks that must pass.
+
 **Out of scope:** what this subtask must not touch.
 ```
 
@@ -63,7 +65,7 @@ Name implementation paths only where the contract fixes them. Express each promi
 
 Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the group with `tasks-create` for the Orbit Project, and its subtasks with `tasks-subtask-create`. Move the group to Todo only after the operator approves.
+Create the group in Backlog with `tasks-create` for the Orbit Project, and its subtasks with `tasks-subtask-create`.
 
 ## Implement a subtask
 
@@ -74,3 +76,5 @@ Create the group with `tasks-create` for the Orbit Project, and its subtasks wit
 ## Review a subtask
 
 Check the risk that the brief names first, then apply the quality bar.
+
+The final review decides each open follow-up. A fixup fixes it, or the pull request summary records it as a limitation or as work for a later group.

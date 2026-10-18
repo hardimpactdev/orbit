@@ -14,7 +14,7 @@ it('keeps documentation tooling guidance beside the project', function (): void 
         ->toBeString()
         ->toContain('repository-root `docs/`')
         ->toContain('console-only')
-        ->toContain('composer check');
+        ->toContain('root `AGENTS.md` check policy');
     expect($composer['scripts']['guidance:check'] ?? null)
         ->toBe('../../bin/guidance-check')
         ->and($composer['scripts']['test'] ?? null)

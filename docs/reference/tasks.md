@@ -1040,11 +1040,11 @@ For a delta re-review, the retrieval command stages the candidate in a temporary
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
-The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. The implementer blocks only when ownership is unclear, the work needs live or shared resources beyond the task, access is missing, or a product decision needs the operator. The prompt does not explain consults or their limits, because the engine enforces them. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
+The implementer prompt asks the implementer to finish the brief. Orbit runs the Project check at handoff. The implementer blocks only when ownership is unclear, the work needs live or shared resources beyond the task, access is missing, or a product decision needs the operator. The prompt says that the reviewer answers a blocked turn first. It gives no consult limits or causes, because the engine enforces them. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
 The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`. It does not edit or commit the code.
 
-The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. A continued turn repeats these rules. Both agents check framework APIs with the Pi server's `search_docs` tool, whose own description says when to use it. The shared prompt adds no Project policy.
+The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. A continued turn repeats these rules. Both agents check Laravel ecosystem APIs with the Pi server's `search_docs` tool, whose own description says when to use it. The shared prompt adds no Project policy.
 
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `task.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
@@ -1057,7 +1057,7 @@ When the change adds or alters runtime behaviour, the reviewer first traces the 
 - (c) An unmet brief item or deliverable.
 - (d) A regression of existing behaviour.
 
-Each blocking finding names its file and line, its normal-operation trigger, and what must change. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window.
+Each blocking finding names its file and line, its normal-operation trigger, and what must change. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window; an operator recovery command is enough.
 
 After two `changes_requested` outcomes on one subtask, only (b), (c), and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
