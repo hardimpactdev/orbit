@@ -35,7 +35,7 @@ Prefer datasets for cases sharing setup and assertions. Move duplicate validatio
 
 ## Validate
 
-Use `composer test:affected` and `composer check` in changed PHP projects. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` and `bin/review-check` for those invocations rather than silently changing test scripts.
+Follow the root `AGENTS.md` check policy. In an Orbit task, the implementer runs only `composer test:affected` in each changed PHP project, because the Gateway runs the full Project check at handoff. Outside a task, use `composer test:affected` and `composer check` in changed PHP projects. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` and `bin/review-check` for those invocations rather than silently changing test scripts.
 
 For a fresh baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI uses `--tia --fresh` to discard the selection graph and execute every test in the selected configuration. Preserve plain output through `bin/pest-plain` and use the shared process setting, `ORBIT_CHECK_PROCESSES`. From a PHP project, a typical run is:
 

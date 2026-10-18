@@ -12,7 +12,7 @@ Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
 - Use Saloon fakes. Do not contact a live Gateway or node.
 - Follow the root `AGENTS.md` check policy for task and non-task work. Run
   `git diff --check -- packages/php-sdk` from the monorepo root.
-- Follow the root contributor guide for CI, independent review, and maintainer approval. Root `composer check` is available for local checks across projects.
+- Follow the root contributor guide for CI, independent review, and maintainer approval.
 - Review the diff, staged files, branch, and upstream state before handoff.
   Keep authorized cross-component changes in the same feature branch. Never
   stage, commit, push, or deploy without authorization.

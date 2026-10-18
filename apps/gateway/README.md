@@ -115,6 +115,8 @@ Use `ORBIT_HOME` to override the application data directory. The default is
 
 ## Quality
 
+Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only `composer test:affected` in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
+
 ```bash
 composer test       # Pest 5 suite with TIA in parallel
 composer format     # Laravel Pint formatter

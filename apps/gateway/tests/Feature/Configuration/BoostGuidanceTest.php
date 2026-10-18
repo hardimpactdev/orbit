@@ -130,6 +130,22 @@ it('regenerates strict guidance while preserving project-owned sections', functi
         ->toBe(trim($effectiveGuidance));
 });
 
+it('keeps regenerated Pest check guidance under the root check policy', function (): void {
+    $composer = app(GuidelineComposer::class);
+    $guidelines = new ReflectionProperty(GuidelineComposer::class, 'guidelines');
+    $guidelines->setValue($composer, collect([
+        'pest' => ['scoped' => [[
+            'body' => '- After the feature tests pass, ask the user to run the complete suite with `php artisan test --compact`.',
+        ]]],
+    ]));
+
+    $scopedGuidance = $composer->resolvedGuidelines()->pluck('scoped')->flatten(1)->pluck('body')->implode("\n");
+
+    expect($scopedGuidance)
+        ->toContain('follow the root `AGENTS.md` check policy for task and non-task work')
+        ->not->toContain('run `composer check` locally');
+});
+
 it('fails closed when Boost changes its project rule source markers', function (string $sourceGuidance): void {
     $composer = app(GuidelineComposer::class);
     $guidelines = new ReflectionProperty(GuidelineComposer::class, 'guidelines');
