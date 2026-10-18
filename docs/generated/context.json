@@ -1159,6 +1159,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0223-run-one-gate-from-handoff-to-merge.md",
+            "title": "ADR 0223: Run one gate from handoff to merge",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": [
+                "0223"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1219,7 +1244,8 @@
                 "0216",
                 "0218",
                 "0219",
-                "0222"
+                "0222",
+                "0223"
             ]
         },
         {
