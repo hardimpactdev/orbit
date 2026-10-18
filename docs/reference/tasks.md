@@ -87,10 +87,14 @@ A task moves through these statuses from preparation to its end.
 | `settling` | Every subtask has ended. The task waits here until publication is recorded. |
 | `waiting_for_review` | The task has published its pull request and waits for human review and CI. VM power is separate from this status. |
 | `completed` | The pull request merged, or an operator completed the task. The workspace is removed. |
-| `failed` | An agent could not start. |
+| `failed` | An agent could not start. The workspace and VM are removed by the next cleanup sweep. |
 | `cancelled` | An operator cancelled the task. |
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
+
+An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, server-restart resume, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery.
+
+The Gateway keeps task checks and their stored output, consumed turn receipts as comments, other comments, approval records, and Activity after workspace removal. [Readable agent transcripts](#archive-finished-threads) are copied before a ready VM is deleted. Unconsumed receipt files, raw VM logs, unpublished Git objects, uncommitted edits, and unreadable transcripts are not durable Gateway evidence and go with the VM.
 
 ## Tasks and subtasks
 
@@ -126,7 +130,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 ### Change subtasks
 
-Subtask create appends a `todo` subtask at the next position. It works in every task status except `completed` and `cancelled`. Outside `backlog`, the new subtask needs at least one deliverable.
+Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
 
 Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
 
@@ -134,8 +138,8 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | --- | --- |
 | `backlog` | Every field of every subtask. Subtask destroy deletes a subtask and closes the gap. |
 | `todo`, `running`, `reviewing`, `settling` | Every field of a `todo` subtask. Its deliverables cannot become empty. Its position moves only among the `todo` subtasks after the last started or ended subtask. |
-| `reserved`, `failed` | Nothing. Subtask create still appends |
-| `completed`, `cancelled` | Nothing |
+| `reserved` | Nothing. Subtask create still appends |
+| `completed`, `failed`, `cancelled` | Nothing |
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
@@ -850,7 +854,7 @@ Every change to assistance goes through `TaskAssistance::apply`; direct model wr
 
 Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity.
 
-Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on a completed or cancelled task; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
+Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on an ended group; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
 
 #### Direction requests
 
@@ -1555,13 +1559,13 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on completed or cancelled tasks.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on ended groups.
 
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It requests `removal_failure` assistance with the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
+- of an ended group, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
 - of a `settling` or `waiting_for_review` task with a published pull request whose cleanup failed. A refused cancellation of an unpublished task stays outside the sweep until cancel is retried.
 
 The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.

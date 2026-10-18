@@ -30,7 +30,7 @@ final class TaskExecutionHold
         return app(TaskExecutionLock::class)->synchronized($group->id, static function () use ($group, $operation): mixed {
             $fresh = Task::topLevel()->find($group->id);
             if (! $fresh instanceof Task || self::active($fresh)
-                || in_array($fresh->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+                || in_array($fresh->status, TaskGroupStatus::endedStatuses(), true)) {
                 return null;
             }
 

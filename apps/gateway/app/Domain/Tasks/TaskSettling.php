@@ -138,7 +138,7 @@ final readonly class TaskSettling
     }
 
     /**
-     * Removes the workspace that a cancelled or completed group owns, attached or not, and that of a settling group
+     * Removes the workspace that an ended group owns, attached or not, and that of a settling group
      * whose merged pull request cleanup failed. An unattached workspace waits while a live claim can still use it.
      * The tick does not remove the workspace of a group that is still active.
      *
@@ -265,7 +265,7 @@ final readonly class TaskSettling
 
     private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
     {
-        if (in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)) {
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             return $group->taskable_id === $instance->id
                 || ! $group->reserved_at instanceof Carbon
                 || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
@@ -368,7 +368,7 @@ final readonly class TaskSettling
             ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
             ->where(function ($ended) use ($cutoff): void {
                 $ended->where(function ($finished) use ($cutoff): void {
-                    $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+                    $finished->whereIn('tasks.status', TaskGroupStatus::endedStatuses())
                         ->where(function ($reservation) use ($cutoff): void {
                             $reservation->whereColumn('tasks.taskable_id', 'instances.id')
                                 ->orWhereNull('tasks.reserved_at')

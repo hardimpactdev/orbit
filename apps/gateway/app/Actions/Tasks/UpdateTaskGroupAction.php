@@ -58,7 +58,7 @@ final readonly class UpdateTaskGroupAction
             }
 
             if ($data->preview !== null) {
-                if (in_array($locked->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed], true)) {
+                if (in_array($locked->status, TaskGroupStatus::endedStatuses(), true)) {
                     throw new ResourceOperationException('tasks.preview_closed', 'Preview cannot change after a task group has ended.', 409);
                 }
                 $locked->preview = $data->preview;

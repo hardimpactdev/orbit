@@ -36,13 +36,13 @@ enum TaskGroupStatus: string
     }
 
     /**
-     * A cancelled or completed group, or one whose pull request may have merged and awaits completion.
+     * A group that has completed, failed, or been cancelled.
      *
      * @return list<self>
      */
     public static function endedStatuses(): array
     {
-        return [self::Completed, self::Cancelled, ...self::awaitingCompletion()];
+        return [self::Completed, self::Failed, self::Cancelled];
     }
 
     public function isActive(): bool

@@ -127,7 +127,7 @@ final readonly class CancelTaskGroupAction
             });
         } catch (Throwable $exception) {
             $current = Task::topLevel()->findOrFail($group->id);
-            $retryable = in_array($current->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
+            $retryable = in_array($current->status, TaskGroupStatus::endedStatuses(), true)
                 || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
                     && is_string($current->pr_url) && $current->pr_url !== ''
                     && Task::topLevel()->whereKey($current->id)->removalFailure()->exists());
