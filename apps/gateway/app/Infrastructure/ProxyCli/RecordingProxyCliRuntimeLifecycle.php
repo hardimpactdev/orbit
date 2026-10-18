@@ -23,10 +23,10 @@ final class RecordingProxyCliRuntimeLifecycle implements ProxyCliRuntimeLifecycl
         Node $node,
         #[SensitiveParameter]
         array $environment,
-        int $port = ProxyCliProcess::PORT,
     ): void {
+        $data = ProxyCliProcess::data($node, $environment);
         $this->converged = true;
-        $this->environment = $environment;
+        $this->environment = $data->environment;
         Process::query()->updateOrCreate(
             [
                 'owner_type' => Node::class,
@@ -34,14 +34,14 @@ final class RecordingProxyCliRuntimeLifecycle implements ProxyCliRuntimeLifecycl
                 'name' => ProxyCliProcess::NAME,
             ],
             [
-                'runtime' => 'systemd',
-                'working_directory' => '/var/lib/orbit/proxycli',
+                'runtime' => $data->runtime,
+                'working_directory' => $data->workingDirectory,
                 'runtime_config' => [
-                    'command' => [ProxyCliProcess::EXECUTABLE, '/var/lib/orbit/proxycli/server.py'],
-                    'environment' => $environment,
-                    'ports' => ['127.0.0.1:'.$port.':'.$port.'/tcp'],
+                    'command' => $data->command,
+                    'environment' => $data->environment,
+                    'ports' => $data->ports,
                 ],
-                'restart_policy' => 'unless-stopped',
+                'restart_policy' => $data->restartPolicy,
                 'desired_state' => 'running',
                 'status' => 'active',
             ],

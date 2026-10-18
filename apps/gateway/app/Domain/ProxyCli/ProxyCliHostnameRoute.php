@@ -18,7 +18,7 @@ use Throwable;
  */
 final readonly class ProxyCliHostnameRoute
 {
-    public function takeoverCandidate(Node $node, int $port = ProxyCliProcess::PORT): ?Route
+    public function takeoverCandidate(Node $node): ?Route
     {
         $route = Route::query()
             ->with(['customProxy', 'targets'])
@@ -29,7 +29,8 @@ final readonly class ProxyCliHostnameRoute
             return null;
         }
 
-        if (! $this->servesCollector($route, $node, $port)) {
+        if (! $this->servesCollector($route, $node)) {
+            $port = ProxyCliProcess::PORT;
             throw new ResourceOperationException(
                 errorCode: 'proxycli.hostname_taken',
                 message: "Route [{$route->id}] holds ".ProxyCliHostname::Value.' and is not a custom proxy Route to '
@@ -41,7 +42,7 @@ final readonly class ProxyCliHostnameRoute
         return $route;
     }
 
-    private function servesCollector(Route $route, Node $node, int $port): bool
+    private function servesCollector(Route $route, Node $node): bool
     {
         $proxy = $route->customProxy;
 
@@ -57,7 +58,7 @@ final readonly class ProxyCliHostnameRoute
         }
 
         try {
-            return CustomProxyUpstream::parse($proxy->upstream)->authority() === "127.0.0.1:{$port}";
+            return CustomProxyUpstream::parse($proxy->upstream)->authority() === '127.0.0.1:'.ProxyCliProcess::PORT;
         } catch (Throwable) {
             return false;
         }

@@ -876,12 +876,13 @@ def loop(collector: Collector) -> None:
 
 
 def main() -> None:
+    port = int(os.environ["PROXYCLI_PORT"])
     host = env("PROXYCLI_CACHE_HOST")
     cache = Valkey(host, int(env("PROXYCLI_CACHE_PORT", "6379")), env("PROXYCLI_CACHE_USERNAME"), env("PROXYCLI_CACHE_PASSWORD")) if host else None
     collector = Collector(cache)
     Handler.collector = collector
     threading.Thread(target=loop, args=(collector,), daemon=True).start()
-    ThreadingHTTPServer(("127.0.0.1", int(env("PROXYCLI_PORT", "8787"))), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

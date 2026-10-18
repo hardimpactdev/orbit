@@ -16,7 +16,6 @@ interface ProxyCliRuntimeLifecycle
         Node $node,
         #[SensitiveParameter]
         array $environment,
-        int $port = ProxyCliProcess::PORT,
     ): void;
 
     public function remove(Node $node): void;

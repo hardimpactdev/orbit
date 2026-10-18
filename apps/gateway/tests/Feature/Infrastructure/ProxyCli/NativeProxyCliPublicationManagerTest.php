@@ -74,7 +74,7 @@ it('builds the Node before it removes the certificate, then converges DNS withou
 });
 
 it('renders a site that proxies collector.cli-proxy-api.orbit to the loopback collector and waits for its restart', function (): void {
-    $site = new ProxyCliCaddySiteRenderer()->render(8787);
+    $site = new ProxyCliCaddySiteRenderer()->render();
 
     expect($site)->toStartWith('# Managed by Orbit: proxycli')
         ->toContain("collector.cli-proxy-api.orbit {\n")

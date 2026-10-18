@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Actions\ProxyCli\ReconvergeProxyCliConnectionAction;
 use App\Domain\AppDev\ContributedPrivateDnsRecords;
+use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
+use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
+use App\Domain\ProxyCli\ProxyCliConnectionOwnership;
 use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliReservedHostnames;
@@ -79,6 +83,8 @@ final class ProxyCliServiceProvider extends ExtensionServiceProvider
             $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
             $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
         }
+        $this->contribute(DatabaseConnectionUpdateHook::class, ReconvergeProxyCliConnectionAction::class);
+        $this->contribute(DatabaseConnectionRemovalGuard::class, ProxyCliConnectionOwnership::class);
         $this->contribute(ProcessRemovalGuard::class, ProxyCliProcessOwnership::class);
         $this->contribute(ContributedCaddySiteSource::class, ProxyCliCaddySiteSource::class);
         $this->contribute(NodeFootprintArtifact::class, ProxyCliFootprintArtifact::class);

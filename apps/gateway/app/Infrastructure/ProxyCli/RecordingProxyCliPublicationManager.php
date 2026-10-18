@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\ProxyCli;
 
-use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Models\Node;
 use App\Models\Route;
@@ -19,7 +18,7 @@ final class RecordingProxyCliPublicationManager implements ProxyCliPublicationMa
 
     public ?int $takeoverRouteId = null;
 
-    public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
+    public function converge(Node $node, ?Route $takeover = null): void
     {
         $this->converged = true;
         $this->nodeId = $node->id;

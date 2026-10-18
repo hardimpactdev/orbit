@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\ProxyCli;
 
-use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
@@ -48,7 +47,7 @@ final readonly class ProxyCliCaddySiteSource implements ContributedCaddySiteSour
             listener: CaddyListenerRule::Shared,
             hosts: [ProxyCliFootprint::Hostname],
             port: 443,
-            body: $this->renderer->render(ProxyCliProcess::PORT),
+            body: $this->renderer->render(),
             bindPlaceholder: ProxyCliFootprint::CaddyBindPlaceholder,
         )];
     }
