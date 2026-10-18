@@ -190,6 +190,9 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
 
     public int $inspections = 0;
 
+    /** @var list<string> */
+    public array $knownIds = [];
+
     public int $orphanScans = 0;
 
     public bool $orphanScanFails = false;
@@ -209,6 +212,7 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
     public function orphanIds(Node $node, array $knownIds): array
     {
         $this->orphanScans++;
+        $this->knownIds = $knownIds;
 
         if ($this->orphanScanFails) {
             throw new DoctorInspectionException;
@@ -217,3 +221,12 @@ final class ScheduleDoctorFakeInspector implements ScheduleStateInspector
         return $this->orphans;
     }
 }
+
+it('passes all known intents to the standalone inventory without inspecting them again', function (): void {
+    $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true), resourceId: 'inventory'));
+
+    expect($this->inspector->knownIds)->toBe([$this->schedule->id])
+        ->and($this->inspector->inspections)->toBe(0)
+        ->and($this->inspector->orphanScans)->toBe(1)
+        ->and($report->issues)->toBeEmpty();
+});

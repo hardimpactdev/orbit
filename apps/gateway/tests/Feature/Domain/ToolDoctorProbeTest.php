@@ -1261,3 +1261,20 @@ function tool_doctor_cask(string $token, string $version, ?array $artifacts = nu
         ]],
     ];
 }
+
+it('retains registered manager context in the separate inventory job', function (): void {
+    $node = tool_probe_linux_node();
+    $manager = ToolManagerRecord::create(['node_id' => $node->id, 'name' => ToolManagerName::Brew->value, 'status' => 'active']);
+    Tool::create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'jq', 'status' => 'installed']);
+    $inventory = tool_doctor_scans([
+        tool_doctor_scan(ToolManagerName::Brew, ToolInventoryScanState::Conflicting),
+        tool_doctor_scan(ToolManagerName::BrewCask, ToolInventoryScanState::Unsupported),
+        tool_doctor_scan(ToolManagerName::Vp, ToolInventoryScanState::Unsupported),
+    ]);
+    $report = tool_doctor_probe(tool_doctor_installed_inspector(), $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resourceId: 'inventory'));
+
+    expect($report->checked)->toBe(0)
+        ->and($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
+        ->and($report->issues[0]->resourceName)->toBe('brew');
+});

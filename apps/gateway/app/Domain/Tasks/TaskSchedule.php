@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Console\Scheduling\GatewaySchedule;
-use App\Jobs\RunScheduledCommand;
+use App\Domain\Problems\ProblemCollection;
+use App\Domain\Problems\ProblemCollector;
+use App\Jobs\Problems\PruneProblemBatches;
 use Illuminate\Console\Scheduling\Schedule;
 
 final readonly class TaskSchedule
@@ -17,9 +19,12 @@ final readonly class TaskSchedule
         GatewaySchedule::command($schedule, 'tasks:tick', uniqueFor: 330)
             ->everyTenSeconds()
             ->when($enabled);
-        GatewaySchedule::job($schedule, new RunScheduledCommand('problems:collect', 900))
+        $schedule->call(static fn () => app(ProblemCollection::class)->dispatch())
             ->name('problems:collect')->everyTenMinutes()->when($enabled);
-        $schedule->command('problems:collect --horizon')->everyTenMinutes()->withoutOverlapping(1)->when($enabled);
+        $schedule->call(static fn () => app(ProblemCollector::class)->collectHorizon())
+            ->name('problems:horizon')->everyTenMinutes()->when($enabled);
+        GatewaySchedule::job($schedule, new PruneProblemBatches)
+            ->daily()->when($enabled);
         $schedule->command('problems:file')->hourly()->withoutOverlapping(30)->when($enabled);
     }
 }

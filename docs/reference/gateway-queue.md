@@ -48,7 +48,6 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
 | `tasks:tick` | 10 seconds | `tasks` | 330 seconds |
-| `problems:collect` | 10 minutes | `tasks` | 900 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
@@ -64,12 +63,18 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 | Command | Every | Overlap lock |
 | --- | --- | --- |
-| `problems:collect --horizon` | 10 minutes | 1 minute |
+| Horizon Doctor observation | 10 minutes | none |
 | `problems:file` | hour | 30 minutes |
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-Full [problem collection](/reference/tasks#outer-loop) needs the queue and never runs in the scheduler. Without a queue, dispatch fails with an error. The separate `--horizon` observation inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
+[Problem collection](/reference/tasks#outer-loop) dispatches short jobs every 10 minutes on `tasks`: one observation per Node, then one Doctor check per resource, then signal collection and filing. Laravel batches keep the full fleet observation context available to family checks. Every collection job has a five-second timeout and fails on timeout; a completion batch records an unverifiable observation for each failed resource before filing.
+
+Resource checks commit separately because both a Node scan and a family scan can run many remote probes in sequence. Collection needs the queue and never scans the fleet in the scheduler. Without a queue, dispatch fails with an error.
+
+The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
+
+Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `tasks` with a five-second deadline.
 
 ### Without a queue
 
@@ -163,12 +168,12 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate `problems:collect --horizon` observation runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Horizon observation callback runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 ## Why it works this way
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Fleet problem collection runs as a queued job, so a slow Doctor scan cannot delay scheduler dispatch or a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff). Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
+Fleet problem collection runs as short queued steps, so it cannot hold the [scheduler drain](/reference/gateway-recovery#runtime-handoff), and an in-flight collection step holds Horizon termination for at most its five-second timeout. Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.

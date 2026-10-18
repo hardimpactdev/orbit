@@ -30,7 +30,8 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $schedules = Schedule::query()->where('host_node_id', $context->node->id)->orderBy('id')->get();
+        $schedules = Schedule::query()->where('host_node_id', $context->node->id)->orderBy('id')->tap($context->select(...))
+            ->get();
 
         if (! $context->inspection->reachable && $schedules->isNotEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), [
@@ -70,13 +71,16 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        if (! $this->scansForOrphans($context, $schedules->isNotEmpty())) {
+        $knownIds = $context->resourceId === 'inventory'
+            ? Schedule::query()->where('host_node_id', $context->node->id)->pluck('id')->all()
+            : $schedules->pluck('id')->all();
+        if (($context->resourceId !== null && $context->resourceId !== 'inventory') || ! $this->scansForOrphans($context, $knownIds !== [])) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
         }
 
         try {
             foreach ($this->inspector->orphanIds($context->node, array_values(array_filter(
-                $schedules->pluck('id')->all(),
+                $knownIds,
                 is_string(...),
             ))) as $id) {
                 $issues[] = new DoctorIssueData(

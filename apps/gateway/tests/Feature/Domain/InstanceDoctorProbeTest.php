@@ -584,7 +584,7 @@ it('reports every production projection field in stable order without exposing p
         ->not->toContain($instance->production_home, $instance->production_php_socket);
 });
 
-it('reports missing and shared production PHP associations before native projection drift', function (): void {
+it('reports missing and shared production PHP associations before native projection drift', function (bool $scoped): void {
     $node = instance_probe_node();
     $missing = instance_probe_production_instance(instance_probe_app(), $node);
     $missing->update(['production_php_socket' => null]);
@@ -613,17 +613,17 @@ it('reports missing and shared production PHP associations before native project
                 caddyProjectionMatches: true,
             );
         }
-    })->inspect(instance_probe_context($node));
+    })->inspect(new DoctorNodeContext($node, instance_probe_context($node)->inspection, resourceId: $scoped ? $sharedFirst->id : null));
 
     expect(collect($report->issues)->map(fn ($issue): array => [$issue->resourceId, $issue->code])->all())
-        ->toBe([
+        ->toBe($scoped ? [[$sharedFirst->id, 'instance.php_fpm_association_shared']] : [
             [$missing->id, 'instance.php_fpm_association_missing'],
             [$sharedFirst->id, 'instance.php_fpm_association_shared'],
             [$sharedSecond->id, 'instance.php_fpm_association_shared'],
         ])
         ->and($report->checked)
-        ->toBe(3);
-});
+        ->toBe($scoped ? 1 : 3);
+})->with([false, true]);
 
 it('reports unavailable production observations without hiding established drift', function (): void {
     $node = instance_probe_node();

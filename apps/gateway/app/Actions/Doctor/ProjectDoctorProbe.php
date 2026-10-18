@@ -36,6 +36,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
         $rows = Project::query()
             ->whereIn('id', Instance::query()->whereIn('id', $eligibleInstanceIds)->select('project_id'))
             ->orderBy('id')
+            ->tap($context->select(...))
             ->get();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, 0, []);

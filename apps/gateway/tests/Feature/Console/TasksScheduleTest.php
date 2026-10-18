@@ -29,7 +29,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
     $file = collect($schedule->events())->first(
         static fn ($event): bool => str_contains((string) $event->command, 'problems:file'),
     );
-    expect($schedule->events())->toHaveCount(4)
+    expect($schedule->events())->toHaveCount(5)
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeTrue()
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeFalse()
         ->and($collect)->not->toBeNull()
@@ -45,7 +45,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
 it('skips the task tick schedule when tasks are disabled', function (): void {
     $schedule = task_schedule(enabled: false);
 
-    expect($schedule->events())->toHaveCount(4)
+    expect($schedule->events())->toHaveCount(5)
         ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeFalse();
 });
 

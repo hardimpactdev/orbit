@@ -35,8 +35,9 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rules = FirewallRule::query()->where('node_id', $context->node->id)->orderBy('id')->get();
-        $expectations = $this->expectations->for($context->node);
+        $rules = FirewallRule::query()->where('node_id', $context->node->id)->orderBy('id')->tap($context->select(...))
+            ->get();
+        $expectations = $context->resourceId === null || $context->resourceId === 'inventory' ? $this->expectations->for($context->node) : [];
 
         if ($rules->isEmpty() && $expectations === []) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, []);

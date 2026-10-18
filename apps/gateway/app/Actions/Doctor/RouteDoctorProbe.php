@@ -39,10 +39,14 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $routes = $this->servedRoutes($context->node);
+        if ($context->resourceId !== null) {
+            $routes = $routes->where('id', $context->resourceId)->values();
+        }
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
         $proxies = RouteCustomProxy::query()
             ->with('route')
             ->where('node_id', $context->node->id)
+            ->when($context->resourceId !== null, fn ($query) => $query->where('route_id', $context->resourceId))
             ->orderBy('route_id')
             ->get();
 
@@ -92,7 +96,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
      *
      * @return Collection<int, Route>
      */
-    private function servedRoutes(Node $node): Collection
+    public function servedRoutes(Node $node): Collection
     {
         $clusters = NodeRole::query()
             ->where('node_id', $node->id)

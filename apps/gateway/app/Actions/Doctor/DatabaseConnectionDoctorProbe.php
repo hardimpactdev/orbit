@@ -28,10 +28,27 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
         return DoctorFamily::DatabaseConnection;
     }
 
+    /** @return list<string> */
+    public function resources(Node $node): array
+    {
+        $attachments = $this->attachmentsOn($node);
+        $connections = $this->unattachedNodeConnections($node, $attachments);
+
+        return [
+            ...$attachments->map(static fn (DatabaseConnectionTarget $target): string => 'attachment:'.$target->id)->all(),
+            ...$connections->map(static fn (DatabaseConnection $connection): string => 'connection:'.$connection->id)->all(),
+        ];
+    }
+
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $attachments = $this->attachmentsOn($context->node);
         $unattached = $this->unattachedNodeConnections($context->node, $attachments);
+        if ($context->resourceId !== null) {
+            $target = (string) $context->resourceId;
+            $attachments = str_starts_with($target, 'attachment:') ? $attachments->where('id', (int) substr($target, 11))->values() : new Collection;
+            $unattached = str_starts_with($target, 'connection:') ? $unattached->where('id', (int) substr($target, 11))->values() : new Collection;
+        }
         $checked = $attachments->count() + $unattached->count();
 
         if ($checked === 0) {

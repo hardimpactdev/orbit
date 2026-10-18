@@ -106,6 +106,9 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         }
 
         foreach ($roles as $role) {
+            if ($context->resourceId !== null && $role->id !== $context->resourceId) {
+                continue;
+            }
             if ($role->status !== LifecycleStatus::Active) {
                 continue;
             }
@@ -153,7 +156,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => in_array($role->role, self::CaddySiteRoles, strict: true))
             ?? $active->first();
 
-        if (! $role instanceof NodeRole) {
+        if (! $role instanceof NodeRole || ($context->resourceId !== null && $context->resourceId !== $role->id)) {
             return;
         }
 
@@ -216,7 +219,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         $role = $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev)
             ?? $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd);
 
-        if (! $role instanceof NodeRole) {
+        if (! $role instanceof NodeRole || ($context->resourceId !== null && $context->resourceId !== $role->id)) {
             return;
         }
 

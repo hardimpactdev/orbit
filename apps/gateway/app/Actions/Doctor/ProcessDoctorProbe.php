@@ -60,6 +60,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                     });
             })
             ->orderBy('id')
+            ->tap($context->select(...))
             ->get();
 
         if ($processes->isEmpty()) {

@@ -52,9 +52,12 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             ->with(['node', 'manager'])
             ->where('node_id', $context->node->id)
             ->orderBy('id')
+            ->tap($context->select(...))
             ->get();
 
-        $environments = Instance::query()->where('node_id', $context->node->id)->whereNotNull('vp_environment')->orderBy('id')->get();
+        $environments = Instance::query()->where('node_id', $context->node->id)->whereNotNull('vp_environment')
+            ->when($context->resourceId !== null, fn ($query) => $query->whereKey(is_string($context->resourceId) && str_starts_with($context->resourceId, 'instance:') ? substr($context->resourceId, 9) : -1))
+            ->orderBy('id')->get();
         $count = $tools->count() + $environments->count();
 
         if (! $context->inspection->reachable) {
@@ -79,7 +82,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Tool,
             $count,
-            [...$this->registeredIssues($tools), ...$this->environmentIssues($environments, $context->node), ...$this->discoveryIssues($context, $tools)],
+            [...$this->registeredIssues($tools), ...$this->environmentIssues($environments, $context->node), ...($context->resourceId === null || $context->resourceId === 'inventory' ? $this->discoveryIssues($context, $context->resourceId === 'inventory' ? Tool::query()->with(['node', 'manager'])->where('node_id', $context->node->id)->get() : $tools) : [])],
         );
     }
 

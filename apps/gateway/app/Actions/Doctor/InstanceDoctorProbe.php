@@ -51,7 +51,8 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $peers = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = $context->resourceId === null ? $peers : $peers->where('id', $context->resourceId)->values();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
@@ -143,7 +144,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationMissing);
             }
 
-            if ($instance->placedOnAppProd() && $this->productionAssociationShared($instance, $rows)) {
+            if ($instance->placedOnAppProd() && $this->productionAssociationShared($instance, $peers)) {
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationShared);
             }
 

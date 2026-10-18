@@ -14,6 +14,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Jobs\Problems\CollectProblemSignals;
+use App\Jobs\Problems\PruneProblemBatches;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -96,19 +98,18 @@ describe('the schedule', function (): void {
             ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
     });
 
-    it('queues fleet collection once without running Doctor in the scheduler', function (): void {
+    it('queues collection without running Doctor in the scheduler', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $collect = gateway_queue_event('problems:collect');
-
         expect($collect)->toBeInstanceOf(CallbackEvent::class);
-        $collect->run(app());
+
         $collect->run(app());
 
         $row = DB::table('jobs')->sole();
         $job = unserialize(json_decode($row->payload, true)['data']['command']);
         expect($row->queue)->toBe(GatewayQueue::Tasks->value)
-            ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])
-            ->toBe(['problems:collect', 900, 900, GatewayQueue::Connection]);
+            ->and($job)->toBeInstanceOf(CollectProblemSignals::class)
+            ->and([$job->timeout, $job->connection])->toBe([5, GatewayQueue::Connection]);
     });
 
     it('refuses fleet collection dispatch without a queue instead of running it inline', function (): void {
@@ -120,11 +121,11 @@ describe('the schedule', function (): void {
 
     it('keeps Horizon observation and filing outside Horizon', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $horizon = gateway_queue_event('problems:collect --horizon');
+        $horizon = gateway_queue_event('problems:horizon');
         $file = gateway_queue_event('problems:file');
 
-        expect($horizon)->not->toBeInstanceOf(CallbackEvent::class)
-            ->and([$horizon->expression, $horizon->withoutOverlapping, $horizon->expiresAt])->toBe(['*/10 * * * *', true, 1])
+        expect($horizon)->toBeInstanceOf(CallbackEvent::class)
+            ->and([$horizon->expression, $horizon->withoutOverlapping])->toBe(['*/10 * * * *', false])
             ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
             ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
     });
@@ -331,4 +332,18 @@ describe(GatewayHorizon::class, function (): void {
             ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse()
             ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
     });
+});
+
+it('queues batch pruning and invokes the native command with structured options', function (): void {
+    config(['orbit.gateway_queue.connection' => 'services-valkey']);
+    $event = gateway_queue_event(PruneProblemBatches::class);
+    expect($event->expression)->toBe('0 0 * * *');
+    $event->run(app());
+    $row = DB::table('jobs')->sole();
+    $job = unserialize(json_decode($row->payload, true)['data']['command']);
+    expect($job)->toBeInstanceOf(PruneProblemBatches::class)
+        ->and($job->timeout)->toBe(5)->and($row->queue)->toBe('tasks');
+    Artisan::shouldReceive('call')->once()->with('queue:prune-batches', ['--hours' => 24, '--unfinished' => 24, '--cancelled' => 24])->andReturn(0);
+
+    $job->handle();
 });
