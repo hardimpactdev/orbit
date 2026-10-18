@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\LifecycleStatus;
@@ -79,6 +80,21 @@ describe('task broadcasts', function (): void {
             ->and($events[0]->data)->toBe(['id' => $group->id, 'status' => 'backlog']);
     });
 
+    it('broadcasts cancellation of an unclaimed group with no subtasks or assistance', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $group = live_group('backlog');
+        $group->tasks()->delete();
+        app(TaskBroadcasts::class)->flush();
+        Event::fake([RecordBroadcast::class]);
+
+        app(CancelTaskGroupAction::class)->execute($group);
+        app(TaskBroadcasts::class)->flush();
+
+        $events = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($events)->toHaveCount(1)
+            ->and($events[0]->data['status'])->toBe('cancelled');
+    });
+
     it('coalesces every change to a group and its subtasks into one update without free text', function (): void {
         $group = live_group();
         app(TaskBroadcasts::class)->flush();
@@ -86,10 +102,10 @@ describe('task broadcasts', function (): void {
 
         $group->update(['status' => TaskGroupStatus::Reviewing]);
         $group->tasks[0]->update(['status' => TaskStatus::Reviewing]);
-        $group->tasks[1]->update(['assistance_requested' => true, 'assistance_reason' => 'Private reason']);
+        test_update_task($group->tasks[1], ['assistance_requested' => true, 'assistance_reason' => 'Private reason']);
         app(TaskBroadcasts::class)->flush();
 
-        $events = live_broadcasts();
+        $events = live_broadcasts(RecordEventType::TaskGroupUpdated);
         expect($events)->toHaveCount(1)
             ->and($events[0]->type)->toBe(RecordEventType::TaskGroupUpdated)
             ->and($events[0]->data)->toBe(['id' => $group->id, 'status' => 'reviewing', 'lines_added' => null, 'lines_deleted' => null, 'line_diff' => null])
@@ -245,7 +261,7 @@ describe('task broadcasts', function (): void {
         $group = live_group();
         app(TaskBroadcasts::class)->flush();
         Event::fake([RecordBroadcast::class]);
-        $group->update(['assistance_requested' => true, 'assistance_reason' => 'Waiting']);
+        test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Waiting']);
 
         $this->artisan('tasks:tick')->assertSuccessful();
 

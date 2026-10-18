@@ -61,10 +61,7 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {
-            $group->refresh();
-            $group->status = TaskGroupStatus::Completed;
-            $group->settled_at ??= now();
-            $group->save();
+            $group->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
@@ -150,13 +147,11 @@ final readonly class CompleteTaskGroupAction
                             'status' => TaskStatus::Cancelled,
                             'settled_at' => now(),
                             'completion_summary' => 'Cancelled by operator.',
-                            'assistance_requested' => false,
                         ]);
                     }
                     $locked->update([
                         'status' => TaskGroupStatus::Completed,
                         'settled_at' => $locked->settled_at ?? now(),
-                        'assistance_requested' => false,
                     ]);
 
                     return true;
@@ -185,6 +180,7 @@ final readonly class CompleteTaskGroupAction
             // Under the admission lock, so a tick cannot park the group's task VM while its workspace is removed.
             $this->execution->synchronized($group->id, fn () => $this->removeWorkspace($group), wait: false);
         } catch (Throwable $exception) {
+            $this->workspace->recordFailure($group, $exception, replaceDirection: $finishWhenRemovalFails);
             if (! $finishWhenRemovalFails) {
                 throw $exception;
             }
@@ -195,18 +191,12 @@ final readonly class CompleteTaskGroupAction
         return true;
     }
 
-    /** Deletes the checkout. A refusal keeps the checkout and the Instance row, asks for assistance, and rethrows. */
+    /** Deletes the checkout; a refusal leaves the checkout and Instance for removeOrFinish to report. */
     private function removeWorkspace(Task $group): void
     {
         $instanceId = $group->taskable_id;
 
-        try {
-            $this->workspace->remove($group);
-        } catch (Throwable $exception) {
-            $this->workspace->recordFailure($group, $exception);
-
-            throw $exception;
-        }
+        $this->workspace->remove($group);
 
         $this->workspace->clearFailure($group);
 

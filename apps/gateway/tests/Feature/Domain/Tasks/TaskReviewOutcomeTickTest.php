@@ -15,7 +15,6 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -188,7 +187,6 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int
@@ -338,11 +336,11 @@ it('leaves a direction question escalated when the following review receipt has 
 it('starts a reviewer for a held direction resolution and answers from the relay', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
-    $task->update([
+    test_update_task($task, [
         'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => 'Which mirror?', 'assistance_reason' => 'Which mirror?',
     ]);
-    $group->update([
+    test_update_task($group, [
         'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => 'Which mirror?', 'assistance_reason' => 'Which mirror?',
     ]);
@@ -566,12 +564,12 @@ it('delivers a relay answer that was recorded before the send was interrupted', 
 it('replays a held direction review from the stored resolution after the flag write fails', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
-    $task->update([
+    test_update_task($task, [
         'status' => TaskStatus::Reviewing, 'review_attempt' => 3, 'review_notified_attempt' => null,
         'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => 'Which ADR?', 'assistance_reason' => 'Which ADR?',
     ]);
-    $group->update([
+    test_update_task($group, [
         'status' => TaskGroupStatus::Reviewing, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
         'assistance_question' => 'Which ADR?', 'assistance_reason' => 'Which ADR?',
     ]);
@@ -661,7 +659,7 @@ it('refuses pending correction recovery for either real ended PR reason on sched
     app(RequestEndedPullRequestAssistanceAction::class)->execute($group);
     $reason = $group->fresh()?->assistance_reason;
     expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
-    ($held === 'task' ? $group : $task)->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
+    test_update_task(($held === 'task' ? $group : $task), test_assistance_attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
     $taskReason = $task->fresh()?->assistance_reason;
     $groupReason = $group->fresh()?->assistance_reason;
     app(TaskExtensionState::class)->enable();
@@ -686,7 +684,7 @@ it('refuses pending correction recovery for either real ended PR reason on sched
 it('preserves a real ended PR hold arriving during correction send before the final guarded commit', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
-    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
+    test_update_task($task, ['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
     $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
     app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
     $pending = $task->fresh()?->deliverable_correction_resume;
@@ -736,8 +734,8 @@ it('supersedes an uncertain correction after completed direction without erasing
         ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.', 'path' => 'tests/CorrectedTest.php', 'change' => 'created'],
         ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'command' => 'vendor/bin/pest tests/CorrectedTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
     ];
-    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => $failure === 'before-reservation' ? null : 1, 'deliverables' => $failure === 'before-reservation' ? [['id' => 'old', 'type' => 'review', 'description' => 'Previous contract.']] : $contract]);
-    $group->update(['assistance_requested' => true]);
+    test_update_task($task, ['assistance_requested' => true, 'deliverable_correction_check_id' => $failure === 'before-reservation' ? null : 1, 'deliverables' => $failure === 'before-reservation' ? [['id' => 'old', 'type' => 'review', 'description' => 'Previous contract.']] : $contract]);
+    test_update_task($group, ['assistance_requested' => true]);
     AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     $checkout = sys_get_temp_dir().'/orbit-correction-direction-'.bin2hex(random_bytes(6));
     File::ensureDirectoryExists($checkout.'/.git/orbit');
@@ -1011,7 +1009,6 @@ it('keeps the implementer handoff when the relay marker update fails after the s
         ->and(TaskQuestion::query()->count())->toBe(1)
         ->and($dispatcher->commands)->not->toBeEmpty()
         ->and($starts())->toBe(1);
-
 });
 
 it('reminds a reviewer that ends a turn without a receipt once, then asks for assistance', function (): void {
@@ -1068,7 +1065,6 @@ it('starts the reviewer with the first review request when the group has no revi
         {
 
             return null;
-
         }
 
         public function spawnReviewer(Task $task): ?int

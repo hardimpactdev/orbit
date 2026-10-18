@@ -16,7 +16,8 @@ function assistance_kind_migration(): object
     DB::setDefaultConnection('assistance_kind');
     $paths = array_values(array_filter(
         glob(database_path('migrations/*.php')) ?: [],
-        static fn (string $path): bool => ! str_contains($path, 'add_assistance_kind_to_tasks'),
+        static fn (string $path): bool => ! str_contains($path, 'add_assistance_kind_to_tasks')
+            && ! str_contains($path, 'classify_task_removal_failures'),
     ));
     Artisan::call('migrate', [
         '--database' => 'assistance_kind',

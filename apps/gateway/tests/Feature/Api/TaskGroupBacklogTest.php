@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -321,9 +320,6 @@ it('cancels a todo subtask of a running group without starting anything', functi
 });
 
 it('settles after cancelling the only todo subtask of a running group without assistance', function (): void {
-    $notifier = Mockery::mock(CoderSettleNotifier::class);
-    $notifier->shouldNotReceive('assistance');
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $group = backlog_group($this, ['Todo']);
     Task::topLevel()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
@@ -348,9 +344,6 @@ it('does not check merged pull request assistance when cancelling todo in a retu
     $watcher->shouldNotReceive('health');
     $watcher->shouldNotReceive('status');
     app()->instance(TaskPullRequestWatcher::class, $watcher);
-    $notifier = Mockery::mock(CoderSettleNotifier::class);
-    $notifier->shouldNotReceive('assistance');
-    app()->instance(CoderSettleNotifier::class, $notifier);
 
     $group = backlog_group($this, ['Todo']);
     $task = Task::query()->findOrFail($group['tasks'][0]['id']);
@@ -458,8 +451,8 @@ it('cancels the unfinished subtasks with their group and keeps finished ones', f
 
 it('shows a requested assistance and its reason on the group and the subtask', function (): void {
     $group = backlog_group($this, ['One']);
-    Task::topLevel()->whereKey($group['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
-    Task::query()->whereKey($group['tasks'][0]['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::topLevel()->whereKey($group['id']), ['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::query()->whereKey($group['tasks'][0]['id']), ['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
 
     $this->getJson("/api/v1/task-groups/{$group['id']}")
         ->assertOk()
@@ -473,8 +466,8 @@ it('shows a requested assistance and its reason on the group and the subtask', f
 
 it('clears a requested assistance when the group is cancelled', function (): void {
     $group = backlog_group($this, ['One']);
-    Task::topLevel()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
-    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::topLevel()->whereKey($group['id']), ['status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    test_update_task(Task::query()->whereKey($group['tasks'][0]['id']), ['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
 
     $this->postJson("/api/v1/task-groups/{$group['id']}/cancel")
         ->assertOk()

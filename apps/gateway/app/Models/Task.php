@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskFinalReview;
@@ -18,7 +19,6 @@ use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
-use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -27,7 +27,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -93,7 +92,6 @@ use LogicException;
  * @property string|null $watched_pr_state
  * @property string|null $watched_pr_completion
  * @property bool|null $preview
- * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
@@ -143,7 +141,6 @@ final class Task extends Model
         'taskable_id',
         'pr_url',
         'preview',
-        'notify_coder',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -266,7 +263,6 @@ final class Task extends Model
         'merge_reason',
         'merged_sha',
         'preview',
-        'notify_coder',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -291,10 +287,10 @@ final class Task extends Model
             $task->guardHierarchy();
             $task->guardWorkspace();
             $task->guardStatus();
-            $task->clearAssistanceWhenEnded();
         });
 
         self::saved(static function (Task $task): void {
+            $task->clearAssistanceWhenEnded();
             $task->settleQuestionsWhenEnded();
         });
     }
@@ -355,6 +351,13 @@ final class Task extends Model
     public function scopeTopLevel(Builder $query): void
     {
         $query->withoutGlobalScope('subtask')->whereNull('parent_id');
+    }
+
+    /** @param  Builder<Task>  $query */
+    public function scopeRemovalFailure(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('assistance_requested'), true)
+            ->where($query->qualifyColumn('assistance_kind'), AssistanceKind::RemovalFailure);
     }
 
     /** @return BelongsTo<Task, $this> */
@@ -518,7 +521,6 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
-            'notify_coder' => 'boolean',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
@@ -559,91 +561,15 @@ final class Task extends Model
         ];
     }
 
-    /**
-     * The assistance flag follows the stored status when this update does not change it.
-     * The decision is inside the UPDATE, so a stale loaded status cannot reflag an ended row.
-     */
-    private bool $assistanceFollowsDatabase = false;
-
+    /** Keep lifecycle changes and their assistance Activity in one transaction. */
     #[\Override]
-    protected function performUpdate(Builder $query): bool
+    public function save(array $options = []): bool
     {
-        if ($this->fireModelEvent('updating') === false) {
-            return false;
+        if ($this->isDirty(TaskAssistance::Fields)) {
+            throw new LogicException('Assistance can only be changed through TaskAssistance::apply.');
         }
 
-        if ($this->usesTimestamps()) {
-            $this->updateTimestamps();
-        }
-
-        $dirty = $this->guardEndedAssistance($this->getDirtyForUpdate());
-
-        if (count($dirty) > 0) {
-            $this->setKeysForSaveQuery($query)->update($dirty);
-
-            $this->refreshSavedAttributes();
-
-            if ($this->assistanceFollowsDatabase) {
-                $this->assistanceFollowsDatabase = false;
-                $this->syncAssistanceFromDatabase();
-            }
-
-            $this->syncChanges();
-
-            $this->fireModelEvent('updated', false);
-        }
-
-        return true;
-    }
-
-    /**
-     * @param  array<string, mixed>  $dirty
-     * @return array<string, mixed>
-     */
-    private function guardEndedAssistance(array $dirty): array
-    {
-        if (array_key_exists('status', $dirty) && $this->isEndedStatus($dirty['status'])) {
-            $this->assistance_requested = false;
-            $dirty['assistance_requested'] = $this->attributes['assistance_requested'];
-
-            return $dirty;
-        }
-
-        $requestsAssistance = array_key_exists('assistance_requested', $dirty)
-            && $this->isRequestedFlag($dirty['assistance_requested']);
-        $loadedEnded = ! array_key_exists('status', $dirty) && $this->isEndedStatus($this->attributes['status'] ?? null);
-
-        if (! array_key_exists('status', $dirty) && ($requestsAssistance || $loadedEnded)) {
-            $grammar = $this->getConnection()->getQueryGrammar();
-            $status = $grammar->wrap('status');
-            $flag = $requestsAssistance ? '1' : $grammar->wrap('assistance_requested');
-            $dirty['assistance_requested'] = new Expression(
-                "case when {$status} in ('completed', 'cancelled') then 0 else {$flag} end", // @phpstan-ignore argument.type (identifiers are grammar-wrapped, not user input)
-            );
-            $this->assistanceFollowsDatabase = true;
-        }
-
-        return $dirty;
-    }
-
-    private function syncAssistanceFromDatabase(): void
-    {
-        $stored = $this->newModelQuery()->whereKey($this->getKey())->value('assistance_requested');
-        $this->assistance_requested = $this->isRequestedFlag($stored);
-    }
-
-    private function isEndedStatus(mixed $status): bool
-    {
-        if ($status instanceof BackedEnum) {
-            $status = $status->value;
-        }
-
-        return $status === TaskStatus::Completed->value || $status === TaskStatus::Cancelled->value;
-    }
-
-    private function isRequestedFlag(mixed $flag): bool
-    {
-        return in_array($flag, [true, 1, '1'], true);
+        return $this->getConnection()->transaction(fn (): bool => parent::save($options));
     }
 
     private function applyLevelDefaults(): void
@@ -654,7 +580,6 @@ final class Task extends Model
                 'implementer_agent_driver' => 'pi',
                 'reviewer_agent_driver' => 'pi',
                 'preview' => false,
-                'notify_coder' => false,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,
                 'reviewer_model' => TaskAgentDefaults::ReviewerModel,
@@ -799,28 +724,11 @@ final class Task extends Model
         $this->syncOriginalAttribute('parent_id');
     }
 
-    /**
-     * A completed or cancelled task never asks for assistance. The last reason stays.
-     * A query-builder update skips this hook, so that write clears the flag itself.
-     */
+    /** The writer owns the assistance rule for every status transition. */
     private function clearAssistanceWhenEnded(): void
     {
-        $status = $this->attributes['status'] ?? null;
-
-        if ($status instanceof BackedEnum) {
-            $status = $status->value;
-        }
-
-        if (! is_string($status)) {
-            return;
-        }
-
-        $ended = $this->resolvedParentId() === null
-            ? in_array(TaskGroupStatus::tryFrom($status), [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
-            : in_array(TaskStatus::tryFrom($status), [TaskStatus::Completed, TaskStatus::Cancelled], true);
-
-        if ($ended) {
-            $this->assistance_requested = false;
+        if ($this->wasChanged('status')) {
+            TaskAssistance::apply($this, reconcileStatus: true);
         }
     }
 

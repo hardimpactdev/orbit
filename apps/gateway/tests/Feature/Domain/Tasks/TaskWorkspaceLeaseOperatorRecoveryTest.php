@@ -112,7 +112,7 @@ function operator_protocol(string $mode, string $operation, string $binding, arr
 
 it('seals a lost receipt before releasing dead ownership and audits repeated operator recovery', function (): void {
     [$lease, $operation] = operator_recovery_holder();
-    $this->group->update(['assistance_requested' => true]);
+    test_update_task($this->group, ['assistance_requested' => true]);
 
     $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Investigated missing receipt'])->assertSuccessful();
     $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Confirm completed recovery'])->assertSuccessful();

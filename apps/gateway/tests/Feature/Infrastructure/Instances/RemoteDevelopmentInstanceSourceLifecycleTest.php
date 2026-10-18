@@ -238,6 +238,7 @@ it('preserves a pre-existing same-origin checkout through the whole failed creat
     $this->files->makeDirectory(dirname($path), 0o755, true);
     orb76_run(['git', 'clone', $this->repository, $path]);
     orb76_run(['git', '-C', $path, 'checkout', 'main']);
+    orb76_run(['git', '-C', $path, 'config', 'maintenance.auto', 'false']);
     orb76_run(['git', '-C', $path, 'config', 'user.name', 'Orbit Test']);
     orb76_run(['git', '-C', $path, 'config', 'user.email', 'orbit@example.test']);
     orb76_run(['git', '-C', $path, 'commit', '--allow-empty', '-m', 'Unpublished local work']);

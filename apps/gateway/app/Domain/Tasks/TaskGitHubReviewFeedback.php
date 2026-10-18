@@ -45,7 +45,7 @@ final readonly class TaskGitHubReviewFeedback
 
     /** Set or recover exactly one source. An empty update republishes retained causes when possible.
      * @param  array<string, string|null>  $changes
-     * @return bool Whether the displayed assistance changed. Notifications happen outside this transaction.
+     * @return bool Whether the displayed assistance changed. Activity is recorded in the same transaction.
      */
     public function change(Task $group, array $changes = []): bool
     {
@@ -70,12 +70,8 @@ final readonly class TaskGitHubReviewFeedback
             if ($reason === $locked->assistance_reason || in_array($locked->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
                 return false;
             }
-            $attributes = $reason === null ? TaskAssistance::cleared() : TaskAssistance::attributes(AssistanceKind::Failure, null, $reason);
-            DB::table('tasks')->where('id', $locked->id)->update([
-                ...$attributes, 'assistance_kind' => $reason === null ? null : AssistanceKind::Failure->value, 'updated_at' => now(),
-            ]);
 
-            return true;
+            return TaskAssistance::apply($locked, $reason === null ? null : AssistanceKind::Failure, null, $reason, replaceFailure: true);
         });
         $group->refresh();
 

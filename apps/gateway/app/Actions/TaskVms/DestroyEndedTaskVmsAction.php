@@ -33,9 +33,7 @@ final readonly class DestroyEndedTaskVmsAction
                     ->whereHas('group', static fn ($group) => $group->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]))
                     ->whereNotExists($workspace))
                 ->orWhere(static fn ($stranded) => $stranded
-                    ->whereHas('group', static fn ($group) => $group->whereIn('status', TaskGroupStatus::endedStatuses())->where(static fn ($reason) => $reason
-                        ->where('assistance_reason', 'like', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'%')
-                        ->orWhere('assistance_reason', 'like', RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%')))
+                    ->whereHas('group', static fn ($group) => $group->whereIn('status', TaskGroupStatus::endedStatuses())->removalFailure())
                     ->whereExists($workspace)))
             ->get(['id']);
 

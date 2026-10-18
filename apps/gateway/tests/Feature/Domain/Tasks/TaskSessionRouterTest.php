@@ -6,7 +6,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionActor;
@@ -16,13 +15,13 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
-use Tests\Support\NullCoderSettleNotifier;
 
 function router_group(): Task
 {
@@ -144,7 +143,7 @@ it('dispatches acceptForSession for a pending approval', function (): void {
     $dispatcher = router_dispatcher();
     $observation = router_observation($group, 'approval-3');
 
-    new TaskSessionActor(router_input_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(router_input_registry($dispatcher))->execute(
         $group,
         $observation,
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -167,7 +166,7 @@ it('surfaces a refused drain instead of swallowing the dispatch', function (): v
         }
     };
 
-    expect(fn () => new TaskSessionActor(router_input_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    expect(fn () => new TaskSessionActor(router_input_registry($dispatcher))->execute(
         $group,
         router_observation($group, 'approval-3'),
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -187,7 +186,7 @@ it('starts an implementer turn through the agent driver', function (): void {
     $registry = test_snapshot_registry($dispatcher, $reader);
     app()->instance(AgentDriverRegistry::class, $registry);
 
-    new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor($registry)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 0.86, 'Jev selected continue_implementer.'),
@@ -200,60 +199,28 @@ it('starts an implementer turn through the agent driver', function (): void {
         ->and($dispatcher->commands[0]['effort'])->toBe(config('orbit.tasks.implementer_effort'));
 });
 
-it('notifies Coder only when Jev escalates', function (): void {
+it('requests assistance in Activity when Jev escalates', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?Task $escalated = null;
+    $decision = new TaskSessionDecision(TaskSessionNextAction::RequestAssistance, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
-        public ?TaskSessionDecision $decision = null;
-
-        public function notify(Task $group): void {}
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->escalated = $group;
-            $this->decision = $decision;
-        }
-
-        public function assistance(Task $group, string $reason): void {}
-    };
-    $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
-
-    new TaskSessionActor(test_snapshot_registry($dispatcher), $notifier)->execute($group, router_observation($group), $decision);
+    new TaskSessionActor(test_snapshot_registry($dispatcher))->execute($group, router_observation($group), $decision);
 
     expect($dispatcher->commands)->toBe([])
-        ->and($notifier->escalated?->id)->toBe($group->id)
-        ->and($notifier->decision?->reason)->toBe('Choice confidence 0.2 is below 0.75.');
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_reason)->toBe($decision->reason)
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->count())->toBe(1);
 });
 
 it('dispatches nothing for noop', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public bool $called = false;
 
-        public function notify(Task $group): void
-        {
-            $this->called = true;
-        }
-
-        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->called = true;
-        }
-
-        public function assistance(Task $group, string $reason): void {}
-    };
-
-    new TaskSessionActor(test_snapshot_registry($dispatcher), $notifier)->execute(
+    new TaskSessionActor(test_snapshot_registry($dispatcher))->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::Noop, 0.95, 'Jev selected noop.'),
     );
 
-    expect($dispatcher->commands)->toBe([])
-        ->and($notifier->called)->toBeFalse();
+    expect($dispatcher->commands)->toBe([]);
 });

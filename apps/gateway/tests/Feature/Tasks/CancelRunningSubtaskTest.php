@@ -7,7 +7,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -27,7 +26,6 @@ use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
-use Tests\Support\NullCoderSettleNotifier;
 
 /**
  * A running group on an Instance whose first subtask is in its baseline check and whose second waits.
@@ -100,7 +98,6 @@ function cancel_subtask_in_baseline(int $suffix): array
     ]);
     $checks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $checks);
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
         public function headCommit(Instance $instance): ?string
@@ -227,7 +224,6 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
         public function headCommit(Instance $instance): ?string
@@ -322,7 +318,6 @@ it('retries after an interrupt failure and settles when cancelling the last subt
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     $project = Project::query()->create([
         'name' => 'Cancel retry',
         'slug' => 'cancel-retry',

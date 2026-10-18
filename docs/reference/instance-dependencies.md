@@ -56,7 +56,7 @@ Select one Instance by the current directory or by its full Route domain, or sca
 
 ```bash
 orbit instance:dependencies:scan
-orbit instance:dependencies:scan --project=commander.test
+orbit instance:dependencies:scan --project=orbit.test
 orbit instance:dependencies:scan --all
 ```
 
@@ -94,7 +94,7 @@ Update one development Instance with the same selectors, except `--all`:
 
 ```bash
 orbit instance:dependencies:update
-orbit instance:dependencies:update --project=commander.test
+orbit instance:dependencies:update --project=orbit.test
 ```
 
 The update command does not iterate over monorepo sub-projects. For a monorepo it remains repository-root-only; it does not update manifests under `apps/` or `packages/`. Per-sub-project updates are out of scope.

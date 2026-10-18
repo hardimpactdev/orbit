@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
@@ -21,8 +20,6 @@ use Illuminate\Support\Facades\Log;
  */
 final readonly class FailTaskVmAction
 {
-    public function __construct(private CoderSettleNotifier $coder) {}
-
     /**
      * @param  list<TaskVmState>  $from
      * @return bool whether this call failed the row
@@ -62,7 +59,6 @@ final readonly class FailTaskVmAction
             $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
             if (! $wasAsking && $applied && ! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
                 Log::warning('A task group asks for assistance: a task VM operation failed.', ['group_id' => $group->id, 'reason' => $reason]);
-                DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
             }
         });
     }

@@ -29,7 +29,6 @@ final readonly class TaskConsultation
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
-        private CoderSettleNotifier $coder,
         private TaskSessionObserver $observer,
         private TaskSessionActor $actor,
         private TaskTurnReceipts $receipts,
@@ -429,10 +428,7 @@ final readonly class TaskConsultation
     {
         $observation = $this->observer->observe($group, $task);
         if (! $observation->available) {
-            $decision = $scheduler->unavailableDecision($group);
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-                $this->requestAssistance($task, $group, $decision->reason, $observation, AssistanceKind::Failure);
-            }
+            $scheduler->unavailableDecision($group);
 
             return;
         }
@@ -644,9 +640,9 @@ final readonly class TaskConsultation
             if (! TaskAssistance::sameRequest($locked, $task) || $locked->assistance_kind !== AssistanceKind::Direction) {
                 return;
             }
-            TaskAssistance::clearResolvedParent($locked, $parent);
+            TaskAssistance::clearResolvedParent($locked, $parent, $resolution);
+            TaskAssistance::apply($locked, source: $resolution);
             $locked->update([
-                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'direction_relay_comment_id' => $resolution->id,
                 'resolution_delivered_comment_id' => $resolution->id,
@@ -826,12 +822,10 @@ final readonly class TaskConsultation
      */
     public function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
-        $notifyReason = null;
-        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source, &$notifyReason): void {
+        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source): void {
             if ($handled !== []) {
                 $task->update($handled);
             }
-            $wasAsking = (bool) DB::table('tasks')->where('id', $group->id)->value('assistance_requested');
             TaskAssistance::apply($task, $kind, $question, $reason);
             $task->refresh();
             $taskKind = $task->assistance_kind;
@@ -849,14 +843,7 @@ final readonly class TaskConsultation
                     TaskQuestions::recordBlocked($task, $source);
                 }
             }
-            $groupReason = $group->assistance_reason;
-            if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {
-                $notifyReason = $groupReason;
-            }
         });
-        if (is_string($notifyReason)) {
-            $this->coder->assistance($group, $notifyReason);
-        }
     }
 
     /**

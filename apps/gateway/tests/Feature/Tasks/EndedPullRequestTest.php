@@ -52,7 +52,7 @@ function ended_pr_group(string $state, string $status = 'running'): Task
         'name' => 'ORB-152', 'slug' => 'orb-152',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
     ]);
-    $group = Task::topLevel()->create([
+    $group = test_create_task(Task::topLevel(), [
         'project_id' => $project->id, 'title' => 'Early merge', 'brief' => 'Keep the remaining work.',
         'status' => $status, 'assistance_requested' => true, 'assistance_reason' => 'An earlier question.',
         'pr_url' => $status === 'settling' ? 'https://github.com/acme/orbit/pull/42' : null,
@@ -125,7 +125,7 @@ it('stops for an ended pull request before a later subtask approval and sends ea
     $this->freezeTime();
     $group = ended_pr_group($state, $status);
     if ($status === 'running') {
-        $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        test_update_task($group, ['assistance_requested' => false, 'assistance_reason' => null]);
     }
     $driver = ended_pr_driver();
     [$completed, $running, $reviewing, $todo] = $group->tasks->all();
@@ -357,7 +357,7 @@ it('delivers an ended pull request notice to a stopped input-waiting thread but 
 it('preserves an ended pull request hold established while a resolution send is in flight', function (TaskStatus $status): void {
     $group = ended_pr_group('missing');
     $task = $group->tasks->firstWhere('status', $status);
-    $task->update(['assistance_requested' => true, 'assistance_reason' => 'An earlier question.']);
+    test_update_task($task, ['assistance_requested' => true, 'assistance_reason' => 'An earlier question.']);
     $driver = Mockery::mock(AgentDriver::class);
     $driver->shouldReceive('key')->andReturn('pi');
     $driver->shouldReceive('observe')->andReturn(new AgentObservation(AgentThreadState::Done, turnId: 'completed-before-resolution'));
@@ -385,7 +385,7 @@ it('preserves an ended pull request hold established while a resolution send is 
 it('preserves a current ended pull request reason when holding a resolution for a missing reviewer', function (bool $parentHold): void {
     $group = ended_pr_group('missing');
     $task = $group->tasks->firstWhere('status', TaskStatus::Reviewing);
-    $task->update(['assistance_requested' => true, 'assistance_reason' => 'An earlier question.']);
+    test_update_task($task, ['assistance_requested' => true, 'assistance_reason' => 'An earlier question.']);
     $task->load('parent');
     AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->delete();
     $driver = ended_pr_driver();
@@ -394,7 +394,7 @@ it('preserves a current ended pull request reason when holding a resolution for 
     // the hold before resolution eligibility and the reviewer lookup finish using that snapshot.
     TaskComment::created(static function (TaskComment $comment) use ($group, $task, $parentHold, $reason): void {
         if ($comment->type === TaskCommentType::Resolution) {
-            ($parentHold ? $group : $task)->fresh()->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+            test_update_task(($parentHold ? $group : $task)->fresh(), ['assistance_requested' => true, 'assistance_reason' => $reason]);
         }
     });
 
