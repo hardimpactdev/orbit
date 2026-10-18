@@ -7,7 +7,7 @@ namespace Orbit\Extensions\AiRouter\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Extension-owned collector activation state, staged here until the AiRouter namespace move.
+ * Extension-owned collector activation state.
  *
  * @property int $process_id
  * @property ?string $source_revision

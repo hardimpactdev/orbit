@@ -38,7 +38,7 @@ final readonly class AiRouterRouteTakeover
     {
         $this->projection->run(function () use ($route, $node, $publish): void {
             // Another operation may have changed the Route since enable checked it.
-            if ($this->routes->takeoverCandidate($node, $route->domain)?->id !== $route->id) {
+            if ($this->routes->takeoverCandidate($node)?->id !== $route->id) {
                 $publish();
 
                 return;

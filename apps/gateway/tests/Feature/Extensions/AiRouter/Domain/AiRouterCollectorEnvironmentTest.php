@@ -13,6 +13,6 @@ it('refuses missing cache placement instead of passing an empty value to the col
     expect(fn () => app(AiRouterCollectorEnvironment::class)->build($connection))
         ->toThrow(LogicException::class, $message);
 })->with([
-    'missing host' => ['host', 'AiRouter cache connection has no host.'],
-    'missing port' => ['port', 'AiRouter cache connection has no port.'],
+    'missing host' => ['host', 'AI router cache connection has no host.'],
+    'missing port' => ['port', 'AI router cache connection has no port.'],
 ]);

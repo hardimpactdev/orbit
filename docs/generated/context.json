@@ -1420,7 +1420,6 @@
             "concepts": [
                 "Activity",
                 "Database server",
-                "Deployment",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2029,10 +2028,7 @@
                 "Schedule",
                 "Task"
             ],
-            "governing_adrs": [
-                "0212",
-                "0221"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-recovery.md",

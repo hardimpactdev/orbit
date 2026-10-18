@@ -131,16 +131,19 @@ class GrokFallbackTests(unittest.TestCase):
                         grpc_fixture(status="7"), grpc_fixture(percent=float('nan')),
                         grpc_fixture(percent=101), grpc_fixture(periods=2),
                         grpc_fixture(extra=b"\x0a\x01\x00"), grpc_fixture(extra=b"\x08\x00")]:
-            with self.assertRaises(ValueError): m.grok_grpc_windows(fixture, now=2000000000)
+            with self.assertRaises(ValueError):
+                m.grok_grpc_windows(fixture, now=2000000000)
     def test_rejects_empty_and_truncated(self):
         for fixture in ['', '!!!', 'AAAAAAE=', grpc_fixture()[:-3]]:
-            with self.assertRaises(ValueError): m.grok_grpc_windows(fixture, now=2000000000)
+            with self.assertRaises(ValueError):
+                m.grok_grpc_windows(fixture, now=2000000000)
     def test_period_only_json_uses_billing_fallback_through_proxy(self):
         c = m.Collector(Cache())
         calls = []
         def request(*args):
             calls.append(args)
-            if len(calls) == 1: return {'status_code': 200, 'body': {'config': {'currentPeriod': {'type': 'USAGE_PERIOD_TYPE_WEEKLY'}}}}
+            if len(calls) == 1:
+                return {'status_code': 200, 'body': {'config': {'currentPeriod': {'type': 'USAGE_PERIOD_TYPE_WEEKLY'}}}}
             return {'status_code': 200, 'body': grpc_fixture(start=int(time.time())-10, end=int(time.time())+100)}
         c._request = request
         a = c._account({'auth_index': 'grok-account', 'provider': 'xai'})
@@ -403,4 +406,5 @@ class CollectorModelTests(unittest.TestCase):
         self.assertEqual(dropped["models"], [{"id": "claude-sonnet", "provider": "claude"}])
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == '__main__':
+    unittest.main()

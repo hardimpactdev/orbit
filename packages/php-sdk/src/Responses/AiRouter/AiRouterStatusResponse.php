@@ -16,6 +16,7 @@ final readonly class AiRouterStatusResponse
         public ?string $cacheConnection,
         public ?string $collectedAt,
         public string $requestId,
+        public bool $cutoverPending = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -32,6 +33,7 @@ final readonly class AiRouterStatusResponse
 
         if (
             ! is_bool($data['enabled'] ?? null)
+            || ! is_bool($data['cutover_pending'] ?? null)
             || ! is_string($hostname)
             || $hostname === ''
             || strlen($hostname) > 255
@@ -49,12 +51,14 @@ final readonly class AiRouterStatusResponse
             $cacheConnection,
             $collectedAt,
             $requestId,
+            $data['cutover_pending'],
         );
     }
 
     /**
      * @return array{
      *     enabled: bool,
+     *     cutover_pending: bool,
      *     hostname: string,
      *     node_id: int|null,
      *     cache_connection: string|null,
@@ -66,6 +70,7 @@ final readonly class AiRouterStatusResponse
     {
         return [
             'enabled' => $this->enabled,
+            'cutover_pending' => $this->cutoverPending,
             'hostname' => $this->hostname,
             'node_id' => $this->nodeId,
             'cache_connection' => $this->cacheConnection,

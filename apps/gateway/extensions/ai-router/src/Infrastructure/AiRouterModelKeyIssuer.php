@@ -30,7 +30,7 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
 
     public function assertReady(): void
     {
-        $key = $this->proxy->cliproxyManagementKey();
+        $key = $this->proxy->managementKey();
         if ($key === null || $key === '') {
             throw new ResourceOperationException(
                 'ai_router.disabled',
@@ -43,7 +43,7 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
     public function origin(): string
     {
         $origin = $this->settings->modelProxyOrigin ?? throw TaskVmConfig::invalid('model_proxy_origin is required to prepare a task VM.');
-        if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
+        if (rtrim((string) $this->proxy->routerUrl(), '/') !== $origin) {
             throw TaskVmConfig::invalid('model_proxy_origin must be the CLIProxyAPI URL of the ai-router extension.');
         }
 
@@ -62,7 +62,7 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
 
     private function managementKey(): string
     {
-        $key = $this->proxy->cliproxyManagementKey();
+        $key = $this->proxy->managementKey();
         if ($key === null || $key === '') {
             throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Set up the ai-router extension: it holds the CLIProxyAPI management key.', 409);
         }

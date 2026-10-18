@@ -13,9 +13,6 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
-    /** Retired slug used only by this historical migration. */
-    private const string RetiredSlug = 'proxycli';
-
     public function up(): void
     {
         $now = now('UTC');
@@ -32,11 +29,11 @@ return new class extends Migration
             }
         }
 
-        $enabled = $this->gatewaySetting(self::RetiredSlug.'.enabled');
-        $routerNode = $this->gatewaySetting(self::RetiredSlug.'.node_id');
+        $enabled = $this->gatewaySetting('proxycli.enabled');
+        $proxyCliNode = $this->gatewaySetting('proxycli.node_id');
 
-        if ($enabled === '1' && is_string($routerNode) && ctype_digit($routerNode)) {
-            $this->record((int) $routerNode, self::RetiredSlug, $now);
+        if ($enabled === '1' && is_string($proxyCliNode) && ctype_digit($proxyCliNode)) {
+            $this->record((int) $proxyCliNode, 'proxycli', $now);
         }
     }
 

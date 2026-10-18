@@ -170,7 +170,7 @@ A `models` entry always has `id`. It includes `owned_by`, `display_name`, and `t
 
 When `owned_by` is present, the collector maps it with the table below. When `owned_by` is absent, it maps the auth file's `provider` with that same table. The management list sets that file's `provider` and `type` to one value. The entry's `type` is not a provider, so the collector does not map it. A model with neither `owned_by` nor an auth-file provider is omitted.
 
-`provider` is the AiRouter provider that serves the model:
+`provider` is the CLIProxyAPI provider that serves the model:
 
 | `owned_by` | `provider` |
 | --- | --- |
@@ -178,8 +178,8 @@ When `owned_by` is present, the collector maps it with the table below. When `ow
 | `anthropic` | `claude` |
 | `xai` | `grok` |
 | `moonshot` | `kimi` |
-| `google` | `google`. No AiRouter provider serves it |
-| `meta` | `meta`. No AiRouter provider serves it |
+| `google` | `google`. No CLIProxyAPI provider serves it |
+| `meta` | `meta`. No CLIProxyAPI provider serves it |
 | Any other value | That same value |
 
 `antigravity` keeps its name, and it is an AI router provider. The route refuses with `ai_router.disabled` (409) while the collector is not set up. A snapshot that has no models returns an empty list. A collector deployed before this read has no models until `ai-router:setup` runs again and the next poll stores them.
@@ -237,7 +237,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `ai_router.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
 | `extension.required` | 409 | Teardown runs while the `tasks` extension is enabled. Teardown changes nothing. |
 | `ai_router.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key. Teardown changes nothing. |
-| `ai_router.cutover_pending` | 409 | The release cutover is pending. The next extension tick retries it before teardown can remove its recorded intent. |
+| `ai_router.cutover_pending` | 409 | The release cutover is pending. The next extension tick retries it. Setup and teardown cannot replace its recorded intent. |
 | `ai_router.keys_busy` | 409 | A model key operation holds the lock for more than 60 seconds. Teardown changes nothing. Run it again. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
@@ -268,44 +268,8 @@ A window the provider did not return is unknown. Showing it as zero use would te
 - [Database role](/reference/database-role)
 - [Private DNS](/reference/private-dns)
 
-## Deploy the rename
+## Collector convergence
 
-Deployment performs the cutover automatically. The migration preserves the collector's Process ID and desired state, renames its stored specification and settings, and records pending work. It keeps encrypted setting bytes, tokens, anchor hashes, task model keys, and stored origin URLs unchanged. The router Process and its operator-owned management Route stay unchanged in this step.
+The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
 
-After activation, the new scheduler runs `orbit:ai-router-converge` every minute through the existing Gateway scheduled-command path. It also repairs a changed collector specification or source revision. Ordinary repair runs when the extension is enabled and configured. Recorded cutover work also finishes with the switch off. No operator setup command or new management key is needed.
-
-For a pending rename, the tick performs these steps:
-
-1. Stop and remove the old collector's exact systemd unit, checking its Process ownership.
-2. Delete the old collector cache namespace, including its lock. Keep unrelated and new keys.
-3. Issue the new certificate and publish `collector.ai-router.orbit`, withdrawing the old site and DNS name.
-4. Converge the same Process with the new script path and environment names.
-5. Remove the old source and certificate files, then clear the pending work.
-
-The pending record survives failure or interruption. The next tick repeats the unfinished cutover. Each step is safe to repeat. The old hostname has no alias. A Route on the old collector name is removed only if it belongs to this Node and proxies to the collector's loopback port. The management Route is preserved.
-
-### Quota availability window
-
-Quota reads have a gap from release activation until the new collector writes its first successful snapshot. The window includes the scheduler handoff, zero to 60 seconds until its next tick, any queue wait, publication and Process startup, and the first upstream poll. The collector polls immediately on startup, then every 60 seconds. Queue delays and upstream failures can extend the window; it has no fixed upper bound. Missing quota is unknown, not zero.
-
-The new collector rebuilds the snapshot under `orbit:ai-router:*`; deployment does not copy or rename snapshot keys. A retry removes only the old namespace. It never clears a new snapshot.
-
-Task model requests keep using the same router at the same origin with the same keys throughout this window. Collector retirement does not stop or reconfigure the router. The migration renames the task VM column to `ai_router_origin` without changing any URL or held key. The `task_vms.model_proxy_origin` config and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` stay until build step 5.
-
-### CodexBar
-
-CodexBar is the one external client to update at deployment. In `~/.codexbar/config.json`, change `providers[].pluginSettings.BASE_URL` from `https://collector.cli-proxy-api.orbit` to `https://collector.ai-router.orbit` for the entries whose IDs are `proxy-codex`, `proxy-antigravity`, `proxy-xai`, `proxy-kimi`, and `proxy-claude`. Keep their tokens and other settings unchanged. Orbit does not edit this file.
-
-The old URL stops serving when the new site is published. Updating CodexBar earlier can show an unavailable endpoint until publication and the first snapshot complete. Updating it later keeps that client unavailable until its URL changes.
-
-The following old names are removal inputs only, never runtime aliases.
-
-| Old name | Automatic action |
-| --- | --- |
-| `cli-proxy-api-collector` | Remove the owned unit; the same Process ID becomes `ai-router-collector`. |
-| `/var/lib/orbit/proxycli/server.py` and `PROXYCLI_*` | Publish `/var/lib/orbit/ai-router/collector.py` and `AI_ROUTER_*`; remove the old directory after convergence. |
-| `orbit:proxycli:*` | Delete the old snapshot, account data, and lock after stopping the old collector. |
-| `collector.cli-proxy-api.orbit` | Withdraw it when publishing `collector.ai-router.orbit`. |
-| `caddy.certificate.proxycli` | Remove the old receipt; issue the new hostname's certificate. |
-| `/etc/caddy/orbit-proxycli-cert-current` | Remove after publishing the new collector site. |
-| `cli-proxy-api.orbit` and `cli-proxy-api` | Keep the operator-owned management Route and router Process until step 4. |
+`ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota is unavailable until the collector writes a fresh snapshot. The window includes up to one minute for dispatch, queue wait, publication, startup, and the first successful poll. Queue and upstream failures can extend it. Missing quota is unknown, never zero.

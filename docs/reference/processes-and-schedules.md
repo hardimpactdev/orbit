@@ -132,7 +132,7 @@ Creating or starting an Instance Process needs an active Instance on an active N
 
 Removing a systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and resets the unit's failed state. A crashed unit therefore leaves no `failed` entry in `systemctl list-units`.
 
-Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and AiRouter keep their ownership checks through this point. A refusal leaves the Process in place.
+Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and AI router keep their ownership checks through this point. A refusal leaves the Process in place.
 
 ### Update in place
 

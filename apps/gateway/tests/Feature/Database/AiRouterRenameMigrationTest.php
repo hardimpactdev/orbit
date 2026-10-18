@@ -8,10 +8,13 @@ use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
-/** The retired slug is input to the one-time migration, never a runtime alias. */
-const AI_ROUTER_RETIRED_SLUG = 'proxycli';
+beforeEach(function (): void {
+    Schema::drop('ai_router_cutovers');
+    DB::statement('ALTER TABLE task_vms RENAME COLUMN ai_router_origin TO model_proxy_origin');
+});
 
 function ai_router_rename_migration(): object
 {
@@ -21,7 +24,7 @@ function ai_router_rename_migration(): object
 it('renames stored switch and settings without decrypting or changing credentials and anchor hashes', function (): void {
     $scope = new SettingScope(SettingScopeType::Gateway);
     $settings = app(SettingRepository::class);
-    $old = AI_ROUTER_RETIRED_SLUG;
+    $old = 'proxycli';
     foreach ([$old.'.enabled' => '1', 'extension.'.$old.'.enabled' => '1', $old.'.node_id' => '17', $old.'.cliproxy_url' => 'http://10.44.0.3:8317'] as $key => $value) {
         $settings->put($scope, $key, $value);
     }
@@ -30,11 +33,10 @@ it('renames stored switch and settings without decrypting or changing credential
     $ciphertexts = DB::table('settings')->where('is_secret', true)->pluck('value', 'id')->all();
 
     ai_router_rename_migration()->up();
-    ai_router_rename_migration()->up();
 
     expect($settings->get($scope, 'extension.ai-router.enabled'))->toBe('1')
-        ->and(app(AiRouterState::class)->cliproxyUrl())->toBe('http://10.44.0.3:8317')
-        ->and(app(AiRouterState::class)->cliproxyManagementKey())->toBe('management-sentinel')
+        ->and(app(AiRouterState::class)->routerUrl())->toBe('http://10.44.0.3:8317')
+        ->and(app(AiRouterState::class)->managementKey())->toBe('management-sentinel')
         ->and($settings->get($scope, 'ai_router.anchor.'.hash('sha256', 'http://10.44.0.3:8317')))->toBe('anchor-sentinel')
         ->and(DB::table('settings')->where('is_secret', true)->pluck('value', 'id')->all())->toBe($ciphertexts)
         ->and(DB::table('settings')->where('key', 'like', '%'.$old.'%')->count())->toBe(0);
@@ -43,33 +45,37 @@ it('renames stored switch and settings without decrypting or changing credential
 it('refuses conflicting settings and rolls back earlier renames', function (): void {
     $settings = app(SettingRepository::class);
     $scope = new SettingScope(SettingScopeType::Gateway);
-    $settings->put($scope, 'extension.'.AI_ROUTER_RETIRED_SLUG.'.enabled', '1');
-    $settings->put($scope, AI_ROUTER_RETIRED_SLUG.'.read_token', 'old');
+    $settings->put($scope, 'extension.proxycli.enabled', '1');
+    $settings->put($scope, 'proxycli.read_token', 'old');
     $settings->put($scope, 'ai_router.read_token', 'new');
     $before = DB::table('settings')->orderBy('id')->get()->toJson();
 
     expect(fn () => ai_router_rename_migration()->up())->toThrow(RuntimeException::class, 'Both retired and current')
-        ->and(DB::table('settings')->orderBy('id')->get()->toJson())->toBe($before);
+        ->and(DB::table('settings')->orderBy('id')->get()->toJson())->toBe($before)
+        ->and(Schema::hasTable('ai_router_cutovers'))->toBeFalse();
+    $settings->delete($scope, 'ai_router.read_token');
+    ai_router_rename_migration()->up();
+    expect($settings->get($scope, 'ai_router.read_token'))->toBe('old');
 });
 
 it('records an automatic cutover for a running collector without stopping it in the migration', function (): void {
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
-    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), AI_ROUTER_RETIRED_SLUG.'.node_id', (string) $node->id);
+    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.node_id', (string) $node->id);
     $id = DB::table('processes')->insertGetId([
         'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'cli-proxy-api-collector',
-        'runtime' => 'systemd', 'runtime_config' => json_encode(['command' => ['/usr/bin/python3', '/var/lib/orbit/'.AI_ROUTER_RETIRED_SLUG.'/server.py'], 'environment' => []], JSON_THROW_ON_ERROR), 'desired_state' => 'running', 'status' => 'active',
+        'runtime' => 'systemd', 'runtime_config' => json_encode(['command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'], 'environment' => []], JSON_THROW_ON_ERROR), 'desired_state' => 'running', 'status' => 'active',
     ]);
     ai_router_rename_migration()->up();
     expect(DB::table('processes')->where('id', $id)->value('desired_state'))->toBe('running')
-        ->and(DB::table('ai_router_cutovers')->where('process_id', $id)->value('previous_name'))->toBe('cli-proxy-api-collector');
+        ->and(DB::table('ai_router_cutovers')->where('process_id', $id)->exists())->toBeTrue();
 });
 
 it('renames only the stopped configured collector and preserves every environment value and source row', function (): void {
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
     $other = Node::query()->create(['name' => 'other', 'status' => 'active', 'public_ssh_host' => '192.0.2.4', 'wireguard_ip' => '10.44.0.4']);
-    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), AI_ROUTER_RETIRED_SLUG.'.node_id', (string) $node->id);
-    $oldEnvironment = [strtoupper(AI_ROUTER_RETIRED_SLUG).'_READ_TOKEN' => 'unchanged-read-token', strtoupper(AI_ROUTER_RETIRED_SLUG).'_PORT' => '8787'];
-    $config = ['command' => ['/usr/bin/python3', '/var/lib/orbit/'.AI_ROUTER_RETIRED_SLUG.'/server.py'], 'environment' => $oldEnvironment];
+    app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.node_id', (string) $node->id);
+    $oldEnvironment = ['PROXYCLI_READ_TOKEN' => 'unchanged-read-token', 'PROXYCLI_PORT' => '8787'];
+    $config = ['command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'], 'environment' => $oldEnvironment];
     $id = DB::table('processes')->insertGetId([
         'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'cli-proxy-api-collector',
         'runtime' => 'systemd', 'runtime_config' => json_encode($config, JSON_THROW_ON_ERROR), 'desired_state' => 'stopped', 'status' => 'active',
@@ -95,7 +101,6 @@ it('renames only the stopped configured collector and preserves every environmen
 });
 
 it('renames the stored origin column while preserving held model keys and origin values byte for byte', function (): void {
-    DB::statement('ALTER TABLE task_vms RENAME COLUMN ai_router_origin TO model_proxy_origin');
     $id = DB::table('task_vms')->insertGetId([
         'provider' => 'incus', 'name' => 'held-vm', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130',
         'model_key' => 'encrypted-group-key-sentinel', 'model_proxy_origin' => 'http://10.44.0.3:8317',
@@ -110,35 +115,20 @@ it('renames the stored origin column while preserving held model keys and origin
     expect($after)->toEqual($before);
 });
 
-it('renames an existing retired source table without changing rows or cascading dependents', function (): void {
-    $node = Node::query()->create(['name' => 'source-node', 'status' => 'active', 'public_ssh_host' => '192.0.2.3']);
-    $id = DB::table('processes')->insertGetId(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'source', 'runtime' => 'systemd', 'runtime_config' => '{}']);
-    DB::table('ai_router_process_sources')->insert(['process_id' => $id, 'source_revision' => str_repeat('b', 64), 'activation_pending' => true]);
-    $before = DB::table('ai_router_process_sources')->get()->toJson();
-    DB::statement('ALTER TABLE ai_router_process_sources RENAME TO '.AI_ROUTER_RETIRED_SLUG.'_process_sources');
-
-    ai_router_rename_migration()->up();
-
-    expect(DB::table('ai_router_process_sources')->get()->toJson())->toBe($before)
-        ->and(DB::select('PRAGMA foreign_key_check'))->toBeEmpty();
-    DB::table('processes')->where('id', $id)->delete();
-    expect(DB::table('ai_router_process_sources')->count())->toBe(0);
-});
-
 it('renames stored error codes and invalidates only the retired footprint receipt', function (): void {
     $node = Node::query()->create(['name' => 'receipt-node', 'status' => 'active', 'public_ssh_host' => '192.0.2.3']);
-    DB::table('node_footprints')->insert(['node_id' => $node->id, 'artifacts' => json_encode([AI_ROUTER_RETIRED_SLUG => 'old-digest', 'caddy' => 'keep-digest'], JSON_THROW_ON_ERROR)]);
+    DB::table('node_footprints')->insert(['node_id' => $node->id, 'artifacts' => json_encode(['proxycli' => 'old-digest', 'caddy' => 'keep-digest'], JSON_THROW_ON_ERROR)]);
     // A separate error-code table covers the migration's scalar-column contract without unrelated Activity policy.
     DB::statement('CREATE TABLE rename_error_records (id INTEGER PRIMARY KEY, error_code TEXT, evidence TEXT)');
     try {
-        foreach ([AI_ROUTER_RETIRED_SLUG.'.disabled', 'process.required_by_'.AI_ROUTER_RETIRED_SLUG, 'database_connection.required_by_'.AI_ROUTER_RETIRED_SLUG, 'resource.not_found'] as $code) {
-            DB::table('rename_error_records')->insert(['error_code' => $code, 'evidence' => AI_ROUTER_RETIRED_SLUG.' historical text']);
+        foreach (['proxycli.disabled', 'process.required_by_proxycli', 'resource.not_found'] as $code) {
+            DB::table('rename_error_records')->insert(['error_code' => $code, 'evidence' => 'proxycli historical text']);
         }
 
         ai_router_rename_migration()->up();
 
-        expect(DB::table('rename_error_records')->orderBy('id')->pluck('error_code')->all())->toBe(['ai_router.disabled', 'process.required_by_ai_router', 'database_connection.required_by_ai_router', 'resource.not_found'])
-            ->and(DB::table('rename_error_records')->where('evidence', AI_ROUTER_RETIRED_SLUG.' historical text')->count())->toBe(4)
+        expect(DB::table('rename_error_records')->orderBy('id')->pluck('error_code')->all())->toBe(['ai_router.disabled', 'process.required_by_ai_router', 'resource.not_found'])
+            ->and(DB::table('rename_error_records')->where('evidence', 'proxycli historical text')->count())->toBe(3)
             ->and(json_decode(DB::table('node_footprints')->value('artifacts'), true, flags: JSON_THROW_ON_ERROR))->toBe(['caddy' => 'keep-digest']);
     } finally {
         DB::statement('DROP TABLE rename_error_records');

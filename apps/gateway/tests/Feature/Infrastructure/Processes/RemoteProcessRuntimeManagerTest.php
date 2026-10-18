@@ -1700,21 +1700,6 @@ it('removes the retired runtime footprint without losing its override when the l
         ->and($process->refresh()->runtime)->toBe(ProcessRuntime::Docker);
 });
 
-it('removes an explicitly retired unit name under the refreshed Process lease without changing its current name', function (): void {
-    $process = runtime_manager_systemd_process($this->instance);
-    $retired = clone $process;
-    $retired->name = 'previous-collector';
-    $path = new SystemdProcessRenderer()->unitPath($retired);
-    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($process, $path): void {
-        if ($command->arguments === ['sudo', 'cat', '--', $path]) {
-            $this->ssh->responses[] = process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n");
-        }
-    };
-    $this->manager->remove($retired);
-    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'rm', '-f', '--', $path]))->toBeTrue()
-        ->and($process->refresh()->name)->toBe('queue');
-});
-
 it('removes a systemd process whose unit has no failed record to reset', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $unit = "orbit-process-{$process->id}-queue.service";

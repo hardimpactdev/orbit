@@ -16,8 +16,7 @@ use SplFileInfo;
  */
 final class SourceClosure
 {
-    /** @var list<string> */
-    public const array StopNamespaces = ['App\\Models\\', 'App\\Actions\\', 'App\\Http\\', 'App\\Console\\', 'App\\Providers\\'];
+    private const string StopPattern = '/^(?:(?:Models|Actions|Http|Console|Providers)\\\\|[^\\\\]*ServiceProvider$)/';
 
     /** @var array<string, list<string>> */
     private static array $cache = [];
@@ -111,10 +110,15 @@ final class SourceClosure
 
         return array_values(array_filter(
             array_unique($references),
-            static fn (string $class): bool => self::path($class) !== null
-                && ! array_any(self::StopNamespaces, static fn (string $stop): bool => str_starts_with($class, $stop))
-                && preg_match('/^Orbit\\\\Extensions\\\\[^\\\\]+\\\\(?:Models|Actions|Http|Console)\\\\/', $class) !== 1
-                && ! str_ends_with($class, 'ServiceProvider'),
+            static function (string $class): bool {
+                foreach (self::roots() as $namespace => $directory) {
+                    if (str_starts_with($class, $namespace)) {
+                        return preg_match(self::StopPattern, substr($class, strlen($namespace))) !== 1;
+                    }
+                }
+
+                return false;
+            },
         ));
     }
 

@@ -34,6 +34,8 @@ final class CollectorActivationSsh implements SshExecutor
 
     public string $unit = '';
 
+    public string $candidate = '';
+
     public string $state = 'active';
 
     /** @var list<RemoteCommand> */
@@ -53,7 +55,16 @@ final class CollectorActivationSsh implements SshExecutor
                 $this->interruptPublication = false;
                 throw new RuntimeException('response lost after publication');
             }
+        } elseif (in_array('/dev/stdin', $command->arguments, true)) {
+            $this->candidate = $command->input ?? '';
+        } elseif (in_array('mv', $command->arguments, true)) {
+            $this->unit = $this->candidate;
+        } elseif ($command->arguments[1] === 'test' && $this->unit === '') {
+            return new CommandResult(1, '', '', 0, false);
         } elseif (in_array('cat', $command->arguments, true)) {
+            if ($this->unit === '') {
+                return new CommandResult(1, '', '', 0, false);
+            }
             $stdout = $this->unit;
         } elseif (in_array('is-active', $command->arguments, true)) {
             $stdout = $this->state;
@@ -100,12 +111,12 @@ it('recovers source publication with a lost response and leaves completed retrie
         ->and($this->source->refresh()->activation_pending)->toBeTrue()
         ->and($this->runtime->restarted)->toBeEmpty();
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->runtime->restarted)->toBe([$this->process->id])
+    expect($this->runtime->restarted)->toBeEmpty()
         ->and($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source))
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and(Process::query()->where('name', AiRouterProcess::NAME)->sole()->id)->toBe($this->process->id);
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->runtime->restarted)->toBe([$this->process->id]);
+    expect($this->runtime->restarted)->toBeEmpty();
 })->with([false, true]);
 
 it('retains pending source activation if publication succeeds but Process convergence is interrupted', function (): void {
@@ -116,21 +127,21 @@ it('retains pending source activation if publication succeeds but Process conver
         ->and($this->source->refresh()->activation_pending)->toBeTrue();
     $this->runtime->failConverge = false;
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->runtime->restarted)->toBe([$this->process->id]);
+    expect($this->runtime->restarted)->toBeEmpty();
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->runtime->restarted)->toBe([$this->process->id]);
+    expect($this->runtime->restarted)->toBeEmpty();
 });
 
-it('retains source activation intent when restart fails and retries it', function (): void {
+it('retains source activation intent when unit convergence fails and retries it', function (): void {
     $runtime = Mockery::mock(ProcessRuntimeManager::class);
     $runtime->shouldReceive('status')->andReturn('active');
     $runtime->shouldReceive('assertCanStart')->andReturnNull();
-    $runtime->shouldReceive('converge')->andReturnNull();
-    $runtime->shouldReceive('restart')->once()->ordered()->andThrow(new ProcessOperationException('restart', 'process.restart_failed', 'restart response lost'));
-    $runtime->shouldReceive('restart')->once()->ordered()->andReturnNull();
+    $runtime->shouldReceive('converge')->once()->ordered()->andThrow(new ProcessOperationException('start', 'process.start_failed', 'activation response lost'));
+    $runtime->shouldReceive('converge')->twice()->ordered()->andReturnNull();
+    $runtime->shouldNotReceive('restart');
     app()->instance(ProcessRuntimeManager::class, $runtime);
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
-    expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(ProcessOperationException::class, 'restart response lost');
+    expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(ProcessOperationException::class, 'activation response lost');
     expect($this->source->refresh()->source_revision)->toBeNull()
         ->and($this->source->refresh()->activation_pending)->toBeTrue();
     $lifecycle->converge($this->node, $this->environment);
@@ -179,3 +190,25 @@ it('leaves an unchanged migrated collector untouched on upgrade', function (stri
         expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
     }
 })->with([['running', 'active', true], ['stopped', 'inactive', true], ['running', 'active', false], ['stopped', 'inactive', false]]);
+
+it('activates changed source once through unit convergence and leaves the next converge untouched', function (string $unit): void {
+    $accounts = Mockery::mock(ManagedUserAccountResolver::class);
+    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+    $accounts->shouldReceive('resolve')->andReturn($account);
+    app()->instance(ManagedUserAccountResolver::class, $accounts);
+    $renderer = new SystemdProcessRenderer;
+    $target = new ProcessTargetResolver()->forInstallation($this->process);
+    $this->ssh->unit = match ($unit) {
+        'matching' => $renderer->render($this->process, $target, $account),
+        'changed' => $renderer->render($this->process, $target, $account)."# previous unit\n",
+        'absent' => '',
+    };
+    app()->instance(ProcessRuntimeManager::class, app(RemoteProcessRuntimeManager::class));
+    $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
+    $lifecycle->converge($this->node, $this->environment);
+    $lifecycle->converge($this->node, $this->environment);
+    $starts = array_filter($this->ssh->commands, fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'restart', 'orbit-process-'.$this->process->id.'-ai-router-collector.service']);
+    expect($starts)->toHaveCount(1)
+        ->and($this->source->refresh()->activation_pending)->toBeFalse()
+        ->and($this->process->refresh()->systemd_activation_pending)->toBeFalse();
+})->with(['matching', 'changed', 'absent']);

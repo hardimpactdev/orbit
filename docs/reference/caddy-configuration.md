@@ -60,7 +60,7 @@ The Gateway renders the sites from committed database state only, so the same st
 
 A role's sites render while the role is provisioning or active, and after a failed convergence, because they can already be live. They stop rendering when the role's removal starts.
 
-The `websocket`, `analytics`, AiRouter, and Metrics sites also wait for their certificate. The Gateway records when the role's certificate step has placed the certificate on the Node. It forgets the record at the removal that withdraws the site. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
+The `websocket`, `analytics`, AI router, and Metrics sites also wait for their certificate. The Gateway records when the role's certificate step has placed the certificate on the Node. It forgets the record at the removal that withdraws the site. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ The `websocket`, `analytics`, AiRouter, and Metrics sites also wait for their ce
 | Service metrics scrape site on port 9103 | A selected Ingress Node | The WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The Node that runs the role or collector | The WireGuard address |
 
-An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites must not use a core source name, such as `gateway`, and its certificate record must not use a core slug. The contribution's test pins those identities; the build does not reject them at runtime. The AiRouter collector site comes from such a source.
+An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites must not use a core source name, such as `gateway`, and its certificate record must not use a core slug. The contribution's test pins those identities; the build does not reject them at runtime. The AI router collector site comes from such a source.
 
 A Node gets at most one site for each domain, port, and listener. When a Route's current placement and its transition placement render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
@@ -141,7 +141,7 @@ The `websocket` role runs this check before it changes anything on the Node. Giv
 
 ### When a build runs
 
-A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AiRouter, Gateway web convergence, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
+A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, Gateway web convergence, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
 
 A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
 
@@ -205,7 +205,7 @@ The command that requested the build fails with its own error code:
 | `ingress` role | `ingress.caddy_config_failed` |
 | `websocket` role | `websocket.caddy_publication_failed` |
 | `analytics` role | `analytics.caddy_publication_failed` |
-| AiRouter collector | `ai_router.caddy_publication_failed` |
+| AI router collector | `ai_router.caddy_publication_failed` |
 | Metrics and service metrics | `metrics.caddy_publication_failed` |
 | Gateway web convergence | `gateway.caddy_config_invalid` at `render` or `validate`, `gateway.caddy_start_failed` at `reload`, and `gateway.caddy_config_install_failed` at any other stage |
 

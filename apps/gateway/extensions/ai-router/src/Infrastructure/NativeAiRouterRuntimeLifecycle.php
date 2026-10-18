@@ -6,9 +6,7 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
-use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
-use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
@@ -57,6 +55,11 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
             $source->source_revision = null;
             $source->save();
         }
+        if ($existing !== null && $source?->activation_pending) {
+            // Unit convergence consumes source activation intent, even when the unit bytes already match.
+            $existing->systemd_activation_pending = true;
+            $existing->save();
+        }
         $data = AiRouterProcess::data($node, $environment);
 
         try {
@@ -74,12 +77,6 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
 
         $source ??= AiRouterProcessSource::query()->firstOrNew(['process_id' => $process->id]);
 
-        // The source file can be current even when its Python process is still old.
-        if ($existing !== null && ($source->activation_pending
-            || ($source->source_revision !== null && $source->source_revision !== $revision))
-            && $process->desired_state === DesiredProcessState::Running) {
-            app(RestartProcessAction::class)->execute($process);
-        }
         $source->source_revision = $revision;
         $source->activation_pending = false;
         $source->save();

@@ -759,7 +759,7 @@
           "ai-router"
         ],
         "x-orbit-extension": "ai-router",
-        "description": "Stops the collector Process for the whole fleet, withdraws collector.ai-router.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with ai_router.keys_outstanding (409) while a task VM holds a model key, and with ai_router.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.",
+        "description": "Stops the collector Process for the whole fleet, withdraws collector.ai-router.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with ai_router.keys_outstanding (409) while a task VM holds a model key, and with ai_router.keys_busy (409) while a model key operation holds the lock for more than 60 seconds. Teardown refuses with ai_router.cutover_pending while the release cutover is pending.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -824,7 +824,7 @@
           "ai-router"
         ],
         "x-orbit-extension": "ai-router",
-        "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
+        "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, when the snapshot was last written, and whether an automatic cutover is pending.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -889,7 +889,7 @@
           "ai-router"
         ],
         "x-orbit-extension": "ai-router",
-        "description": "Deploys one collector Process and publishes https://collector.ai-router.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with ai_router.hostname_taken. The response never includes tokens or the management key.",
+        "description": "Deploys one collector Process and publishes https://collector.ai-router.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with ai_router.hostname_taken. The response never includes tokens or the management key. Setup refuses with ai_router.cutover_pending while the release cutover is pending.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1338,7 +1338,7 @@
     "/api/v1/ai-router/providers/{provider}": {
       "get": {
         "operationId": "ai-router-provider-show",
-        "summary": "Show a ai-router provider",
+        "summary": "Show an AI router provider",
         "tags": [
           "ai-router"
         ],

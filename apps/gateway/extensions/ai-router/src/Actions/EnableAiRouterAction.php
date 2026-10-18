@@ -43,7 +43,7 @@ final readonly class EnableAiRouterAction
         $this->cutover->assertComplete();
         if (config('task_vms.enabled') === true) {
             $origin = config('task_vms.model_proxy_origin');
-            if (! is_string($origin) || rtrim($data->cliproxyUrl, '/') !== rtrim($origin, '/')) {
+            if (! is_string($origin) || rtrim($data->routerUrl, '/') !== rtrim($origin, '/')) {
                 throw ValidationException::withMessages([
                     'cliproxy_url' => ['The cliproxy_url must equal task_vms.model_proxy_origin while task VMs are enabled.'],
                 ]);
@@ -58,8 +58,8 @@ final readonly class EnableAiRouterAction
         $this->state->enable(
             $node->id,
             $data->cacheConnection,
-            rtrim($data->cliproxyUrl, '/'),
-            $data->cliproxyManagementKey,
+            rtrim($data->routerUrl, '/'),
+            $data->managementKey,
             $readToken,
             $controlToken,
         );

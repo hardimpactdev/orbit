@@ -44,14 +44,14 @@ final readonly class AiRouterState
         return $this->settings->get($this->scope(), AiRouterSettings::CacheConnection);
     }
 
-    public function cliproxyUrl(): ?string
+    public function routerUrl(): ?string
     {
-        return $this->settings->get($this->scope(), AiRouterSettings::CliproxyUrl);
+        return $this->settings->get($this->scope(), AiRouterSettings::RouterUrl);
     }
 
-    public function cliproxyManagementKey(): ?string
+    public function managementKey(): ?string
     {
-        return $this->settings->get($this->scope(), AiRouterSettings::CliproxyManagementKey);
+        return $this->settings->get($this->scope(), AiRouterSettings::ManagementKey);
     }
 
     public function readToken(): ?string
@@ -67,7 +67,7 @@ final readonly class AiRouterState
     public function enable(
         int $nodeId,
         string $cacheConnection,
-        string $cliproxyUrl,
+        string $routerUrl,
         string $managementKey,
         string $readToken,
         string $controlToken,
@@ -76,8 +76,8 @@ final readonly class AiRouterState
         $this->settings->put($scope, AiRouterSettings::Enabled, '1');
         $this->settings->put($scope, AiRouterSettings::NodeId, (string) $nodeId);
         $this->settings->put($scope, AiRouterSettings::CacheConnection, $cacheConnection);
-        $this->settings->put($scope, AiRouterSettings::CliproxyUrl, $cliproxyUrl);
-        $this->settings->put($scope, AiRouterSettings::CliproxyManagementKey, $managementKey, SettingValueProtection::Secret);
+        $this->settings->put($scope, AiRouterSettings::RouterUrl, $routerUrl);
+        $this->settings->put($scope, AiRouterSettings::ManagementKey, $managementKey, SettingValueProtection::Secret);
         $this->settings->put($scope, AiRouterSettings::ReadToken, $readToken, SettingValueProtection::Secret);
         $this->settings->put($scope, AiRouterSettings::ControlToken, $controlToken, SettingValueProtection::Secret);
     }
@@ -86,7 +86,7 @@ final readonly class AiRouterState
     {
         $scope = $this->scope();
         $this->settings->put($scope, AiRouterSettings::Enabled, '0');
-        $this->settings->delete($scope, AiRouterSettings::CliproxyManagementKey);
+        $this->settings->delete($scope, AiRouterSettings::ManagementKey);
         $this->settings->delete($scope, AiRouterSettings::ReadToken);
         $this->settings->delete($scope, AiRouterSettings::ControlToken);
     }

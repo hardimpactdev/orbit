@@ -10,9 +10,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
 
-/** Retired slug used only as historical migration input. */
-const AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG = 'proxycli';
-
 it('moves populated source state reversibly without changing Processes or their dependents', function (): void {
     $migration = require base_path('extensions/ai-router/database/migrations/2026_10_16_074137_move_proxycli_process_sources_to_extension_table.php');
     $migration->down();
@@ -30,7 +27,7 @@ it('moves populated source state reversibly without changing Processes or their 
             'name' => $name, 'runtime' => 'systemd', 'working_directory' => '/srv/example',
             'runtime_config' => '{"command":"/bin/true"}', 'status' => 'active',
             'systemd_activation_hash' => str_repeat('c', 64), 'systemd_activation_pending' => false,
-            AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_revision' => $revision, AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending' => $pending,
+            'proxycli_source_revision' => $revision, 'proxycli_source_activation_pending' => $pending,
         ]);
     }
     Schema::create('source_migration_dependents', static function (Blueprint $table): void {
@@ -47,8 +44,8 @@ it('moves populated source state reversibly without changing Processes or their 
 
     $migration->up();
 
-    expect(Schema::hasColumn('processes', AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_revision'))->toBeFalse()
-        ->and(Schema::hasColumn('processes', AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending'))->toBeFalse()
+    expect(Schema::hasColumn('processes', 'proxycli_source_revision'))->toBeFalse()
+        ->and(Schema::hasColumn('processes', 'proxycli_source_activation_pending'))->toBeFalse()
         ->and(AiRouterProcessSource::query()->count())->toBe(4);
     $this->assertDatabaseMissing('ai_router_process_sources', ['process_id' => 164]);
     foreach ([103, 163, 165, 166] as $id) {
@@ -58,7 +55,7 @@ it('moves populated source state reversibly without changing Processes or their 
             ->and($source->activation_pending)->toBe($pending);
     }
     $withoutSources = array_map(static function (array $row): array {
-        unset($row[AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_revision'], $row[AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending']);
+        unset($row['proxycli_source_revision'], $row['proxycli_source_activation_pending']);
 
         return $row;
     }, $before);
@@ -91,15 +88,15 @@ it('rolls back the copy and first column drop when the second column drop is ref
         'id' => 163, 'owner_type' => Node::class, 'owner_id' => 1,
         'name' => 'cli-proxy-api-collector', 'runtime' => 'systemd',
         'working_directory' => '/srv/example', 'runtime_config' => '{}',
-        AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_revision' => str_repeat('d', 64), AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending' => true,
+        'proxycli_source_revision' => str_repeat('d', 64), 'proxycli_source_activation_pending' => true,
     ]);
-    DB::statement('CREATE INDEX source_migration_blocker ON processes ('.AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending)');
+    DB::statement('CREATE INDEX source_migration_blocker ON processes (proxycli_source_activation_pending)');
 
     expect(fn () => $migration->up())->toThrow(QueryException::class);
 
     expect(Schema::hasTable('ai_router_process_sources'))->toBeFalse()
-        ->and(DB::table('processes')->where('id', 163)->value(AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_revision'))->toBe(str_repeat('d', 64))
-        ->and(DB::table('processes')->where('id', 163)->value(AI_ROUTER_PROCESS_SOURCE_MIGRATION_TEST_RETIRED_SLUG.'_source_activation_pending'))->toBe(1);
+        ->and(DB::table('processes')->where('id', 163)->value('proxycli_source_revision'))->toBe(str_repeat('d', 64))
+        ->and(DB::table('processes')->where('id', 163)->value('proxycli_source_activation_pending'))->toBe(1);
     DB::statement('DROP INDEX source_migration_blocker');
     $migration->up();
 });

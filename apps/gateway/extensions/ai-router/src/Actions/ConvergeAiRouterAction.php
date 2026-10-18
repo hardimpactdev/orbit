@@ -38,25 +38,28 @@ final readonly class ConvergeAiRouterAction
         private AiRouterHostnameRoute $routes,
     ) {}
 
-    public function execute(bool $force = false): void
+    public function execute(bool $force = false, bool $deferCutover = false): bool
     {
-        $this->lifecycle->run(function () use ($force): void {
+        return $this->lifecycle->run(function () use ($force, $deferCutover): bool {
             if (! $this->state->enabled()) {
-                return;
+                return false;
             }
             $nodeId = $this->state->nodeId();
             $slug = $this->state->cacheConnection();
             if ($nodeId === null || $slug === null) {
-                return;
+                return false;
+            }
+            $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', AiRouterProcess::NAME)->first();
+            $pending = $process !== null && $this->cutover->pending($process);
+            if ($deferCutover && $pending) {
+                return false;
+            }
+            if (! $force && ! $pending && ! $this->extensions->enabled('ai-router')) {
+                return false;
             }
             $node = $this->placement->node($nodeId);
             $connection = $this->placement->connection($slug);
             $environment = $this->environment->build($connection);
-            $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', AiRouterProcess::NAME)->first();
-            $pending = $process !== null && $this->cutover->pending($process);
-            if (! $force && ! $pending && ! $this->extensions->enabled('ai-router')) {
-                return;
-            }
             $source = $process === null ? null : AiRouterProcessSource::query()->find($process->id);
             $attributes = $this->specifications->attributes(AiRouterProcess::data($node, $environment), $this->targets->forNodeAdmission($node));
             if (! $force && ! $pending && $process !== null && $this->specifications->matches($process, $attributes)
@@ -64,11 +67,10 @@ final readonly class ConvergeAiRouterAction
                 && $process->status !== LifecycleStatus::Failed
                 && $source?->activation_pending === false
                 && $source->source_revision === hash_file('sha256', base_path('extensions/ai-router/resources/collector.py'))) {
-                return;
+                return false;
             }
             $takeover = $this->routes->takeoverCandidate($node);
             if ($pending) {
-                $takeover = $this->routes->takeoverCandidate($node, AiRouterRenameCutover::RetiredHostname) ?? $takeover;
                 $this->cutover->retire($process);
             }
             $this->publication->converge($node, $takeover);
@@ -76,6 +78,8 @@ final readonly class ConvergeAiRouterAction
             if ($pending) {
                 $this->cutover->complete($process);
             }
+
+            return true;
         });
     }
 }

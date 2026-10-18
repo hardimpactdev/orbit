@@ -56,17 +56,18 @@ it('reconverges rotated connection credentials while the extension switch is off
 it('rechecks configured state after a waiting tick acquires the lifecycle lock', function (): void {
     $lock = Mockery::mock(Lock::class);
     Cache::shouldReceive('lock')->once()->with(AiRouterLifecycleLock::Name, 600)->andReturn($lock);
-    $lock->shouldReceive('block')->once()->with(60, Mockery::type(Closure::class))->andReturnUsing(function (int $seconds, Closure $operation): void {
+    $lock->shouldReceive('block')->once()->with(60, Mockery::type(Closure::class))->andReturnUsing(function (int $seconds, Closure $operation): bool {
         // A teardown completed while this tick waited to acquire the same lock.
         app(AiRouterState::class)->disable();
-        $operation();
+
+        return $operation();
     });
     app(ConvergeAiRouterAction::class)->execute();
     expect(app(RecordingAiRouterRuntimeLifecycle::class)->converged)->toBeFalse();
 });
 
 it('keeps pending rename work intact if setup or teardown is requested before the first tick', function (bool $setup): void {
-    DB::table('ai_router_cutovers')->insert(['process_id' => $this->process->id, 'previous_name' => 'cli-proxy-api-collector']);
+    DB::table('ai_router_cutovers')->insert(['process_id' => $this->process->id]);
     $action = fn () => $setup
         ? app(EnableAiRouterAction::class)->execute(new EnableAiRouterData(999, 'different-cache', 'http://different-router:8317', 'replacement'))
         : app(DisableAiRouterAction::class)->execute();

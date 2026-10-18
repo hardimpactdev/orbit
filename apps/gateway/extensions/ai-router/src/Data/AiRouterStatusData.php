@@ -14,15 +14,17 @@ final readonly class AiRouterStatusData
         public ?string $cacheConnection,
         public ?string $collectedAt,
         public string $hostname = AiRouterHostname::Value,
+        public bool $cutoverPending = false,
     ) {}
 
     /**
-     * @return array{enabled: bool, hostname: string, node_id: int|null, cache_connection: string|null, collected_at: string|null}
+     * @return array{enabled: bool, hostname: string, node_id: int|null, cache_connection: string|null, collected_at: string|null, cutover_pending: bool}
      */
     public function toArray(): array
     {
         return [
             'enabled' => $this->enabled,
+            'cutover_pending' => $this->cutoverPending,
             'hostname' => $this->hostname,
             'node_id' => $this->nodeId,
             'cache_connection' => $this->cacheConnection,

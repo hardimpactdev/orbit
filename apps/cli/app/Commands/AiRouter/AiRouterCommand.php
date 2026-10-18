@@ -26,6 +26,7 @@ abstract class AiRouterCommand extends GatewayCommand implements GatedExtensionC
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
             'Enabled' => $response->enabled,
+            'Cutover pending' => $response->cutoverPending,
             'Hostname' => $response->hostname,
             'Node ID' => $response->nodeId,
             'Cache connection' => $response->cacheConnection,

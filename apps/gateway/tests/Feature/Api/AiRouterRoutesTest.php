@@ -225,7 +225,7 @@ it('enables ai-router with the matching task VM origin and normalizes trailing s
         ->assertCreated()
         ->assertJsonPath('data.enabled', true);
 
-    expect(app(AiRouterState::class)->cliproxyUrl())->toBe('http://10.44.0.3:8317');
+    expect(app(AiRouterState::class)->routerUrl())->toBe('http://10.44.0.3:8317');
     expect(app(RecordingAiRouterRuntimeLifecycle::class)->environment['AI_ROUTER_CLIPROXY_URL'])->toBe('http://10.44.0.3:8317');
     expect(Process::query()->where('name', AiRouterProcess::NAME)->firstOrFail()->runtime_config['environment']['AI_ROUTER_CLIPROXY_URL'])
         ->toBe('http://10.44.0.3:8317');
@@ -624,7 +624,7 @@ it('refuses the teardown with 409 and changes nothing while Tasks needs it or a 
         ->assertJsonPath('error.details', $details)
         ->assertJsonPath('error.message', fn (string $text): bool => str_starts_with($text, $message));
 
-    expect(app(AiRouterState::class)->cliproxyManagementKey())->toBe('management-key')
+    expect(app(AiRouterState::class)->managementKey())->toBe('management-key')
         ->and(app(AiRouterState::class)->enabled())->toBeTrue()
         ->and(Process::query()->where('name', AiRouterProcess::NAME)->exists())->toBeTrue()
         ->and(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeFalse()
@@ -664,7 +664,7 @@ it('holds the model key lock from the key check through the teardown', function 
         public function remove(Node $node): void
         {
             // The management key is already gone here, so a key issued now could never be revoked.
-            expect(app(AiRouterState::class)->cliproxyManagementKey())->toBeNull();
+            expect(app(AiRouterState::class)->managementKey())->toBeNull();
             $lock = Cache::lock(ModelKeyIssuer::Lock, 10);
             $this->lockFree = $lock->get();
             if ($this->lockFree) {
@@ -711,7 +711,7 @@ it('refuses the teardown with 409 and changes nothing while a model key operatio
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'ai_router.keys_busy');
 
-    expect(app(AiRouterState::class)->cliproxyManagementKey())->toBe('management-key')
+    expect(app(AiRouterState::class)->managementKey())->toBe('management-key')
         ->and(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeFalse()
         ->and(app(RecordingAiRouterPublicationManager::class)->removed)->toBeFalse();
     $prepare->release();

@@ -13,8 +13,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /** Retired slug read by the historical certificate migration. */
-const CERTIFICATE_MIGRATION_RETIRED_SLUG = 'proxycli';
-
 it('records a certificate for every role site that renders today and for nothing else', function (): void {
     $gateway = caddy_certificate_migration_node('gateway', [RoleName::Gateway->value => [LifecycleStatus::Active, null]]);
     $websocket = caddy_certificate_migration_node('websocket', [RoleName::WebSocket->value => [LifecycleStatus::Active, null]]);
@@ -24,7 +22,7 @@ it('records a certificate for every role site that renders today and for nothing
     $metrics = caddy_certificate_migration_node('metrics', [RoleName::Metrics->value => [LifecycleStatus::Active, null]]);
     $collector = caddy_certificate_migration_node('collector', []);
     foreach (['enabled' => '1', 'node_id' => (string) $collector->id] as $key => $value) {
-        DB::table('settings')->insert(['scope_type' => 'gateway', 'scope_id' => 0, 'key' => CERTIFICATE_MIGRATION_RETIRED_SLUG.'.'.$key, 'value' => $value, 'is_secret' => false]);
+        DB::table('settings')->insert(['scope_type' => 'gateway', 'scope_id' => 0, 'key' => 'proxycli.'.$key, 'value' => $value, 'is_secret' => false]);
     }
     $migration = caddy_certificate_migration();
     run_legacy_schema_migration($migration, 'down');
@@ -36,7 +34,7 @@ it('records a certificate for every role site that renders today and for nothing
     expect($records->published($websocket->id, WebSocketCaddySiteSource::CertificateSlug))->toBeTrue()
         ->and($records->published($retrying->id, AnalyticsCaddySiteSource::CertificateSlug))->toBeTrue()
         ->and($records->published($gateway->id, MetricsCaddySiteSource::CertificateSlug))->toBeTrue()
-        ->and($records->published($collector->id, CERTIFICATE_MIGRATION_RETIRED_SLUG))->toBeTrue()
+        ->and($records->published($collector->id, 'proxycli'))->toBeTrue()
         ->and($records->published($removing->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
         ->and($records->published($removalFailed->id, AnalyticsCaddySiteSource::CertificateSlug))->toBeFalse()
         ->and($records->published($metrics->id, MetricsCaddySiteSource::CertificateSlug))->toBeFalse();
@@ -44,7 +42,7 @@ it('records a certificate for every role site that renders today and for nothing
     run_legacy_schema_migration($migration, 'down');
 
     expect($records->published($websocket->id, WebSocketCaddySiteSource::CertificateSlug))->toBeFalse()
-        ->and(DB::table('settings')->where('key', CERTIFICATE_MIGRATION_RETIRED_SLUG.'.enabled')->value('value'))->toBe('1');
+        ->and(DB::table('settings')->where('key', 'proxycli.enabled')->value('value'))->toBe('1');
 });
 
 it('records no Metrics certificate on the Gateway while no Metrics role renders', function (): void {

@@ -12,6 +12,7 @@ use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 it('maps a fleet status without tokens or keys', function (): void {
     $response = AiRouterStatusResponse::fromGatewayData([
         'enabled' => true,
+        'cutover_pending' => true,
         'hostname' => 'collector.ai-router.orbit',
         'node_id' => 7,
         'cache_connection' => 'valkey',
@@ -22,6 +23,7 @@ it('maps a fleet status without tokens or keys', function (): void {
 
     expect($response->toArray())->toBe([
         'enabled' => true,
+        'cutover_pending' => true,
         'hostname' => 'collector.ai-router.orbit',
         'node_id' => 7,
         'cache_connection' => 'valkey',

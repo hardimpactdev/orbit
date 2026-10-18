@@ -11,8 +11,8 @@ final readonly class EnableAiRouterData
     public function __construct(
         public int $nodeId,
         public string $cacheConnection,
-        public string $cliproxyUrl,
+        public string $routerUrl,
         #[SensitiveParameter]
-        public string $cliproxyManagementKey,
+        public string $managementKey,
     ) {}
 }

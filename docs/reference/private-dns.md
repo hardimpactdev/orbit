@@ -147,7 +147,7 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 | `metrics.orbit` | The same address as `gateway.orbit`, and only while a Node holds the `metrics` role |
 | `reverb.orbit` | The Node that holds `websocket` |
 | `analytics.orbit` | The Node that holds `analytics` |
-| `collector.ai-router.orbit` | The AiRouter collector Node, while setup holds the collector. See [ai-router](/reference/ai-router). |
+| `collector.ai-router.orbit` | The AI router collector Node, while setup holds the collector. See [ai-router](/reference/ai-router). |
 
 New Routes and Route domain changes cannot take these reserved platform names. Existing conflicts remain published until an operator changes or removes the Route; Doctor reports `route.domain_reserved`. Core reserves and publishes `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. The ai-router extension reserves and publishes `collector.ai-router.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it.
 

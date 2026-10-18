@@ -18,11 +18,11 @@ use Throwable;
  */
 final readonly class AiRouterHostnameRoute
 {
-    public function takeoverCandidate(Node $node, string $hostname = AiRouterHostname::Value): ?Route
+    public function takeoverCandidate(Node $node): ?Route
     {
         $route = Route::query()
             ->with(['customProxy', 'targets'])
-            ->where('domain', $hostname)
+            ->where('domain', AiRouterHostname::Value)
             ->first();
 
         if (! $route instanceof Route) {
@@ -34,7 +34,7 @@ final readonly class AiRouterHostnameRoute
             throw new ResourceOperationException(
                 errorCode: 'ai_router.hostname_taken',
                 message: "Route [{$route->id}] holds ".AiRouterHostname::Value.' and is not a custom proxy Route to '
-                    ."127.0.0.1:{$port} on Node [{$node->name}]. Remove that Route before you enable ai_router.",
+                    ."127.0.0.1:{$port} on Node [{$node->name}]. Remove that Route before you enable ai-router.",
                 status: 409,
             );
         }

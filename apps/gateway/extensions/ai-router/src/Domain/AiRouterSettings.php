@@ -12,9 +12,9 @@ final readonly class AiRouterSettings
 
     public const string CacheConnection = 'ai_router.cache_connection';
 
-    public const string CliproxyUrl = 'ai_router.router_url';
+    public const string RouterUrl = 'ai_router.router_url';
 
-    public const string CliproxyManagementKey = 'ai_router.management_key';
+    public const string ManagementKey = 'ai_router.management_key';
 
     public const string ReadToken = 'ai_router.read_token';
 

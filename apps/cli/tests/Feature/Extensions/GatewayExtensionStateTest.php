@@ -73,7 +73,7 @@ it('retains gateway trust guidance when discovery cannot verify the certificate'
             );
         },
         ShowAiRouterStatusRequest::class => MockResponse::make([
-            'data' => ['enabled' => false, 'hostname' => 'collector.ai-router.orbit', 'node_id' => null, 'cache_connection' => null, 'collected_at' => null],
+            'data' => ['enabled' => false, 'cutover_pending' => false, 'hostname' => 'collector.ai-router.orbit', 'node_id' => null, 'cache_connection' => null, 'collected_at' => null],
             'request_id' => 'status-direct-request',
         ]),
     ]);

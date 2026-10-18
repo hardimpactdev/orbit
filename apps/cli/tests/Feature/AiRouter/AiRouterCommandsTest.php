@@ -280,6 +280,7 @@ function ai_router_cli_status_response(array $payload = []): MockResponse
             'hostname' => 'collector.ai-router.orbit',
             'node_id' => 4,
             'cache_connection' => 'valkey',
+            'cutover_pending' => false,
             'collected_at' => '2026-09-20T12:00:00Z',
             ...$payload,
         ],
@@ -329,3 +330,12 @@ function ai_router_cli_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('shows a pending release cutover in human status', function (): void {
+    MockClient::global([
+        ListExtensionsRequest::class => ai_router_cli_extensions_response(),
+        ShowAiRouterStatusRequest::class => ai_router_cli_status_response(payload: ['cutover_pending' => true, 'collected_at' => null]),
+    ]);
+    [$exit, $output] = ai_router_cli_display('ai-router:status');
+    expect($exit)->toBe(0)->and($output)->toMatch('/Cutover pending\s+yes/');
+});

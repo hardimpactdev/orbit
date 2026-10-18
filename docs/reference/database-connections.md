@@ -53,7 +53,7 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
-Deletion returns `database_connection.required_by_ai_router` (409) while [AiRouter setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
+Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
 A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [ai-router collector](/reference/ai-router#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
 
