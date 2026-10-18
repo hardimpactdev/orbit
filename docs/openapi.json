@@ -33129,6 +33129,7 @@
             "enum": [
               "direction",
               "failure",
+              "removal_failure",
               "observation",
               null
             ]
@@ -33344,6 +33345,7 @@
             "enum": [
               "direction",
               "failure",
+              "removal_failure",
               "observation",
               null
             ]
@@ -33864,6 +33866,7 @@
             "enum": [
               "direction",
               "failure",
+              "removal_failure",
               "observation",
               null
             ]

@@ -19,7 +19,6 @@ use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
-use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -718,32 +717,11 @@ final class Task extends Model
         $this->syncOriginalAttribute('parent_id');
     }
 
-    /**
-     * A completed or cancelled task never asks for assistance. The last reason stays.
-     * Query-builder lifecycle updates must call the same assistance rule.
-     */
+    /** The writer owns the assistance rule for every status transition. */
     private function clearAssistanceWhenEnded(): void
     {
-        if (! $this->isDirty('status')) {
-            return;
-        }
-
-        $status = $this->attributes['status'] ?? null;
-
-        if ($status instanceof BackedEnum) {
-            $status = $status->value;
-        }
-
-        if (! is_string($status)) {
-            return;
-        }
-
-        $ended = $this->resolvedParentId() === null
-            ? in_array(TaskGroupStatus::tryFrom($status), [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
-            : in_array(TaskStatus::tryFrom($status), [TaskStatus::Completed, TaskStatus::Cancelled], true);
-
-        if ($ended) {
-            TaskAssistance::apply($this, reason: $this->fresh()?->assistance_reason);
+        if ($this->wasChanged('status')) {
+            TaskAssistance::apply($this, reconcileStatus: true);
         }
     }
 

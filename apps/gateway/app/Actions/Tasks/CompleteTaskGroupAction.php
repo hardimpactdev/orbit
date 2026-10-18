@@ -8,11 +8,9 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Task;
@@ -63,14 +61,7 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {
-            // The work is complete but cleanup is still stuck. Preserve its assistance through
-            // this terminal transition instead of clearing it with the ordinary model status hook.
-            DB::transaction(static function () use ($group): void {
-                Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
-                $group->refresh();
-                TaskQuestions::settle($group, 'Task completed.');
-                app(TaskBroadcasts::class)->groupChanged($group->id);
-            });
+            $group->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
@@ -189,6 +180,7 @@ final readonly class CompleteTaskGroupAction
             // Under the admission lock, so a tick cannot park the group's task VM while its workspace is removed.
             $this->execution->synchronized($group->id, fn () => $this->removeWorkspace($group), wait: false);
         } catch (Throwable $exception) {
+            $this->workspace->recordFailure($group, $exception, replaceDirection: $finishWhenRemovalFails);
             if (! $finishWhenRemovalFails) {
                 throw $exception;
             }
@@ -199,18 +191,12 @@ final readonly class CompleteTaskGroupAction
         return true;
     }
 
-    /** Deletes the checkout. A refusal keeps the checkout and the Instance row, asks for assistance, and rethrows. */
+    /** Deletes the checkout; a refusal leaves the checkout and Instance for removeOrFinish to report. */
     private function removeWorkspace(Task $group): void
     {
         $instanceId = $group->taskable_id;
 
-        try {
-            $this->workspace->remove($group);
-        } catch (Throwable $exception) {
-            $this->workspace->recordFailure($group, $exception);
-
-            throw $exception;
-        }
+        $this->workspace->remove($group);
 
         $this->workspace->clearFailure($group);
 

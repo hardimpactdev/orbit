@@ -71,11 +71,11 @@ it('stops asking for assistance when a flagged task is saved as completed or can
 
     TaskAssistance::apply($subject, AssistanceKind::Failure, null, $reason);
 
-    expect($subject->fresh()?->assistance_requested)->toBeTrue()
+    expect($subject->fresh()?->assistance_requested)->toBeFalse()
         ->and($subject->fresh()?->assistance_reason)->toBe($reason);
 
     $response = $this->getJson('/api/v1/tasks/status')->assertOk();
-    expect(array_column($response->json('data.assistance'), 'id'))->toBe($level === 'group' ? [$open->id, $group->id] : [$open->id]);
+    expect(array_column($response->json('data.assistance'), 'id'))->toBe([$open->id]);
 })->with([
     'completed group' => ['group', 'completed'],
     'cancelled group' => ['group', 'cancelled'],
@@ -119,7 +119,7 @@ it('audits assistance clears when cancelling the remaining subtasks', function (
         ->and($open->fresh()?->assistance_reason)->toBe('Still waiting.');
 });
 
-it('shows a new assistance comment on an ended group in tasks status', function (string $status): void {
+it('does not reopen an ended group for a direction comment', function (string $status): void {
     $gateway = Node::query()->create([
         'name' => 'ended-comment-gateway-'.$status,
         'status' => LifecycleStatus::Active,
@@ -170,13 +170,14 @@ it('shows a new assistance comment on an ended group in tasks status', function 
     $task->refresh();
     expect($comment->body)->toBe($reason)
         ->and($group->status->value)->toBe($status)
-        ->and($group->assistance_requested)->toBeTrue()
-        ->and($group->assistance_reason)->toBe($reason)
+        ->and($group->assistance_requested)->toBeFalse()
+        ->and($group->assistance_reason)->toBe('Earlier reason.')
         ->and($task->status)->toBe(TaskStatus::Running)
         ->and($task->assistance_requested)->toBeTrue()
         ->and($task->assistance_reason)->toBe($reason);
 
-    $this->getJson('/api/v1/tasks/status')->assertOk()->assertJsonPath('data.assistance.1.id', $group->id);
+    $response = $this->getJson('/api/v1/tasks/status')->assertOk();
+    expect(array_column($response->json('data.assistance'), 'id'))->toBe([$open->id]);
 })->with(['completed', 'cancelled']);
 
 it('keeps a stale save from leaving an ended task asking for assistance', function (string $level, string $status, string $interleaving): void {
@@ -229,11 +230,10 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
         $other->save();
         TaskAssistance::apply($stale, AssistanceKind::Failure, null, 'Asked too late.');
 
-        expect($stale->assistance_requested)->toBeTrue()
-            ->and($stale->status->value)->toBe($status)
+        expect($stale->assistance_requested)->toBeFalse()
             ->and($stale->fresh()?->status->value)->toBe($status)
-            ->and($stale->fresh()?->assistance_requested)->toBeTrue()
-            ->and($stale->fresh()?->assistance_reason)->toBe('Asked too late.');
+            ->and($stale->fresh()?->assistance_requested)->toBeFalse()
+            ->and($stale->fresh()?->assistance_reason)->toBe('Ended by the other writer.');
     }
 })->with([
     'group completed flagged then ended' => ['group', 'completed', 'end'],
@@ -245,3 +245,41 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
     'subtask completed ended then flagged' => ['subtask', 'completed', 'flag'],
     'subtask cancelled ended then flagged' => ['subtask', 'cancelled', 'flag'],
 ]);
+
+it('keeps unsaved array casts and loaded relations intact when assistance changes or stays unchanged', function (bool $unchanged): void {
+    $project = Project::query()->create(['name' => 'Pending state', 'slug' => 'pending-state', 'repository_url' => 'https://github.com/acme/pending-state.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Pending', 'brief' => 'Preserve pending state.', 'status' => TaskGroupStatus::Running]);
+    $task = $group->tasks()->create(['position' => 1, 'title' => 'Pending subtask', 'brief' => 'Preserve casts.', 'status' => TaskStatus::Running]);
+    TaskAssistance::apply($task, AssistanceKind::Direction, 'Which mirror?', 'Waiting.');
+    $task->setRelation('parent', $group);
+    $task->fill(['provider_retry' => ['attempt' => 1]]);
+
+    TaskAssistance::apply($task, $unchanged ? AssistanceKind::Failure : null, reason: 'A failure.');
+
+    expect($task->provider_retry)->toBe(['attempt' => 1])
+        ->and($task->isDirty('provider_retry'))->toBeTrue()
+        ->and($task->parent)->toBe($group);
+    $task->update(['status' => TaskStatus::Cancelled]);
+    expect($task->provider_retry)->toBe(['attempt' => 1])
+        ->and($task->fresh()?->provider_retry)->toBe(['attempt' => 1]);
+})->with([true, false]);
+
+it('keeps ended cleanup assistance when an unrelated late request arrives', function (AssistanceKind $kind): void {
+    $project = Project::query()->create([
+        'name' => 'Cleanup assistance', 'slug' => 'cleanup-assistance',
+        'repository_url' => 'https://github.com/example/cleanup.git', 'default_branch' => 'main',
+    ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id, 'title' => 'Cancelled cleanup', 'brief' => 'Remove the workspace.',
+        'status' => TaskGroupStatus::Cancelled,
+    ]);
+    TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: 'Workspace removal failed: Node unreachable.');
+    $entries = Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->count();
+
+    expect(TaskAssistance::apply($group, $kind, 'Which mirror?', 'A late report.'))->toBeFalse()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_reason)->toBe('Workspace removal failed: Node unreachable.')
+        ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->count())->toBe($entries);
+})->with([AssistanceKind::Failure, AssistanceKind::Direction]);

@@ -4726,7 +4726,7 @@ export interface components {
             watched_pr_state?: string | null;
             assistance_requested?: boolean;
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | "observation" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
@@ -4769,7 +4769,7 @@ export interface components {
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | "observation" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
@@ -4882,7 +4882,7 @@ export interface components {
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             /** @enum {string|null} */
-            assistance_kind?: "direction" | "failure" | "observation" | null;
+            assistance_kind?: "direction" | "failure" | "removal_failure" | "observation" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
         };

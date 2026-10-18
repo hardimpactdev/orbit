@@ -10,7 +10,9 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -175,6 +177,7 @@ it('marks the group completed and reports the removal failure when the workspace
     };
     app()->instance(InstanceRemover::class, $remover);
     $group = complete_group();
+    TaskAssistance::apply($group, AssistanceKind::Direction, 'Which mirror?', 'Choose a mirror.');
     $instanceId = $group->taskable_id;
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
@@ -182,6 +185,8 @@ it('marks the group completed and reports the removal failure when the workspace
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($completed->taskable_id)->toBe($instanceId)
         ->and($completed->assistance_requested)->toBeTrue()
+        ->and($completed->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and($completed->assistance_question)->toBeNull()
         ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 

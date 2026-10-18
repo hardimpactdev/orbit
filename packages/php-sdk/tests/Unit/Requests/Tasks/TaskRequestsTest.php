@@ -285,14 +285,14 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'project_code' => 'ORB',
                 'title' => 'Blocked implementer',
                 'status' => 'running',
-                'assistance_kind' => null,
+                'assistance_kind' => 'failure',
                 'assistance_question' => null,
                 'assistance_reason' => 'The implementer is blocked.',
             ])
             ->and($assisted->toArray()['assistance'][1])->toMatchArray([
                 'title' => 'Settling question',
                 'status' => 'settling',
-                'assistance_kind' => null,
+                'assistance_kind' => 'failure',
                 'assistance_question' => null,
                 'assistance_reason' => 'Which database should this use?',
             ])

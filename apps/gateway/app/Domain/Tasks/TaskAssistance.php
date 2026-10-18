@@ -46,17 +46,36 @@ final class TaskAssistance
      * The check and the write hold the same row lock, so a stale in-memory model cannot replace a newer direction
      * request or leave its question behind. A new cleanup failure can request assistance after a task ends.
      */
-    public static function apply(Task $record, ?AssistanceKind $kind = null, ?string $question = null, ?string $reason = null, bool $replaceFailure = false, bool $replaceDirection = false, ?TaskComment $source = null): bool
+    public static function apply(Task $record, ?AssistanceKind $kind = null, ?string $question = null, ?string $reason = null, bool $replaceFailure = false, bool $replaceDirection = false, ?TaskComment $source = null, bool $reconcileStatus = false): bool
     {
-        return DB::transaction(function () use ($record, $kind, $question, $reason, $replaceFailure, $replaceDirection, $source): bool {
+        return DB::transaction(function () use ($record, $kind, $question, $reason, $replaceFailure, $replaceDirection, $source, $reconcileStatus): bool {
             $current = Task::withoutGlobalScopes()->whereKey($record->id)->lockForUpdate()->firstOrFail();
             $requested = $current->assistance_requested;
-            $pending = array_diff_key($record->getDirty(), array_flip(self::Fields));
-            if ($kind !== null && $requested
+            $ended = in_array($current->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskStatus::Completed, TaskStatus::Cancelled], true);
+            if ($reconcileStatus) {
+                if (! $ended) {
+                    self::sync($record, $current);
+
+                    return false;
+                }
+                $kind = $current->assistance_kind === AssistanceKind::RemovalFailure ? AssistanceKind::RemovalFailure : null;
+                $reason = $current->assistance_reason;
+            }
+            if ($ended && $kind !== null && $kind !== AssistanceKind::RemovalFailure) {
+                if ($current->assistance_kind === AssistanceKind::RemovalFailure) {
+                    self::sync($record, $current);
+
+                    return false;
+                }
+                $kind = null;
+                $question = null;
+                $reason = $current->assistance_reason;
+            }
+            if (! $ended && $kind !== null && $requested
                 && (($current->assistance_kind === AssistanceKind::Direction && ! $replaceDirection)
                     || $kind === AssistanceKind::Observation
-                    || ($kind === AssistanceKind::Failure && $current->assistance_kind !== AssistanceKind::Observation && ! $replaceFailure))) {
-                $record->refresh()->forceFill($pending);
+                    || (in_array($kind, [AssistanceKind::Failure, AssistanceKind::RemovalFailure], true) && $current->assistance_kind !== AssistanceKind::Observation && ! $replaceFailure))) {
+                self::sync($record, $current);
 
                 return false;
             }
@@ -67,12 +86,13 @@ final class TaskAssistance
                 'assistance_reason' => $reason,
             ];
             if ($current->only(self::Fields) === [...$attributes, 'assistance_kind' => $kind]) {
-                $record->refresh()->forceFill($pending);
+                self::sync($record, $current);
 
                 return false;
             }
             DB::table('tasks')->where('id', $record->id)->update([...$attributes, 'updated_at' => now()]);
-            $record->refresh()->forceFill($pending);
+            $current->forceFill($attributes);
+            self::sync($record, $current);
             if (! $requested && ! $record->assistance_requested) {
                 return true;
             }
@@ -96,6 +116,15 @@ final class TaskAssistance
 
             return true;
         });
+    }
+
+    /** Synchronize only assistance; never re-encode pending casts or reload the caller's relations. */
+    private static function sync(Task $record, Task $current): void
+    {
+        foreach (self::Fields as $field) {
+            $record->setAttribute($field, $current->getAttribute($field));
+        }
+        $record->syncOriginalAttributes(self::Fields);
     }
 
     /**

@@ -41,8 +41,8 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `title`, `brief` | both | Short name, and the goal and acceptance |
 | `status` | both | Lifecycle state |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
-| `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. Ending a task clears its current request and keeps its last reason; a later cleanup failure can ask again |
-| `assistance_kind`, `assistance_question` | both | `direction` when the record needs the operator's direction, with its one question. `observation` for a driver outage, and `failure` for other failures, both with no question. See [Direction requests](#direction-requests) |
+| `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. See the [assistance lifecycle](#assistance-and-resolution) for ended tasks and cleanup failures |
+| `assistance_kind`, `assistance_question` | both | The typed [assistance cause](#direction-requests) and the one question for a `direction` request. Other kinds have no question |
 | `position` | subtask | Order under the parent, gapless from 1 |
 | `deliverables` | subtask | The typed items the subtask must deliver |
 | `check` | subtask | The latest [task check](#project-check) run |
@@ -842,16 +842,17 @@ Every change to assistance goes through `TaskAssistance::apply`; direct model wr
 
 Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity.
 
-Ending a task clears its current request; a later cleanup failure can request assistance again, including on a completed or cancelled group. `tasks:status` lists every task that still asks for assistance. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
+Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on a completed or cancelled task; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
 
 #### Direction requests
 
-Every assistance request has a kind, `direction`, `failure`, or `observation`. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
+Every assistance request has a typed kind. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
 
 | Kind | Cause | Question |
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
 | `failure` | A failed push, check, thread, or other failure | Null |
+| `removal_failure` | A workspace removal failure, including after completion or cancellation; clears when removal succeeds | Null |
 | `observation` | A driver outage beyond the grace period, including during a consult; group-only and self-clearing | Null |
 
 The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. An observation outage replaces no open request; direction or failure can replace an observation request. `tasks:status` lists direction requests first in its table.

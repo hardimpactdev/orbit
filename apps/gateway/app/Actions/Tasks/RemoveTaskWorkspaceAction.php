@@ -154,7 +154,7 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
-    public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
+    public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null, bool $replaceDirection = false): void
     {
         if ($exception instanceof TaskWorkspaceWaiting) {
             return;
@@ -165,20 +165,14 @@ final readonly class RemoveTaskWorkspaceAction
                 break;
             }
         }
-        TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true, replaceDirection: $replaceDirection);
     }
 
     /** Clears assistance that this removal recorded, once the checkout is gone. Another cause is left alone. */
     public function clearFailure(Task $group): void
     {
         $group->refresh();
-        $reason = $group->assistance_reason;
-
-        if (! is_string($reason)) {
-            return;
-        }
-
-        if (! str_starts_with($reason, self::RemovalFailedPrefix) && ! str_starts_with($reason, self::MergeCleanupFailedPrefix) && ! str_starts_with($reason, self::OwnershipRefusedPrefix)) {
+        if ($group->assistance_kind !== AssistanceKind::RemovalFailure) {
             return;
         }
 
