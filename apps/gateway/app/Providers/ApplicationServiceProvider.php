@@ -41,9 +41,12 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -230,6 +233,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
+use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
@@ -505,6 +509,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
+        ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,
@@ -550,6 +555,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([ValkeyConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
+
         $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
 
         $this->app->bind(
