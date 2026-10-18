@@ -124,7 +124,12 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
   - the classic branch protection, with `GET /repos/{owner}/{repo}/branches/{branch}/protection`, which needs `Administration: read`. A 404 there means that the branch has no classic protection.
 - It refuses when either source requires an up-to-date branch: `strict_required_status_checks_policy` in a ruleset, or `required_status_checks.strict` in classic protection.
 - It also refuses when it cannot read either source, because then the policy is unknown.
-- The GitHub App manifest adds `Administration: read`. An installation that has not accepted the new permission cannot turn review and merge on until it does. Projects that already have it on are not read again.
+- The protection read needs `Administration: read`. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) plans `Administration: write` on the same App, for runner registration. Write covers read, so both ADRs share one permission change:
+  - Whichever ADR's step builds first adds `administration: write` to the App manifest, once.
+  - Nick accepts that change on the installation, once.
+  - The other ADR reuses the same grant. It adds no read-level permission and never lowers the grant to read.
+  - The token for the protection read is minted with only `administration: read`. Runner tokens keep only `administration: write`.
+- An installation that has not accepted the grant cannot turn review and merge on until it does. Projects that already have it on are not read again.
 - Rules can change after that. When GitHub refuses a merge because the branch is behind, Orbit records `refused`, merges nothing, and asks for assistance once, with that reason. So the pull request never waits without a signal.
 - Projects without review and merge keep GitHub's branch update, as today.
 
@@ -249,7 +254,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - It deletes every `base_merge` check row, of open and ended groups.
    - It converts every `base_merge` reviewed commit to `orbit_push`. The head of an open group may be such a commit, and it inherited its review, so `mergeWhenReady` keeps accepting it.
    - Deploy it when no `base_merge` check is running.
-   - Add the strict-base refusal to `project:update`, with both rule reads and `Administration: read` in `GitHubAppManifestPage` and [GitHub App](/reference/github-app).
+   - Add the strict-base refusal to `project:update`, with both rule reads. When ADR 0213's registration through the GitHub App has not added `administration: write` to `GitHubAppManifestPage` yet, this step adds it, and the [GitHub App](/reference/github-app) page names both uses.
    - Add the assistance on a behind refusal to `mergeWhenReady`.
    - Delete `TaskCheckKind::BaseMerge` and `TaskReviewedCommitSource::BaseMerge`.
    - Delete `TaskPublication::appendBaseMerge`, `prepareBaseMerge`, `queueBaseMergeRetry`, `appendAgentBaseMerge`, `appendDeltaReview`, and `conflictOutput`, with the repair, retry, and lost states of the gate.
@@ -317,7 +322,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
-- ADRs: [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): item 6 (main caches) of its Orbit Project section imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type
+- ADRs: [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): item 6 (main caches) of its Orbit Project section imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; its `Administration: write` grant also covers the protection read, and whichever ADR builds first adds it once
 - Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches). [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
