@@ -64,7 +64,7 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
 
         $this->passwords["{$server->node->wireguard_ip}:{$server->port}"] = $server->root_password;
         $this->users['default'] = $server->default_open
-            ? new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', [])
+            ? new ValkeyAclUser('default', 'on nopass ~* &* +@all', [])
             : ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, $server->root_password);
 
         return true;
@@ -113,7 +113,7 @@ final class FakeValkeyServerAdmin implements ValkeyServerAdmin
         }
 
         $rules = implode(' ', [
-            'on sanitize-payload',
+            'on',
             ...array_map(static fn (string $pattern): string => '~'.$pattern, $patterns),
             'resetchannels -@all',
             ...array_map(static fn (string $rule): string => '+'.$rule, $allow),

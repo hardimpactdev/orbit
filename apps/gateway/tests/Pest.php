@@ -154,6 +154,7 @@ pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tia
 // The Gateway reads these as programs and catalogues, not as PHP, so coverage never records them.
 // A change reruns the tests that cover that file, and no others.
 pest()->tia()->watch([
+    'tests/Fixtures/valkey/*.json' => 'tests/Unit/Domain/DatabaseServers/ValkeyAclUserTest.php',
     'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
     'resources/tasks/metadata' => 'tests/Feature/Infrastructure/Tasks',
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',

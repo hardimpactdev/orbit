@@ -86,7 +86,7 @@ final readonly class ValkeyProcessAdoption
         $default = $users['default'] ?? null;
         $expectedDefault = filled($connection->password)
             ? ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, (string) $connection->password)
-            : new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
+            : new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
         if (! $default?->sameAs($expectedDefault)) {
             throw self::refused("Adoption would replace the default user's authentication or permissions.");
         }

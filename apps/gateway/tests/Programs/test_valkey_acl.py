@@ -1,6 +1,7 @@
 """database-servers.write-valkey-acl against a fake Docker: sudo and docker are shell fakes on PATH. The fake docker
 records its arguments and standard input, then runs the container's `sh -c` script with /data in a temporary
 directory, so the umask and the rename run for real."""
+import json
 import os
 import stat
 import tempfile
@@ -11,7 +12,7 @@ from harness import execute, result
 
 NAME = 'database-servers.write-valkey-acl'
 ACL = 'user default on #' + '0123456789abcdef' * 4 + ' ~* &* +@all\n'
-USER = ('user gateway-queue #' + 'fedcba9876543210' * 4 + ' on sanitize-payload ~orbit-gateway:* ~orbit-gateway-horizon:*'
+USER = ('user gateway-queue #' + 'fedcba9876543210' * 4 + ' on ~orbit-gateway:* ~orbit-gateway-horizon:*'
         ' resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous -function -script\n')
 FAKES = {
     'sudo': '[ "$1" = -n ] || exit 64; shift; exec "$@"',
@@ -68,6 +69,17 @@ class WriteValkeyAclTest(unittest.TestCase):
         self.assertEqual(self.write(acl=acl), ('written', {}))
         self.assertEqual((self.volume / 'users.acl').read_text(), acl)
 
+    def test_accepts_the_shared_real_acl_list_fixture(self):
+        fixture = json.loads((Path(__file__).parents[1] / 'Fixtures/valkey/acl-list.json').read_text())
+        default = next(line for line in fixture['closed'] if line.startswith('user default '))
+        managed = [line for line in fixture['closed'] if not line.startswith('user default ')]
+        for first in (default, fixture['open_default']):
+            for flag in ('', 'sanitize-payload '):
+                acl = '\n'.join(line.replace(' on ', ' on ' + flag, 1) for line in [first, *managed]) + '\n'
+                with self.subTest(default=first, flag=flag):
+                    self.assertEqual(self.write(acl=acl), ('written', {}))
+                    self.assertEqual((self.volume / 'users.acl').read_text(), acl)
+
     def test_replaces_an_existing_file(self):
         self.volume.mkdir(parents=True)
         (self.volume / 'users.acl').write_text('user default on nopass ~* &* +@all\n')
@@ -101,6 +113,7 @@ class WriteValkeyAclTest(unittest.TestCase):
             'a managed line for default': {'acl': ACL + USER.replace('gateway-queue', 'default')},
             'a user without a password': {'acl': ACL + USER.replace('#' + 'fedcba9876543210' * 4, 'nopass')},
             'a user with two passwords': {'acl': ACL + USER.replace(' on ', ' #' + 'a' * 64 + ' on ', 1)},
+            'an unsupported payload flag': {'acl': ACL + USER.replace(' on ', ' on nosanitize-payload ', 1)},
             'a user with channels': {'acl': ACL + USER.replace('resetchannels', '&*')},
             'a user without the final deny': {'acl': ACL + USER.replace(' -function -script', '')},
             'a user without a key pattern': {'acl': ACL + USER.replace(' ~orbit-gateway:* ~orbit-gateway-horizon:*', '')},

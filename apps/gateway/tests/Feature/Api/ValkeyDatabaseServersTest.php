@@ -400,7 +400,7 @@ describe('database:server:create --process --connection', function (): void {
     it('adopts an open server without locking out clients and closes it only after migration', function (): void {
         $this->connection->update(['password' => null]);
         $this->valkey->anonymous = true;
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertCreated();
         $server = DatabaseServer::query()->sole();
         expect($server->default_open)->toBeTrue()
@@ -434,7 +434,7 @@ describe('database:server:create --process --connection', function (): void {
     it('retries failed open adoption with the same generated admin password', function (): void {
         $this->connection->update(['password' => null]);
         $this->valkey->anonymous = true;
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
         $this->runtime->failConverge = true;
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertStatus(502);
         $password = DatabaseServer::query()->sole()->root_password;
@@ -705,7 +705,7 @@ describe('database:server:create on an active Valkey server', function (): void 
 
     it('sets each missing or changed user, deletes every other user, and saves, without a restart', function (): void {
         unset($this->valkey->users['gateway-queue']);
-        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on sanitize-payload ~* &* -@all', [
+        $this->valkey->users['default'] = new ValkeyAclUser('default', 'on ~* &* -@all', [
             hash('sha256', $this->server->root_password),
             hash('sha256', 'second-admin-password'),
         ]);

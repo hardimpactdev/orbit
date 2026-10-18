@@ -602,6 +602,10 @@ jobs:
           cp .env.example .env
           composer install --no-interaction --prefer-dist
       # ORBIT_TEST_DOCKER runs the Valkey Database server tests against a real valkey/valkey:8.1 in Docker.
+      - name: Pull the current Valkey test image
+        run: |
+          docker pull valkey/valkey:8.1
+          docker run --rm valkey/valkey:8.1 valkey-server --version
       - name: Run every privileged test
         env:
           ORBIT_TEST_DOCKER: '1'
@@ -635,6 +639,10 @@ jobs:
           "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
+      - name: Pull the current Valkey test image
+        run: |
+          docker pull valkey/valkey:8.1
+          docker run --rm valkey/valkey:8.1 valkey-server --version
       - name: Lint and test the remote programs
         env:
           ORBIT_TEST_DOCKER: '1'

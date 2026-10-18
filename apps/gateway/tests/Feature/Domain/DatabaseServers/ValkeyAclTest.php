@@ -11,7 +11,7 @@ use App\Models\Node;
 
 function valkey_acl_test_rules(): string
 {
-    return 'on sanitize-payload ~queue:* resetchannels -@all +@list -@admin -@dangerous -function -script';
+    return 'on ~queue:* resetchannels -@all +@list -@admin -@dangerous -function -script';
 }
 
 beforeEach(function (): void {
@@ -37,7 +37,7 @@ beforeEach(function (): void {
 describe('ValkeyAcl', function (): void {
     it('records default with the admin password and one user per connection with its own username', function (): void {
         expect(ValkeyAcl::users($this->server))->toEqual([
-            'default' => ValkeyAclUser::withPassword('default', 'on sanitize-payload ~* &* +@all', 'admin-secret'),
+            'default' => ValkeyAclUser::withPassword('default', 'on ~* &* +@all', 'admin-secret'),
             'queue' => ValkeyAclUser::withPassword('queue', valkey_acl_test_rules(), 'queue-secret'),
         ]);
     });
@@ -58,7 +58,7 @@ describe('ValkeyAcl', function (): void {
 
     it('lists each recorded user that is missing or differs, and each other live user', function (): void {
         $live = [
-            'default' => ValkeyAclUser::withPassword('default', 'on sanitize-payload ~* &* +@all', 'admin-secret'),
+            'default' => ValkeyAclUser::withPassword('default', 'on ~* &* +@all', 'admin-secret'),
             'queue' => ValkeyAclUser::withPassword('queue', valkey_acl_test_rules(), 'queue-secret'),
         ];
 
@@ -77,7 +77,7 @@ describe('ValkeyAcl', function (): void {
     it('leaves the live default of an open server alone and writes it without a password', function (): void {
         $this->server->update(['default_open' => true]);
         $live = [
-            'default' => new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []),
+            'default' => new ValkeyAclUser('default', 'on nopass ~* &* +@all', []),
             'queue' => ValkeyAclUser::withPassword('queue', valkey_acl_test_rules(), 'queue-secret'),
         ];
 

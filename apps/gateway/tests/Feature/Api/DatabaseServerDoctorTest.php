@@ -42,7 +42,7 @@ beforeEach(function (): void {
     ]);
     $this->admin = new FakeValkeyServerAdmin;
     $this->admin->users = [
-        'default' => new ValkeyAclUser('default', 'on sanitize-payload ~* &* +@all', [hash('sha256', 'doctor-admin-secret')]),
+        'default' => new ValkeyAclUser('default', 'on ~* &* +@all', [hash('sha256', 'doctor-admin-secret')]),
         'private-client' => new ValkeyAclUser('private-client', 'on ~private:* resetchannels -@all +get', [hash('sha256', 'doctor-client-secret')]),
     ];
     app()->instance(ValkeyServerAdmin::class, $this->admin);
@@ -67,7 +67,7 @@ it('reports matching ACL users as healthy through the Doctor endpoint without wr
 it('reports an open adopted server once and compares only its other users', function (): void {
     $this->server->update(['default_open' => true]);
     $this->admin->anonymous = true;
-    $this->admin->users['default'] = new ValkeyAclUser('default', 'on nopass sanitize-payload ~* &* +@all', []);
+    $this->admin->users['default'] = new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
 
     $response = $this->postJson('/api/v1/doctor', $this->request)->assertOk();
 
@@ -81,18 +81,19 @@ it('reports an open adopted server once and compares only its other users', func
 });
 
 it('compares rules by token, so only the order of command rules matters', function (string $rules, bool $healthy): void {
-    DatabaseUser::query()->update(['privileges' => 'on sanitize-payload ~private:* ~shared:* resetchannels -@all +get +@list -@admin']);
+    DatabaseUser::query()->update(['privileges' => 'on ~private:* ~shared:* resetchannels -@all +get +@list -@admin']);
     $this->admin->users['private-client'] = new ValkeyAclUser('private-client', $rules, [hash('sha256', 'doctor-client-secret')]);
 
     $this->postJson('/api/v1/doctor', $this->request)->assertOk()
         ->assertJsonPath('data.healthy', $healthy);
 })->with([
-    'the same rules' => ['on sanitize-payload ~private:* ~shared:* resetchannels -@all +get +@list -@admin', true],
-    'flags, keys, and channels in another order' => ['sanitize-payload on resetchannels ~shared:* ~private:* -@all +get +@list -@admin', true],
-    'extra spaces' => ['on  sanitize-payload ~private:* ~shared:*   resetchannels -@all +get +@list -@admin', true],
-    'command rules in another order' => ['on sanitize-payload ~private:* ~shared:* resetchannels -@all -@admin +get +@list', false],
-    'another key pattern' => ['on sanitize-payload ~private:* ~other:* resetchannels -@all +get +@list -@admin', false],
-    'a missing flag' => ['on ~private:* ~shared:* resetchannels -@all +get +@list -@admin', false],
+    'the same rules' => ['on ~private:* ~shared:* resetchannels -@all +get +@list -@admin', true],
+    'flags, keys, and channels in another order' => ['on resetchannels ~shared:* ~private:* -@all +get +@list -@admin', true],
+    'extra spaces' => ['on  ~private:* ~shared:*   resetchannels -@all +get +@list -@admin', true],
+    'command rules in another order' => ['on ~private:* ~shared:* resetchannels -@all -@admin +get +@list', false],
+    'another key pattern' => ['on ~private:* ~other:* resetchannels -@all +get +@list -@admin', false],
+    'payload metadata' => ['on sanitize-payload ~private:* ~shared:* resetchannels -@all +get +@list -@admin', true],
+    'a disabled user' => ['off ~private:* ~shared:* resetchannels -@all +get +@list -@admin', false],
 ]);
 
 it('reports a missing or different live ACL file without exposing its path', function (?string $file): void {
@@ -109,10 +110,10 @@ it('reports ACL drift without exposing users rules passwords or hashes', functio
         'missing client' => array_pop($this->admin->users),
         'extra user' => $this->admin->users['unrecorded'] = new ValkeyAclUser('unrecorded', 'on nopass ~* &* +@all', []),
         'admin rights' => $this->admin->users['default'] = new ValkeyAclUser('default', 'on ~* &* -@all', [hash('sha256', 'doctor-admin-secret')]),
-        'admin password' => $this->admin->users['default'] = new ValkeyAclUser('default', 'on sanitize-payload ~* &* +@all', [hash('sha256', 'wrong')]),
+        'admin password' => $this->admin->users['default'] = new ValkeyAclUser('default', 'on ~* &* +@all', [hash('sha256', 'wrong')]),
         'client password' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on ~private:* resetchannels -@all +get', [hash('sha256', 'wrong')]),
         'extra password' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on ~private:* resetchannels -@all +get', [hash('sha256', 'doctor-client-secret'), hash('sha256', 'wrong')]),
-        'client rules' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on sanitize-payload ~* &* +@all', [hash('sha256', 'doctor-client-secret')]),
+        'client rules' => $this->admin->users['private-client'] = new ValkeyAclUser('private-client', 'on ~* &* +@all', [hash('sha256', 'doctor-client-secret')]),
     };
 
     $response = $this->postJson('/api/v1/doctor', $this->request)->assertOk()

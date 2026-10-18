@@ -31,7 +31,6 @@ use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Sleep;
-use Illuminate\Support\Str;
 use Predis\Client;
 use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
@@ -177,9 +176,10 @@ beforeEach(function (): void {
         'name' => 'valkey-docker', 'status' => 'active', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1',
     ]);
+    $this->fixture = json_decode(file_get_contents(base_path('tests/Fixtures/valkey/acl-list.json')), true, flags: JSON_THROW_ON_ERROR);
     $this->server = DatabaseServer::query()->create([
         'slug' => $name, 'driver' => DatabaseDriver::Redis, 'node_id' => $this->node->id, 'tag' => '8.1', 'port' => valkey_docker_free_port(),
-        'root_password' => Str::random(48), 'status' => LifecycleStatus::Active,
+        'root_password' => $this->fixture['admin_password'], 'status' => LifecycleStatus::Active,
     ]);
     $specification = DatabaseServerProcess::valkeyData($this->server, $this->node, $name, $this->volume);
     $process = Process::query()->create([
@@ -210,6 +210,21 @@ afterEach(function (): void {
 });
 
 describe('a Valkey Database server in Docker', function (): void {
+    it('matches the shared fixture to raw ACL LIST output from the CI image', function (): void {
+        foreach ($this->fixture['users'] as $user) {
+            $this->admin->setUser($this->server, $user['name'], $user['password'], $user['patterns'], $user['allow']);
+        }
+        $client = valkey_docker_client($this->server, 'default', $this->password);
+        $lines = $client->executeRaw(['ACL', 'LIST']);
+        sort($lines);
+        expect($lines)->toBe($this->fixture['closed']);
+
+        $client->executeRaw(['ACL', 'SETUSER', 'default', 'resetpass', 'nopass']);
+        $lines = $client->executeRaw(['ACL', 'LIST']);
+        $default = array_values(array_filter($lines, static fn (string $line): bool => str_starts_with($line, 'user default ')));
+        expect($default)->toBe([$this->fixture['open_default']]);
+    });
+
     it('logs in as default only with the admin password and gives a client without one nothing', function (): void {
         $wrong = $this->server->replicate()->fill(['root_password' => 'wrong-password']);
         $wrong->setRelation('node', $this->node);
@@ -236,7 +251,7 @@ describe('a Valkey Database server in Docker', function (): void {
             ['@connection', '@list', '@write', '@slow', 'eval'],
         );
 
-        expect($rules)->toBe('on sanitize-payload ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +@write +@slow +eval -@admin -@dangerous -function -script')
+        expect($rules)->toBe('on ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +@write +@slow +eval -@admin -@dangerous -function -script')
             ->and($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeTrue()
             ->and($this->admin->aclUsers($this->server)['orbit-test-queue']->rules)->toBe($rules)
             ->and($this->admin->aclUsers($this->server)['orbit-test-queue']->hasOnlyPassword('queue-secret'))->toBeTrue();

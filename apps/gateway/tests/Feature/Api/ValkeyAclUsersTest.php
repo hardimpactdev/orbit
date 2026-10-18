@@ -128,7 +128,7 @@ describe('database:create --server on a Valkey server', function (): void {
 
         $connection = DatabaseConnection::query()->sole();
         $password = (string) $connection->password;
-        $rules = 'on sanitize-payload ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous -function -script';
+        $rules = 'on ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +eval +client|setname -@admin -@dangerous -function -script';
         $live = $this->valkey->users['gateway-queue'];
 
         expect(strlen($password))->toBe(40)

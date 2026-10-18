@@ -8,9 +8,10 @@ use SensitiveParameter;
 
 /**
  * One user of a Valkey Database server as `ACL LIST` reports it. `rules` is the line without `user <name>` and without
- * the password hashes, with single spaces, such as `on sanitize-payload ~orbit-gateway:* resetchannels -@all
+ * the password hashes, with single spaces, such as `on ~orbit-gateway:* resetchannels -@all
  * +@connection -@admin -@dangerous -function -script`. Two users compare by their rule tokens: flags, key patterns,
  * and channel rules in any order, command rules in order, because only their order changes what Valkey allows.
+ * Payload sanitization flags are Valkey metadata: Orbit never sets them and does not compare them.
  */
 final readonly class ValkeyAclUser
 {
@@ -18,7 +19,7 @@ final readonly class ValkeyAclUser
     public const string ADMIN = 'default';
 
     /** The rules of `default` as `ACL LIST` reports them: every key, channel, and command. */
-    public const string ADMIN_RULES = 'on sanitize-payload ~* &* +@all';
+    public const string ADMIN_RULES = 'on ~* &* +@all';
 
     /** @param list<string> $passwordHashes */
     public function __construct(
@@ -94,7 +95,7 @@ final readonly class ValkeyAclUser
 
         foreach (explode(' ', $this->rules) as $token) {
             $kind = match (true) {
-                $token === '' => null,
+                in_array($token, ['', 'sanitize-payload'], true) => null,
                 str_starts_with($token, '~'), str_starts_with($token, '%'), in_array($token, ['allkeys', 'resetkeys'], true) => 'keys',
                 str_starts_with($token, '&'), in_array($token, ['allchannels', 'resetchannels'], true) => 'channels',
                 str_starts_with($token, '+'), str_starts_with($token, '-'), in_array($token, ['allcommands', 'nocommands'], true) => 'commands',

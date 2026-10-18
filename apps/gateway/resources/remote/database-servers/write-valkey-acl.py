@@ -15,12 +15,34 @@ import subprocess
 
 VOLUME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{1,254}')
 IMAGE = re.compile(r'valkey/valkey:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}')
-ACL = re.compile(
-    r'user default on (?:#[0-9a-f]{64}|nopass) ~\* &\* \+@all\n'
-    r'(?:user (?!default )[a-z0-9]+(?:-[a-z0-9]+)* #[0-9a-f]{64} on sanitize-payload(?: ~[!-~]+)+ resetchannels -@all'
-    r'(?: \+[!-~]+)* -@admin -@dangerous -function -script\n)*'
+HASH = re.compile(r'#[0-9a-f]{64}')
+USER = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
+MANAGED_RULES = re.compile(
+    r'on(?: ~[!-~]+)+ resetchannels -@all(?: \+[!-~]+)* -@admin -@dangerous -function -script'
 )
 WRITE = 'umask 077 && cat > /data/users.acl.orbit-new && mv -f /data/users.acl.orbit-new /data/users.acl'
+
+
+def valid_acl(acl):
+    """Read ACL LIST/file tokens; hashes and flags may appear in either order. Orbit does not set payload flags."""
+    if not isinstance(acl, str) or not acl.endswith('\n'):
+        return False
+    for index, line in enumerate(acl[:-1].split('\n')):
+        tokens = line.split(' ')
+        if len(tokens) < 3 or tokens[0] != 'user' or USER.fullmatch(tokens[1]) is None:
+            return False
+        hashes = [token for token in tokens[2:] if HASH.fullmatch(token)]
+        rules = [token for token in tokens[2:] if not HASH.fullmatch(token)
+                 and token != 'sanitize-payload']
+        if index == 0:
+            if tokens[1] != 'default' or not (
+                (len(hashes) == 1 and rules == ['on', '~*', '&*', '+@all'])
+                or (not hashes and rules == ['on', 'nopass', '~*', '&*', '+@all'])
+            ):
+                return False
+        elif tokens[1] == 'default' or len(hashes) != 1 or MANAGED_RULES.fullmatch(' '.join(rules)) is None:
+            return False
+    return True
 
 
 def main(payload):
@@ -29,7 +51,7 @@ def main(payload):
             'the volume is not a Docker volume name')
     require(isinstance(image, str) and IMAGE.fullmatch(image) is not None, 'failed',
             'the image is not valkey/valkey:<tag>')
-    require(isinstance(acl, str) and ACL.fullmatch(acl) is not None, 'failed',
+    require(valid_acl(acl), 'failed',
             'the ACL file is not the default line and managed user lines')
     completed = subprocess.run(
         ['sudo', '-n', 'docker', 'run', '--rm', '-i', '--network', 'none',

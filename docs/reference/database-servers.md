@@ -207,7 +207,7 @@ The [Doctor](/cli/doctor) family `database_server` checks each Valkey server who
 | `database_server.acl_mismatch` | The live users differ from the recorded users. | [Repair the server](#repair-a-valkey-server). |
 | `database_server.inspection_failed` | Doctor could not connect, or `default` could not log in with the admin password. | Check that the Node and the server's Process run, then [repair the server](#repair-a-valkey-server). |
 
-The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. Doctor compares rules by token: the order of flags, key patterns, and channel rules does not matter, and the order of command rules does. An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too. Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of rule tokens matters as follows: the order of flags, key patterns, and channel rules does not matter, and the order of command rules does. An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
 
 ## Repair a Valkey server
 
