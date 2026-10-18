@@ -50,7 +50,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
             $failure = $failures[$key] ?? null;
             if (array_key_exists($key, $hashes) === array_key_exists($key, $failures)
                 || (array_key_exists($key, $hashes) && (! is_string($hash) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hash) !== 1))
-                || (array_key_exists($key, $failures) && (! is_string($failure) || preg_match('/\A[A-Za-z]+\z/D', $failure) !== 1))) {
+                || (array_key_exists($key, $failures) && (! is_string($failure) || preg_match('/\A[\x20-\x7e]{1,160}\z/D', $failure) !== 1))) {
                 throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash or artifact failure.');
             }
         }

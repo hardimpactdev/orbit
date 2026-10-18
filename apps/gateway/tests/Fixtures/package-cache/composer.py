@@ -38,6 +38,34 @@ class ComposerCacheTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             redirect.redirect_request(urllib.request.Request(github), None, 302, '', {}, 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz')
 
+    def test_repository_id_archive_is_not_a_starting_url(self):
+        url = 'https://api.github.com/repositories/7769432/zipball/' + 'a' * 40
+        with patch('urllib.request.build_opener') as opener:
+            with self.assertRaisesRegex(ValueError, 'Rejected archive URL'):
+                cache['download'](url, 'sentinel')
+            opener.assert_not_called()
+
+    def test_failure_reasons_do_not_expose_unexpected_exception_text(self):
+        for error in [ValueError('secret-sentinel'), OSError('secret-sentinel')]:
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as temporary:
+                def fetch(url):
+                    raise error
+                result = cache['fill'](Path(temporary) / 'cache', [self.artifact()], 100000, fetch)
+                self.assertEqual(list(result['failures'].values()), [type(error).__name__])
+                self.assertNotIn('secret-sentinel', json.dumps(result))
+
+    def test_rejected_redirect_is_recorded_as_a_safe_reason(self):
+        def fetch(url):
+            return cache['PublicRedirect']().redirect_request(urllib.request.Request(url), None, 301, '', {}, 'https://evil.test/secret-sentinel')
+        with tempfile.TemporaryDirectory() as temporary:
+            result = cache['fill'](Path(temporary) / 'cache', [self.artifact()], 100000, fetch)
+            self.assertEqual(list(result['failures'].values()), ['Rejected archive redirect'])
+
+    def test_oversized_archive_has_a_distinct_safe_reason(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(cache['fill'].__globals__, MAX_ARCHIVE=3):
+            result = cache['fill'](Path(temporary) / 'cache', [self.artifact()], 100000, lambda url: io.BytesIO(b'archive'))
+            self.assertEqual(list(result['failures'].values()), ['Archive exceeds size limit'])
+
     def test_moved_github_repository_redirect_keeps_the_locked_commit(self):
         commit = '301c07936b16d88628b126b01d082ba153cf4c40'
         original = 'https://api.github.com/repos/vlucas/phpdotenv/zipball/' + commit
@@ -77,12 +105,12 @@ class ComposerCacheTest(unittest.TestCase):
 
             result = cache['fill'](root, [bad, good], 100000, fetch)
 
-            self.assertEqual(result['failures'], {bad['key']: 'HTTPError'})
+            self.assertEqual(result['failures'], {bad['key']: 'HTTP 429'})
             self.assertEqual(result['hashes'], {good['key']: 'sha256-' + hashlib.sha256(b'archive').hexdigest()})
             self.assertEqual(json.loads((root / '.inventory.json').read_text()), {good['key']: hashlib.sha256(b'archive').hexdigest()})
             self.assertEqual(list(root.glob('.download-*')), [])
 
-    def test_missing_auth_skips_only_github_misses_and_retains_verified_hits(self):
+    def test_missing_auth_reports_github_misses_and_retains_verified_hits(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'shared'
             hit = self.artifact()
@@ -95,11 +123,11 @@ class ComposerCacheTest(unittest.TestCase):
                        key='npm/' + hashlib.sha256((npm_url + ' ' + integrity).encode()).hexdigest() + '.tgz')
             def fetch(url):
                 if cache['github_url'](url):
-                    raise cache['GitHubAuthenticationUnavailable']('no installation')
+                    return cache['download'](url)
                 return io.BytesIO(b'archive')
             result = cache['fill'](root, [hit, miss, npm], 100000, fetch)
             hashes = result['hashes']
-            self.assertEqual(result['failures'], {miss['key']: 'GitHubAuthenticationUnavailable'})
+            self.assertEqual(result['failures'], {miss['key']: 'GitHub installation token unavailable'})
             self.assertEqual(set(hashes), {hit['key'], npm['key']})
             self.assertFalse((root / miss['key']).exists())
             self.assertEqual((root / hit['key']).read_bytes(), b'archive')
@@ -132,14 +160,14 @@ class ComposerCacheTest(unittest.TestCase):
             self.assertEqual(next((root / 'quarantine').iterdir()).read_bytes(), b'corrupt')
 
     def test_rejects_bad_integrity_limit_and_unsafe_url(self):
-        for change, limit in [({}, 1), ({'integrity': 'sha1-' + '0' * 40}, 100000),
-                              ({'url': 'http://127.0.0.1/secret'}, 100000),
-                              ({'key': '../escape'}, 100000)]:
+        for change, limit, reason in [({}, 1, 'Cache full'), ({'integrity': 'sha1-' + '0' * 40}, 100000, 'Archive checksum mismatch'),
+                                      ({'url': 'http://127.0.0.1/secret'}, 100000, 'Composer key does not match the archive'),
+                                      ({'key': '../escape'}, 100000, 'Invalid Composer cache key')]:
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary) / 'cache'
                 artifact = {**self.artifact(), **change}
                 result = cache['fill'](root, [artifact], limit, lambda url: io.BytesIO(b'archive'))
-                self.assertEqual(result, {'hashes': {}, 'failures': {artifact['key']: 'ValueError'}})
+                self.assertEqual(result, {'hashes': {}, 'failures': {artifact['key']: reason}})
                 self.assertFalse((root / self.artifact()['key']).exists())
                 self.assertFalse((root / '.inventory.json').exists())
 

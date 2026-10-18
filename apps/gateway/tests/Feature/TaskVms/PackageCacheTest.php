@@ -23,6 +23,8 @@ use App\Models\Project;
 use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Queue\Worker;
+use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -296,7 +298,7 @@ it('publishes available cache artifacts without App coverage and rejects invalid
                 $hashes['composer-miss'] = null;
             }
 
-            return new CommandResult(0, json_encode(['hashes' => $hashes, 'failures' => ['composer-miss' => 'GitHubAuthenticationUnavailable']], JSON_THROW_ON_ERROR), '', 1, false);
+            return new CommandResult(0, json_encode(['hashes' => $hashes, 'failures' => ['composer-miss' => 'GitHub installation token unavailable']], JSON_THROW_ON_ERROR), '', 1, false);
         }
     };
     $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
@@ -329,7 +331,7 @@ it('records partial fills per Project and keeps them pending until every host su
         {
             return new CommandResult(0, json_encode([
                 'hashes' => $this->failArtifact ? ['healthy' => 'sha256-'.str_repeat('a', 64)] : ['healthy' => 'sha256-'.str_repeat('a', 64), 'broken' => 'sha256-'.str_repeat('b', 64)],
-                'failures' => $this->failArtifact ? ['broken' => 'HTTPError'] : [],
+                'failures' => $this->failArtifact ? ['broken' => 'HTTP 429'] : [],
             ], JSON_THROW_ON_ERROR), '', 1, false);
         }
     };
@@ -337,7 +339,7 @@ it('records partial fills per Project and keeps them pending until every host su
 
     expect(fn () => $fill->execute($first->id))->toThrow(TaskVmException::class, 'Some package cache artifacts failed');
 
-    Log::shouldHaveReceived('warning')->once()->with('Package cache artifact failed.', ['host_node_id' => $first->id, 'key' => 'broken', 'failure' => 'HTTPError']);
+    Log::shouldHaveReceived('warning')->once()->with('Package cache artifact failed.', ['host_node_id' => $first->id, 'key' => 'broken', 'failure' => 'HTTP 429']);
     expect(PackageCacheEntry::query()->sole()->package)->toBe('healthy');
     expect($snapshots['healthy']->fresh()->fill_pending)->toBeTrue();
     expect($snapshots['broken']->fresh()->fill_pending)->toBeTrue();
@@ -422,4 +424,66 @@ it('requires every host to verify a changed Composer checksum even when its arch
     expect(fn () => $fill->execute($second->id))->toThrow(TaskVmException::class);
     expect($snapshot->fresh()->fill_pending)->toBeTrue();
     expect(PackageCacheEntry::query()->sole()->host_node_id)->toBe($first->id);
+});
+
+it('accepts bounded printable archive failure reasons and rejects unsafe or oversized text', function (string $reason, bool $accepted): void {
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $ssh = new class($reason) implements SshExecutor
+    {
+        public function __construct(private readonly string $reason) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(0, json_encode(['hashes' => [], 'failures' => ['archive' => $this->reason]], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+    $cache = package_cache_transport($ssh);
+    $artifacts = [['manager' => 'composer', 'package' => 'acme/demo', 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => null, 'key' => 'archive']];
+
+    if ($accepted) {
+        expect($cache->fill($settings->host($node->id), $node, $artifacts))->toBe(['hashes' => [], 'failures' => ['archive' => $reason]]);
+    } else {
+        expect(fn () => $cache->fill($settings->host($node->id), $node, $artifacts))->toThrow(TaskVmException::class, 'no verified archive hash or artifact failure');
+    }
+})->with([
+    'fixed reason' => ['Archive checksum mismatch', true],
+    'HTTP status' => ['HTTP 429', true],
+    'printable boundary' => [str_repeat('x', 160), true],
+    'empty' => ['', false],
+    'newline' => ["HTTP 429\nsecret", false],
+    'control byte' => ["Cache\0full", false],
+    'non-ASCII' => ['échec', false],
+    'oversized' => [str_repeat('x', 161), false],
+]);
+
+it('fails a package fill after one attempt and leaves the Project pending for its next fetch', function (): void {
+    config(['queue.connections.gateway.driver' => 'database']);
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    $snapshot = PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'commit' => str_repeat('a', 40), 'blobs' => [], 'artifacts' => [], 'fill_pending' => true]);
+    $ssh = new class implements SshExecutor
+    {
+        public int $calls = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls++;
+
+            return new CommandResult(1, '', '', 1, false);
+        }
+    };
+    app()->instance(TaskVmPackageCache::class, package_cache_transport($ssh));
+    FillTaskVmPackageCache::dispatch($node->id);
+
+    /** @var Worker $worker */
+    $worker = app('queue.worker');
+    $worker->runNextJob('gateway', 'builds', new WorkerOptions(sleep: 0, maxTries: 3));
+
+    expect($ssh->calls)->toBe(1);
+    expect(DB::table('jobs')->count())->toBe(0);
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
+    app(ObservePackageCacheAction::class)->execute($project, '/nonexistent-mirror', $snapshot->commit);
+    expect(DB::table('jobs')->count())->toBe(1);
 });

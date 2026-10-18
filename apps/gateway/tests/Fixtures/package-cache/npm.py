@@ -84,7 +84,7 @@ class NpmCacheTest(unittest.TestCase):
             root = Path(temporary)
             spec = artifact(package())
             result = cache['fill'](root / 'shared', [spec], 100000, lambda url: io.BytesIO(b'wrong'))
-            self.assertEqual(result, {'hashes': {}, 'failures': {spec['key']: 'ValueError'}})
+            self.assertEqual(result, {'hashes': {}, 'failures': {spec['key']: 'Archive checksum mismatch'}})
             self.assertFalse((root / 'shared' / spec['key']).exists())
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode='w:gz') as archive:

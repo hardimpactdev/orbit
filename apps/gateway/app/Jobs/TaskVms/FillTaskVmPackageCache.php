@@ -14,7 +14,7 @@ final class FillTaskVmPackageCache implements ShouldBeUniqueUntilProcessing, Sho
 {
     use TaskVmJob;
 
-    public int $tries = 3;
+    public int $tries = 1;
 
     public int $timeout = 1700;
 
