@@ -178,6 +178,8 @@ register() {
     # The token reaches the container on stdin, not in the argv of incus. config.sh still takes it as an argument.
     local uid gid
     uid=$(in_ct "$name" id -u runner) gid=$(in_ct "$name" id -g runner)
+    # The container shell expands its arguments after it reads the token.
+    # shellcheck disable=SC2016
     printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
       sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --work /home/runner/work --replace' \
