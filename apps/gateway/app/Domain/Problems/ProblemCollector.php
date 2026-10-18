@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Problems;
 
 use App\Actions\Doctor\ProcessDoctorProbe;
+use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\NodeAccessAuthorizer;
@@ -86,17 +89,13 @@ final readonly class ProblemCollector
             return;
         }
 
+        $startedAt = now();
         $issue = $this->processDoctor->inspectProcess($process);
-
-        if ($issue === null) {
-            return;
-        }
-
-        DB::transaction(fn () => $this->record(
-            $this->doctorFingerprint($issue),
-            ProblemSource::Doctor,
-            ['expected' => $issue->expected, 'observed' => $issue->observed, 'summary' => $issue->summary],
-        ));
+        $this->recordDoctor(DoctorReportData::fromNodes([
+            DoctorNodeReportData::fromFamilies($gateway->id, $gateway->name, [
+                DoctorFamilyReportData::fromIssues(DoctorFamily::Process, 1, $issue === null ? [] : [$issue], [$process->id]),
+            ]),
+        ]), $startedAt);
     }
 
     /**
@@ -130,7 +129,7 @@ final readonly class ProblemCollector
                     'doctor_node' => $issue['doctor_node'],
                     'doctor_family' => $issue['doctor_family'],
                     'doctor_resource' => $issue['doctor_resource'],
-                    'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource']),
+                    'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource'], (int) $issue['doctor_node']),
                     'doctor_observed_at' => $startedAt->toISOString(),
                 ]);
             }

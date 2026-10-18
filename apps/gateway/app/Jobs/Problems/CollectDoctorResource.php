@@ -18,6 +18,7 @@ use App\Domain\Problems\ProblemCollector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Node;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 use UnexpectedValueException;
@@ -38,6 +39,9 @@ final class CollectDoctorResource extends ProblemCollectionJob
             $stored = Cache::get(ProblemCollection::contextKey($this->collection, $id));
             if ($stored !== null && ! is_array($stored)) {
                 throw new UnexpectedValueException('Invalid cached Doctor observation.');
+            }
+            if ($id === $this->nodeId && $stored !== null) {
+                $startedAt = Carbon::parse(Arr::string($stored, 'observed_at'));
             }
             $node = Node::query()->find($id);
             if ($node instanceof Node) {

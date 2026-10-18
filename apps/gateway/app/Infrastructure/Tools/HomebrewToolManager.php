@@ -343,24 +343,28 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardSupportedNode($node);
-        $result = $node->platform === 'macos'
-            ? $this->mac->installedInventory($node, false)
-            : $this->commands->execute($node, [...self::LINUX_PREFIX, 'list', '--versions', '--formula'], maxOutputBytes: 1_048_576);
+        $result = $this->commands->execute($node, $this->brewArguments($node, false, ['list', '--versions', '--formula']), maxOutputBytes: 1_048_576);
         $this->guardSuccessfulResult($result, 'installed-version', 'The Homebrew installed inventory probe failed.');
         $versions = [];
+        $unverifiable = [];
         foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
             if ($line === '') {
                 continue;
             }
             $fields = explode(' ', $line);
             $package = array_shift($fields);
-            if (! $this->validatePackage($package) || $fields === [] || ! array_all($fields, $this->isSafeVersion(...))) {
-                throw new ToolManagerException('installed-version', 'The Homebrew installed inventory was malformed.', $result);
+            if (! $this->validatePackage($package)) {
+                continue;
+            }
+            if ($fields === [] || ! array_all($fields, $this->isSafeVersion(...))) {
+                $unverifiable[] = $package;
+
+                continue;
             }
             $versions[$package] = [...($versions[$package] ?? []), ...$fields];
         }
 
-        return new InstalledToolInventory($versions, $result);
+        return new InstalledToolInventory($versions, $result, $unverifiable);
     }
 
     public function installedVersion(Node $node, string $package): ?string

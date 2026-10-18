@@ -56,8 +56,10 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
         $rules = $context->select($rules);
         $expectations = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory ? $this->expectations->for($context->node) : [];
 
+        $inventoryCheck = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory;
+        $inventoryChecks = $inventoryCheck ? [DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Inventory) => [FirewallDoctorIssueCode::InspectionFailed->value]] : [];
         if ($rules->isEmpty() && $expectations === []) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, []);
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, [], observedChecks: $inventoryChecks);
         }
 
         if (! $context->inspection->reachable) {
@@ -65,7 +67,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                 FirewallDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'firewall',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Firewall state cannot be inspected because the node is unreachable.',
                 'reachable',
@@ -118,7 +120,18 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), $issues, [...$rules->modelKeys(), ...array_map(static fn (FirewallInspectionTarget $target): int|string => $target->resourceId, $expectations)], ['' => [FirewallDoctorIssueCode::NodeUnreachable->value]]);
+        $checks = [DoctorResources::nodeCheckId($context->node->id) => [FirewallDoctorIssueCode::NodeUnreachable->value]];
+        if ($batch !== null && ! array_any($issues, static fn (DoctorIssueData $issue): bool => $issue->kind === DoctorIssueKind::Unverifiable)) {
+            $checks = [...$checks, ...$inventoryChecks];
+        }
+
+        return DoctorFamilyReportData::fromIssues(
+            DoctorFamily::Firewall,
+            $rules->count(),
+            $issues,
+            [...$rules->modelKeys(), ...array_map(static fn (FirewallInspectionTarget $target): int|string => $target->resourceId, $expectations)],
+            $checks,
+        );
     }
 
     /**

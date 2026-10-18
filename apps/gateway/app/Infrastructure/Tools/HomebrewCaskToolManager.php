@@ -177,7 +177,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $this->guardSupportedNode($node);
-        $result = $this->mac->installedInventory($node, true);
+        $result = $this->commands->execute($node, $this->caskArguments($node, false, ['info', '--json=v2', '--cask', '--installed']), maxOutputBytes: self::MAX_INVENTORY_LENGTH);
         $this->guardSuccessfulResult($result, 'installed-version', 'The Homebrew cask installed inventory probe failed.');
         $decoded = $this->decode($result, 'installed-version', 'The Homebrew cask installed inventory was malformed.', self::MAX_INVENTORY_LENGTH);
         if (! is_array($decoded->casks ?? null)) {
@@ -186,10 +186,10 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         $versions = [];
         $unverifiable = [];
         foreach ($decoded->casks as $cask) {
-            if (! $cask instanceof stdClass || ! is_string($cask->token ?? null) || ! $this->validatePackage($cask->token)) {
+            if (! $cask instanceof stdClass) {
                 throw $this->malformed($result, 'installed-version', 'The Homebrew cask installed inventory was malformed.');
             }
-            if (($cask->tap ?? null) !== 'homebrew/cask') {
+            if (($cask->tap ?? null) !== 'homebrew/cask' || ! is_string($cask->token ?? null) || ! $this->validatePackage($cask->token)) {
                 continue;
             }
             $version = $this->readableInstalledVersion($cask);
@@ -337,8 +337,12 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         $seen = [];
 
         foreach ($decoded->casks as $cask) {
-            if (! $cask instanceof stdClass || ! is_string($cask->token ?? null) || ! $this->validatePackage($cask->token)) {
+            if (! $cask instanceof stdClass) {
                 throw $this->malformed($result, 'inventory', 'The Homebrew cask inventory was malformed.');
+            }
+
+            if (! is_string($cask->token ?? null) || ! $this->validatePackage($cask->token)) {
+                continue;
             }
 
             if (isset($seen[$cask->token])) {

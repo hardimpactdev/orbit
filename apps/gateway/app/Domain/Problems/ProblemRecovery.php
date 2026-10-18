@@ -6,6 +6,7 @@ namespace App\Domain\Problems;
 
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
@@ -237,15 +238,19 @@ final readonly class ProblemRecovery
     {
         $family = $row->evidence['doctor_family'] ?? null;
         $id = $row->evidence['doctor_resource'] ?? null;
+        $node = $row->evidence['doctor_node'] ?? null;
 
         return ($row->evidence['doctor_resource_present'] ?? null) === true && is_string($family) && (is_int($id) || is_string($id))
-            && $this->resourceExists($family, $id) === false;
+            && is_string($node) && ctype_digit($node) && $this->resourceExists($family, $id, (int) $node) === false;
     }
 
-    public function resourceExists(string $family, int|string|null $id): ?bool
+    public function resourceExists(string $family, int|string|null $id, int $nodeId): ?bool
     {
         if ($id === null || $id === '') {
             return null;
+        }
+        if (DoctorResources::isNodeCheckId($id, $nodeId)) {
+            return Node::query()->whereKey($nodeId)->exists();
         }
         $model = match ($family) {
             'node' => Node::class, 'role' => NodeRole::class, 'project' => Project::class,

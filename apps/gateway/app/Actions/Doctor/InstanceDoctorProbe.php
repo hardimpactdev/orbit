@@ -76,7 +76,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 InstanceDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'instance',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Instance state cannot be inspected because the node is unreachable.',
                 'reachable',
@@ -234,7 +234,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues, $observed, ['' => [InstanceDoctorIssueCode::NodeUnreachable->value]]);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues, $observed, [DoctorResources::nodeCheckId($context->node->id) => [InstanceDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /** @param Collection<int, Instance> $instances

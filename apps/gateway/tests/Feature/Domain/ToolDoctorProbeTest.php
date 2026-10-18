@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Doctor\ToolDoctorProbe;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -12,6 +13,7 @@ use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Tools\DebianVersionNormalizer;
@@ -42,6 +44,7 @@ use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
+use App\Jobs\Problems\CollectDoctorResource;
 use App\Models\Node;
 use App\Models\ProblemFingerprint;
 use App\Models\Tool;
@@ -1098,7 +1101,7 @@ it('reports a timed out inventory command as unverifiable without writing tools'
         ->and($report->issues)->toHaveCount(1)
         ->and($report->issues[0]->code)->toBe('tool.inspection_failed')
         ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
-        ->and($report->issues[0]->resourceId)->toBeNull()
+        ->and($report->issues[0]->resourceId)->toBe('node:'.$node->id.':inventory')
         ->and($report->issues[0]->resourceName)->toBeNull()
         ->and($ssh->calls)->toBe(1)
         ->and($ssh->commandTimeout)->toBe(30.0)
@@ -1310,7 +1313,7 @@ it('recovers global Tool inventory faults only after a complete successful scan'
     $node->update(['platform' => $platform]);
     $rows = [];
     foreach (['tool.inventory_scan', 'tool.inspection_failed'] as $code) {
-        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|none', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => null, 'doctor_observed_at' => now()->toISOString()]]);
+        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|node:'.$node->id.':inventory', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => 'node:'.$node->id.':inventory', 'doctor_observed_at' => now()->toISOString()]]);
     }
     $this->travel(1)->minutes();
     $inspector = new class implements ToolInspector
@@ -1330,3 +1333,40 @@ it('recovers global Tool inventory faults only after a complete successful scan'
         expect($row->refresh()->evidence['resolution'] ?? null)->toBe($recovered ? 'fresh_doctor_success' : null);
     }
 })->with([['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
+
+it('keeps failed Tool jobs separate and recovers only the job observed clean', function (): void {
+    $this->freezeTime();
+    $node = tool_probe_linux_node();
+    $otherNode = Node::factory()->create();
+    (new CollectDoctorResource('failed-checks', [$otherNode->id], $otherNode->id, DoctorFamily::Tool, new DoctorResources(DoctorResourceKind::Inventory)))->failed(new RuntimeException('Worker stopped.'));
+    foreach ([DoctorResourceKind::Inventory, DoctorResourceKind::Environments] as $kind) {
+        (new CollectDoctorResource('failed-checks', [$node->id], $node->id, DoctorFamily::Tool, new DoctorResources($kind)))
+            ->failed(new RuntimeException('Worker stopped.'));
+    }
+    expect(ProblemFingerprint::query()->pluck('fingerprint')->all())->toEqualCanonicalizing([
+        'doctor|tool.inspection_failed|tool|node:'.$node->id.':inventory',
+        'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments',
+        'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory',
+    ]);
+    $this->travel(1)->minutes();
+    $inventory = tool_doctor_scans([
+        tool_doctor_scan(ToolManagerName::Brew, ToolInventoryScanState::Complete),
+        tool_doctor_scan(ToolManagerName::BrewCask, ToolInventoryScanState::Unsupported),
+        tool_doctor_scan(ToolManagerName::Vp, ToolInventoryScanState::Complete),
+    ]);
+    $probe = tool_doctor_probe(tool_doctor_installed_inspector(), $inventory);
+    $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Inventory)));
+
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':inventory')->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments')->sole()->evidence)->not->toHaveKey('resolved_at');
+    $this->travel(1)->minutes();
+    $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Environments)));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments')->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole()->evidence)->not->toHaveKey('resolved_at');
+    $otherNode->delete();
+    expect(app(ProblemRecovery::class)->reason(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole()))->toBe('resource_gone');
+});

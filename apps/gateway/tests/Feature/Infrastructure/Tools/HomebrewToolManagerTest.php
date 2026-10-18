@@ -965,9 +965,18 @@ it('reads one fresh formula inventory per Node after the normal scope probe', fu
 it('refuses an unverifiable formula inventory instead of reporting absent Tools', function (CommandResult $result): void {
     [$manager] = homebrew_tool_manager([$result]);
 
-    expect(fn () => $manager->installedInventory(homebrew_tool_node()))->toThrow(ToolManagerException::class);
+    expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'jq'))->toThrow(ToolManagerException::class);
 })->with([
     'failed command' => [new CommandResult(1, '', '', 10, false)],
     'truncated list' => [new CommandResult(0, "jq 1.7.1\n", '', 10, true)],
     'malformed record' => [new CommandResult(0, "jq\n", '', 10, false)],
 ]);
+
+it('isolates unmanageable formula names and unreadable versions', function (): void {
+    [$manager] = homebrew_tool_manager([homebrew_result("other/tap/formula 1.0\nbad;name 2.0\nunreadable ?\njq 1.7.1\n")]);
+
+    $inventory = $manager->installedInventory(homebrew_tool_node());
+
+    expect($inventory->versionFor('jq'))->toBe('1.7.1');
+    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+});

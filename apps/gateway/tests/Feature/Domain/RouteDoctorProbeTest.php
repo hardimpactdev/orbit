@@ -406,7 +406,7 @@ it('recovers a stored Route fault without claiming unobserved proxy health', fun
     $this->travel(1)->minutes();
     $inspector = Mockery::mock(CustomProxyRouteInspector::class);
     $inspector->shouldNotReceive('inspect');
-    $family = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($node));
+    $family = app(RouteDoctorProbe::class, ['inspector' => $inspector])->inspect(route_doctor_context($node));
     app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
         DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
     ]), now());

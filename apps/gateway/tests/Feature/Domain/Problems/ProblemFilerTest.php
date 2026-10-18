@@ -905,7 +905,7 @@ it('normalizes SHA buckets once and adopts only untouched generated groups', fun
         ]]);
         $stamp = now()->utc()->format('Y-m-d H:i:s').' UTC';
         $brief = implode("\n\n", ['Filed by the outer loop.', "Symptom\n".$summary, "Fingerprint\n".$fingerprint, "First seen\n".$stamp, "Last seen\n".$stamp, "Count\n1", "Occurrences\n".$stamp.' 1', "Evidence\nActivity ids: ".$activity->id, "Suspected entry point\nnckrtl/orbit@".$sha.', release recipe-build-'.$build->id]);
-        $data = new CreateTaskGroupData(projectId: $project->id, title: 'Rollout halted for machine-recipe-upcloud at '.substr($sha, 0, 12), brief: $brief, status: TaskGroupStatus::Backlog, notifyCoder: false, tasks: [
+        $data = new CreateTaskGroupData(projectId: $project->id, title: 'Rollout halted for machine-recipe-upcloud at '.substr($sha, 0, 12), brief: $brief, status: TaskGroupStatus::Backlog, tasks: [
             new TaskInputData(title: 'Document the owning page', brief: $summary, deliverables: [['id' => 'docs', 'type' => 'review', 'description' => 'The owning page matches the fix, or no page changes.']]),
             new TaskInputData(title: 'Reproduce the failure and fix it', brief: $summary, deliverables: [['id' => 'test', 'type' => 'review', 'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.']]),
         ]);

@@ -1151,3 +1151,30 @@ it('uses the normal Homebrew scope checks before reading installed casks', funct
     'extra output' => [new CommandResult(0, "/opt/homebrew\n/Users/mini\nextra\n", '', 10, false), 'manager-probe'],
     'truncated scope' => [new CommandResult(0, "/opt/homebrew\n", '', 10, true), 'ssh'],
 ]);
+
+it('ignores unmanageable names without losing official cask versions', function (): void {
+    [$manager] = cask_manager([
+        cask_prefix(),
+        cask_result(json_encode(['casks' => [
+            ['token' => 'other/cask/bad name', 'tap' => 'other/cask', 'installed' => '1.0'],
+            ['token' => 'bad name', 'tap' => 'homebrew/cask', 'installed' => '1.0'],
+            ['token' => 'font-hack', 'tap' => 'homebrew/cask', 'installed' => '3.003'],
+        ]], JSON_THROW_ON_ERROR)),
+    ]);
+
+    expect($manager->installedVersion(cask_node(), 'font-hack'))->toBe('3.003');
+});
+
+it('excludes unmanageable cask names from discovery without losing official packages', function (): void {
+    [$manager] = cask_manager([]);
+    $result = cask_result(json_encode(['formulae' => [], 'casks' => [
+        cask_document(['token' => 'bad name', 'full_token' => 'bad name', 'installed' => '3.003']),
+        cask_document(['token' => 'other/cask/bad name', 'tap' => 'other/cask', 'installed' => '3.003']),
+        cask_document(['installed' => '3.003']),
+    ]], JSON_THROW_ON_ERROR));
+
+    $packages = $manager->interpretInstalledInventory('/opt/homebrew', '/Users/mini', 'arm64_golden_gate', $result);
+
+    expect(array_map(static fn ($package): string => $package->package, $packages))->toBe(['font-hack']);
+    expect($packages[0]->adoption)->toBe('supported');
+});

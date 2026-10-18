@@ -65,7 +65,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 
         if ($context->inspection->reachable) {
-            $observedChecks[''] = [RouteDoctorIssueCode::NodeUnreachable->value];
+            $observedChecks[DoctorResources::nodeCheckId($context->node->id)] = [RouteDoctorIssueCode::NodeUnreachable->value];
         }
         if ($proxies->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Route, $routes->count(), $issues, observedChecks: $observedChecks);
@@ -76,7 +76,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                 RouteDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'route',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Custom proxy Route state cannot be inspected because the node is unreachable.',
                 'reachable',

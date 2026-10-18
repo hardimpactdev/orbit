@@ -81,7 +81,8 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $tools = $context->select($this->tools($context->node));
+        $allTools = $this->tools($context->node);
+        $tools = $context->select($allTools);
         $environments = $context->select($this->environments($context->node), DoctorResourceKind::Environments);
         $count = $tools->count() + $environments->count();
 
@@ -95,7 +96,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                     ToolDoctorIssueCode::NodeUnreachable,
                     DoctorIssueKind::Unverifiable,
                     'tool',
-                    null,
+                    DoctorResources::nodeCheckId($context->node->id),
                     null,
                     'Tool node is unreachable.',
                     null,
@@ -106,17 +107,21 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
         $registeredIssues = $this->registeredIssues($tools);
         $environmentsIssues = $this->environmentIssues($environments, $context->node);
-        $checks = [ToolDoctorIssueCode::NodeUnreachable->value];
-        if ($environments->isNotEmpty() && $environmentsIssues === []) {
-            $checks = [...$checks, ToolDoctorIssueCode::VpStoreMissing->value, ToolDoctorIssueCode::VpStoreInspectionFailed->value];
+        $checks = [DoctorResources::nodeCheckId($context->node->id) => [ToolDoctorIssueCode::NodeUnreachable->value]];
+        if (($context->resources === null || $context->resources->kind === DoctorResourceKind::Environments) && $environmentsIssues === []) {
+            $checks[DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Environments)] = [
+                ToolDoctorIssueCode::InspectionFailed->value,
+                ToolDoctorIssueCode::VpStoreMissing->value,
+                ToolDoctorIssueCode::VpStoreInspectionFailed->value,
+            ];
         }
 
         $inventory = ['issues' => [], 'complete' => false];
         if ($context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory) {
-            $inventory = $this->discoveryIssues($context, $this->tools($context->node));
+            $inventory = $this->discoveryIssues($context, $allTools);
         }
         if ($inventory['complete']) {
-            $checks = [...$checks, ToolDoctorIssueCode::InventoryScan->value, ToolDoctorIssueCode::InspectionFailed->value];
+            $checks[DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Inventory)] = [ToolDoctorIssueCode::InventoryScan->value, ToolDoctorIssueCode::InspectionFailed->value];
         }
 
         return DoctorFamilyReportData::fromIssues(
@@ -124,7 +129,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             $count,
             [...$registeredIssues, ...$environmentsIssues, ...$inventory['issues']],
             array_values($tools->modelKeys()),
-            ['' => $checks],
+            $checks,
         );
     }
 
@@ -159,7 +164,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                 if (! $this->vp->versionSatisfies($version, $environment->vpVersion)) {
                     $issues[] = $this->environmentUnverifiable($owners[$index]);
                 } elseif (! $installed[$index]) {
-                    $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreMissing, DoctorIssueKind::Drift, 'tool', null, 'Instance '.$owners[$index]->id.' vp environment', 'Recorded active vp store content is missing.', 'ready', 'not_ready');
+                    $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreMissing, DoctorIssueKind::Drift, 'tool', DoctorResources::nodeCheckId($node->id, DoctorResourceKind::Environments), 'Instance '.$owners[$index]->id.' vp environment', 'Recorded active vp store content is missing.', 'ready', 'not_ready');
                 }
             }
         } catch (Throwable) {
@@ -173,7 +178,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
     private function environmentUnverifiable(Instance $instance): DoctorIssueData
     {
-        return new DoctorIssueData(ToolDoctorIssueCode::VpStoreInspectionFailed, DoctorIssueKind::Unverifiable, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The vp prerequisite or inspection did not complete. This is not evidence of store drift.', 'verifiable', 'unverifiable');
+        return new DoctorIssueData(ToolDoctorIssueCode::VpStoreInspectionFailed, DoctorIssueKind::Unverifiable, 'tool', DoctorResources::nodeCheckId($instance->node_id, DoctorResourceKind::Environments), 'Instance '.$instance->id.' vp environment', 'The vp prerequisite or inspection did not complete. This is not evidence of store drift.', 'verifiable', 'unverifiable');
     }
 
     /**
@@ -284,18 +289,18 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         try {
             $scans = $this->inventory->inspect($context->node);
         } catch (Throwable) {
-            return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
+            return ['issues' => [$this->inventoryInspectionFailed($context->node->id)], 'complete' => false];
         }
 
         $expected = [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp];
 
         if (count($scans) !== count($expected)) {
-            return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
+            return ['issues' => [$this->inventoryInspectionFailed($context->node->id)], 'complete' => false];
         }
 
         foreach ($expected as $index => $manager) {
             if ($scans[$index]->manager !== $manager) {
-                return ['issues' => [$this->inventoryInspectionFailed()], 'complete' => false];
+                return ['issues' => [$this->inventoryInspectionFailed($context->node->id)], 'complete' => false];
             }
         }
 
@@ -317,7 +322,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
                 continue;
             }
 
-            $scanIssues[] = $this->scanIssue($scan, $this->managerIsUsed($tools, $scan->manager));
+            $scanIssues[] = $this->scanIssue($scan, $this->managerIsUsed($tools, $scan->manager), $context->node->id);
         }
 
         usort(
@@ -356,7 +361,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         return ['issues' => [...$scanIssues, ...$packageIssues], 'complete' => $complete];
     }
 
-    private function scanIssue(ToolInventoryScan $scan, bool $managerIsUsed): DoctorIssueData
+    private function scanIssue(ToolInventoryScan $scan, bool $managerIsUsed, int $nodeId): DoctorIssueData
     {
         $informational = match ($scan->scanState) {
             ToolInventoryScanState::Absent => true,
@@ -371,7 +376,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             ToolDoctorIssueCode::InventoryScan,
             $informational ? DoctorIssueKind::Informational : DoctorIssueKind::Unverifiable,
             'tool',
-            null,
+            DoctorResources::nodeCheckId($nodeId, DoctorResourceKind::Inventory),
             $scan->manager->value,
             'Package inventory scan is not complete.',
             'complete',
@@ -405,13 +410,13 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             .';block='.$block;
     }
 
-    private function inventoryInspectionFailed(): DoctorIssueData
+    private function inventoryInspectionFailed(int $nodeId): DoctorIssueData
     {
         return new DoctorIssueData(
             ToolDoctorIssueCode::InspectionFailed,
             DoctorIssueKind::Unverifiable,
             'tool',
-            null,
+            DoctorResources::nodeCheckId($nodeId, DoctorResourceKind::Inventory),
             null,
             'Tool inspection could not be verified.',
             'verifiable',

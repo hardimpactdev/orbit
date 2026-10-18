@@ -341,7 +341,7 @@ Each occurrence stores the UTC time of the first signal in its 5-minute window a
 | Assistance | `assist\|normalized reason` |
 | Release alert | `release\|kind\|resource\|attempt\|fault` |
 
-A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
+Node reachability checks use `node:{id}`. Node-wide inventory and environment checks use `node:{id}:inventory` and `node:{id}:environments` as their resource ids. Queued reports retain the time when their Node observation started. A delayed job cannot turn that cached observation into fresh recovery evidence. Each check recovers only after its own successful observation; a different job or Node cannot close it. Other null Doctor resource ids use `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
 
 An Activity row counts only when it is server-class. A row is server-class in any of these cases:
 
@@ -1671,7 +1671,7 @@ The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waitin
 
 A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
 
-Collecting it from the release's Activity row is rejected: the Activity key has no commit, so two different bad commits would share one task, and a single row would never be ready. The key holds the commit, because each failed commit is its own problem and is not released again. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
+The release producer supplies the failing resource, attempt, and fault. The Gateway SHA stays in evidence, so a Gateway update does not create another incident for an unchanged failure. The Activity key lacks that incident identity, and a single Activity row would never be ready. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
 
 ### One fingerprint per problem
 

@@ -2,14 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Actions\Doctor\ProcessDoctorProbe;
 use App\Actions\Doctor\RunDoctorAction;
-use App\Domain\Doctor\DoctorInspectionException;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
@@ -703,4 +705,71 @@ it('ignores informational inventory while confirming a fresh resource observatio
         DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
     ]), now());
     expect($row->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});
+
+it('recovers Horizon incidents from its next successful foreground observation without a fleet scan', function (): void {
+    $this->freezeTime();
+    problem_collector_sandbox();
+    $gateway = $this->markAsGateway(problem_collector_node('gateway'));
+    $gateway->update(['status' => LifecycleStatus::Active]);
+    $process = Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $gateway->id, 'name' => 'horizon',
+        'runtime' => ProcessRuntime::Systemd,
+        'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon']],
+        'desired_state' => 'running', 'status' => LifecycleStatus::Active,
+    ]);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            throw new RuntimeException('Horizon recovery must not scan Nodes.');
+        }
+    });
+    $inspector = new class implements ProcessStateInspector
+    {
+        public ProcessInspectionStatus $status = ProcessInspectionStatus::Inactive;
+
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            return new ProcessInspectionData(true, $this->status);
+        }
+    };
+    app()->instance(ProcessStateInspector::class, $inspector);
+    app(ProblemCollector::class)->collectHorizon();
+    $row = ProblemFingerprint::query()->where('fingerprint', 'doctor|process.state_mismatch|process|'.$process->id)->sole();
+    $this->travel(1)->minutes();
+    $inspector->status = ProcessInspectionStatus::Active;
+
+    app(ProblemCollector::class)->collectHorizon();
+
+    expect($row->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});
+
+it('recovers reachability for one Node without closing another Node incident', function (): void {
+    $this->freezeTime();
+    $nodes = [problem_collector_node('down-a'), problem_collector_node('down-b')];
+    app()->instance(ProcessStateInspector::class, new class implements ProcessStateInspector
+    {
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            return new ProcessInspectionData(true, ProcessInspectionStatus::Active);
+        }
+    });
+    foreach ($nodes as $node) {
+        Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'worker', 'runtime' => ProcessRuntime::Systemd, 'runtime_config' => ['command' => ['php']], 'desired_state' => 'running', 'status' => LifecycleStatus::Active]);
+        $report = app(ProcessDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)));
+        app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+    }
+    expect(ProblemFingerprint::query()->pluck('fingerprint')->all())->toEqualCanonicalizing([
+        'doctor|process.node_unreachable|process|node:'.$nodes[0]->id,
+        'doctor|process.node_unreachable|process|node:'.$nodes[1]->id,
+    ]);
+    $this->travel(1)->minutes();
+    $node = $nodes[1];
+    $report = app(ProcessDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
+
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|process.node_unreachable|process|node:'.$nodes[0]->id)->sole()->evidence)->not->toHaveKey('resolved_at');
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|process.node_unreachable|process|node:'.$nodes[1]->id)->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
 });

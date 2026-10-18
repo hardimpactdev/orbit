@@ -237,7 +237,7 @@ return new class extends Migration
 
     private function generated(ProblemFingerprint $row, Task $group): bool
     {
-        if ($group->notify_coder !== false || $group->preview !== false || $group->workspace()->exists() || $group->checks()->exists() || $group->pr_url !== null || $group->pr_branch !== null || $group->started_at !== null || $group->implementer_agent_thread_id !== null || $group->reviewer_agent_thread_id !== null || $group->status->value !== 'backlog' || ! $this->unmodified($group) || TaskComment::query()->where('task_group_id', $group->id)->exists()) {
+        if ($group->preview !== false || $group->workspace()->exists() || $group->checks()->exists() || $group->pr_url !== null || $group->pr_branch !== null || $group->started_at !== null || $group->implementer_agent_thread_id !== null || $group->reviewer_agent_thread_id !== null || $group->status->value !== 'backlog' || ! $this->unmodified($group) || TaskComment::query()->where('task_group_id', $group->id)->exists()) {
             return false;
         }
         $tasks = $group->tasks()->orderBy('position')->lockForUpdate()->get();

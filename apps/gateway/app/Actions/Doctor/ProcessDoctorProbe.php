@@ -89,7 +89,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                     ProcessDoctorIssueCode::NodeUnreachable,
                     DoctorIssueKind::Unverifiable,
                     'process',
-                    null,
+                    DoctorResources::nodeCheckId($context->node->id),
                     null,
                     'Process runtime state cannot be inspected because the node is unreachable.',
                     'reachable',
@@ -135,7 +135,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues, $observedResources, ['' => [ProcessDoctorIssueCode::NodeUnreachable->value]]);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Process, $processes->count(), $issues, $observedResources, [DoctorResources::nodeCheckId($context->node->id) => [ProcessDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /** Inspect one Process without a fleet or Node scan. */
