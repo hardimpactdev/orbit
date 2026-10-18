@@ -181,7 +181,7 @@ describe('machine recipe structure and identity', function (): void {
         $php = [...array_values(array_unique($php)), 'dpkg-repack'];
         $php85 = [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
-        $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
+        $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), 'containerd', ...$javascript]));
         $development = [...$production, ...$php];
         // The nested Incus packages of the topology seed (ADR 0222), pinned in the recipe document itself.
         $document = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
