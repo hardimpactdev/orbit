@@ -736,6 +736,10 @@ Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
+Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
+
+Every image package command, including assessment and the separate PHP installer during verification, inherits the same snapshot configuration through `APT_CONFIG`. Image installs skip `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Normal Node sources stay unchanged.
+
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
 #### The topology seed
@@ -992,7 +996,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `sweep` | Deletes the build servers and unverified templates that an interrupted build left |
 | `launch` | Boots a builder server from the stock Ubuntu 26.04 template with the base image builder user-data |
 | `cloud-init`, `orbit-user` | Waits for cloud-init over SSH, and checks the pinned `orbit` uid and gid |
-| `packages`, `javascript`, `rust`, `agent`, `pi` | Installs the base profile through the shared recipe installer with exact versions and integrity pins |
+| `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi` | Prepares Ubuntu snapshot indexes, then installs the base profile through the shared recipe installer with exact versions and integrity pins |
 | `recipe-marker`, `verify`, `masks` | Writes the recipe identity and profile marker, verifies the recipe software, and masks the first-boot and apt timers |
 | `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
 | `clean` | Runs `base-image-clean.sh` |

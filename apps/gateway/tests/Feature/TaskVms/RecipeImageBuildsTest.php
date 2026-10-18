@@ -112,6 +112,17 @@ beforeEach(function (): void {
     Sleep::fake(syncWithCarbon: true);
 });
 
+it('configures snapshot apt before installing packages in the Incus recipe chain', function (): void {
+    $build = new TaskVmImageBuild(['attempt' => 1]);
+    $build->id = 1;
+
+    $jobs = app(TaskVmImageBuildChain::class)->jobs($build);
+    $phases = array_map(static fn (BuildRecipeImageStep $job): string => $job->phase,
+        array_values(array_filter($jobs, static fn ($job): bool => $job instanceof BuildRecipeImageStep)));
+
+    expect($phases)->toBe(['reset', 'launch', 'boot', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke', 'topology-seed']);
+});
+
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
     $aliases = [];
@@ -204,7 +215,7 @@ describe('recipe image triggers', function (): void {
         foreach ($builds as $build) {
             runRecipeImageBuild($build);
             expect(array_keys($build->images))->toBe(['base']);
-            expect(app(TaskVmImageBuildChain::class)->jobs($build))->toHaveCount(15);
+            expect(app(TaskVmImageBuildChain::class)->jobs($build))->toHaveCount(16);
             expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
             foreach ($build->images as $profile => $image) {
                 expect($incus->imageProperties[$image['fingerprint']])->toBe(['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => $profile]);
