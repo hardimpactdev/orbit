@@ -29,8 +29,9 @@ The data comes from read-only reads of the live Gateway on 2026-10-18: its datab
 | Task VMs have no GitHub write access, so agents asked an operator | about 31 | 1729, 1735, 1641 |
 | Orbit merged main into the workspace during a final review | about 19 | 1632, 1692 |
 | Topology preparation failed and woke nobody | about 16 | 1733, 1745, 1752 |
-| The human merge gate: Nick closed both pull requests without merging, then completed the groups | about 9 | 1645, 1647 |
 | Operator holds for infrastructure defects | about 8 | 1791, 1768, 1729 |
+
+Groups 1645 and 1647 also waited about 9 h in `waiting_for_review`. That was the intended human merge gate: Nick rejected both changes and completed the groups within seconds. It is review time, not lost time.
 
 The second row is the incident that the lease answers. Orbit itself started a merge and a check from a second code path while a review ran. Fixes #1297, #1303, and #1310 came first, then #1314.
 
@@ -41,7 +42,7 @@ The second row is the incident that the lease answers. Orbit itself started a me
 - No lease was ever `remote_uncertain` or `recovery_sealed`.
 - No fence, seal, or tombstone ever fired.
 - No operator ever ran `tasks:lease:release`.
-- Gateway releases 289 to 296 restarted the Gateway eight times in that window. No lease became uncertain.
+- Gateway releases 289 to 296 ran in that window. No lease became uncertain. A release drains Horizon: `fast_termination` is false, so running jobs finish first.
 - 6 of 1,321 leases waited more than 5 s.
   - Three were publication waits of about 10 s.
   - Three waited 38 to 57 minutes behind checks and verdicts of 40 to 67 minutes. That is correct serialization, and its cost is check time.
@@ -140,7 +141,8 @@ Task code has about 30 recovery, resume, or "stale" paths. Two kinds of send sit
 The review records `review_workspace_head`, `review_workspace_tree`, and `review_workspace_lease_id`. It infers after the fact who changed a writable checkout.
 
 - `TaskReviewBase::previousReview` uses `review_workspace_tree` as the base of a delta review.
-- The final review commits `review_workspace_head` (`TaskReviewOutcome.php:233-239`), and the incoming pull request path reads it (`:331`).
+- A final review writes no commit. Its approval stores the reviewed `review_workspace_head` and publishes it (`TaskReviewOutcome.php:231-241`). The incoming pull request path reads the same field (`:331`).
+- Only a subtask approval writes a commit (`TaskReviewOutcome.php:245`).
 - The reviewer instruction says: "Leave the workspace tree as you found it: Orbit checks" it (`TaskTurnInstructions.php:42`).
 - A reviewer edit survives `changes_requested`. The implementer then continues on that tree, and the next handoff carries the edit.
 
@@ -171,11 +173,14 @@ The scheduler state gates, the IMMEDIATE transactions, and `TaskVmWorkspaceGuard
 
 ### The tick stays fast
 
-The tick only decides and sends. It reads and writes the database, reads Pi threads, sends turns, and dispatches jobs. It makes no SSH call, runs no Git command, and calls no GitHub API.
+The tick only decides and sends. It reads and writes the database, reads Pi threads, sends turns, and dispatches jobs. It makes no SSH call, runs no Git command, calls no GitHub API, and calls no model.
 
 - **Bound.** A tick pass finishes in under 5 s at the p99, and no pass takes 30 s.
 - `TaskTickClock` records the duration of each pass. `tasks:status` reports the p99 and the maximum of the last hour.
-- A Pi timeout of 15 s is the only way a pass reaches the maximum. After one Pi timeout, the tick skips the other Pi calls of that group in that pass. So one hung Pi server costs at most one 15 s timeout per pass.
+- Each pass has a budget of 20 s from its start. A Pi call gets the smaller of its own 15 s timeout and the budget that is left.
+- When the budget is spent, the pass stops at the next group. It sets the wake marker, so the next pass starts at once.
+- The tick serves groups in the order of their last service, oldest first. So a group that a pass did not reach comes first in the next pass, and every group gets service.
+- So no pass takes 30 s, whatever the number of slow or hung Pi servers.
 - Slow work runs in a queued job or in a detached unit. A job records its result and wakes the tick.
 
 These tick steps break or risk the bound today. Each one moves:
@@ -190,6 +195,7 @@ These tick steps break or risk the bound today. Each one moves:
 | Check and topology status reads | About 1 s per SSH call, each tick | A status job, which needs no holder |
 | Baseline-retry fetch and reset, and the resume fast-forward (`TaskSettling.php:1166`) | About 1 s per SSH call | A workspace step job |
 | Incoming pull requests, the pull request watch, the green-tip retry, and merge on green | GitHub calls in every tick | A GitHub job per group, and one job for incoming pull requests |
+| Brief coverage at the opening approval: `TaskBriefCoverage::missing()` calls Jev, which calls a model (`TaskReviewOutcome.php:204-209`, `Jev.php:35`) | A model call in the tick | The GitHub job, before it opens the pull request |
 | Workspace removal: `RemoveTaskWorkspaceAction`, with teardown steps over SSH and the transcript archive | Teardown leases up to 4 s | The `instance.destroy` operation that ADR 0218 plans |
 | Claim provisioning: `prepareSource`, the package cache, and the development setup (`TaskClaimAdmission.php:80`) | Remote setup in the tick | A claim job. The tick only reserves the group |
 
@@ -197,7 +203,7 @@ The jobs:
 
 - **Workspace step job** (`RunTaskWorkspaceStep`). It runs one or more workspace steps for one group. It is unique per group, with `tries = 1`, and its `uniqueFor` is at least its timeout. It holds the group's workspace holder as kind `step`, with its job ID.
 - **Status job** (`ReadTaskRunStatus`). It reads the status of a check or topology by its run ID, and records a result when it finds one. It reads only. It needs no holder, and it is unique per group. The tick dispatches it while a check or topology holds.
-- **GitHub job** (`SyncTaskPullRequest`). It reads the pull request, opens it, requests reviewers, and merges on green. It is unique per group. It needs no holder, because it does not touch the checkout.
+- **GitHub job** (`SyncTaskPullRequest`). It checks brief coverage, reads the pull request, opens it, requests reviewers, and merges on green. It is unique per group. It needs no holder, because it does not touch the checkout.
 - **Incoming pull request job**. It runs `WatchIncomingPullRequestsAction` once a minute.
 - **Claim job**. It provisions the reserved group, as the claim does today.
 
@@ -206,9 +212,15 @@ The tick stays on the `tasks` queue. The new jobs and `PublishTaskVmCommit`, whi
 ### Wake the tick
 
 - A request or a job that records work for the tick wakes it: a turn request, a retry request, a removal request, or a job result.
-- A wake sets the cache marker `orbit:tasks:tick:requested`, then dispatches `RunScheduledCommand` for `tasks:tick`. That is the same unique job that the schedule dispatches.
+- The tick job becomes `RunTaskTick`, unique until it starts processing (`ShouldBeUniqueUntilProcessing`). So at most one tick job waits in the queue. The schedule and every wake dispatch it.
+- Correctness does not depend on the unique lock. It depends on two rules on the cache marker `orbit:tasks:tick:requested` and the tick lock `orbit:tasks:tick`:
+  1. A wake, and every tick job when it starts, first sets the marker, then acts. A wake then dispatches `RunTaskTick`. A tick job then tries the tick lock without waiting.
+  2. A tick job that gets the lock clears the marker and runs a pass. After each pass it releases the lock, and only then reads the marker. When the marker is set, it tries the lock again and runs another pass. When the lock is taken, it ends, because the tick that holds the lock reads the marker after its own pass.
+- A tick job that does not get the lock ends at once, after rule 1 set the marker. No worker waits for a lock.
+- So every marker that is set is read by a tick that holds the lock or that releases it afterwards. A recorded request never waits for the next scheduled tick.
+- Release-then-read closes the window that the old design left: a wake that lands after a tick's last read finds the lock free, so its tick job gets the lock.
 - When no tick runs, the job starts at once. So a send follows its request in about a second, after any step job that prepares the turn.
-- When a tick runs, the unique lock drops the new job. The running tick reads the marker before it ends. When the marker is set, the tick clears it and runs one more pass. So no wake is lost, and no worker waits for a lock.
+- A test runs every interleaving of a wake with a tick's last pass, with Laravel's `UniqueLock` and a real cache, and checks that a pass follows each wake.
 - The schedule still dispatches the tick every 10 seconds.
 - The tick stays the only sender.
 
@@ -221,8 +233,11 @@ The tick stays on the `tasks` queue. The new jobs and `PublishTaskVmCommit`, whi
 - A step job checks that it is the recorded holder before it acts. When it finishes, it clears the holder and wakes the tick.
 - When the holder names a step job whose unique lock is free, the job ended without clearing it. The tick clears the holder and dispatches the step again. Each step is safe to run again.
 - At the start of a step, a `.git/index.lock` is stale, because the step holds the workspace. The step removes it and records that in Activity.
-- An agent turn holds until the tick observes that it stopped: the driver reports the thread idle. A step job then reads and clears the receipt. An unreadable runtime keeps the holder.
-- A detached check holds until the status job records its result. The rules of ADR 0223 for a terminal `lost` carry over: a run that systemd proves ended releases the holder.
+- An agent turn holds until the tick observes that the dispatched turn ended. Pi reports `done` after a normal stop and `failed` after an interrupt or a provider failure. `idle` comes before any response, so it ends nothing.
+- The rule is bound to the turn ID of the dispatched turn request, as the reconciliation in `TaskWorkspaceLease.php:766-774` does today. A state of another turn does not count.
+- A step job then reads and clears the receipt. An unreadable runtime keeps the holder.
+- A detached check holds until the status job records its result.
+- The check run ID lives on the check row, in a new `task_checks.run_id` column. Today `TaskCheck::process()` reads it from `task_workspace_leases.check_run_id`. The terminal `lost` rule of ADR 0223 (its decision part 8, built in its build step 7) carries over: a run that systemd proves ended releases the holder.
 - A topology unit holds until the status job records its result. It keeps its supervision.
 - Publication needs no holder. `PublishTaskVmCommit` takes the approved commit out of the VM by its SHA and pushes it from the Gateway mirror. It reads no working tree.
 - There is no queue of waiters. One subtask runs at a time, so the tick picks the next actor from the group state.
@@ -248,7 +263,7 @@ The tick stays on the `tasks` queue. The new jobs and `PublishTaskVmCommit`, whi
 - The dispatcher is a separate class, `TaskTurnDispatcher`. It is the only caller of an agent driver's `send`, `create`, and `respond` in Tasks code. Only the tick calls it.
 - `AgentDriverRegistry::get` returns the plain driver. `LeasedAgentDriver` goes.
 - An architecture test fails on a call of an agent driver's `send`, `create`, or `respond` in Tasks code outside the dispatcher. It also fails on a caller of the dispatcher outside the tick.
-- A second architecture test fails on an SSH call, a Git command, or a GitHub call in the tick.
+- A second architecture test fails on an SSH call, a Git command, a GitHub call, or a model call in the tick.
 
 ### One turn-request record
 
@@ -296,7 +311,7 @@ The tick stays on the `tasks` queue. The new jobs and `PublishTaskVmCommit`, whi
 Orbit counts a race only when it occurs in testing, deploying, or production.
 
 - The race that occurred was Orbit acting from a second code path. One holder and one sender close it.
-- Two ticks cannot overlap: the unique lock of the tick job outlasts its process.
+- Two ticks cannot overlap: a pass needs the tick lock, and a pass ends in under 30 s, well before the lock's 300 s expiry.
 - A delayed SSH request after recovery did not occur in 3,195 operations.
 - A second Gateway host does not exist.
 - A lost Pi runtime with a live turn did not occur in 1,321 leases.
@@ -327,13 +342,13 @@ When another race occurs, it gets its own decision with its data.
 
 The build starts after the steps of ADR 0223 land, so the main-merge actor is already gone. It ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
 
-1. **Wake and measure the tick.** Add the wake marker and the extra pass. `TaskTickClock` records each pass. `tasks:status` reports the p99 and the maximum. Doctor fails when the p99 is 5 s or more, or when a pass took 30 s.
-2. **One dispatcher.** Add `TaskTurnDispatcher`, `task_turn_requests`, and the first architecture test. The test starts with an allowlist of today's send sites. Move the tick's own sends to the dispatcher.
+1. **Wake and measure the tick.** Add `RunTaskTick`, the wake marker, and the release-then-read rule, with the interleaving test. `TaskTickClock` records each pass. `tasks:status` reports the p99 and the maximum. Doctor fails when the p99 is 5 s or more, or when a pass took 30 s.
+2. **One dispatcher.** Add `TaskTurnDispatcher`, `task_turn_requests`, and the first architecture test. The test starts with an allowlist of today's send sites. Move the tick's own sends to the dispatcher. The key columns stay, because the actions of step 3 still write them.
    - Delete `LeasedAgentDriver`. `AgentDriverRegistry::get` returns the plain driver.
    - Delete the pending-send replays in `TaskSubtaskRunner` (`:78`), `TaskReviewOutcome` (`:77-80`), and `TaskSessionActor` (`:105`), and `TaskWorkspaceLease::pendingSend`.
-   - Delete the `completion_reminder_*`, `review_reminder_*`, and `review_notified_*` key columns.
    - Delete the opening-turn bypass in `TaskAgentSpawner`.
-3. **Requests record intent and wake the tick.** Move every send of `StoreTaskCommentAction` and `ResumeDeliverableCorrectionAction` to turn requests. Each request wakes the tick. A baseline retry becomes a recorded request. Empty the allowlist.
+3. **Requests record intent and wake the tick.** Move every send of `StoreTaskCommentAction` and `ResumeDeliverableCorrectionAction` to turn requests. Each request wakes the tick. A baseline retry becomes a recorded request. Empty the allowlist. Then no code writes the key columns, so this step drops them.
+   - Delete the `completion_reminder_*`, `review_reminder_*`, and `review_notified_*` key columns, with their writes in `StoreTaskCommentAction` (`:457-459`) and `ResumeDeliverableCorrectionAction` (`:114-119`).
    - Delete `pending_resolution_*` and `retryPendingResolution`.
    - Delete the `direction_answer_*`, `ended_pr_notice_*`, and `deliverable_correction_resume` columns.
    - Delete the `resolution_delivered_comment_id` trigger of the baseline retry in `TaskSubtaskRunner`.
@@ -341,24 +356,26 @@ The build starts after the steps of ADR 0223 land, so the main-merge actor is al
    - Delete the six `pi_restart_*` columns and `provider_retry`.
    - Delete the rewrite of `provider_retry` in `reconcilePiRestart`.
    - Delete the second category list in `TaskConsultation` and its dead `driver !== 'pi'` check.
-5. **Bind reviews to the recorded tree.** Record the review base when a review starts. Restore the checkout after every reviewer turn. Change `TaskReviewBase`, `TaskReviewPacket`, and the final-review commit to read the recorded base. Change the reviewer text at `TaskTurnInstructions.php:42` to say that the checkout is read-only.
+5. **Bind reviews to the recorded tree.** Record the review base when a review starts. Restore the checkout after every reviewer turn. Change `TaskReviewBase`, `TaskReviewPacket`, the subtask approval commit, and the final-review publication to read the recorded base. Change the reviewer text at `TaskTurnInstructions.php:42` to say that the checkout is read-only.
    - Delete `review_workspace_lease_id`.
    - Delete the `orbit_commit`, newer-implementer, and causal-chain branches of `reviewWorkspaceDecision`.
    - Delete `recoveredCommit`, `ownedWorkspaceChange`, `restartReviewOnHead`, and `TaskWorkspaceLease::ownedChange`.
-6. **One holder, no journal.** One pull request, because the lease releases a dead owner only through the journal. Add the holder on the group row. The tick sets and clears it. `NativeSshExecutor` sends each SSH call once.
-   - Delete `task_workspace_leases` and `TaskWorkspaceLease`, with the FIFO waiters, the `dispatch_*` and causality columns, and `adoptExistingOwner`.
-   - Delete `RemoteWorkspaceOperationJournal`, `resources/tasks/workspace-operation.py`, `task_workspace_operations`, and the `TaskWorkspaceOperationRecovery` interface and binding.
-   - Delete the `systemd-run` wrapper of synchronous SSH calls, with its receipts, tombstones, binding seals, and lock files.
-   - Delete `TaskWorkspaceLeaseRecovery`, `tasks:lease:release` and its `--gateway-node` option, Gateway process identity, and the remote program `gateway.task-workspace-owner`.
-   - Delete the group and Instance flocks: `TaskExecutionLock`, `NativeTaskExecutionLock`, and `TaskExecutionHold`, except its `active()` predicate.
-   - Change the lease users: `StopTaskSubtaskAction`, `CancelTaskCheckAction`, `CancelTaskGroupAction`, `CompleteTaskGroupAction`, `UpdateTaskGroupAction`, `RequestEndedPullRequestAssistanceAction`, `ResumeDeliverableCorrectionAction`, `RemoveTaskWorkspaceAction`, `ShowTasksStatusAction`, `TaskWorkspaceExecutor`, `TaskSessionObserver`, `TaskConsultation`, `TaskSettling`, `TaskPublication`, `GitHubTaskPullRequestPublisher`, `InstanceDoctorProbe`, and `PublishTaskVmCommit`.
-   - Change the parking fence of `ParkIdleTaskVmsAction` to the holder.
-   - Replace `workspace_leases` in `tasks:status` with the holder, in the API, `docs/openapi.json`, the MCP description, the PHP SDK (`TaskWorkspaceLeaseResponse`), the CLI, and the web app types.
-7. **Move remote work out of the tick.** Add the workspace step job, the status job, the GitHub job, the incoming pull request job, the claim job, and the `tasks-work` queue. Split each send into its two phases. Add the second architecture test.
-   - Delete the SSH, Git, and GitHub calls of the tick that the table above names.
+6. **Move remote work out of the tick.** Add the workspace step job, the status job, the GitHub job, the incoming pull request job, the claim job, and the `tasks-work` queue. Split each send into its two phases. Add the pass budget and the second architecture test.
+   - While the lease still exists, a workspace step job takes the workspace lease, as the tick's synchronous steps do today. The status job and the GitHub job take none. So admission and completion keep today's rules in this step.
+   - Delete the SSH, Git, GitHub, and model calls of the tick that the table above names.
    - Delete the call of `WatchIncomingPullRequestsAction` in `TickTaskSessionsCommand`.
    - Delete the synchronous workspace removal of the tick. It starts `instance.destroy` instead.
    - `PublishTaskVmCommit` wakes the tick when it ends.
+7. **One holder, no journal.** One pull request, because the lease releases a dead owner only through the journal. Add the holder on the group row. The tick sets and clears it. The step job of step 6 now holds the `step` holder instead of a lease. `NativeSshExecutor` sends each SSH call once.
+   - Add `task_checks.run_id`. A migration copies each retained `check_run_id` from its lease row. Change `TaskCheck::process()` (`TaskCheck.php:53-58`) to read it.
+   - Delete `task_workspace_leases`, `TaskWorkspaceLease`, and its record model, with the FIFO waiters, the `dispatch_*` and causality columns, and `adoptExistingOwner`.
+   - Delete `RemoteWorkspaceOperationJournal`, `resources/tasks/workspace-operation.py`, `task_workspace_operations` and its model, and the `TaskWorkspaceOperationRecovery` interface and binding.
+   - Delete the `systemd-run` wrapper of synchronous SSH calls, with its receipts, tombstones, binding seals, and lock files.
+   - Delete `TaskWorkspaceLeaseRecovery`, `tasks:lease:release` and its `--gateway-node` option, Gateway process identity, and the remote program `gateway.task-workspace-owner`.
+   - Delete the group and Instance flocks: `TaskExecutionLock`, `NativeTaskExecutionLock`, and `TaskExecutionHold`, except its `active()` predicate.
+   - Change the lease users: `TaskCheck`, `StopTaskSubtaskAction`, `CancelTaskCheckAction`, `CancelTaskGroupAction`, `CompleteTaskGroupAction`, `UpdateTaskGroupAction`, `RequestEndedPullRequestAssistanceAction`, `ResumeDeliverableCorrectionAction`, `RemoveTaskWorkspaceAction`, `ShowTasksStatusAction`, `TaskWorkspaceExecutor`, `TaskSessionObserver`, `TaskConsultation`, `TaskSettling`, `TaskPublication`, `GitHubTaskPullRequestPublisher`, `InstanceDoctorProbe`, and `PublishTaskVmCommit`.
+   - Change the parking fence of `ParkIdleTaskVmsAction` to the holder.
+   - Replace `workspace_leases` in `tasks:status` with the holder, in the API, `docs/openapi.json`, the MCP description, the PHP SDK (`TaskWorkspaceLeaseResponse`), the CLI, and the web app types.
 8. **No redundant locks.** Delete the `lockForUpdate()` calls in task code.
 9. **No forwarders.** Inject the phase services into each other.
    - Delete the one-line forwarders of `TaskScheduler`.
@@ -375,7 +392,8 @@ The build starts after the steps of ADR 0223 land, so the main-merge actor is al
 - **A lease that expires.** An expired lease admits a second writer while a turn still runs. The holder ends only when Orbit observes the actor stop.
 - **Run workspace steps inside the tick.** One slow SSH call or GitHub call then delays every group. One approval lease ran for 248 s.
 - **Wait for the next scheduled tick.** A comment would wait up to 10 s, and a send that follows a job would wait again.
-- **A blocking tick lock, or `ShouldBeUniqueUntilProcessing`.** Each wake during a tick would hold one more of the three `tasks` workers in a lock wait, and Horizon's job time would then measure waits, not ticks. The marker and the extra pass lose no wake and hold no worker.
+- **A blocking tick lock.** Each wake during a tick would hold one more of the three `tasks` workers in a lock wait, and Horizon's job time would then measure waits, not ticks.
+- **Read the marker before the job's unique lock is released.** A wake between that read and the release finds the lock held and its dispatch dropped, so it waits for the schedule. A review reproduced that window on Beast. Releasing the tick lock before the last read closes it.
 - **Let a request send directly.** That is the second code path that caused the incident.
 - **Remote proof that each SSH command ended.** It defends against a delayed request after recovery, which never occurred in 3,195 operations. It adds a second round trip to every call, and it caused #1330. Destroying the VM is the final recovery.
 - **Infer review drift from a causal chain.** Restoring the recorded tree after each reviewer turn, and committing that tree, make drift one recorded difference.
@@ -397,7 +415,7 @@ The build starts after the steps of ADR 0223 land, so the main-merge actor is al
 - A tick pass stays under 5 s at the p99, so one slow group no longer delays the others.
 - More work runs as queued jobs on the `tasks-work` queue.
 - A comment, a resolution, or a removal wakes the tick. A send follows in about a second, after its step job.
-- A Gateway restart during a workspace step ends its job. The next tick clears the `step` holder and dispatches the step again.
+- A Gateway release drains Horizon, so a running step job finishes. Only a worker or host death ends a step job early. Then the next tick clears the `step` holder and dispatches the step again.
 - A holder that never ends needs a cancel, which destroys the VM.
 - The VM keeps no receipts, seals, or lock files, so nothing needs pruning.
 - A reviewer's edit is discarded and recorded. It never reaches the implementer or the pull request.
@@ -406,11 +424,11 @@ The build starts after the steps of ADR 0223 land, so the main-merge actor is al
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, apps/web, packages/php-sdk
-- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary): this ADR states what its step 5 needs. [0211](/decisions/0211-ship-node-changes-as-remote-programs): the remote program `gateway.task-workspace-owner` and `workspace-operation.py` go. [0218](/decisions/0218-take-long-commands-off-the-request-path): `tasks:comment:create` no longer calls an agent in the request; the claim's remote work leaves the tick; the tick starts `instance.destroy` for every workspace removal. ADR 0223, in an open pull request: its lease changes in steps 3 and 8 carry over to the holder in step 6
+- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary): this ADR states what its step 5 needs. [0211](/decisions/0211-ship-node-changes-as-remote-programs): the remote program `gateway.task-workspace-owner` and `workspace-operation.py` go. [0218](/decisions/0218-take-long-commands-off-the-request-path): `tasks:comment:create` no longer calls an agent in the request; the claim's remote work leaves the tick; the tick starts `instance.destroy` for every workspace removal. ADR 0223, in open pull request #1343 at `0865189dd`: its lease changes carry over to the holder in step 7 here. They are the rename in its build step 3, and the terminal `lost` release of its decision part 8, built in its build step 7
 - Detail: [Tasks](/reference/tasks): Scheduler, Workspace lease, Task workspace, Session routing, Retry a transient provider error, Recover a Pi server restart, Review a subtask, "The reviewer does not edit", Cancel a stuck task, and Complete and cleanup. [Gateway queue](/reference/gateway-queue). [Doctor](/cli/doctor) and [`tasks:status`](/cli/tasks#orbit-tasksstatus)
 - Verify: the tests and live reads below.
   - In apps/gateway, the architecture test that forbids an agent `send`, `create`, or `respond` outside the dispatcher.
-  - In apps/gateway, the architecture test that forbids an SSH call, a Git command, or a GitHub call in the tick.
+  - In apps/gateway, the architecture test that forbids an SSH call, a Git command, a GitHub call, or a model call in the tick.
   - In apps/gateway, `php artisan test --compact --filter='TaskScheduler|TaskSubtaskRunner|TaskReviewOutcome|TaskPublication|TaskConsultation|StoreTaskComment|RetryTaskBaseline|CancelTaskGroup'`.
   - In apps/gateway, a test that a reviewer edit after `changes_requested` is gone before the implementer resumes.
   - On the live Gateway, after the build, the tick's p99 stays under 5 s, and no pass takes 30 s.
