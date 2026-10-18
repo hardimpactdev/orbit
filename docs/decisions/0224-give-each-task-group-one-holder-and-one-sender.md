@@ -347,7 +347,7 @@ The build starts after two prerequisites:
 - The steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land, so the main-merge actor is already gone.
 - [#1340](https://github.com/nckrtl/orbit/pull/1340) merges, so the tick sends no webhook.
 
- It ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
+The build ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
 
 1. **Wake and measure the tick.** Add `RunTaskTick`, the wake marker, and the release-then-read rule, with the interleaving test. `TaskTickClock` records each pass. `tasks:status` reports the p99 and the maximum. Doctor fails when the p99 is 5 s or more, or when a pass took 30 s.
 2. **One dispatcher.** Add `TaskTurnDispatcher`, `task_turn_requests`, and the first architecture test. The test starts with an allowlist of today's send sites. Move the tick's own sends to the dispatcher. The key columns stay, because the actions of step 3 still write them.
