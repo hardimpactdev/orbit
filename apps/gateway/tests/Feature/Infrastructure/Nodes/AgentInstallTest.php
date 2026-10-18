@@ -47,7 +47,9 @@ it('refuses macOS agent installation before SSH and skips removal', function ():
     expect($ssh->commands)->toBeEmpty();
 });
 
-it('pins agent v0.4.3', function (): void {
+it('pins the current agent release for both supported architectures', function (): void {
+    expect(NodeAgentFootprint::Architectures)->toBe(['x86_64', 'aarch64']);
+
     expect(NodeAgentFootprint::Version)->toBe('0.4.3')
         ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('4effe5a562dbb087f33a580e9912e0b78c83f77ff72af6d2eec030b4b918d74a')
         ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('8c063259e2f04900b988bc6405c987dd5273ad9d15b856abb3ab98bbb36cb4df')
@@ -55,6 +57,11 @@ it('pins agent v0.4.3', function (): void {
         ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-x86_64')
         ->and(NodeAgentFootprint::downloadUrl('aarch64'))
         ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-aarch64');
+});
+
+it('rejects an architecture absent from the current agent manifest', function (): void {
+    expect(fn () => NodeAgentFootprint::checksum('armv7l'))
+        ->toThrow(InvalidArgumentException::class, 'Unsupported Node agent architecture.');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {

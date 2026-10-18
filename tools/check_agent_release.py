@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Keep the Gateway recipe on the agent version published for this checkout."""
 
 import json
