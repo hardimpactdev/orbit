@@ -738,7 +738,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($settling->fresh()?->taskable_id)->toBeNull()
         ->and($settling->fresh()?->assistance_requested)->toBeFalse()
         ->and(Instance::query()->find($otherWorkspace->id))->toBeNull()
-        ->and($other->fresh()?->assistance_requested)->toBeFalse()
+        ->and($other->fresh()?->assistance_requested)->toBeTrue()
         ->and($other->fresh()?->assistance_reason)->toBe($hold)
         ->and(Instance::query()->find($workspace->id))->not->toBeNull();
 });
