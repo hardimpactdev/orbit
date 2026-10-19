@@ -257,12 +257,8 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
 
     expect($appRules)->toContain('pinned gateway SSH', 'explicit narrow sudo');
     expect($bootstrapRules)
-        ->toContain(
-            'composer guidance:check',
-            'composer guidance:update',
-            'Restore the exact tracked guidance paths',
-            'no product-code edits',
-        );
+        ->toContain('Follow Required Guidance Bootstrap in `AGENTS.md`.')
+        ->not->toContain('composer guidance:update');
     expect($databaseRules)
         ->toContain(
             'SQLite',

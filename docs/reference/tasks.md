@@ -1064,7 +1064,7 @@ The reviewer prompt is the one statement of when a finding blocks, and this list
 
 Each blocking finding names its file and line, the rule it meets, and what must change. A finding under (a) also names its normal-operation trigger. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer does not ask for new markers, fences, or locks against such a window; an operator recovery command is enough.
 
-After two `changes_requested` outcomes on one subtask, only (b), (c), (d), and (e) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
+After two `changes_requested` outcomes on one subtask, only (b), (c), and (d) findings may block. An (a) or (e) finding then becomes a follow-up with its file and line. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. When the reviewer's receipt arrives, it reads them again.
 
@@ -1753,7 +1753,7 @@ An audit of eight task groups found 11 real bugs likely in normal operation, 23 
 
 Blocking every missing guarantee against injected failures was rejected because it spent review and implementation effort on narrow failure windows before the main paths were understood. Reviewers trace ordinary paths first, block only under the blocking rule, and retain other findings as follow-ups. This serves [lean](/mission#principles).
 
-Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on data loss, security issues, unrecoverable states, unmet work, regressions, or quality-bar breaches, so each subtask has a bounded repair loop that never ships a known data-loss or security defect. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
+Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on data loss, security issues, unrecoverable states, unmet work, or regressions, so each subtask has a bounded repair loop that never ships a known data-loss or security defect. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
 
 ### The reviewer does not edit
 

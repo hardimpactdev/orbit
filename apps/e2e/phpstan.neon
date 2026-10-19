@@ -9,5 +9,6 @@ parameters:
     paths:
         - app
         - ../../tools/phpstan
+        - ../../tools/boost
     tmpDir: vendor/phpstan/cache
 

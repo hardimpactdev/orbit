@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use Illuminate\Support\Collection;
 use Laravel\Boost\Install\GuidelineComposer;
+use Orbit\Boost\GuidelineSections;
 use RuntimeException;
 
 final class GatewayGuidelineComposer extends GuidelineComposer
@@ -40,17 +41,7 @@ final class GatewayGuidelineComposer extends GuidelineComposer
             $guidelines,
         );
 
-        $guidelines = preg_replace(
-            pattern: '/\n## (?:Frontend Bundling|Vite Error|Documentation Files)\n.*?(?=\n(?:## |=== )|\z)/s',
-            replacement: '',
-            subject: $guidelines,
-        );
-
-        if (! is_string($guidelines)) {
-            throw new RuntimeException('Could not remove unsupported guidance.');
-        }
-
-        return $guidelines;
+        return GuidelineSections::withoutRemoved($guidelines);
     }
 
     /**
