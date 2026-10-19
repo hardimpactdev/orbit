@@ -24,14 +24,13 @@ use UnexpectedValueException;
 /** A narrow exception to manual PR review: only the App's one-commit snapshot bump may merge on green. */
 final readonly class MergeNightlyRecipePullRequestsAction
 {
-    private const int RetrySeconds = 300;
-
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
         private GitHubAppStore $store,
         private RecipeMaintenanceAlerts $alerts,
         private NightlyRecipeContents $contents,
+        private RetireNightlyRecipePullRequestsAction $retire,
     ) {}
 
     public function execute(): void
@@ -41,6 +40,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
         if ($credentials === null || $repository === null) {
             return;
         }
+        $retrySeconds = RetireNightlyRecipePullRequestsAction::RetrySeconds;
         $scope = 'machine-recipe:nightly-merge:'.$repository->owner.'/'.$repository->name;
         if (Cache::has($scope.':retry')) {
             return;
@@ -49,29 +49,25 @@ final readonly class MergeNightlyRecipePullRequestsAction
             $token = $this->access->token($repository);
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
-            Cache::put($scope.':retry', true, self::RetrySeconds);
-            $this->blocked('list', 'Nightly recipe PRs could not be read; retrying in five minutes. No automatic merge was attempted.');
+            Cache::put($scope.':retry', true, $retrySeconds);
+            $this->alerts->haltedOnce("Nightly recipe PRs could not be read; retrying in {$retrySeconds} seconds. No automatic merge was attempted.", RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
 
             return;
         }
         $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
             ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
         $author = $credentials->slug.'[bot]';
-        $pulls = array_values(array_filter($pulls, static fn (GitHubListedPullRequest $pull): bool => preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) === 1));
-        // Finish retirement before any replacement can merge and disappear from the open list.
-        foreach ($pulls as $pull) {
-            $blocked = Cache::get($this->blockedHeadKey($repository, $pull->number));
-            if (! is_array($blocked) || ($blocked['sha'] ?? null) !== $pull->headSha || ! is_string($blocked['reason'] ?? null)) {
-                continue;
-            }
-            try {
-                $this->supersede($http, $repository, $pull, $pulls, $author, $blocked['reason']);
-            } catch (Throwable) {
-                Cache::put($scope.':retry', true, self::RetrySeconds);
-                $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] retirement failed; retrying in five minutes before merging its replacement.");
+        $pulls = array_values(array_filter($pulls, fn (GitHubListedPullRequest $pull): bool => $this->contents->nightlySnapshot($pull->headRef) !== null));
+        if ($pulls === []) {
+            return;
+        }
+        try {
+            $pulls = $this->retire->execute($http, $repository, $pulls, $author, $this->contents->read($http, 'main'));
+        } catch (Throwable) {
+            Cache::put($scope.':retry', true, $retrySeconds);
+            $this->alerts->haltedOnce("Nightly recipe main snapshot could not be read; retrying in {$retrySeconds} seconds.", RecipeMaintenanceAlerts::repositoryIncident('main_snapshot_failed'));
 
-                return;
-            }
+            return;
         }
         foreach ($pulls as $pull) {
             $blockedHeadKey = $this->blockedHeadKey($repository, $pull->number);
@@ -105,7 +101,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
                     $this->metadata($http->get($path)->throw()->json(), $pull->headSha, $pull->headRef, $repository, $author);
                 } catch (UnexpectedValueException $error) {
                     Cache::forever($blockedHeadKey, ['sha' => $pull->headSha, 'reason' => $error->getMessage()]);
-                    $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] blocked: {$error->getMessage()}");
+                    $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] blocked: {$error->getMessage()}", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_blocked'));
 
                     return;
                 }
@@ -114,9 +110,9 @@ final readonly class MergeNightlyRecipePullRequestsAction
                     throw new RuntimeException('GitHub refused the expected-head merge; recheck the PR and branch protection.');
                 }
             } catch (Throwable $error) {
-                Cache::put($retryKey, true, self::RetrySeconds);
+                Cache::put($retryKey, true, $retrySeconds);
                 $reason = $error instanceof RequestException || $error instanceof ConnectionException ? 'GitHub request failed.' : $error->getMessage();
-                $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] could not be completed; retrying in five minutes. {$reason}");
+                $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] could not be completed; retrying in {$retrySeconds} seconds. {$reason}", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_retry'));
             }
         }
     }
@@ -126,46 +122,12 @@ final readonly class MergeNightlyRecipePullRequestsAction
         return 'machine-recipe:blocked-pr-head:'.$repository->owner.'/'.$repository->name.':'.$number;
     }
 
-    /** @param list<GitHubListedPullRequest> $pulls */
-    private function supersede(PendingRequest $http, GitHubRepository $repository, GitHubListedPullRequest $pull, array $pulls, string $author, string $reason): void
-    {
-        if ($pull->authorLogin !== $author) {
-            return;
-        }
-        foreach ($pulls as $replacement) {
-            if ($replacement->headRef <= $pull->headRef || $replacement->authorLogin !== $author) {
-                continue;
-            }
-            if (! $this->identity($http->get('/pulls/'.$replacement->number)->throw()->json(), $replacement->headSha, $replacement->headRef, $repository, $author)) {
-                continue;
-            }
-            $pr = $http->get('/pulls/'.$pull->number)->throw()->json();
-            if (! $this->identity($pr, $pull->headSha, $pull->headRef, $repository, $author)) {
-                return;
-            }
-            $http->post('/issues/'.$pull->number.'/comments', ['body' => "Closing this blocked nightly recipe PR in favor of {$replacement->url}. Recipe evidence was rejected: {$reason}"])->throw();
-            $http->patch('/pulls/'.$pull->number, ['state' => 'closed'])->throw();
-
-            return;
-        }
-    }
-
     private function metadata(mixed $pr, string $sha, string $branch, GitHubRepository $repository, string $author): void
     {
-        $this->require($this->identity($pr, $sha, $branch, $repository, $author), 'The open PR target, head, or Gateway App author changed.');
+        $this->require($this->contents->appPull($pr, $sha, $branch, $repository, $author) && data_get($pr, 'draft') === false, 'The open PR target, head, or Gateway App author changed.');
         $this->require(data_get($pr, 'commits') === 1, 'Extra commits block automatic merge.');
         $this->require(data_get($pr, 'changed_files') === 1,
             'Only the recipe snapshot and Ubuntu pins may change.');
-    }
-
-    private function identity(mixed $pr, string $sha, string $branch, GitHubRepository $repository, string $author): bool
-    {
-        $name = $repository->owner.'/'.$repository->name;
-
-        return data_get($pr, 'state') === 'open' && data_get($pr, 'draft') === false
-            && data_get($pr, 'base.ref') === 'main' && data_get($pr, 'base.repo.full_name') === $name
-            && data_get($pr, 'head.ref') === $branch && data_get($pr, 'head.repo.full_name') === $name && data_get($pr, 'head.sha') === $sha
-            && data_get($pr, 'user.login') === $author && data_get($pr, 'user.type') === 'Bot';
     }
 
     private function patch(PendingRequest $http, mixed $files, string $parent, string $head, string $snapshot): void
@@ -213,10 +175,4 @@ final readonly class MergeNightlyRecipePullRequestsAction
         }
     }
 
-    private function blocked(string $key, string $summary): void
-    {
-        if (Cache::add('machine-recipe:blocked-pr:'.$key, true, 86400)) {
-            $this->alerts->halted($summary, incident: RecipeMaintenanceAlerts::mergeIncident($key));
-        }
-    }
 }

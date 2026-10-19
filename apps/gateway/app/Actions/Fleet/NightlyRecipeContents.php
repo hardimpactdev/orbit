@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Domain\Fleet\NightlyRecipePendingDeployment;
+use App\Domain\GitHub\GitHubRepository;
 use App\Infrastructure\MachineSoftware\AuthenticatedUbuntuSnapshot;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use DateTimeImmutable;
@@ -32,6 +33,21 @@ final readonly class NightlyRecipeContents
         if ($main !== $deployed) {
             throw new NightlyRecipePendingDeployment('Nightly recipe maintenance is waiting for the serving release to carry main’s recipe definitions.');
         }
+    }
+
+    public function nightlySnapshot(string $branch): ?string
+    {
+        return preg_match('/\Anightly\/recipe-([0-9]{8})\z/', $branch, $parts) === 1 ? $parts[1].'T000000Z' : null;
+    }
+
+    public function appPull(mixed $pr, string $sha, string $branch, GitHubRepository $repository, string $author): bool
+    {
+        $name = $repository->owner.'/'.$repository->name;
+
+        return data_get($pr, 'state') === 'open'
+            && data_get($pr, 'base.ref') === 'main' && data_get($pr, 'base.repo.full_name') === $name
+            && data_get($pr, 'head.ref') === $branch && data_get($pr, 'head.repo.full_name') === $name && data_get($pr, 'head.sha') === $sha
+            && data_get($pr, 'user.login') === $author && data_get($pr, 'user.type') === 'Bot';
     }
 
     /** GitHub records App API commits with the App author and its signed web-flow committer. */

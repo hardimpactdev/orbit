@@ -803,23 +803,27 @@ At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gatewa
 
 The job runs every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR checks finish. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
 
-Before opening tonight's PR, the nightly job checks every open `nightly/recipe-*` PR. If Required checks failed and main advanced beyond the commit's parent, it closes an untouched older-date App PR so tonight's PR replaces it. For today's date it rebuilds the PR as one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
+Refresh and merge use one rule to end a nightly PR: close an App `nightly/recipe-*` PR once main’s snapshot has reached its date or a newer-date App PR is open. This runs before Required checks, evidence resolution, or merge attempts, whatever kept the PR open. It covers failed checks, rejected evidence, and refused merges.
 
-Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. It leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. Other bots' reviews and edits also block recovery; only cross-references are ignored.
+The Gateway closes first, then posts a best-effort comment with the reason. A failed close retries after 300 seconds; other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
+
+For today’s date, Refresh rebuilds a remaining failed PR only if main advanced beyond its commit’s parent. It creates one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
+
+Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. Refresh leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. The shared closing rule still applies to superseded App PRs. Other bots' reviews and edits also block recovery; only cross-references are ignored.
 
 A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or PHP build PR.
 
 A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
 
-Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. Closing an older failed PR instead avoids keeping both that PR and tonight's replacement open.
+Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time. It requires one App-authored commit with GitHub’s verified web-flow signature and its App as PR author. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
 
 Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
 
-GitHub, network, and snapshot download errors remain retryable after a five-minute backoff.
+GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason.
 
-Once a newer date’s App PR is open, the next merge tick comments with the rejection reason and replacement PR, then closes the older blocked App PR. Retirement finishes before any merge; a temporary retirement error pauses merges for five minutes so the replacement remains available for the retry. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
+The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.
 

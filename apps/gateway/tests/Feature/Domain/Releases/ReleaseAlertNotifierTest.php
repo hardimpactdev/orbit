@@ -312,7 +312,7 @@ it('keeps a no-build nightly cycle independent of summary text and Gateway sourc
     FleetFixtures::inPlace();
     foreach (['a', 'b'] as $letter) {
         FleetFixtures::adopt(str_repeat($letter, 40));
-        app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: '.$letter, incident: RecipeMaintenanceAlerts::mergeIncident('list'));
+        app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: '.$letter, incident: RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
         expect(Artisan::call('problems:file'))->toBe(0);
     }
     $row = ProblemFingerprint::query()->sole();
@@ -320,7 +320,7 @@ it('keeps a no-build nightly cycle independent of summary text and Gateway sourc
         ->and(Task::topLevel()->count())->toBe(1)
         ->and(Task::topLevel()->sole()->brief)->toContain('GitHub list failed: b');
     $this->travel(1)->days();
-    app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: b', incident: RecipeMaintenanceAlerts::mergeIncident('list'));
+    app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: b', incident: RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
     expect(ProblemFingerprint::query()->count())->toBe(2);
 });
 

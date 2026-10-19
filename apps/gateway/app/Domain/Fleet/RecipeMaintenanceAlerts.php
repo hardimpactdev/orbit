@@ -12,6 +12,7 @@ use App\Domain\Releases\ReleaseIncident;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 final readonly class RecipeMaintenanceAlerts
@@ -40,17 +41,11 @@ final readonly class RecipeMaintenanceAlerts
         return new ReleaseIncident('recipe-repository:'.str_replace('/', ':', FleetRolloutAlerts::repository()), 'nightly:'.now()->utc()->format('Ymd'), $fault);
     }
 
-    public static function mergeIncident(string $key): ReleaseIncident
+    public function haltedOnce(string $summary, ReleaseIncident $incident): void
     {
-        if ($key === 'list') {
-            return self::repositoryIncident('github_list_failed');
+        if (Cache::add('machine-recipe:alert:'.$incident->key(ReleaseAlertKind::RolloutHalted), true, 86400)) {
+            $this->halted($summary, incident: $incident);
         }
-
-        if (preg_match('/\A([0-9]+):([0-9a-f]{40})\z/', $key, $parts) !== 1) {
-            throw new InvalidArgumentException('A recipe merge alert needs its PR and head.');
-        }
-
-        return self::pullIncident((int) $parts[1], $parts[2], 'merge_blocked');
     }
 
     public static function pullIncident(int $number, string $head, string $fault): ReleaseIncident

@@ -63,7 +63,7 @@ function nightlyMergeHttp(array $evidence, array $overrides = []): RecordingRele
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
         $base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
         $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => static fn (Request $request) => Http::response([
-            'content' => base64_encode(str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after']),
+            'content' => base64_encode(str_contains($request->url(), 'ref=main') ? ($evidence['main_content'] ?? $evidence['before']) : (str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after'])),
         ]),
         $base.'/pulls/99/merge' => Http::response(['merged' => $evidence['merge_status'] === 200, 'sha' => str_repeat('c', 40), 'message' => 'Merge verdict'], $evidence['merge_status']),
     ], $overrides));
@@ -168,7 +168,7 @@ it('raises the existing alert when GitHub refuses the expected-SHA merge', funct
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === str_repeat('b', 40));
-    expect($alerts->alerts[0]->summary)->toContain('retrying in five minutes');
+    expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
 });
 
 it('ignores task-group PRs and does not mint merge requests for them', function (): void {
@@ -273,7 +273,7 @@ it('retries temporary failures on the same green head after backoff', function (
 
     expect(count(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/pulls/99') || str_contains($request->url(), '/check-runs?'))))->toBe($requests);
     expect($alerts->alerts)->toHaveCount(1);
-    expect($alerts->alerts[0]->summary)->toContain('retrying in five minutes');
+    expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
     if ($failure === 'snapshot download') {
         expect($alerts->alerts[0]->summary)->toContain('snapshot download failed');
     }
@@ -345,10 +345,10 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
-    if (in_array($case, ['valid', 'extra commits replacement', 'invalid candidate before App replacement'], true)) {
+    if (in_array($case, ['valid', 'extra commits replacement', 'invalid candidate before App replacement', 'comment failure'], true)) {
         $replacementUrl = $case === 'invalid candidate before App replacement' ? 'pull/101' : 'pull/100';
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments')
-            && str_contains($request['body'], $replacementUrl) && str_contains($request['body'], 'Recipe contents differ'));
+            && str_contains($request['body'], $replacementUrl) && str_contains($request['body'], 'Superseded'));
         Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99') && $request['state'] === 'closed');
     } else {
         Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
@@ -356,12 +356,9 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files?'));
 })->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'invalid candidate before App replacement', 'extra commits replacement', 'changed old head', 'changed old author', 'comment failure']);
 
-it('finishes blocked PR retirement before merging a green replacement after a temporary cleanup failure', function (string $failure): void {
+it('retries a failed close after the replacement merges without repeating its comment', function (): void {
     $this->freezeTime();
     $evidence = nightlyMergeEvidence();
-    $evidence['after'] .= ' ';
-    nightlyMergeHttp($evidence);
-    app(MergeNightlyRecipePullRequestsAction::class)->execute();
     $replacement = nightlyMergeEvidence();
     $snapshot = new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day');
     $replacement['after'] = str_replace(substr($evidence['pr']['head']['ref'], -8).'T000000Z', $snapshot->format('Ymd\THis\Z'), $replacement['after']);
@@ -371,32 +368,25 @@ it('finishes blocked PR retirement before merging a green replacement after a te
     $replacement['pr']['head']['ref'] = 'nightly/recipe-'.$snapshot->format('Ymd');
     $replacement['pr']['head']['sha'] = str_repeat('d', 40);
     $replacement['commits'][0]['sha'] = $replacement['runs'][0]['head_sha'] = str_repeat('d', 40);
-    Http::swap(new Factory);
     $base = 'https://api.github.com/repos/nckrtl/orbit';
-    $closed = false;
+    $closed = $merged = false;
     $fail = true;
-    nightlyMergeHttp($evidence, [
-        // Newest first proves cleanup does not depend on GitHub's list ordering.
-        $base.'/pulls?*' => function () use ($evidence, $replacement, &$closed) {
-            return Http::response($closed ? [$replacement['pr']] : [$replacement['pr'], $evidence['pr']]);
+    $alerts = nightlyMergeHttp($evidence, [
+        $base.'/pulls?*' => function () use ($evidence, $replacement, &$closed, &$merged) {
+            return Http::response(array_merge($closed ? [] : [$evidence['pr']], $merged ? [] : [$replacement['pr']]));
         },
         $base.'/pulls/100' => Http::response($replacement['pr']),
         $base.'/pulls/100/commits?*' => Http::response($replacement['commits']),
         $base.'/pulls/100/files?*' => Http::response($replacement['files']),
         $base.'/commits/'.str_repeat('d', 40).'/check-runs?*' => Http::response(['total_count' => 1, 'check_runs' => $replacement['runs']]),
-        $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => fn (Request $request) => Http::response(['content' => base64_encode(str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $replacement['before'] : $replacement['after'])]),
-        $base.'/issues/99/comments' => function () use ($failure, &$fail) {
-            if ($failure === 'comment' && $fail) {
-                $fail = false;
-
-                return Http::response([], 503);
-            }
-
-            return Http::response([], 201);
+        $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => function (Request $request) use ($replacement, &$merged) {
+            return Http::response(['content' => base64_encode(str_contains($request->url(), 'ref=main') ? ($merged ? $replacement['after'] : $replacement['before'])
+                : (str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $replacement['before'] : $replacement['after']))]);
         },
-        $base.'/pulls/99' => function (Request $request) use ($evidence, $failure, &$fail, &$closed) {
+        $base.'/issues/99/comments' => Http::response([], 201),
+        $base.'/pulls/99' => function (Request $request) use ($evidence, &$fail, &$closed) {
             if ($request->method() === 'PATCH') {
-                if ($failure === 'close' && $fail) {
+                if ($fail) {
                     $fail = false;
 
                     return Http::response([], 503);
@@ -406,24 +396,109 @@ it('finishes blocked PR retirement before merging a green replacement after a te
 
             return Http::response($evidence['pr']);
         },
-        $base.'/pulls/100/merge' => function () use (&$closed) {
-            expect($closed)->toBeTrue();
+        $base.'/pulls/100/merge' => function () use (&$merged) {
+            $merged = true;
 
             return Http::response(['merged' => true, 'sha' => str_repeat('c', 40), 'message' => 'Merged']);
         },
     ]);
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    expect($closed)->toBeFalse();
+    expect($merged)->toBeTrue();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments'));
+    expect($alerts->alerts[0]->incident->fault)->toBe('retirement_failed');
+
     $this->travel(4)->minutes();
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
-
-    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
     expect($closed)->toBeFalse();
-
     $this->travel(2)->minutes();
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
     expect($closed)->toBeTrue();
-    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/pulls/100/merge') && $request['sha'] === str_repeat('d', 40));
-    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments') && str_contains($request['body'], 'Recipe contents differ') && str_contains($request['body'], 'pull/100'));
-})->with(['comment', 'close']);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments')))->toHaveCount(1);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments') && str_contains($request['body'], 'main’s Ubuntu snapshot'));
+});
+
+it('ends refused green merges for three days of ticks before re-resolving superseded evidence', function (string $superseded, int $status): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $evidence['merge_status'] = $status;
+    $replacement = $evidence['pr'];
+    $replacement['number'] = 100;
+    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['head']['ref'] = 'nightly/recipe-'.new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day')->format('Ymd');
+    $replacement['head']['sha'] = str_repeat('d', 40);
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $closed = $reached = false;
+    nightlyMergeHttp($evidence, [
+        $base.'/pulls?*' => function () use ($evidence, $replacement, $superseded, &$closed) {
+            return Http::response(array_merge($closed ? [] : [$evidence['pr']], $superseded === 'newer App PR' ? [$replacement] : []));
+        },
+        $base.'/pulls/99' => function (Request $request) use ($evidence, &$closed) {
+            if ($request->method() === 'PATCH') {
+                $closed = true;
+            }
+
+            return Http::response($evidence['pr']);
+        },
+        $base.'/pulls/100' => Http::response($replacement),
+        $base.'/commits/'.str_repeat('d', 40).'/check-runs?*' => Http::response(['total_count' => 0, 'check_runs' => []]),
+        $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => function (Request $request) use ($evidence, &$reached) {
+            return Http::response(['content' => base64_encode(str_contains($request->url(), 'ref=main') ? ($reached ? $evidence['after'] : $evidence['before'])
+                : (str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after']))]);
+        },
+        $base.'/issues/99/comments' => Http::response([], 201),
+    ]);
+    $snapshots = Mockery::mock(SnapshotAvailability::class);
+    $snapshots->shouldReceive('latest')->times($superseded === 'main snapshot' ? 1 : 0)->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $reached = true;
+    for ($tick = 0; $tick < 864; $tick++) {
+        $this->travel(5)->minutes();
+        app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    }
+
+    expect($closed)->toBeTrue();
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/pulls/99/merge')))->toHaveCount($superseded === 'main snapshot' ? 1 : 0);
+    expect(Http::recorded(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99')))->toHaveCount(1);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments')))->toHaveCount(1);
+})->with(['main snapshot', 'newer App PR'])->with([405, 409]);
+
+it('alerts separately for a retry then evidence rejection then retirement failure on the same head', function (): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $evidence['after'] .= ' ';
+    $reached = false;
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $alerts = nightlyMergeHttp($evidence, [
+        $base.'/pulls/99' => function (Request $request) use ($evidence) {
+            if ($request->method() === 'PATCH') {
+                return Http::response([], 503);
+            }
+
+            return Http::response($evidence['pr']);
+        },
+        $base.'/pulls/99/commits?*' => Http::sequence()->pushStatus(503)->push($evidence['commits']),
+        $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => function (Request $request) use ($evidence, &$reached) {
+            return Http::response(['content' => base64_encode(str_contains($request->url(), 'ref=main') ? ($reached ? $evidence['after'] : $evidence['before'])
+                : (str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after']))]);
+        },
+    ]);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(6)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $reached = true;
+    $this->travel(6)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(6)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    expect(array_map(fn ($alert): string => $alert->incident->fault, $alerts->alerts))->toBe(['merge_retry', 'merge_blocked', 'retirement_failed']);
+    expect($alerts->alerts[1]->summary)->toContain('Recipe contents differ');
+    expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
+});
