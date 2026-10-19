@@ -1580,7 +1580,9 @@ Every successful removal push records publication in the same state that selects
 
 A stopped `ready` VM uses the shared wake path once before removal retries. A failed wake stays final. When the VM is `failed`, cleanup records the lost reviewed SHA and original VM failure once in Activity and removal assistance, then destroys it. A failed deletion keeps this reason on retry.
 
-A missing `ready` VM waits for the host sweep to confirm failure after two consecutive misses. The destroy job records this wait on the VM and owns its removal assistance. Workspace removal waits under that reason before lease admission, without an SSH snapshot or push attempt, so repeated ticks and removal sweeps do not add Activity. When the VM is found again, the destroy job clears the wait and removal can retry. The Incus sweep needs task VMs enabled and an active host Node. While either is off, the reason names the blocker: task VMs are disabled, or the named host is inactive.
+A missing `ready` VM waits for the host sweep to confirm failure after two consecutive misses. The destroy job records this wait on the VM and owns its removal assistance. Workspace removal waits under that reason before lease admission, without an SSH snapshot or push attempt, so repeated ticks and removal sweeps do not add Activity.
+
+When the VM is found again, the destroy job clears the wait and removal can retry. The Incus sweep needs task VMs enabled and an active host Node. While either is off, the reason names the blocker: task VMs are disabled, or the named host is inactive.
 
 An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
