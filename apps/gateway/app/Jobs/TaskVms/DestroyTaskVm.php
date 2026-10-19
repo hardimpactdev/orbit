@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Models\Node;
@@ -50,7 +51,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
-    public function handle(TaskVmGuest $guest, DeleteTaskVmAction $delete, RemoveNodeAction $nodes, RemoveTaskWorkspaceAction $removal): void
+    public function handle(): void
     {
         $vm = TaskVm::query()->find($this->taskVmId);
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
@@ -72,10 +73,20 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                     return;
                 }
                 if ($vm->state !== TaskVmState::Failed) {
-                    $observed = $guest->observeSettled($vm);
+                    if ($commit !== null && $vm->hostSweepWaitReason() !== null && $this->hostSweepPause($vm) !== '') {
+                        $this->waitForHostSweep($vm, $group, $commit);
+
+                        return;
+                    }
+                    $observed = app(TaskVmGuest::class)->observeSettled($vm);
+                    if ($observed !== null && $vm->hostSweepWaitReason() !== null) {
+                        $vm->update(['error_code' => null, 'error_message' => null]);
+                    }
                     if ($commit !== null) {
                         if ($observed !== null && ! $observed->running) {
                             app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
+                        } elseif ($observed === null) {
+                            $this->waitForHostSweep($vm, $group, $commit);
                         }
 
                         // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
@@ -87,14 +98,14 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null) {
+            if ($lostCommit !== null && $vm->state === TaskVmState::Failed) {
                 TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
             }
         }
 
-        $delete->execute($vm);
+        app(DeleteTaskVmAction::class)->execute($vm);
         if ($workspace && $lostCommit === null) {
-            $removal->clearFailure($group);
+            app(RemoveTaskWorkspaceAction::class)->clearFailure($group);
         }
 
         try {
@@ -102,7 +113,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             if ($node instanceof Node) {
                 // The VM is gone, so the Node is unreachable: offline removal sheds its role and forgets its Processes
                 // without probing the dead address.
-                $nodes->execute($node, $this->gateway(), offline: true, force: true, deleted: true);
+                app(RemoveNodeAction::class)->execute($node, $this->gateway(), offline: true, force: true, deleted: true);
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null]);
         } catch (Throwable $exception) {
@@ -110,6 +121,29 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
             throw $exception;
         }
+    }
+
+    /** Owns both the recorded wait and its assistance; removal reads the wait without retrying its push. */
+    private function waitForHostSweep(TaskVm $vm, Task $group, string $commit): void
+    {
+        $reason = "Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$commit}] has not been pushed. Workspace removal waits for the host sweep to confirm loss.".$this->hostSweepPause($vm);
+        if ($vm->hostSweepWaitReason() !== $reason) {
+            $vm->update(['error_code' => TaskVmError::AwaitingHostSweep->value, 'error_message' => $reason]);
+        }
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $reason, replaceFailure: true);
+    }
+
+    private function hostSweepPause(TaskVm $vm): string
+    {
+        if ($vm->provider->needsHostNode()) {
+            if (! TaskVmSettings::scheduled()->enabled) {
+                return ' The Incus host sweep is paused because task VMs are disabled.';
+            } elseif ($vm->incusHostNode()->status !== LifecycleStatus::Active) {
+                return " The Incus host sweep is paused because host [{$vm->incusHostNode()->name}] is inactive.";
+            }
+        }
+
+        return '';
     }
 
     private function gateway(): Node

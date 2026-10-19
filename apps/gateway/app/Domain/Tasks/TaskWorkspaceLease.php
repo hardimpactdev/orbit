@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -217,10 +218,14 @@ final class TaskWorkspaceLease
      */
     public function run(Task $group, string $kind, string $owner, Closure $operation, ?int $taskId = null): mixed
     {
-        if (! $group->taskable instanceof Instance) {
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
             return $operation();
         }
-        $instanceId = $group->taskable->id;
+        if ($kind === 'teardown') {
+            RemoveTaskWorkspaceAction::awaitVmPreservation($group, $instance);
+        }
+        $instanceId = $instance->id;
         if ($this->activeScope($instanceId) instanceof TaskWorkspaceLeaseRecord) {
             return $operation();
         }
