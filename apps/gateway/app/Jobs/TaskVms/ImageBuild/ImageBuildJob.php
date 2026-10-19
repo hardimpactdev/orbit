@@ -140,7 +140,7 @@ abstract class ImageBuildJob implements ShouldQueue
                 'seconds' => max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($started)->getTimestampMs() / 1000),
                 'error' => mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 4000)];
             $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed, 'current_step' => $step, 'current_program' => $program])->save();
-            if ($build->recipe_identity !== null) {
+            if ($build->recipe_identity !== null && ! $build->restartsAutomatically()) {
                 // Only the winning failure write alerts, after its outermost transaction commits.
                 DB::afterCommit(static function () use ($build, $step, $program): void {
                     $phase = $program ?? $step->value;

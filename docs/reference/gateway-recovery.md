@@ -809,6 +809,8 @@ The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source
 
 An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
 
+Image-build alerts use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Only failures that need operator recovery alert; unacknowledged queue submissions restart automatically without an alert. The incident resolves when a later attempt succeeds, the desired recipe identity or generation supersedes the build, or the build row is gone. An attempt that is still running or failed does not prove recovery.
+
 Recipe alerts without a build carry an explicit identity. A PR failure uses its PR number and head. A failed repository read uses its nightly date cycle. A failed maintenance job uses its queue job UUID. Alert wording and later Gateway releases do not prove that these incidents recovered.
 
 A migration merges the old buckets based on SHA only when retained alert evidence proves their resource, attempt, and fault. It adopts only groups whose original generated content and lack of operator activity can be confirmed. Ambiguous history stays available for an operator and cannot file a new group automatically.
@@ -1105,7 +1107,7 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
 
-A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. Deployment repairs stored halts caused by image builds without a manual database edit. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
+A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
 
 A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
 

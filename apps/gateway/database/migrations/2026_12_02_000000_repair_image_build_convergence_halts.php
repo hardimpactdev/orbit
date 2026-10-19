@@ -9,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::table('task_vm_image_builds')->whereNotNull('fleet_convergence')->orderBy('id')->eachById(function (object $record): void {
+        DB::table('task_vm_image_builds')->whereNotNull('fleet_convergence')->eachById(function (object $record): void {
             $progress = json_decode($record->fleet_convergence, true, flags: JSON_THROW_ON_ERROR);
             if (! is_array($progress) || ($progress['status'] ?? null) !== 'halted') {
                 return;

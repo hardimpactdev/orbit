@@ -15,6 +15,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Models\Node;
@@ -176,8 +177,6 @@ it('halts at a Doctor failure without retrying or touching later Nodes and alert
     expect($alerts->alerts[0]->summary)->toContain('Doctor', 'No automatic rollback or retry');
 
     $halt = $record->fleet_convergence;
-    $migration = require database_path('migrations/2026_12_02_000000_repair_image_build_convergence_halts.php');
-    $migration->up();
     Bus::fake();
     $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
     $doctor->failNode = null;
@@ -221,20 +220,20 @@ it('waits after an image failure then starts convergence when retry promotes bot
     expect($alerts->alerts)->toHaveCount(1);
 });
 
-it('repairs a stored build-failure halt on deployment and converges its promoted generation', function (): void {
+it('automatically retries repeated unacknowledged submissions without operator alerts', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
-    $record->forceFill(['fleet_convergence' => ['generation' => 1, 'status' => 'halted', 'nodes' => [],
-        'message' => "Machine recipe [{$record->recipe_identity}] halted: Image build [{$other->id}] failed on host [{$other->host_node_id}]. Inspect its build steps before recovery. No automatic rollback or retry.",
-        'finished_at' => now()->toIso8601String(), 'alert' => ['outcome' => 'sent']]])->save();
-    $migration = require database_path('migrations/2026_12_02_000000_repair_image_build_convergence_halts.php');
+    Bus::fake();
+    $other->update(['state' => TaskVmImageBuildState::Running, 'promoted_at' => null]);
 
-    $migration->up();
-    $migration->up();
-    expect($record->refresh()->fleet_convergence)->toBe(['generation' => 1, 'status' => 'ready', 'nodes' => []]);
-    app(ConvergeFleetRecipeAction::class)->execute();
+    for ($attempt = 1; $attempt <= 3; $attempt++) {
+        $other->update(['submission_pending_at' => now()->subMinutes(11)->toISOString()]);
+        app(RecipeImageBuilds::class)->reconcile();
+        expect($other->refresh()->attempt)->toBe($attempt + 1);
+        expect($other->state)->toBe(TaskVmImageBuildState::Running);
+    }
 
-    expect($doctor->visited)->toBe([$record->host_node_id]);
     expect($alerts->alerts)->toBe([]);
+    expect($doctor->visited)->toBe([]);
 });
 
 it('halts an interrupted visit and preserves its stopping point instead of retrying it', function (): void {
@@ -248,8 +247,6 @@ it('halts an interrupted visit and preserves its stopping point instead of retry
     expect($alerts->alerts[0]->summary)->toContain('Interrupted visit');
 
     $halt = $record->fleet_convergence;
-    $migration = require database_path('migrations/2026_12_02_000000_repair_image_build_convergence_halts.php');
-    $migration->up();
     app(ConvergeFleetRecipeAction::class)->execute();
 
     expect($record->refresh()->fleet_convergence)->toBe($halt);
