@@ -97,6 +97,9 @@ final readonly class RemoveTaskWorkspaceAction
             }
             $commit = TaskFinalReview::reconcileRemovalPush($group);
             if ($commit !== null) {
+                if (TaskVm::forNode($instance->node_id)?->state === TaskVmState::Destroying) {
+                    throw new TaskWorkspaceWaiting("The task VM of Instance [{$instance->name}] is already being destroyed.");
+                }
                 $this->publisher->push($group, $commit);
                 TaskFinalReview::recordRemovalPush($group, $commit);
             }

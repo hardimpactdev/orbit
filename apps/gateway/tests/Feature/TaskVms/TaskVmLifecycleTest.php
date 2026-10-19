@@ -1147,8 +1147,10 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['observe', 'observe', 'start', 'destroy']);
     });
 
-    it('keeps reviewed work on a missing ready VM until the host sweep records its failure', function (): void {
+    it('explains why a missing ready VM waits for its host sweep', function (bool $enabled, LifecycleStatus $hostStatus): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        tvm_life_settings(enabled: $enabled);
+        $this->host->update(['status' => $hostStatus]);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
         $sha = str_repeat('c', 40);
@@ -1162,9 +1164,12 @@ describe(DestroyTaskVm::class, function (): void {
         $this->assertModelExists($instance);
         expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
         expect($this->provider->calls)->toBe(['observe', 'observe']);
+        expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+        expect($group->fresh()->assistance_reason)->toContain('was not found', $sha, 'host sweep', 'enabled', 'active');
         expect($group->fresh()->assistance_reason)->not->toContain('Reviewed work lost');
+        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->count())->toBe(1);
         Queue::assertNotPushed(ResumeTaskVm::class);
-    });
+    })->with(['task VMs disabled' => [false, LifecycleStatus::Active], 'host inactive' => [true, LifecycleStatus::Failed], 'sweep enabled' => [true, LifecycleStatus::Active]]);
 
     it('destroys a lost VM and records its lost reviewed SHA without clearing the evidence', function (TaskGroupStatus $status): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
@@ -1191,7 +1196,7 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['destroy']);
     })->with([TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
 
-    it('keeps the lost SHA in assistance when deletion fails and workspace removal retries', function (): void {
+    it('keeps the original loss reason when deletion fails and workspace removal retries', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
@@ -1202,15 +1207,18 @@ describe(DestroyTaskVm::class, function (): void {
 
         expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(RuntimeException::class, 'Delete failed.');
         expect($vm->fresh()->state)->toBe(TaskVmState::Destroying);
-        expect($group->fresh()->assistance_reason)->toContain($sha, 'The provider could not start the VM.');
-        app(RemoveTaskWorkspaceAction::class)->recordFailure($group, new TaskPullRequestException('The task workspace is unavailable.'));
+        $lossReason = $group->fresh()->assistance_reason;
+        expect($lossReason)->toContain($sha, 'task_vm.start_failed', 'The provider could not start the VM.');
+        expect($vm->fresh()->error_message)->toBe('Delete failed.');
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
         $this->provider->onDestroy = null;
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
         $this->assertModelMissing($instance);
         expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
         expect($group->fresh()->assistance_requested)->toBeTrue();
-        expect($group->fresh()->assistance_reason)->toContain('Reviewed work lost', $sha);
+        expect($group->fresh()->assistance_reason)->toBe($lossReason);
+        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('properties->reason', 'like', '%Reviewed work lost%')->count())->toBe(1);
         expect($this->provider->calls)->toBe(['destroy', 'destroy']);
     });
 

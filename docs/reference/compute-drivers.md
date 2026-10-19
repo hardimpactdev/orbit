@@ -426,7 +426,9 @@ When the group has ended, or is `settling` or `waiting_for_review`, each tick th
 
 For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
 
-A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job does not make its own missing verdict. A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and VM failure in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A stopped VM without work to preserve is removed the same way:
+A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. Its `removal_failure` assistance says that cleanup waits for this verdict. The Incus sweep runs only while task VMs are enabled and the host Node is active. If either is off, cleanup waits until the sweep can run again. The destroy job does not make its own missing verdict.
+
+A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and original VM failure once in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A failed deletion keeps that reason on retry; its delete error stays on the VM row. Removal never retries a lost head's push after destruction starts. A stopped VM without work to preserve is removed the same way:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.

@@ -76,6 +76,8 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                     if ($commit !== null) {
                         if ($observed !== null && ! $observed->running) {
                             app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
+                        } elseif ($observed === null) {
+                            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$commit}] has not been pushed. Workspace removal waits for the host sweep to confirm loss. For an Incus VM, the sweep requires task VMs to be enabled and the host to be active.", replaceFailure: true);
                         }
 
                         // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
@@ -87,7 +89,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null) {
+            if ($lostCommit !== null && $vm->state === TaskVmState::Failed) {
                 TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
             }
         }
