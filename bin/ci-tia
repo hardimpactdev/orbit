@@ -6,7 +6,7 @@ commit the graph describes, or the full suite when the graph is unusable, the ch
 test-impact analysis cannot see, or the newest full run on main failed. `finish` runs after a passing test run and requires the graph to describe the
 tested commit, with a result for every test file it links. `subprocess` decides whether a run that is not full also runs
 the project's `subprocess` group, which TIA cannot select. `shards` runs in the Gateway plan job of a pull request: it
-lists the test classes that `pest --tia` would run and splits a large selection into shards by their recorded times.
+lists the full suite with TIA disabled and balances its classes using recorded times only.
 """
 import argparse
 import json
@@ -43,17 +43,11 @@ READ_ANYWAY = {
     'apps/gateway': ('apps/agent/tests/', 'docs/openapi.json', 'packages/php-sdk/fixtures/',
                      'packages/php-sdk/src/Responses/Tasks/'),
 }
-# A pull request whose selection has more test classes than this runs its Gateway tests in shards. The full suite of
-# about 760 classes takes about 12 minutes on Sabre, so 200 classes take about 3 minutes: then the Gateway job already
-# ends about when the slowest other job does, and more jobs would only take shard runners from other runs.
-SHARD_THRESHOLD = 200
 # The Pest processes of each shard. The first shard runs in the Gateway job on Sabre; the others each run on one
 # orbit-shard runner, capped at 4 processes.
 SHARD_PROCESSES = (6, 4, 4, 4)
 # Pest records each test's own time. Booting the application for it adds about 0.2 seconds in CI.
 TEST_OVERHEAD_SECONDS = 0.2
-# The first shard runs in the Gateway job, which also runs the architecture tests: about 35 seconds on 6 processes.
-FIRST_SHARD_HEAD_START = 210.0
 LISTED_TEST = re.compile(r'^ - (?:P\\)?([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::', re.M)
 PHP_GRAPH = r'''
 require 'vendor/autoload.php';
@@ -250,7 +244,7 @@ def listed_tests(pest, *options):
     result = subprocess.run([pest, *options, '--list-tests', '--colors=never'], capture_output=True, text=True,
                             errors='replace')
     if result.returncode:
-        raise SystemExit(f'Pest cannot list the affected tests:\n{result.stdout}{result.stderr}')
+        raise SystemExit(f'Pest cannot list the full suite:\n{result.stdout}{result.stderr}')
     # A test that no shard names would run nowhere, so every listed test must parse.
     unparsed = [line for line in result.stdout.splitlines() if line.startswith(' - ') and not LISTED_TEST.match(line)]
     if unparsed:
@@ -263,10 +257,9 @@ def test_class(test):
     return LISTED_TEST.match(' - ' + test).group(1)
 
 
-def selected_tests(pest):
-    """Return the tests that `pest --tia` would run here, and those of them in the `privileged` group. A group option
-    would turn TIA off, so the group is listed on its own."""
-    selected = listed_tests(pest, '--tia')
+def full_tests(pest):
+    """List every test and the privileged cases; graph edges never choose PR tests."""
+    selected = listed_tests(pest, '--no-tia')
     return selected, selected & listed_tests(pest, '--no-tia', '--group=privileged')
 
 
@@ -296,46 +289,43 @@ def class_seconds():
 
 def split(classes, seconds, processes):
     """Split the classes into shards that end together, longest first: each class goes to the shard that would end
-    first, by its process seconds over its processes. The first shard starts with the architecture tests."""
+    first, by its process seconds over its processes."""
     known = sorted(seconds[name] for name in classes if name in seconds)
     unknown = known[len(known) // 2] if known else 1.0
-    loads = [FIRST_SHARD_HEAD_START] + [0.0] * (len(processes) - 1)
+    loads = [0.0] * len(processes)
     shards = [[] for _ in processes]
     for name in sorted(classes, key=lambda name: (-seconds.get(name, unknown), name)):
         ends = [load / count for load, count in zip(loads, processes)]
         index = ends.index(min(ends))
         shards[index].append(name)
         loads[index] += seconds.get(name, unknown)
-    # The first shard's head start can leave it without classes when the selection is small. An empty filter would
-    # find no tests and fail, so the plan keeps only the shards that have classes.
+    # Never publish an empty filter, which would select no tests.
     kept = [(sorted(shard), load) for shard, load in zip(shards, loads) if shard]
     return [shard for shard, _ in kept], [load for _, load in kept]
 
 
 def shard_plan(arguments):
-    """Choose whether the Gateway tests of a pull request run in one job or in shards, and write the plan."""
-    selected, privileged = selected_tests(arguments.pest)
+    """Balance the entire Gateway suite of a pull request and write its plan."""
+    selected, privileged = full_tests(arguments.pest)
     # The shards run without sudo and leave out the privileged group, which the Gateway privileged job runs. A class
     # stays in the selection while any of its selected tests is not privileged.
     classes = sorted({test_class(test) for test in selected - privileged})
-    plan = {'commit': git('rev-parse', 'HEAD'), 'classes': len(classes), 'shards': 1, 'filters': []}
-    shards, loads = split(classes, class_seconds(), SHARD_PROCESSES) if len(classes) > SHARD_THRESHOLD else ([classes], [0.0])
-    if len(shards) == 1:
-        print(f'One job: {len(classes)} affected test classes, at most {SHARD_THRESHOLD} or too few to split.')
-    else:
-        # PHPUnit matches the filter against `Class::test`, so it selects exactly the tests of the shard's classes.
-        plan['shards'] = len(shards)
-        plan['filters'] = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
-        require_coverage(selected, privileged, plan['filters'])
-        print(f'{len(shards)} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
-        for number, (shard, load, processes) in enumerate(zip(shards, loads, SHARD_PROCESSES), 1):
-            print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds on {processes} processes.')
+    shards, loads = split(classes, class_seconds(), SHARD_PROCESSES)
+    if len(shards) < 2:
+        raise SystemExit('The full Gateway suite must fill at least two shards.')
+    # PHPUnit matches the filter against Class::test, so each class runs in exactly one shard.
+    filters = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
+    require_coverage(selected, privileged, filters)
+    plan = {'commit': git('rev-parse', 'HEAD'), 'classes': len(classes), 'shards': len(shards), 'filters': filters}
+    print(f'{len(shards)} shards: {len(classes)} full-suite test classes.')
+    for number, (shard, load, processes) in enumerate(zip(shards, loads, SHARD_PROCESSES), 1):
+        print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds on {processes} processes.')
     Path(arguments.plan).write_text(json.dumps(plan) + '\n')
     output = os.environ.get('GITHUB_OUTPUT')
     if output:
         # The Gateway job runs shard 1; the shard jobs run the others, numbered from 2.
         with open(output, 'a') as file:
-            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\nsharded={str(plan["shards"] > 1).lower()}\n'
+            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\n'
                        f'matrix={json.dumps(list(range(2, plan["shards"] + 1)))}\n')
 
 
@@ -354,7 +344,7 @@ def main():
     subprocess_command = commands.add_parser('subprocess', help='choose whether to run the subprocess test group')
     subprocess_command.add_argument('--base', default='', help='the commit to compare with: the pull request base, '
                                     'or the commit the restored main graph described')
-    shards_command = commands.add_parser('shards', help='choose one Gateway test job or shards for a pull request')
+    shards_command = commands.add_parser('shards', help='balance the full Gateway suite of a pull request')
     shards_command.add_argument('--plan', required=True, help='the file that receives the plan as JSON')
     shards_command.add_argument('--pest', default='vendor/bin/pest', help='the Pest binary')
     arguments = parser.parse_args()

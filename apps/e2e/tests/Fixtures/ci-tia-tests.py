@@ -309,7 +309,7 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual(('affected', head), self.plan()[:2])
 
     def shard_plan(self, classes, status=0, extra='', privileged=(), privileged_tests=''):
-        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does, and
+        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --no-tia --list-tests` does, and
         the privileged classes and single tests for `pest --no-tia --group=privileged --list-tests`."""
         def write_listing(path, names, tail=''):
             path.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
@@ -321,7 +321,7 @@ class CiTiaTest(unittest.TestCase):
         write_listing(privileged_listing, privileged, privileged_tests)
         pest = self.root / 'pest'
         pest.write_text(f'#!/bin/sh\ncase "$*" in\n'
-                        f'  "--tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
+                        f'  "--no-tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
                         f'  "--no-tia --group=privileged --list-tests --colors=never") cat {privileged_listing} ;;\n'
                         f'  *) exit 9 ;;\nesac\n')
         pest.chmod(0o755)
@@ -331,18 +331,23 @@ class CiTiaTest(unittest.TestCase):
         outputs = dict(line.split('=', 1) for line in self.output.read_text().splitlines())
         return result, outputs, json.loads(plan.read_text()) if plan.exists() else None
 
-    def test_keeps_a_narrow_pull_request_selection_in_one_job(self):
-        head = self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
+    def test_plans_every_test_without_tia_even_for_a_narrow_diff(self):
+        self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(20)]
 
-        result, outputs, plan = self.shard_plan([f'Tests\\Feature\\Area{index}Test' for index in range(200)])
+        result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual({'commit': head, 'shards': '1', 'sharded': 'false', 'matrix': '[]'}, outputs)
-        self.assertEqual({'commit': head, 'classes': 200, 'shards': 1, 'filters': []}, plan)
-        self.assertIn('One job: 200 affected test classes, at most 200 or too few to split.', result.stdout)
+        self.assertEqual('4', outputs['shards'])
+        tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
+        for test in tests:
+            self.assertEqual(1, sum(bool(re.search(pattern, test)) for pattern in plan['filters']))
 
+    def test_refuses_an_empty_full_suite(self):
         result, outputs, plan = self.shard_plan([])
-        self.assertEqual(('1', 0), (outputs['shards'], plan['classes']))
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIsNone(plan)
 
     def test_splits_a_large_pull_request_selection_into_balanced_shards(self):
         classes = [f'Tests\\Feature\\Area{index}Test' for index in range(300)]
@@ -356,7 +361,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', 'true', '[2, 3, 4]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual(('4', '[2, 3, 4]'), (outputs['shards'], outputs['matrix']))
         self.assertEqual((4, 300, 4), (plan['shards'], plan['classes'], len(plan['filters'])))
         self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
         # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
@@ -364,16 +369,14 @@ class CiTiaTest(unittest.TestCase):
                                                                                   'P\\Other\\Tests\\Feature\\Area1Test::x']
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertEqual(sorted(tests[:300]), sorted(sum(shards, [])))
-        # The first shard runs in the Gateway job beside the architecture tests, so it starts with their time and gets
-        # none of the slow classes. The other shards get one each.
+        # Longest classes spread across separate workers rather than all landing in one shard.
         slow = [next(index for index, shard in enumerate(shards) if f'P\\{name}::__pest_evaluable_it_works' in shard)
                 for name in classes[:3]]
-        self.assertEqual([1, 2, 3], sorted(slow))
+        self.assertEqual(3, len(set(slow)))
         # Each class goes to the shard that would end first, by its process seconds over its Pest processes: 6 for the
-        # first shard, 4 for the others. The first shard's head start still gives it the fewest classes.
-        self.assertLess(len(shards[0]), min(len(shard) for shard in shards[1:]))
-        self.assertIn('4 shards: 300 affected test classes, more than 200.', result.stdout)
-        self.assertIn('Shard 1: 7 classes, about 218 process seconds on 6 processes.', result.stdout)
+        # first shard, 4 for the others. The first shard can therefore take more classes.
+        self.assertGreater(len(shards[0]), max(len(shard) for shard in shards[1:]))
+        self.assertIn('4 shards: 300 full-suite test classes.', result.stdout)
 
     def test_leaves_the_privileged_group_out_of_the_shards(self):
         # Pest turns TIA off for a group option, so the plan lists the privileged group on its own and subtracts it.
@@ -384,8 +387,8 @@ class CiTiaTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(200, plan['classes'])
-        self.assertEqual(('1', 'false'), (outputs['shards'], outputs['sharded']))
-        self.assertIn('One job: 200 affected test classes', result.stdout)
+        self.assertEqual('4', outputs['shards'])
+        self.assertIn('4 shards: 200 full-suite test classes.', result.stdout)
 
     def test_keeps_the_other_tests_of_a_class_with_some_privileged_tests(self):
         # A class with only some privileged tests stays in a shard, which leaves out its privileged tests itself.
@@ -396,7 +399,7 @@ class CiTiaTest(unittest.TestCase):
             privileged_tests=f' - P\\{classes[0]}::__pest_evaluable_it_fails_loudly\n')
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('true', 299), (outputs['sharded'], plan['classes']))
+        self.assertEqual(('4', 299), (outputs['shards'], plan['classes']))
         shards = [test_filter for test_filter in plan['filters']
                   if re.search(test_filter, f'P\\{classes[0]}::__pest_evaluable_it_works', re.I)]
         self.assertEqual(1, len(shards))
@@ -415,7 +418,7 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual('1 selected tests run in no shard, such as: P\\Tests\\RootTest::it_works', str(failure.exception))
 
     def test_never_plans_a_shard_without_classes(self):
-        # 201 fast classes: shards 2 to 4 never pass the first shard's head start, so it would stay empty.
+        # Even very fast classes fill all four shards.
         classes = [f'Tests\\Unit\\Fast{index}Test' for index in range(201)]
         self.write_graph(self.base, results={
             f'P\\{name}::__pest_evaluable_it_works': {'status': 0, 'message': '', 'time': 0.01, 'assertions': 1,
@@ -424,7 +427,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('3', 'true', '[2, 3]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual(('4', '[2, 3, 4]'), (outputs['shards'], outputs['matrix']))
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertTrue(all(shards))
@@ -441,7 +444,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], status=2)
 
         self.assertEqual(1, result.returncode)
-        self.assertIn('Pest cannot list the affected tests:', result.stderr)
+        self.assertIn('Pest cannot list the full suite:', result.stderr)
         self.assertEqual(({}, None), (outputs, plan))
 
     def test_refuses_a_graph_that_does_not_describe_the_tested_commit(self):

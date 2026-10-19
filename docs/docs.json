@@ -155,6 +155,7 @@
             "group": "Solutions",
             "pages": [
               "solutions/doctor-incus-proof",
+              "solutions/test-impact-declaration-data",
               "solutions/incus-zfs-efficiency",
               "solutions/remote-file-writes-on-uutils-coreutils",
               "solutions/migrate-unmanaged-executor-hostname",

@@ -14,7 +14,7 @@ permissions:
 
 # A pull request keeps only its newest run. Pushes to main share one group: a running main run always
 # finishes, and a newer push replaces only the waiting one, so after a burst of merges the newest commit
-# is tested next. Its affected tests cover every change since the last tested main commit. Scheduled and
+# is tested next. Its tests cover changes since the last tested main graph. Scheduled and
 # manual runs get a group per commit, so a push never cancels a full run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
@@ -30,10 +30,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true. Its subprocess group
-    # runs on a GitHub-hosted runner, so each Gateway run takes one Sabre runner.
+    # The Gateway suite uses one Sabre runner when ORBIT_SABRE_RUNNER is true. Affected main runs also
+    # run its subprocess group on a hosted runner; full suites already include that group.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre. A pull request
-    # with a large Gateway selection also runs up to three Gateway shards, each on its own orbit-shard runner.
+    # also runs three Gateway shards, each on its own orbit-shard runner.
     runs-on: ${{ matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
@@ -73,9 +73,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          # A pull request tests its merge ref, the tree that would land on main. Its commit descends from the main
-          # commit that the restored main graph records, so TIA selects only the tests that the pull request affects.
-          # Pest reads the graph on that detached HEAD and does not write it.
+          # A pull request runs full suites on its merge ref, the tree that would land on main.
           ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
           repository: ${{ github.repository }}
 
@@ -149,7 +147,7 @@ jobs:
         if: matrix.part != 'subprocess'
         run: composer validate --strict
 
-      # A pull request restores the quality caches only from main and saves none, as it does the Pest TIA graph below.
+      # A pull request restores quality caches only from main and saves none.
       - name: Compute PHPStan result cache prefix
         if: matrix.part != 'subprocess'
         id: orbit-phpstan-key
@@ -211,24 +209,22 @@ jobs:
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Compute Pest TIA cache prefix
+        if: github.event_name != 'pull_request'
         id: orbit-tia-key
         working-directory: .
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
-      # Each run on main saves its graph under its own key, so a full run on an already tested commit still refreshes
-      # the cache. A pull request restores only a main graph, first the one for its base commit, and saves none:
-      # actions/cache tries every restore key in the pull request's own scope before main's, and an older graph of the
-      # pull request would count every main change since it as changed.
+      # Each main run restores a main graph for its selection and publishes a refreshed graph after passing.
       - name: Restore Pest TIA graph
+        if: github.event_name != 'pull_request'
         id: orbit-tia-restore
         uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) || '' }}
-            ${{ github.event_name == 'pull_request' && format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) || '' }}
+            ${{ format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) }}
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
             ${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}
 
@@ -271,7 +267,7 @@ jobs:
                 echo "::error::The Gateway plan describes $(jq -r .commit "$plan"), not $(git rev-parse HEAD): refs/pull/N/merge moved since the plan ran. Re-run all jobs, not only the failed ones."
                 exit 1
               fi
-              printf 'sharded=%s\nfilter=%s\n' "$(jq -r '.shards > 1' "$plan")" "$(jq -r '.filters[0] // ""' "$plan")" >> "$GITHUB_OUTPUT"
+              printf 'filter=%s\n' "$(jq -r '.filters[0]' "$plan")" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             sleep 5
@@ -279,14 +275,14 @@ jobs:
           echo '::error::The Gateway plan job did not finish within 10 minutes.'
           exit 1
 
-      - name: Run affected tests
-        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.sharded != 'true'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
+      - name: Run full PR test suite
+        if: matrix.part != 'subprocess' && matrix.directory != 'apps/gateway' && github.event_name == 'pull_request'
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
 
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it. The plan leaves out
       # the privileged group, which the Gateway privileged job runs.
       - name: Run Gateway shard 1
-        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.sharded == 'true'
+        if: matrix.part != 'subprocess' && matrix.directory == 'apps/gateway' && github.event_name == 'pull_request'
         env:
           FILTER: ${{ steps.gateway-plan.outputs.filter }}
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --exclude-group=privileged --compact --filter "$FILTER"
@@ -332,7 +328,7 @@ jobs:
 
       # TIA does not link these contracts to the files they read, so every affected run also runs them.
       - name: Run architecture tests
-        if: always() && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        if: always() && matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
@@ -352,9 +348,9 @@ jobs:
       # Gateway and E2E run them in their subprocess jobs; a full run in the tests job runs them with the whole suite.
       - name: Choose whether to run subprocess tests
         id: orbit-subprocess
-        if: always() && matrix.part != 'tests' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        if: always() && matrix.part != 'tests' && steps.orbit-tia-plan.outputs.mode == 'affected'
         env:
-          BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
         run: ../../bin/ci-tia subprocess --base "$BASE"
 
       # The PHP SDK has no subprocess tests. Every other project's group must find tests.
@@ -428,9 +424,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # A pull request lists its Gateway test selection here. When it has more than 200 test classes, the Gateway job
-  # runs the first of up to four shards and the Gateway shards job runs the others, each on its own runner. Runs on main
-  # keep one Gateway job, because the full run there writes the whole Pest TIA graph.
+  # PRs always split the full Gateway suite. Main keeps one recording job for a complete TIA graph.
   gateway-plan:
     name: Gateway plan
     if: github.event_name == 'pull_request'
@@ -439,7 +433,6 @@ jobs:
     outputs:
       commit: ${{ steps.plan.outputs.commit }}
       shards: ${{ steps.plan.outputs.shards }}
-      sharded: ${{ steps.plan.outputs.sharded }}
       matrix: ${{ steps.plan.outputs.matrix }}
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
@@ -456,7 +449,7 @@ jobs:
           ref: ${{ github.ref }}
           repository: ${{ github.repository }}
 
-      # Without a coverage driver, Pest selects the full suite for a PHP change.
+      # The plan lists full suites; it does not record coverage.
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
@@ -473,7 +466,7 @@ jobs:
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-apps/gateway-${{ hashFiles('apps/gateway/composer.lock', 'apps/gateway/tests/Pest.php', 'apps/gateway/phpunit.xml', 'apps/gateway/phpunit.xml.dist') }}" >> "$GITHUB_OUTPUT"
 
-      # The same main graph that the Gateway job restores for a pull request.
+      # Graph results supply class timings only; they never select the tests of a pull request.
       - name: Restore Pest TIA graph
         uses: actions/cache/restore@v6
         with:
@@ -483,7 +476,7 @@ jobs:
             ${{ format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) }}
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
 
-      - name: Choose one Gateway test job or shards
+      - name: Plan full Gateway shards
         id: plan
         run: ../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"
 
@@ -501,7 +494,7 @@ jobs:
   gateway-shards:
     name: Gateway shards
     needs: gateway-plan
-    if: needs.gateway-plan.outputs.sharded == 'true'
+    if: github.event_name == 'pull_request'
     # The orbit-shard runner containers on Beast and Shark serve this repository's pull requests under the same
     # condition as the Gateway job on Sabre. A fork's pull request uses a hosted runner.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
@@ -989,7 +982,6 @@ jobs:
           DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
           GATEWAY_PLAN_RESULT: ${{ needs.gateway-plan.result }}
-          GATEWAY_SHARDED: ${{ needs.gateway-plan.outputs.sharded }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           REMOTE_PROGRAMS_RESULT: ${{ needs.remote-programs.result }}
@@ -1001,14 +993,7 @@ jobs:
         run: |
           test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
             if [ "$EVENT" = pull_request ]; then
-              test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && {
-                # The shards run exactly when the plan chose them.
-                if [ "$GATEWAY_SHARDED" = true ]; then
-                  test "$GATEWAY_SHARDS_RESULT" = success
-                else
-                  test "$GATEWAY_SHARDED" = false && test "$GATEWAY_SHARDS_RESULT" = skipped
-                fi
-              }
+              test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && test "$GATEWAY_SHARDS_RESULT" = success
             else
               test "$DOCS_MERGE_REF_RESULT" = skipped && test "$GATEWAY_PLAN_RESULT" = skipped && test "$GATEWAY_SHARDS_RESULT" = skipped
             fi
