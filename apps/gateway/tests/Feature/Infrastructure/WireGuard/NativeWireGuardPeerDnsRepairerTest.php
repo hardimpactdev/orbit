@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -92,7 +93,8 @@ it('leaves a Gateway with AppDev and a separate VPN holder untouched', function 
         $peer->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
         $before = $harness->state();
         $result = $harness->repair($tldConvergence);
-        expect($result['exception'])->toBeNull()
+        expect($result['exception'])->not->toBeNull()
+            ->and($result['exception']->errorCode)->toBe($tldConvergence ? 'app-dev.tld_route_failed' : 'vpn.peer_dns_unmanaged')
             ->and($result['resolver'])->toBe($before['resolver'])
             ->and($result['live'])->toBe($before['live'])
             ->and($result['dns'])->toBe($before['dns'])
@@ -166,7 +168,7 @@ it('restores old DNS and the orbit default-route flag if provider restoration fa
         $before = $harness->state();
         $harness->failProviderRestore();
         $result = $harness->repair();
-        expect($result['exception']?->result?->exitCode)->toBe(43)
+        expect($result['exception']?->result?->exitCode)->toBe(47)
             ->and($result['live'])->toBe($before['live'])
             ->and($result['dns'])->toBe($before['dns'])
             ->and($result['resolver'])->toBe($before['resolver'])
@@ -191,7 +193,7 @@ it('restores a durable uplink snapshot after failure following revert', function
             $harness->allowFailures();
             $harness->failProviderRestore();
             $result = $harness->repair();
-            expect($result['exception']?->result?->exitCode)->toBe(43);
+            expect($result['exception']?->result?->exitCode)->toBe(47);
         }
         expect($result['resolver'])->toBe($before['resolver'])
             ->and($result['live'])->toBe($before['live'])
@@ -246,6 +248,24 @@ it('repairs and reads back more than two private routing domains', function (): 
         $second = $harness->repair();
         expect($first['exception'])->toBeNull()->and($second['exception'])->toBeNull()
             ->and($second['dns'])->toBe("orbit\n10.43.0.53\ncustom.example\ninternal\norbit\ntest\n");
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('repairs the maximum namespace on a peer without PHP', function (): void {
+    $rows = [];
+    for ($i = 0; $i < 511; $i++) {
+        $domain = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_pad((string) $i, 61, 'x', STR_PAD_LEFT);
+        $rows[] = ['name' => 'c'.$i, 'tld' => $domain];
+    }
+    Cluster::query()->insert($rows);
+    $harness = wireguard_peer_dns_repair_harness();
+    try {
+        $result = $harness->repair();
+        expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '')
+            ->and(explode("\n", trim($result['dns'])))->toHaveCount(514)
+            ->and($result['resolver']['orbit']['domains'])->toHaveCount(512);
     } finally {
         $harness->cleanup();
     }
@@ -530,6 +550,7 @@ function wireguard_peer_dns_repair_harness(
         if [ -f "$ORBIT_TEST_ROOT/state/candidate-failure" ]; then exit 1; fi
         [ "${1:-}" = strip ]
         SH);
+    wireguard_peer_dns_repair_shim($root, 'php', 'exit 127');
     wireguard_peer_dns_repair_shim($root, 'ip', <<<'SH'
         printf '%s\n' "ip $*" >> "$ORBIT_TEST_ROOT/commands.log"
         if [ "${1:-}" = -o ] && [ "${2:-}" = route ] && [ "${3:-}" = get ]; then
@@ -768,7 +789,7 @@ function wireguard_peer_dns_repair_harness(
                     $this->repairer->repair($this->peer);
                 }
                 $exception = null;
-            } catch (NodeProvisioningException $failure) {
+            } catch (NodeProvisioningException|RuntimeConvergenceException $failure) {
                 $exception = $failure;
             }
 
@@ -932,7 +953,8 @@ it('refuses split repair without an uplink and accepts global or per-link DNS', 
         if ($allowed) {
             expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '');
         } else {
-            expect($result['exception']?->result?->exitCode)->toBe(43)
+            expect($result['exception']?->result?->exitCode)->toBe(47)
+                ->and($result['exception']?->errorCode)->toBe('vpn.peer_dns_uplink_missing')
                 ->and($result['live'])->toBe($before['live'])
                 ->and($result['dns'])->toBe($before['dns'])
                 ->and($result['resolver'])->toBe($before['resolver'])
@@ -941,4 +963,4 @@ it('refuses split repair without an uplink and accepts global or per-link DNS', 
     } finally {
         $harness->cleanup();
     }
-})->with([['', '', false], ['10.43.0.53', '', false], ['127.0.0.53', '', false], ['', '198.51.100.53', true], ['198.51.100.53', '', true]]);
+})->with([['', '', false], ['10.43.0.53', '', false], ['127.0.0.53', '', false], ['', '198.51.100.53', true], ['198.51.100.53', '', true], ['', '2001:db8::53#resolver.example', true], ['fe80::53%eth0', '', true], ['', '::1', false], ['999.0.0.53', '', false]]);

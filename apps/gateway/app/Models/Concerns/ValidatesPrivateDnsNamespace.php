@@ -42,7 +42,7 @@ trait ValidatesPrivateDnsNamespace
     private function validatePrivateDnsNamespace(bool $removing = false): void
     {
         try {
-            app(PeerDnsPolicy::class)->domains($this, $removing);
+            app(PeerDnsPolicy::class)->validateChange($this, $removing);
         } catch (NodeProvisioningException $exception) {
             throw ValidationException::withMessages([$this instanceof Route ? 'domain' : 'tld' => $exception->getMessage()]);
         }

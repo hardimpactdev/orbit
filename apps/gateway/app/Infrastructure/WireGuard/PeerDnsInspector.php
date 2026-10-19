@@ -22,13 +22,13 @@ final readonly class PeerDnsInspector
         private CommandDeadline $deadline,
     ) {}
 
-    /** @return array{policy: bool} */
+    /** @return array{policy: bool, uplink: bool} */
     public function inspect(Node $node): array
     {
         $address = $this->policy->server($node);
         $domains = $this->policy->domains($node);
         $output = $this->execute($node, new RemoteCommand(
-            ['sudo', 'bash', '-seu', '--', 'inspect'],
+            ['sudo', 'bash', '-seu', '--', 'inspect', $address],
             input: PeerDnsProgram::source(),
             maxOutputBytes: 1_048_576,
         ));
@@ -36,14 +36,17 @@ final readonly class PeerDnsInspector
             throw new \RuntimeException('Peer DNS inspection failed.');
         }
         $values = explode("\n", rtrim($output, "\n"));
-        if (count($values) !== 5) {
+        if (count($values) !== 6) {
             throw new \RuntimeException('Peer DNS inspection returned incomplete state.');
         }
         $decoded = array_map(static fn (string $value): string|false => base64_decode($value, true), $values);
         if (in_array(false, $decoded, true)) {
             throw new \RuntimeException('Peer DNS inspection returned invalid state.');
         }
-        [$state, $hooks, $dns, $live, $default] = $decoded;
+        [$state, $hooks, $dns, $live, $default, $uplink] = $decoded;
+        if (! in_array($uplink, ['yes', 'no'], true)) {
+            throw new \RuntimeException('Peer DNS inspection returned invalid uplink state.');
+        }
         $liveDomains = explode(' ', $this->setting($live) ?? '');
         sort($liveDomains, SORT_STRING);
         $expectedDomains = array_map(static fn (string $domain): string => '~'.$domain, $domains);
@@ -51,7 +54,7 @@ final readonly class PeerDnsInspector
 
         return ['policy' => $state === implode("\n", ['orbit', $address, ...$domains])
             && $this->setting($dns) === $address && $liveDomains === $expectedDomains
-            && $hooks === $hook && $this->setting($default) === 'no'];
+            && $hooks === $hook && $this->setting($default) === 'no', 'uplink' => $uplink === 'yes'];
     }
 
     /** @return array{private: ?string, public: ?string, private_valid: bool, public_valid: bool, valid: bool} */

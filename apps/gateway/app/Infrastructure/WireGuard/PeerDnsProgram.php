@@ -7,26 +7,34 @@ namespace App\Infrastructure\WireGuard;
 /** Shared resolver inspection, split-DNS preflight, and uplink migration state. */
 final class PeerDnsProgram
 {
-    public static function source(): string
+    /** @param list<string> $domains */
+    public static function source(array $domains = []): string
     {
-        return <<<'BASH'
+        $source = <<<'BASH'
+            export LC_ALL=C
             # Read resolved's configured servers, including global resolved.conf DNS=.
             # The private scope and its current/preceding server cannot supply public DNS.
             peer_dns_has_uplink() {
                 local all_dns private_server=$1 previous_server=${2:-}
                 all_dns=$(timeout --kill-after=2s 5s resolvectl dns) || return 1
-                printf '%s\n' "$all_dns" | php -r '
-                    [$private, $previous] = array_slice($argv, 1);
-                    foreach (explode("\n", stream_get_contents(STDIN)) as $line) {
-                        if (!preg_match("/^(?:Global|Link [0-9]+ \\(([^)]+)\\)): ?(.*)$/", $line, $match) || ($match[1] ?? "") === "orbit") { continue; }
-                        foreach (preg_split("/\\s+/", trim($match[2])) as $server) {
-                            $server = explode("#", $server, 2)[0];
-                            $server = explode("%", $server, 2)[0];
-                            if (filter_var($server, FILTER_VALIDATE_IP) !== false && $server !== $private && $server !== $previous && !str_starts_with($server, "127.") && !in_array($server, ["::1", "0.0.0.0", "::"], true)) { exit(0); }
+                printf '%s\n' "$all_dns" | awk -v private="$private_server" -v previous="$previous_server" '
+                    function usable(server, octets, count, i) {
+                        sub(/[%#].*$/, "", server)
+                        if (server == private || server == previous || server == "::1" || server == "::" || server == "0.0.0.0") return 0
+                        if (server ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+                            count = split(server, octets, ".")
+                            for (i = 1; i <= count; i++) if (octets[i] > 255) return 0
+                            return octets[1] != 127
                         }
+                        return server ~ /:/ && server ~ /^[0-9a-fA-F:.]+$/
                     }
-                    exit(1);
-                ' -- "$private_server" "$previous_server"
+                    /^Link [0-9]+ \(orbit\):/ { next }
+                    /^(Global|Link [0-9]+ \([^)]+\)): ?/ {
+                        sub(/^[^:]+: */, "")
+                        for (i = 1; i <= NF; i++) if (usable($i)) found = 1
+                    }
+                    END { exit !found }
+                '
             }
 
             # One encoded line fits either durable transaction format without shell evaluation.
@@ -68,7 +76,6 @@ final class PeerDnsProgram
 
             if [ "${1:-}" = inspect ]; then
                 set -o pipefail
-                export LC_ALL=C
                 exec 9>> /run/lock/orbit-wireguard-peer.lock
                 flock -s -w 5 9 || exit 41
                 state=
@@ -82,12 +89,17 @@ final class PeerDnsProgram
                 dns=$(resolvectl dns orbit)
                 domains=$(resolvectl domain orbit)
                 default_route=$(resolvectl default-route orbit)
-                for value in "$state" "$hooks" "$dns" "$domains" "$default_route"; do
+                uplink=no
+                previous_server=$(printf '%s\n' "$state" | sed -n '2p')
+                if peer_dns_has_uplink "$2" "$previous_server"; then uplink=yes; fi
+                for value in "$state" "$hooks" "$dns" "$domains" "$default_route" "$uplink"; do
                     printf '%s' "$value" | base64 --wrap=0
                     printf '\n'
                 done
                 exit 0
             fi
             BASH;
+
+        return $domains === [] ? $source : $source.PHP_EOL.'dns_domains=('.implode(' ', array_map(escapeshellarg(...), $domains)).')'.PHP_EOL;
     }
 }

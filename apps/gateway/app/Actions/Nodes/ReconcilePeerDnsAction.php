@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
@@ -14,7 +15,7 @@ final readonly class ReconcilePeerDnsAction
 {
     public function __construct(private PeerDnsPolicy $policy, private PeerDnsInspector $inspector, private RepairNodeDnsAction $repair) {}
 
-    /** @return list<string> Failed Node names. */
+    /** @return array<string, string> Error codes keyed by failed Node name. */
     public function execute(): array
     {
         $this->policy->domains();
@@ -24,12 +25,16 @@ final readonly class ReconcilePeerDnsAction
                 continue;
             }
             try {
-                if (! $this->inspector->inspect($node)['policy']) {
+                $state = $this->inspector->inspect($node);
+                if (! $state['policy']) {
                     $this->repair->execute($node->name);
+                } elseif (! $state['uplink']) {
+                    throw new NodeProvisioningException('wireguard-peer-dns-uplink', 'vpn.peer_dns_uplink_missing', 'No usable non-Orbit DNS server is configured.');
                 }
             } catch (Throwable $exception) {
-                $failed[] = $node->name;
-                Log::warning('Peer DNS reconciliation failed.', ['node_id' => $node->id, 'exception' => $exception::class]);
+                $code = $exception instanceof NodeProvisioningException ? $exception->errorCode : 'vpn.peer_dns_reconcile_failed';
+                $failed[$node->name] = $code;
+                Log::warning('Peer DNS reconciliation failed.', ['node_id' => $node->id, 'error_code' => $code, 'exception' => $exception::class]);
             }
         }
 

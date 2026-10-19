@@ -180,6 +180,15 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 );
             }
 
+            if ($peerResult->exitCode === 47) {
+                throw $this->failure(
+                    step: 'wireguard-peer-dns-uplink',
+                    errorCode: 'vpn.peer_dns_uplink_missing',
+                    message: "No usable non-Orbit DNS server is configured on node [{$node->name}].",
+                    result: $peerResult,
+                );
+            }
+
             if ($peerResult->exitCode === 43) {
                 throw $this->failure(
                     step: 'wireguard-peer-state',
@@ -532,9 +541,8 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $dnsMode,
                 $operatorDns,
                 $transactionMode,
-                ...$domains,
             ],
-            input: PeerDnsProgram::source().PHP_EOL.str_replace(
+            input: PeerDnsProgram::source($domains).PHP_EOL.str_replace(
                 '__FINALIZE__',
                 $cleanup,
                 <<<'BASH_WRAP'
@@ -548,7 +556,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     dns_mode=$8
                     operator_dns=$9
                     transaction_mode=${10}
-                    dns_domains=("${@:11}")
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -844,7 +851,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     }
                     if [ "$dns_mode" = wireguard ] && { [ -z "$old_dns_link" ] || [ "$old_dns_link" = orbit ]; } && ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
                         echo 'No non-Orbit per-link or global DNS server is configured.' >&2
-                        exit 43
+                        exit 47
                     fi
                     if [ "$dns_mode" = wireguard ] && [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
                         network_state=$(timeout --kill-after=5s 10s networkctl --no-legend --no-pager --full list "$old_dns_link") || exit 43
@@ -882,7 +889,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                             done
                             if [ "$provider_usable" != 1 ] || ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
                                 restore_after_failure || exit 1
-                                exit 43
+                                exit 47
                             fi
                         fi
                     fi

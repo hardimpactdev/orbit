@@ -19,7 +19,7 @@ final class ReconcilePeerDnsCommand extends Command
     {
         $failed = $action->execute();
         if ($failed !== []) {
-            $this->error('Peer DNS reconciliation failed on: '.implode(', ', $failed).'.');
+            $this->error('Peer DNS reconciliation failed on: '.implode(', ', array_map(static fn (string $name, string $code): string => $name.' ['.$code.']', array_keys($failed), array_values($failed))).'.');
 
             return self::FAILURE;
         }

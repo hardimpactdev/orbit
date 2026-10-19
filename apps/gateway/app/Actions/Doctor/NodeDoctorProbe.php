@@ -140,6 +140,7 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 $privateAnswers = $queries['private_valid'] && is_string($gatewayAddress)
                     && preg_match('/(?<![0-9.])'.preg_quote($gatewayAddress, '/').'(?![0-9.])/', $queries['private'] ?? '') === 1;
                 foreach ([
+                    [$dns['uplink'], NodeDoctorIssueCode::PrivateDnsUplinkMissing, 'No usable non-Orbit DNS server is configured.'],
                     [$dns['policy'], NodeDoctorIssueCode::PrivateDnsPolicyMismatch, 'Managed private DNS policy does not match.'],
                     [$privateAnswers, NodeDoctorIssueCode::PrivateDnsUnreachable, 'Private DNS does not return the expected Gateway address.'],
                     [$queries['public_valid'], NodeDoctorIssueCode::PublicDnsUnreachable, 'Public DNS does not resolve through a non-Orbit resolver.'],

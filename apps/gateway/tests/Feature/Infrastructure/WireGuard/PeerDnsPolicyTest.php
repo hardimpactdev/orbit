@@ -84,7 +84,7 @@ it('reports live and persisted resolver drift and failed private answers', funct
     [$node, $ssh] = peer_dns_inspection_fixture();
     $ssh->fault = $fault;
 
-    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => $policy]);
+    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => $policy, 'uplink' => true]);
 
     $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
     $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
@@ -146,7 +146,7 @@ it('continues reconciliation after one peer fails and reports the failed peer', 
     };
     $action = new ReconcilePeerDnsAction(app(PeerDnsPolicy::class), app(PeerDnsInspector::class), new RepairNodeDnsAction($repairer));
 
-    expect($action->execute())->toBe([$node->name])->and($repairer->nodes)->toBe([$node->id, $second->id]);
+    expect($action->execute())->toBe([$node->name => 'vpn.peer_dns_reconcile_failed'])->and($repairer->nodes)->toBe([$node->id, $second->id]);
 });
 
 it('verifies uncached private and public lookups on separate resolver links', function (string $fault, int $exit): void {
@@ -205,6 +205,7 @@ function peer_dns_inspection_fixture(): array
                     'Link 7 (orbit): '.($this->fault === 'server' ? '10.0.0.2' : '10.44.0.1'),
                     'Link 7 (orbit): '.($this->fault === 'domains' ? '~.' : implode(' ', array_map(static fn (string $domain): string => '~'.$domain, $this->domains))),
                     'Link 7 (orbit): '.($this->fault === 'default' ? 'yes' : 'no'),
+                    $this->fault === 'uplink-missing' ? 'no' : 'yes',
                 ];
                 $output = implode("\n", array_map(base64_encode(...), $values));
             } else {
@@ -250,7 +251,7 @@ it('reports SSH inspection failure as unverifiable without attempting repair', f
     expect($dnsIssues)->toHaveCount(1)
         ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
         ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
-    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name]);
+    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name => 'vpn.peer_dns_reconcile_failed']);
 });
 
 it('checks public resolution in Doctor including global DNS answers', function (string $fault, bool $failed): void {
@@ -346,5 +347,39 @@ it('inspects the complete maximum namespace without truncating the snapshot', fu
     Cluster::query()->insert($rows);
     sort($ssh->domains, SORT_STRING);
 
-    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true]);
+    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true, 'uplink' => true]);
 });
+
+it('names missing uplink DNS in Doctor and reconcile output', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    $ssh->fault = 'uplink-missing';
+    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))->toContain('node.private_dns_uplink_missing');
+    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name => 'vpn.peer_dns_uplink_missing']);
+    $this->artisan('orbit:peer-dns-reconcile')
+        ->expectsOutput('Peer DNS reconciliation failed on: app-prod [vpn.peer_dns_uplink_missing].')
+        ->assertExitCode(1);
+});
+
+it('allows nonincreasing teardown and TLD rollback when stored namespace already exceeds the cap', function (string $kind): void {
+    $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3', 'tld' => 'original.internal']);
+    $cover = match ($kind) {
+        'node' => $node,
+        'cluster' => Cluster::query()->create(['name' => 'dev', 'tld' => 'dev.internal']),
+        'route' => Route::query()->create(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'app.example.com', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]),
+    };
+    $rows = [];
+    for ($i = 0; $i < 513; $i++) {
+        $rows[] = ['name' => 'c'.$i, 'tld' => 't'.$i];
+    }
+    Cluster::query()->insert($rows);
+    if ($kind === 'node') {
+        expect($node->update(['tld' => 'changed.internal']))->toBeTrue();
+        expect($node->update(['tld' => 'original.internal']))->toBeTrue();
+        expect($node->refresh()->tld)->toBe('original.internal');
+    }
+    expect($cover->delete())->toBeTrue();
+    $this->assertModelMissing($cover);
+    expect(fn () => Cluster::query()->create(['name' => 'growth', 'tld' => 'growth.internal']))->toThrow(ValidationException::class);
+    expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
+})->with(['node', 'cluster', 'route']);

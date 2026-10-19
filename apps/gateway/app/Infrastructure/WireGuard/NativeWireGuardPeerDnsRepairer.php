@@ -26,7 +26,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
     {
         $policy = app(PeerDnsPolicy::class);
         if (! $policy->manages($node)) {
-            return;
+            throw new NodeProvisioningException('wireguard-peer-dns', 'vpn.peer_dns_unmanaged', "Node [{$node->name}] does not use the managed peer DNS policy.");
         }
         $vpn = $this->configuration->forPeer($node);
         $domains = $policy->domains($node);
@@ -56,6 +56,11 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 'wireguard-peer-transaction',
                 'vpn.peer_recovery_pending',
                 "WireGuard peer recovery is still pending for node [{$node->name}].",
+            ],
+            47 => [
+                'wireguard-peer-dns-uplink',
+                'vpn.peer_dns_uplink_missing',
+                "No usable non-Orbit DNS server is configured on node [{$node->name}].",
             ],
             43 => [
                 'wireguard-peer-state',
@@ -104,17 +109,14 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 $dnsMode,
                 $dnsServer,
                 $publicKey,
-                ...$domains,
             ],
-            input: PeerDnsProgram::source().PHP_EOL.str_replace(
+            input: PeerDnsProgram::source($domains).PHP_EOL.str_replace(
                 '__TRANSACTION_OWNER__',
                 'dns-repair-v2',
                 <<<'BASH_WRAP'
                 dns_mode=$1
                 dns_server=$2
                 expected_public_key=$3
-                shift 3
-                dns_domains=("$@")
 
                 case "$dns_mode" in
                     wireguard) ;;
@@ -287,23 +289,29 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
 
                 if [ "$old_dns_link" = orbit ] && ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
                     echo 'No non-Orbit per-link or global DNS server is configured.' >&2
-                    exit 43
+                    exit 47
                 fi
 
-                hook_pattern="~^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+\\r?\\n(?:^PreDown = (?:resolvectl revert %i|resolvectl dns %i ''; resolvectl domain %i '')\\r?\\n?)?~m"
-                if ! php -r '
-                    [$live, $candidate, $mode, $replacement, $pattern, $oldLink] = array_slice($argv, 1);
-                    $configuration = file_get_contents($live);
-                    if (!is_string($configuration)) { exit(1); }
-                    $updated = preg_replace_callback($pattern, static fn (): string => $replacement, $configuration, -1, $count);
-                    if (!is_string($updated) || $count > 1) { exit(1); }
-                    if ($mode === "wireguard" && $count === 0) {
-                        if ($oldLink === "orbit") { exit(1); }
-                        $updated = preg_replace_callback("/^\\[Interface\\]\\r?$/m", static fn ($match): string => $match[0]."\n".$replacement, $configuration, -1, $headers);
-                        if (!is_string($updated) || $headers !== 1) { exit(1); }
+                if ! printf '%s' "$dns_hooks" | awk -v old_link="$old_dns_link" '
+                    FILENAME == "-" { replacement = replacement $0 ORS; next }
+                    { lines[++count] = $0 }
+                    END {
+                        for (i = 1; i <= count; i++) {
+                            if (lines[i] ~ /^PostUp = resolvectl dns %i [^;]+; resolvectl domain %i .+\r?$/) hooks++
+                            if (lines[i] ~ /^\[Interface\]\r?$/) headers++
+                        }
+                        if (hooks > 1 || (hooks == 0 && (old_link == "orbit" || headers != 1))) exit 1
+                        for (i = 1; i <= count; i++) {
+                            if (lines[i] ~ /^PostUp = resolvectl dns %i [^;]+; resolvectl domain %i .+\r?$/) {
+                                printf "%s", replacement
+                                if (lines[i+1] ~ /^PreDown = resolvectl revert %i\r?$/ || lines[i+1] ~ /^PreDown = resolvectl dns %i \047\047; resolvectl domain %i \047\047\r?$/) i++
+                            } else {
+                                print lines[i]
+                                if (hooks == 0 && lines[i] ~ /^\[Interface\]\r?$/) printf "%s", replacement
+                            }
+                        }
                     }
-                    if (file_put_contents($candidate, $updated) === false) { exit(1); }
-                ' -- "$live" "$candidate" "$dns_mode" "$dns_hooks" "$hook_pattern" "$old_dns_link"; then
+                ' - "$live" > "$candidate"; then
                     rm -f -- "$candidate" "$dns_state_candidate"
                     exit 44
                 fi
@@ -376,7 +384,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 fi
                 if [ "$uplink_failed" != 0 ]; then
                     recover_transaction || exit 46
-                    exit 43
+                    exit 47
                 fi
                 resolvectl dns "$dns_link" "$dns_server" || apply_failed=1
                 resolvectl domain "$dns_link" "${resolvectl_domains[@]}" || apply_failed=1

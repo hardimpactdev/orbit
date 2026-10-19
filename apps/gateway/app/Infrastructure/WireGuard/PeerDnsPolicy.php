@@ -49,6 +49,20 @@ final readonly class PeerDnsPolicy
     /** @return non-empty-list<string> */
     public function domains(Node|Cluster|Route|null $pendingNode = null, bool $removing = false): array
     {
+        return $this->renderDomains($pendingNode, $removing, true);
+    }
+
+    public function validateChange(Node|Cluster|Route $pending, bool $removing): void
+    {
+        $proposed = $this->renderDomains($pending, $removing, false);
+        if (count($proposed) > self::MAX_DOMAINS && count($proposed) > count($this->renderDomains(null, false, false))) {
+            throw $this->invalid();
+        }
+    }
+
+    /** @return non-empty-list<string> */
+    private function renderDomains(Node|Cluster|Route|null $pendingNode, bool $removing, bool $enforceLimit): array
+    {
         $names = [$this->settings->domain(), 'orbit'];
         foreach ([Cluster::class, Node::class, Route::class] as $model) {
             $query = $model::query();
@@ -84,7 +98,7 @@ final readonly class PeerDnsPolicy
         // The routing namespace is a set of suffixes, including exact Route names.
         $domains = array_values(array_filter($domains, static fn (string $domain): bool => array_all($domains, static fn (string $parent): bool => $parent === $domain || ! str_ends_with($domain, '.'.$parent))));
         sort($domains, SORT_STRING);
-        if ($domains === [] || count($domains) > self::MAX_DOMAINS) {
+        if ($domains === [] || ($enforceLimit && count($domains) > self::MAX_DOMAINS)) {
             throw $this->invalid();
         }
 

@@ -10,10 +10,12 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -22,6 +24,7 @@ use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
+use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
@@ -195,7 +198,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'systemctl restart wg-quick@orbit || service_failed=1',
                 'restore_exact_configuration || return 1',
                 'printf -v dns_server_escaped \'%q\' "$dns_server"',
-                'dns_domains=("${@:11}")',
+                "dns_domains=('orbit')",
                 'printf -v dns_domain_escaped \'%q\' "~$dns_domain"',
                 'dns_mode=$8',
                 'operator_dns=$9',
@@ -218,8 +221,8 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
         expect($ssh->commands[1]->arguments)
             ->not->toContain('custom.internal');
 
-        expect(array_slice($ssh->commands[1]->arguments, -4))
-            ->toBe(['operator', '10.44.0.1', 'finalize', 'orbit']);
+        expect(array_slice($ssh->commands[1]->arguments, -3))
+            ->toBe(['operator', '10.44.0.1', 'finalize']);
 
         $remoteScript = $ssh->commands[1]->input ?? '';
         $dnsStateWrite = mb_strpos(
@@ -1857,6 +1860,39 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Clo
     ];
 }
 
+it('keeps native SSH argv small at the maximum namespace and endpoint length', function (): void {
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, str_repeat('A', 43).'=', '', 0, false)]);
+    [$converger, $peer, $connection, $home] = wireguard_peer_harness(new AppDevFakeProcessRunner, $ssh);
+    try {
+        $rows = [];
+        for ($i = 0; $i < 511; $i++) {
+            $domain = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_pad((string) $i, 61, 'x', STR_PAD_LEFT);
+            $rows[] = ['name' => 'c'.$i, 'tld' => $domain];
+        }
+        Cluster::query()->insert($rows);
+        $endpoint = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_repeat('d', 61).':51820';
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', endpoint: $endpoint, dnsServer: '10.44.0.53');
+        $converger->converge($peer, $connection);
+        $command = $ssh->commands[1];
+        $runner = new class implements ProcessRunner
+        {
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                // Exercise execve with the actual single command argument OpenSSH receives.
+                return new NativeProcessRunner()->run(new ProcessInvocation(
+                    ['true', $invocation->arguments[array_key_last($invocation->arguments)]], timeout: 5,
+                ));
+            }
+        };
+        $result = new NativeSshExecutor($runner)->execute($connection, $command);
+        expect($result->exitCode)->toBe(0)
+            ->and(strlen($command->shellCommand()))->toBeLessThan(4096)
+            ->and(strlen($command->input ?? ''))->toBeGreaterThan(130_000);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
 it('routes only private domains through VPN DNS by default', function (?string $tld, string $expectedDomains): void {
     $harness = remote_wireguard_peer_install_harness(filesPresent: false, activeState: 'inactive', enabledState: 'disabled', peerTld: $tld);
     try {
@@ -2485,6 +2521,7 @@ function remote_wireguard_peer_install_harness(
         }
     }
 
+    remote_wireguard_peer_write_shim($root, 'php', 'exit 127');
     remote_wireguard_peer_write_shim(
         root: $root,
         name: 'mv',
@@ -3088,7 +3125,8 @@ it('requires public DNS before both new and root-to-split peer convergence', fun
         if ($allowed) {
             expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '');
         } else {
-            expect($result['exception']?->result?->exitCode)->toBe(43)
+            expect($result['exception']?->result?->exitCode)->toBe(47)
+                ->and($result['exception']?->errorCode)->toBe('vpn.peer_dns_uplink_missing')
                 ->and($result['live'])->toBe($before['live'])
                 ->and($result['dns'])->toBe($before['dns'])
                 ->and($result['resolver'])->toBe($before['resolver']);
