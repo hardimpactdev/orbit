@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Problems\ProblemLogParser;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -13,9 +14,13 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\StreamHandler;
+use Monolog\Logger as MonologLogger;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeTaskCheckRunner;
@@ -26,7 +31,13 @@ beforeEach(function (): void {
 });
 
 it('withholds output rather than storing secrets after a real PCRE redaction failure', function (): void {
-    Log::spy();
+    if (ini_get('pcre.jit') !== '1') {
+        $this->markTestSkipped('Requires PCRE JIT to reproduce its stack limit without a slow non-JIT scan.');
+    }
+    $stream = fopen('php://memory', 'w+');
+    $handler = new StreamHandler($stream);
+    $handler->setFormatter(new LineFormatter(dateFormat: 'Y-m-d H:i:s', allowInlineLineBreaks: true, includeStacktraces: true));
+    Log::swap(new Logger(new MonologLogger('testing', [$handler])));
     $group = tick_group();
     $task = $group->tasks()->sole();
     $check = TaskCheck::query()->create([
@@ -41,9 +52,16 @@ it('withholds output rather than storing secrets after a real PCRE redaction fai
     ));
 
     expect($check->fresh()->output)->toBe('Output withheld: redaction failed.');
-    Log::shouldHaveReceived('warning')->once()->with('Output withheld: redaction failed.', [
-        'pcre_error' => PREG_JIT_STACKLIMIT_ERROR,
-    ]);
+    rewind($stream);
+    $record = stream_get_contents($stream);
+    fclose($stream);
+    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_JIT_STACKLIMIT_ERROR)
+        ->not->toContain('do-not-store-password')
+        ->not->toContain('do-not-store-token')
+        ->not->toContain('a-a-a-');
+    $signal = app(ProblemLogParser::class)->signal($record);
+    expect($signal)->not->toBeNull()
+        ->and($signal->excerpt)->toBe('Output withheld: redaction failed.');
 });
 
 it('bounds and redacts agent-facing check output through the same policy', function (string $source): void {

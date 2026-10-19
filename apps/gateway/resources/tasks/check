@@ -850,15 +850,10 @@ def output_tail(start=0, path=None):
 
 def print_status(status):
     """Each record keeps its own tail; no record is dropped for a larger sibling."""
-    status['output'] = output_records(status.get('output', '').encode())
     result = status.get('result') or {}
-    # The selected failure output is already the status output, not a second transport record.
-    result.pop('failure_output', None)
-    commands = (result.get('deliverables') or {}).get('commands') or {}
-    for command in commands.values():
-        command['output'] = output_records(command.get('output', '').encode())
-        if 'base_output' in command:
-            command['base_output'] = output_records(command['base_output'].encode())
+    failure_output = result.pop('failure_output', None)
+    if failure_output is not None:
+        status['output'] = output_records(failure_output.encode())
     print(json.dumps(status))
 
 
@@ -952,7 +947,7 @@ def status(pid, started, run_id='', checkout=None):
                              'failure_output': 'The workspace changed after the check result was written.'})
             data['managed_terminal_snapshot'] = True
             write_check_result(data, result_path)
-        print_status({'state': 'finished', 'result': data, 'output': data.get('failure_output', output_tail(data.get('setup_output_start') or 0, log_path))})
+        print_status({'state': 'finished', 'result': data, 'output': '' if 'failure_output' in data else output_tail(data.get('setup_output_start') or 0, log_path)})
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:

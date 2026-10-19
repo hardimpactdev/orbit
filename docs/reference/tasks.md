@@ -983,7 +983,7 @@ Stored check output, API responses, check reminders, CI fixup briefs, and comman
 
 Every raw output passes through one shared builder. It keeps at most the last 100 KiB, drops an incomplete first line when a later line exists, then removes timestamps and ANSI codes and redacts once before taking the 16 KiB tail. A final line longer than the window retains its last bounded bytes. Streamed CI logs use the same window. Stored tails are quoted for agents without redacting them again. If a window starts inside a PEM block, Orbit drops the orphan body through its END marker before redaction. Other multiline secrets can lose their identifying key when they cross the cut.
 
-The Orbit check transport uses the same window rule and shared 100 KiB limit for each check, command, and start-commit output record. No record is discarded to fit the 8 MiB status response. If a redaction pass fails, Orbit stores `Output withheld: redaction failed.` instead of that excerpt and logs the PCRE error code without the raw output. A data migration applies the same output rule to check output stored before this rule was introduced.
+The Orbit check transport uses the same window rule and shared 100 KiB limit for each check, command, and start-commit output record. No record is discarded to fit the 8 MiB status response. The shared [text-redaction failure rule](/cli/activity#text-redaction-failures) applies. A data migration applies the same output rule to check output stored before this rule was introduced.
 
 ### Baseline check
 

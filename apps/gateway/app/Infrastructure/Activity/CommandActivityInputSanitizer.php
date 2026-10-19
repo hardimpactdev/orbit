@@ -6,6 +6,7 @@ namespace App\Infrastructure\Activity;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final readonly class CommandActivityInputSanitizer
 {
@@ -175,7 +176,11 @@ final readonly class CommandActivityInputSanitizer
 
     private function redactionFailed(): string
     {
-        Log::warning(self::REDACTION_FAILURE, ['pcre_error' => preg_last_error()]);
+        $error = preg_last_error();
+        Log::error(self::REDACTION_FAILURE, [
+            'pcre_error' => $error,
+            'exception' => new RuntimeException(self::REDACTION_FAILURE, $error),
+        ]);
 
         return self::REDACTION_FAILURE;
     }

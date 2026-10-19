@@ -1726,7 +1726,7 @@ it('uses the same safe raw window in the check transport and PHP builder', funct
         : "'x' * 200000 + 'FAILED last line'";
     $setup = "import json\nraw = ".$pythonRaw."\n".<<<'PYTHON'
         with open(check.RESULT, 'w') as result:
-            json.dump({'failure_output': raw, 'deliverables': {'commands': {'probe': {'output': raw, 'base_output': raw}}}}, result)
+            json.dump({'failure_output': raw, 'deliverables': {'commands': {'probe': {'output': check.output_records(raw.encode()), 'base_output': check.output_records(raw.encode())}}}}, result)
         PYTHON;
 
     $status = check_runner_status(alive: false, meanwhile: $setup);
@@ -1739,6 +1739,28 @@ it('uses the same safe raw window in the check transport and PHP builder', funct
         expect($builder->tail($output))->not->toContain('AAAA');
     }
 })->with(['many PEM keys' => ['-----END PRIVATE KEY-----'], 'ANSI END' => ["-----END PRIVATE\x1b[0m KEY-----"], 'oversized last line' => ['']]);
+
+it('windows only the raw failure record when printing status', function (): void {
+    $setup = <<<'PYTHON'
+        import json
+        original = check.output_records
+        def once(raw):
+            if raw != b'raw failure':
+                raise AssertionError('Status windowed an already bounded record')
+            return original(raw)
+        check.output_records = once
+        with open(check.RESULT, 'w') as result:
+            json.dump({'failure_output': 'raw failure', 'deliverables': {'commands': {'probe': {'output': 'bounded command', 'base_output': 'bounded base'}}}}, result)
+        PYTHON;
+
+    $status = check_runner_status(alive: false, meanwhile: $setup);
+
+    expect($status['output'])->toBe('raw failure')
+        ->and($status['result'])->not->toHaveKey('failure_output')
+        ->and($status['result']['deliverables']['commands']['probe'])->toBe([
+            'output' => 'bounded command', 'base_output' => 'bounded base',
+        ]);
+});
 
 it('keeps the failing tail of ordinary large output through the real check transport', function (string $source, int $lines): void {
     $checkout = check_runner_checkout('true');
@@ -1830,14 +1852,14 @@ it('keeps each tail when combined records exceed the status transport budget', f
     $setup = $escaped ? <<<'PYTHON'
         import json
         output = ('\x01\n' * (512 * 1024)) + 'FAILED last line\n'
-        commands = {f'probe-{i}': {'output': output, 'base_output': output} for i in range(5)}
+        commands = {f'probe-{i}': {'output': check.output_records(output.encode()), 'base_output': check.output_records(output.encode())} for i in range(5)}
         with open(check.RESULT, 'w') as result:
             json.dump({'failure_output': output, 'deliverables': {'commands': commands}}, result)
         PYTHON : <<<'PYTHON'
         import json
         with open(check.RESULT, 'w') as result:
             json.dump({'failure_output': ('check line\n' * 500000) + 'FAILED last line\n',
-                       'deliverables': {'commands': {'probe': {'output': ('command line\n' * 400000) + 'FAILED last line\n'}}}}, result)
+                       'deliverables': {'commands': {'probe': {'output': check.output_records((('command line\n' * 400000) + 'FAILED last line\n').encode())}}}}, result)
         PYTHON;
 
     $status = check_runner_status(alive: false, meanwhile: $setup);
