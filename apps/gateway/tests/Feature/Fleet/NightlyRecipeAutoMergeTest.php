@@ -160,16 +160,83 @@ it('blocks and alerts for any author commit file or snapshot evidence outside th
     'extra file count', 'extra file response', 'wrong file', 'renamed file', 'missing patch', 'extra patch line', 'wrong snapshot date', 'hidden tool edit',
     'head changed at merge', 'extra commit at merge', 'wrong base', 'fork']);
 
-it('raises the existing alert when GitHub refuses the expected-SHA merge', function (): void {
+it('alerts for a refused merge separately from an earlier temporary error on the same head', function (int $status): void {
+    $this->freezeTime();
     $evidence = nightlyMergeEvidence();
-    $evidence['merge_status'] = 409;
-    $alerts = nightlyMergeHttp($evidence);
+    $alerts = nightlyMergeHttp($evidence, [
+        'https://api.github.com/repos/nckrtl/orbit/pulls/99/merge' => Http::sequence()->pushStatus(503)
+            ->push(['merged' => false, 'message' => 'Base branch was modified'], $status)
+            ->whenEmpty(Http::response(['merged' => false, 'message' => 'Base branch was modified'], $status)),
+    ]);
 
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(5)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(5)->minutes();
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === str_repeat('b', 40));
-    expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
-});
+    expect(array_map(fn ($alert): string => $alert->incident->fault, $alerts->alerts))->toBe(['merge_retry', 'merge_refused']);
+    expect($alerts->alerts[1]->summary)->toContain('HTTP '.$status, 'Base branch was modified', 'retrying in 300 seconds');
+})->with([405, 409]);
+
+it('verifies each head once while retrying refused merges for 24 hours', function (int $status): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $evidence['merge_status'] = $status;
+    nightlyMergeHttp($evidence);
+    $snapshots = Mockery::mock(SnapshotAvailability::class);
+    $snapshots->shouldReceive('latest')->twice()->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    for ($tick = 0; $tick <= 288; $tick++) {
+        app(MergeNightlyRecipePullRequestsAction::class)->execute();
+        $this->travel(5)->minutes();
+    }
+
+    expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge')))->toHaveCount(289);
+
+    $head = str_repeat('d', 40);
+    $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
+    $evidence['commits'][0]['sha'] = $evidence['runs'][0]['head_sha'] = $head;
+    $evidence['after'] .= ' ';
+    $evidence['merge_status'] = 200;
+    Http::swap(new Factory);
+    $alerts = nightlyMergeHttp($evidence);
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($alerts->alerts[0]->incident->fault)->toBe('merge_blocked');
+    expect($alerts->alerts[0]->summary)->toContain('Recipe contents differ');
+})->with([405, 409]);
+
+it('checks live PR identity and Required checks after remembering verified evidence', function (string $change): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $evidence['merge_status'] = 405;
+    nightlyMergeHttp($evidence);
+    $snapshots = Mockery::mock(SnapshotAvailability::class);
+    $snapshots->shouldReceive('latest')->once()->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(5)->minutes();
+    match ($change) {
+        'base' => $evidence['pr']['base']['ref'] = 'other',
+        'author' => $evidence['pr']['user']['login'] = 'nick',
+        'draft' => $evidence['pr']['draft'] = true,
+        'checks' => $evidence['runs'][0]['status'] = 'in_progress',
+    };
+    Http::swap(new Factory);
+    nightlyMergeHttp($evidence);
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') || str_contains($request->url(), '/files?'));
+})->with(['base', 'author', 'draft', 'checks']);
 
 it('ignores task-group PRs and does not mint merge requests for them', function (): void {
     $evidence = nightlyMergeEvidence();

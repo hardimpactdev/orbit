@@ -821,11 +821,13 @@ A cross-reference from another issue or PR is not a modification and does not bl
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
-Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time. It requires one App-authored commit with GitHub’s verified web-flow signature and its App as PR author. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+
+Successful evidence verification records the head SHA. Retries reuse that result until the head changes, avoiding repeated index downloads after a refused merge. Required checks and the live PR target, author, head, and draft state are still checked before each merge attempt.
 
 Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
 
-GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason.
+GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, merge-refused, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason. When GitHub refuses a merge, the alert includes its HTTP status and message.
 
 The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
