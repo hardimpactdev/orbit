@@ -77,6 +77,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                         if ($observed !== null && ! $observed->running) {
                             app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
                         }
+
                         // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
                         return;
                     }
@@ -86,8 +87,8 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null && $vm->state === TaskVmState::Failed) {
-                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] failed: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
+            if ($lostCommit !== null) {
+                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
             }
         }
 

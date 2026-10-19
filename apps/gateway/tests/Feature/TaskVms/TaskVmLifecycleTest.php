@@ -1191,6 +1191,29 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['destroy']);
     })->with([TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
 
+    it('keeps the lost SHA in assistance when deletion fails and workspace removal retries', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.start_failed', 'error_message' => 'The provider could not start the VM.']);
+        $sha = str_repeat('c', 40);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $this->provider->onDestroy = static fn () => throw new RuntimeException('Delete failed.');
+
+        expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(RuntimeException::class, 'Delete failed.');
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroying);
+        expect($group->fresh()->assistance_reason)->toContain($sha, 'The provider could not start the VM.');
+        app(RemoveTaskWorkspaceAction::class)->recordFailure($group, new TaskPullRequestException('The task workspace is unavailable.'));
+        $this->provider->onDestroy = null;
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        $this->assertModelMissing($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+        expect($group->fresh()->assistance_requested)->toBeTrue();
+        expect($group->fresh()->assistance_reason)->toContain('Reviewed work lost', $sha);
+        expect($this->provider->calls)->toBe(['destroy', 'destroy']);
+    });
+
     it('records an ordinary removal push before teardown so a later lost VM needs no push', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => TaskGroupStatus::Failed]);
