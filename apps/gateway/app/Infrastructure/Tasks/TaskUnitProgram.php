@@ -6,7 +6,10 @@ namespace App\Infrastructure\Tasks;
 
 use RuntimeException;
 
-/** Embeds the shared unit-state proof in each self-contained remote task program. */
+/**
+ * Embeds the shared unit-state proof in the existing task monitors.
+ * # Uses: prepends same-language libraries; topology needs Python inside a Bash heredoc.
+ */
 final class TaskUnitProgram
 {
     public static function read(string $resource): string
