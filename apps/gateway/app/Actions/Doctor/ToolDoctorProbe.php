@@ -108,7 +108,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         $registeredIssues = $this->registeredIssues($tools);
         $environmentsIssues = $this->environmentIssues($environments, $context->node);
         $checks = [DoctorResources::nodeCheckId($context->node->id) => [ToolDoctorIssueCode::NodeUnreachable->value]];
-        if (($context->covers(DoctorResourceKind::Environments)) && $environmentsIssues === []) {
+        if ($context->covers(DoctorResourceKind::Environments) && $environmentsIssues === []) {
             $checks[DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Environments)] = [
                 ToolDoctorIssueCode::InspectionFailed->value,
                 ToolDoctorIssueCode::VpStoreMissing->value,

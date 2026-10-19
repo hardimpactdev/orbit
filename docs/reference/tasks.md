@@ -1679,7 +1679,7 @@ The Activity key is the command and the error code. Putting the resource id in t
 
 ### A small sample, and no past rows on the first run
 
-Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. The incident identity migration retires old unscoped Doctor incidents; the next filing pass closes their untouched generated groups before filing scoped replacements. The operator keeps control of groups they edited.
+Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. The incident identity migration retires old unscoped and hashed Doctor incidents; the next filing pass closes their untouched generated groups before filing scoped replacements. Historical generated groups can have symptom briefs or fixed subtask instructions. New groups and refreshed groups use the same fixed instructions. The operator keeps control of groups they edited.
 
 The sample keeps bounded Doctor values and a short redacted log excerpt. Storing raw Doctor reports or full traces is rejected, because that output exposes paths and credentials. [Doctor](/cli/doctor#no-stored-reports) keeps no raw report for the caller. Counting past Activity and log rows on the first run is rejected, because those rows would take the daily cap on the day the loop starts. The first run records its cursors at the end of the current data.
 

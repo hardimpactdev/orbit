@@ -100,8 +100,8 @@ final readonly class ProblemFiler
                         $locked->evidence = [...$locked->evidence, 'auto_closed' => true];
                     } elseif ($locked->occurrences > 0) {
                         $group->update(['title' => $this->title($locked), 'brief' => $this->brief($locked, $this->symptom($locked))]);
-                        foreach ($group->tasks()->get() as $task) {
-                            $task->update(['brief' => $this->symptom($locked)]);
+                        foreach ($group->tasks()->orderBy('position')->get() as $index => $task) {
+                            $task->update(['brief' => $this->generatedTasks()[$index]->brief]);
                         }
                         $this->clearEpisode($locked);
                         $locked->evidence = [...$locked->evidence, 'generated_group_hash' => $this->snapshots->hash($group)];
@@ -407,27 +407,33 @@ final readonly class ProblemFiler
             title: $this->title($row),
             brief: $this->brief($row, $symptom),
             status: TaskGroupStatus::Backlog,
-            tasks: [
-                new TaskInputData(
-                    title: 'Document the owning page',
-                    brief: 'Update the page that owns the failing behaviour so it describes the fixed behaviour, or confirm that no page changes.',
-                    deliverables: [[
-                        'id' => 'docs',
-                        'type' => 'review',
-                        'description' => 'The owning page matches the fix, or no page changes.',
-                    ]],
-                ),
-                new TaskInputData(
-                    title: 'Reproduce the failure and fix it',
-                    brief: 'Add a test that fails on the start commit for the symptom in the group brief. Then fix the root cause so it passes.',
-                    deliverables: [[
-                        'id' => 'test',
-                        'type' => 'review',
-                        'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.',
-                    ]],
-                ),
-            ],
+            tasks: $this->generatedTasks(),
         );
+    }
+
+    /** @return list<TaskInputData> */
+    private function generatedTasks(): array
+    {
+        return [
+            new TaskInputData(
+                title: 'Document the owning page',
+                brief: 'Update the page that owns the failing behaviour so it describes the fixed behaviour, or confirm that no page changes.',
+                deliverables: [[
+                    'id' => 'docs',
+                    'type' => 'review',
+                    'description' => 'The owning page matches the fix, or no page changes.',
+                ]],
+            ),
+            new TaskInputData(
+                title: 'Reproduce the failure and fix it',
+                brief: 'Add a test that fails on the start commit for the symptom in the group brief. Then fix the root cause so it passes.',
+                deliverables: [[
+                    'id' => 'test',
+                    'type' => 'review',
+                    'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.',
+                ]],
+            ),
+        ];
     }
 
     private function validate(CreateTaskGroupData $data): void

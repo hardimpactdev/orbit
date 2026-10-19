@@ -37,6 +37,19 @@ use Illuminate\Support\Facades\DB;
 /** Convert retained alert evidence once. Ambiguous history remains operator-owned. */
 return new class extends Migration
 {
+    // Before #1356 both briefs were the symptom. #1356 kept these titles and
+    // deliverables but replaced the briefs with fixed instructions. Freeze both
+    // historical forms here; future filer templates must not change recognition.
+    private const array HistoricalSymptomSubtasks = [
+        ['Document the owning page', 'docs', 'The owning page matches the fix, or no page changes.'],
+        ['Reproduce the failure and fix it', 'test', 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.'],
+    ];
+
+    private const array HistoricalInstructionBriefs = [
+        'Update the page that owns the failing behaviour so it describes the fixed behaviour, or confirm that no page changes.',
+        'Add a test that fails on the start commit for the symptom in the group brief. Then fix the root cause so it passes.',
+    ];
+
     public function up(): void
     {
         ProblemFingerprint::query()->whereIn('source', [ProblemSource::Release, ProblemSource::Doctor])->orderBy('id')->eachById(function (ProblemFingerprint $row): void {
@@ -51,6 +64,9 @@ return new class extends Migration
                 }
                 if ($row->source === ProblemSource::Doctor) {
                     $parts = explode('|', $row->fingerprint);
+                    if ($this->hashedDoctor($row)) {
+                        app(ProblemRecovery::class)->resolve($row, 'doctor_identity_replaced');
+                    }
                     if (count($parts) === 4) {
                         $row->evidence = [...$row->evidence, 'doctor_code' => $parts[1]];
                         if ($parts[3] === 'none' || ($parts[2] === 'database_connection' && ctype_digit($parts[3]))) {
@@ -242,6 +258,11 @@ return new class extends Migration
         return $created instanceof Carbon && $updated instanceof Carbon && $created->eq($updated);
     }
 
+    private function hashedDoctor(ProblemFingerprint $row): bool
+    {
+        return $row->source === ProblemSource::Doctor && preg_match('/\Adoctor#[0-9a-f]{12}\z/', $row->fingerprint) === 1;
+    }
+
     private function generated(ProblemFingerprint $row, Task $group): bool
     {
         if ($group->preview !== false || $group->workspace()->exists() || $group->checks()->exists() || $group->pr_url !== null || $group->pr_branch !== null || $group->started_at !== null || $group->implementer_agent_thread_id !== null || $group->reviewer_agent_thread_id !== null || $group->status->value !== 'backlog' || ! $this->unmodified($group) || TaskComment::query()->where('task_group_id', $group->id)->exists()) {
@@ -260,17 +281,25 @@ return new class extends Migration
         $sections = explode("\n\n", (string) $group->brief);
         $summary = $row->evidence['summary'] ?? null;
         $parts = explode('|', $row->fingerprint);
-        if (! is_string($summary) || count($parts) !== 4 || count($sections) !== 9 || $sections[0] !== 'Filed by the outer loop.'
+        if (! is_string($summary) || (count($parts) !== 4 && ! $this->hashedDoctor($row)) || count($sections) !== 9 || $sections[0] !== 'Filed by the outer loop.'
             || $sections[1] !== "Symptom\n".$summary || $sections[2] !== "Fingerprint\n".$row->fingerprint) {
             return false;
         }
-        $title = $row->source === ProblemSource::Doctor ? "Doctor {$parts[1]} on {$parts[2]} {$parts[3]}" : (ReleaseAlertKind::tryFrom($parts[1])?->label() ?? $parts[1])." for {$parts[2]} at ".substr($parts[3], 0, 12);
+        $title = match (true) {
+            $this->hashedDoctor($row) => $row->fingerprint,
+            $row->source === ProblemSource::Doctor => "Doctor {$parts[1]} on {$parts[2]} {$parts[3]}",
+            default => (ReleaseAlertKind::tryFrom($parts[1])?->label() ?? $parts[1])." for {$parts[2]} at ".substr($parts[3], 0, 12),
+        };
         $repository = $row->evidence['release_repository'] ?? '';
         $releaseId = $row->evidence['release_id'] ?? null;
         if (! is_string($repository) || ($releaseId !== null && ! is_string($releaseId))) {
             return false;
         }
-        $entry = $row->source === ProblemSource::Doctor ? "{$parts[2]} {$parts[3]} {$parts[1]}" : $repository.'@'.$parts[3].($releaseId !== null ? ', release '.$releaseId : '');
+        $entry = match (true) {
+            $this->hashedDoctor($row) => $row->fingerprint,
+            $row->source === ProblemSource::Doctor => "{$parts[2]} {$parts[3]} {$parts[1]}",
+            default => $repository.'@'.$parts[3].($releaseId !== null ? ', release '.$releaseId : ''),
+        };
         if ($group->title !== $title || $sections[8] !== "Suspected entry point\n".$entry
             || preg_match('/\AFirst seen\n\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC\z/', $sections[3]) !== 1
             || preg_match('/\ALast seen\n\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC\z/', $sections[4]) !== 1
@@ -282,8 +311,8 @@ return new class extends Migration
             return false;
         }
         foreach ($tasks as $index => $task) {
-            $expected = $index === 0 ? ['Document the owning page', 'docs', 'The owning page matches the fix, or no page changes.'] : ['Reproduce the failure and fix it', 'test', 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.'];
-            if (! $this->unmodified($task) || $task->position !== $index + 1 || $task->status->value !== 'todo' || $task->title !== $expected[0] || $task->brief !== $summary
+            $expected = self::HistoricalSymptomSubtasks[$index];
+            if (! $this->unmodified($task) || $task->position !== $index + 1 || $task->status->value !== 'todo' || $task->title !== $expected[0] || ! in_array($task->brief, [$summary, self::HistoricalInstructionBriefs[$index]], true)
                 || $task->deliverables !== [['id' => $expected[1], 'type' => 'review', 'description' => $expected[2]]]
                 || $task->topology->toArray() !== [] || $task->started_at !== null || $task->implementer_agent_thread_id !== null || $task->reviewer_agent_thread_id !== null || $task->pr_url !== null || $task->subtask_start_commit !== null || $task->checks()->exists()) {
                 return false;

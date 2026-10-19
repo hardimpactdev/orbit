@@ -1308,7 +1308,7 @@ it('groups registered Tools by manager regardless of row count', function (): vo
         ->and($resources[1]->ids)->toBe([$other->id])
         ->and($resources[2]->kind)->toBe(DoctorResourceKind::Inventory);
 });
-it('recovers global Tool inventory faults only after a complete successful scan', function (string $platform, string $state, bool $recovered): void {
+it('recovers global Tool inventory faults only after a complete successful scan', function (string $platform, string $state, bool $recovered, ?string $vpState = null): void {
     $node = tool_probe_node();
     $node->update(['platform' => $platform]);
     $rows = [];
@@ -1326,13 +1326,13 @@ it('recovers global Tool inventory faults only after a complete successful scan'
         }
     };
     $scanState = ToolInventoryScanState::from($state);
-    $inventory = tool_doctor_scans(array_map(static fn (ToolManagerName $manager): ToolInventoryScan => tool_doctor_scan($manager, $platform === 'linux' && $manager === ToolManagerName::BrewCask ? ToolInventoryScanState::Unsupported : $scanState), [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp]));
+    $inventory = tool_doctor_scans(array_map(static fn (ToolManagerName $manager): ToolInventoryScan => tool_doctor_scan($manager, $platform === 'linux' && $manager === ToolManagerName::BrewCask ? ToolInventoryScanState::Unsupported : ($manager === ToolManagerName::Vp && $vpState !== null ? ToolInventoryScanState::from($vpState) : $scanState)), [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp]));
     $report = tool_doctor_probe($inspector, $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, $platform, 'amd64', true)));
     app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
     foreach ($rows as $row) {
         expect($row->refresh()->evidence['resolution'] ?? null)->toBe($recovered ? 'fresh_doctor_success' : null);
     }
-})->with([['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'absent', true], ['macos', 'absent', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
+})->with([['linux', 'absent', true, 'complete'], ['macos', 'complete', true, 'absent'], ['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'absent', true], ['macos', 'absent', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
 
 it('keeps failed Tool jobs separate and recovers only the job observed clean', function (): void {
     $this->freezeTime();

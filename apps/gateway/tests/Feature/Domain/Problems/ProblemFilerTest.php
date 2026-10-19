@@ -726,7 +726,7 @@ function problem_filer_fingerprint(
     ?Carbon $lastSeen = null,
 ): ProblemFingerprint {
     $source = match (true) {
-        str_starts_with($fingerprint, 'doctor|') => ProblemSource::Doctor,
+        str_starts_with($fingerprint, 'doctor|') || str_starts_with($fingerprint, 'doctor#') => ProblemSource::Doctor,
         str_starts_with($fingerprint, 'log|') || str_starts_with($fingerprint, 'log#') => ProblemSource::Log,
         str_starts_with($fingerprint, 'assist|') => ProblemSource::Assist,
         str_starts_with($fingerprint, 'release|') => ProblemSource::Release,
@@ -749,6 +749,7 @@ it('updates the open generated incident instead of filing another group', functi
     $collector->recordRelease('release_failed|gateway|17|smoke', ['summary' => 'First failure', 'release_kind' => 'release_failed', 'incident_resource' => 'gateway', 'incident_attempt' => '17', 'incident_fault' => 'smoke']);
     expect(Artisan::call('problems:file'))->toBe(0);
     $group = Task::topLevel()->sole();
+    $instructions = $group->tasks()->orderBy('position')->get(['title', 'brief', 'deliverables'])->toArray();
 
     $this->travel(5)->minutes();
     $collector->recordRelease('release_failed|gateway|17|smoke', ['summary' => 'Same fault with fresh evidence', 'activity_ids' => [99]]);
@@ -756,6 +757,7 @@ it('updates the open generated incident instead of filing another group', functi
 
     expect(Task::topLevel()->count())->toBe(1)
         ->and($group->refresh()->brief)->toContain('Same fault with fresh evidence', 'Activity ids: 99');
+    expect($group->tasks()->orderBy('position')->get(['title', 'brief', 'deliverables'])->toArray())->toBe($instructions);
 });
 
 it('closes an untouched release alert only after a verified successor', function (bool $scoped): void {
@@ -1007,12 +1009,17 @@ it('closes completed fleet incidents only after a verified later rollout', funct
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
-it('retires unscoped historical Doctor incidents before filing their scoped replacement', function (): void {
+it('retires historical Doctor incidents before filing their scoped replacement', function (string $fingerprint, string $briefForm, ?string $code): void {
     $this->freezeTime();
     problem_filer_project();
-    $legacy = problem_filer_fingerprint('doctor|tool.inspection_failed|tool|none', 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
+    $legacy = problem_filer_fingerprint($fingerprint, 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
     expect(Artisan::call('problems:file'))->toBe(0);
     $group = Task::topLevel()->sole();
+    if ($briefForm === 'symptom') {
+        foreach ($group->tasks()->get() as $task) {
+            $task->update(['brief' => 'Inventory failed']);
+        }
+    }
     $evidence = $legacy->refresh()->evidence;
     unset($evidence['generated_group_hash']);
     $legacy->update(['evidence' => $evidence]);
@@ -1022,9 +1029,14 @@ it('retires unscoped historical Doctor incidents before filing their scoped repl
     $migration->up();
 
     expect($legacy->refresh()->evidence['resolution'] ?? null)->toBe('doctor_identity_replaced');
-    expect($legacy->evidence['doctor_code'] ?? null)->toBe('tool.inspection_failed');
+    expect($legacy->evidence['doctor_code'] ?? null)->toBe($code);
     problem_filer_fingerprint('doctor|tool.inspection_failed|tool|node:1:inventory', 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
     expect(Artisan::call('problems:file'))->toBe(0);
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
     expect(Task::topLevel()->where('status', TaskGroupStatus::Backlog)->count())->toBe(1);
-});
+})->with([
+    'unscoped symptom briefs' => ['doctor|tool.inspection_failed|tool|none', 'symptom', 'tool.inspection_failed'],
+    'unscoped instruction briefs' => ['doctor|tool.inspection_failed|tool|none', 'instructions', 'tool.inspection_failed'],
+    'hashed symptom briefs' => ['doctor#0123456789ab', 'symptom', null],
+    'hashed instruction briefs' => ['doctor#0123456789ab', 'instructions', null],
+]);
