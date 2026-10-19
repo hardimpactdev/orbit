@@ -356,7 +356,6 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files?'));
 })->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'invalid candidate before App replacement', 'extra commits replacement', 'changed old head', 'changed old author', 'comment failure']);
 
-
 it('finishes blocked PR retirement before merging a green replacement after a temporary cleanup failure', function (string $failure): void {
     $this->freezeTime();
     $evidence = nightlyMergeEvidence();

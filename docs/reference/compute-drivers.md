@@ -815,7 +815,11 @@ Keeping a same-date PR preserves its URL and CI history; rerunning CI alone woul
 
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time. It requires one App-authored commit with GitHub’s verified web-flow signature and its App as PR author. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
 
-Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes. GitHub, network, and snapshot download errors remain retryable after a five-minute backoff. Once a newer date’s App PR is open, the next merge tick comments with the rejection reason and replacement PR, then closes the older blocked App PR. Retirement finishes before any merge; a temporary retirement error pauses merges for five minutes so the replacement remains available for the retry. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
+Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
+
+GitHub, network, and snapshot download errors remain retryable after a five-minute backoff.
+
+Once a newer date’s App PR is open, the next merge tick comments with the rejection reason and replacement PR, then closes the older blocked App PR. Retirement finishes before any merge; a temporary retirement error pauses merges for five minutes so the replacement remains available for the retry. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.
 
