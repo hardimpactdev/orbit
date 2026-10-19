@@ -827,7 +827,7 @@ Successful evidence verification records the head SHA. Retries reuse that result
 
 Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
 
-GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, merge-refused, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason. A merge-refused alert includes GitHub’s HTTP status and message.
+GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, merge-refused, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason. When GitHub refuses a merge, the alert includes its HTTP status and message.
 
 The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
