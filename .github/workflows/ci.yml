@@ -281,7 +281,8 @@ jobs:
 
       - name: Run redaction cases without PCRE JIT
         if: matrix.directory == 'apps/gateway' && matrix.part == 'tests'
-        run: php -d pcre.jit=0 vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php
+        # Avoid Pest's PCOV restart, which drops PHP CLI ini settings even for a single test file.
+        run: php -d pcre.jit=0 vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
 
       - name: Run affected tests
         if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.sharded != 'true'
