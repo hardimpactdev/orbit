@@ -24,6 +24,8 @@ use UnexpectedValueException;
 /** A narrow exception to manual PR review: only the App's one-commit snapshot bump may merge on green. */
 final readonly class MergeNightlyRecipePullRequestsAction
 {
+    private const int RetrySeconds = 300;
+
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
@@ -47,7 +49,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
             $token = $this->access->token($repository);
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
-            Cache::put($scope.':retry', true, 300);
+            Cache::put($scope.':retry', true, self::RetrySeconds);
             $this->blocked('list', 'Nightly recipe PRs could not be read; retrying in five minutes. No automatic merge was attempted.');
 
             return;
@@ -65,7 +67,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
             try {
                 $this->supersede($http, $repository, $pull, $pulls, $author, $blocked['reason']);
             } catch (Throwable) {
-                Cache::put($scope.':retry', true, 300);
+                Cache::put($scope.':retry', true, self::RetrySeconds);
                 $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] retirement failed; retrying in five minutes before merging its replacement.");
 
                 return;
@@ -112,7 +114,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
                     throw new RuntimeException('GitHub refused the expected-head merge; recheck the PR and branch protection.');
                 }
             } catch (Throwable $error) {
-                Cache::put($retryKey, true, 300);
+                Cache::put($retryKey, true, self::RetrySeconds);
                 $reason = $error instanceof RequestException || $error instanceof ConnectionException ? 'GitHub request failed.' : $error->getMessage();
                 $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] could not be completed; retrying in five minutes. {$reason}");
             }
