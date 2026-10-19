@@ -328,7 +328,9 @@ Root `bin/test` queues the five project suites through the same weighted lane al
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. A bounded cgroup uses `memory.max - memory.current`, including bounds on its ancestors; an unbounded cgroup uses `/proc/meminfo`'s `MemAvailable`. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker. On Linux it reads CPU affinity and cgroup v2 CPU quotas. Available memory is the smaller of `/proc/meminfo`'s `MemAvailable` and each bounded cgroup's limit minus its working set, including ancestor bounds. The working set is `memory.current` minus `memory.stat`'s reclaimable `inactive_file` pages. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
+
+The floor of one can overcommit memory and OOM when less than the reserve plus one worker is available. The rule assumes one gate per task VM and does not reserve resources between concurrent gates on a shared host. CPU is schedulable capacity, not idle capacity: topology processes share it and can slow the gate.
 
 | Tool | How it reads the process count |
 | --- | --- |

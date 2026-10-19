@@ -72,7 +72,7 @@ final readonly class RouterLanFirewallFixture
             throw new RuntimeException('The maintained firewall fixture control is missing.');
         }
         $command = new GuestCommand([
-            'env', 'ORBIT_CHECK_PROCESSES=1', 'python3', '-', $control,
+            'env', 'ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1', 'python3', '-', $control,
             json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
         ], 180, $script);
         $report = $this->json(($this->execute)('app-dev', $command));
@@ -125,7 +125,7 @@ final readonly class RouterLanFirewallFixture
     {
         foreach (['+notcp', '+tcp'] as $transport) {
             $result = ($this->execute)($node, GuestCommand::asOrbitUser([
-                'env', 'ORBIT_CHECK_PROCESSES=1', 'dig', '-b', $source, '@'.$destination, $transport,
+                'env', 'ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1', 'dig', '-b', $source, '@'.$destination, $transport,
                 '+short', '+time=2', '+tries=1', 'router-firewall.invalid', 'A',
             ], 15));
             if ($allowed ? (! $result->successful() || trim($result->stdout) !== '192.0.2.179')
@@ -147,7 +147,7 @@ final readonly class RouterLanFirewallFixture
     /** @param list<string> $argv */
     private function call(string $node, array $argv): GuestCommandResult
     {
-        $result = ($this->execute)($node, GuestCommand::asOrbitUser(['env', 'ORBIT_CHECK_PROCESSES=1', ...$argv], 60));
+        $result = ($this->execute)($node, GuestCommand::asOrbitUser(['env', 'ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1', ...$argv], 60));
         if (! $result->successful()) {
             throw new RuntimeException('Fixture command failed on '.$node.': '.$result->stderr);
         }

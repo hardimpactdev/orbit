@@ -83,7 +83,7 @@ it('binds real member and nonmember DNS probes to LAN sources with positive cont
     expect($result['acceptance'])->toBe('member-only UDP/TCP, HTTPS, bridge and VPN verified')
         ->and(array_column($dns, 0))->toBe(['app-prod', 'app-prod', 'operator', 'operator', 'app-prod', 'app-prod']);
     foreach ($dns as [$node, $command]) {
-        expect($command->command)->toContain('-b', $node === 'operator' ? '10.232.1.14' : '10.232.1.12', '@10.232.1.11', 'ORBIT_CHECK_PROCESSES=1');
+        expect($command->command)->toContain('-b', $node === 'operator' ? '10.232.1.14' : '10.232.1.12', '@10.232.1.11', 'ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1');
     }
     $root = array_values(array_filter($calls->getArrayCopy(), static fn (array $call): bool => in_array('python3', $call[1]->command, true)));
     expect($root)->toHaveCount(2)

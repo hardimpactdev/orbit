@@ -206,9 +206,11 @@ The data does not show what a tree base saves. The only rework measured after #1
 ### 6. Derive the process count from cores and memory
 
 - `bin/check-processes` prints the smaller of two numbers, and at least 1: the core count, and the worker count that fits in available memory after subtracting the gate reserve.
-- It reads the available memory when the check starts: the cgroup's `memory.max` minus `memory.current` when the cgroup has a limit, or `MemAvailable` otherwise. It reads the cgroup CPU limit the same way.
+- It reads available memory when the check starts: the smaller of `MemAvailable` and each bounded cgroup's limit minus its working set (`memory.current` minus `memory.stat`'s reclaimable `inactive_file` pages), including ancestor bounds. It reads CPU affinity and cgroup CPU quotas.
+- CPU counts schedulable capacity, not idle cores: topology processes share that capacity, and transient load is not a core reservation. CPU contention can increase gate time.
 - Available memory already leaves out what the agent, the system, and a running topology use. So one rule fits every VM size, with or without a topology.
 - Step 2 measures worker peaks and whole-gate memory on normal, medium, and large task VMs, with their supported topologies running. It sets the per-worker allocation and gate reserve from those measurements. One allocator splits the total worker budget between every concurrent lane and suite.
+- The floor of one can still overcommit memory and OOM when less than the reserve plus one worker is available. The budget is a snapshot for one gate per task VM; it does not reserve resources across concurrent gates on a shared host.
 - At the measured starts, the normal VM without a topology gets 2 workers, the medium VM with its supported topology gets 1, and the large VM with its supported topology gets 4. Available memory can change these counts. The OOM on 2026-10-17 came from the implementer's concurrent full-gate runs, which item 1 removes.
 - When `ORBIT_CHECK_PROCESSES` is set, `bin/check-processes` prints it, because it is the lane share below.
 - `tools/check-processes.php` runs `bin/check-processes` instead of its own copy of the rule.

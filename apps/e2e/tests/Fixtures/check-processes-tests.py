@@ -41,10 +41,11 @@ class CheckProcessesTest(unittest.TestCase):
         context.__enter__()
         self.addCleanup(context.__exit__, None, None, None)
 
-    def limit(self, group='user.slice/task.scope', memory='max', current=0, cpu='max 100000'):
+    def limit(self, group='user.slice/task.scope', memory='max', current=0, cpu='max 100000', reclaimable=0):
         directory = self.cgroup / group
         (directory / 'memory.max').write_text(str(memory))
         (directory / 'memory.current').write_text(str(current))
+        (directory / 'memory.stat').write_text(f'inactive_file {reclaimable}\n')
         (directory / 'cpu.max').write_text(cpu)
 
     def test_uses_all_available_cores_without_four_worker_cap(self):
@@ -54,6 +55,20 @@ class CheckProcessesTest(unittest.TestCase):
     def test_subtracts_current_cgroup_memory(self):
         self.limit(memory=8 * WORKER + RESERVE, current=5 * WORKER)
         self.assertEqual(budget.processes({}), 3)
+
+    def test_reclaimable_page_cache_is_available_to_workers(self):
+        self.limit(memory=8 * WORKER + RESERVE, current=7 * WORKER, reclaimable=4 * WORKER)
+        self.assertEqual(budget.processes({}), 5)
+
+    def test_reclaimable_parent_cache_does_not_hide_leaf_bound(self):
+        self.limit(memory=4 * WORKER + RESERVE, current=WORKER)
+        self.limit('user.slice', memory=8 * WORKER + RESERVE, current=7 * WORKER, reclaimable=4 * WORKER)
+        self.assertEqual(budget.processes({}), 3)
+
+    def test_host_available_memory_also_bounds_a_larger_cgroup(self):
+        self.limit(memory=32 * GIB, current=WORKER)
+        (self.proc / 'meminfo').write_text(f'MemAvailable: {(2 * WORKER + RESERVE) // 1024} kB\n')
+        self.assertEqual(budget.processes({}), 2)
 
     def test_uses_bounded_parent_of_unlimited_leaf(self):
         self.limit()

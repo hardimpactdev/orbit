@@ -35,7 +35,11 @@ def cgroups():
 
 def linux_resources():
     cpus = len(os.sched_getaffinity(0))
-    remaining_memory = []
+    available = next((int(line.split()[1]) * 1024 for line in (PROC / 'meminfo').read_text().splitlines()
+                      if line.startswith('MemAvailable:')), None)
+    if available is None:
+        raise ValueError('Cannot read MemAvailable from /proc/meminfo.')
+    remaining_memory = [available]
     for group in cgroups():
         quota_file = group / 'cpu.max'
         if quota_file.exists():
@@ -46,13 +50,12 @@ def linux_resources():
         if memory_file.exists():
             limit = memory_file.read_text().strip()
             if limit != 'max':
-                remaining_memory.append(int(limit) - int((group / 'memory.current').read_text()))
-    if remaining_memory:
-        return cpus, min(remaining_memory)
-    for line in (PROC / 'meminfo').read_text().splitlines():
-        if line.startswith('MemAvailable:'):
-            return cpus, int(line.split()[1]) * 1024
-    raise ValueError('Cannot read MemAvailable from /proc/meminfo.')
+                statistics = dict(line.split() for line in (group / 'memory.stat').read_text().splitlines())
+                if 'inactive_file' not in statistics:
+                    raise ValueError(f'Cannot read reclaimable memory from {group}/memory.stat.')
+                working_set = max(0, int((group / 'memory.current').read_text()) - int(statistics['inactive_file']))
+                remaining_memory.append(int(limit) - working_set)
+    return cpus, min(remaining_memory)
 
 
 def macos_resources():
