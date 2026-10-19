@@ -335,6 +335,36 @@ print(json.dumps({'outcome': 'current'}))
         self.assertIn(unittest.mock.call(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
                                          '/usr/bin/git', '--version'], required=False, env=None), command.call_args_list)
 
+    def test_guest_launchers_only_run_as_orbit_and_match_the_inspected_version(self):
+        for name, binary in [('node', '/usr/local/bin/node'), ('pnpm', '/usr/local/bin/pnpm'),
+                             ('bun', '/opt/orbit/bun/bin/bun'), ('vp-cli', '/usr/local/bin/vp')]:
+            with self.subTest(tool=name):
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.2'}}})
+                def command(argv, **kwargs):
+                    if argv[-2:] == [binary, '--version']:
+                        self.assertEqual(argv[:-2], recipe.IMAGE_GUEST, 'Guest launcher ran as root')
+                    return subprocess.CompletedProcess(argv, 0, '1.2.3', '')
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={name: '1.2.3'}), \
+                     patch.object(recipe, 'assess', return_value={name: {'status': 'current'}}), \
+                     patch.object(recipe, 'run', side_effect=command) as run:
+                    recipe.image_verify(self.payload)
+                self.assertIn(unittest.mock.call([*recipe.IMAGE_GUEST, binary, '--version'], required=False, env=None), run.call_args_list)
+
+    def test_rust_and_cargo_must_report_the_pinned_version_even_with_a_matching_receipt(self):
+        for name in ('rust', 'cargo'):
+            with self.subTest(tool=name):
+                artifact = {'sha256': 'a' * 64}
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.3',
+                                     'artifacts': {'amd64': artifact}}}})
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={}), \
+                     patch.object(recipe, 'assess', return_value={}), \
+                     patch.object(recipe, 'json_file', return_value={name: artifact}), \
+                     patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, '1.2.4', '')):
+                    with self.assertRaises(recipe.RecipeFailure):
+                        recipe.image_verify(self.payload)
+
     def test_puts_orbit_in_incus_admin_after_the_packages_only_when_the_profile_installs_incus(self):
         self.packages()
         self.assertNotIn(['usermod', '--append', '--groups', 'incus-admin', 'orbit'], self.commands)

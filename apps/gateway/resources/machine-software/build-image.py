@@ -252,6 +252,9 @@ def image_verify(payload):
                          for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
             if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:
                 raise RecipeFailure()
+            for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
+                if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
+                    raise RecipeFailure()
             guest_tools = [('node', '/usr/local/bin/node'), ('bun', '/opt/orbit/bun/bin/bun'),
                            ('pnpm', '/usr/local/bin/pnpm'), ('vp-cli', '/usr/local/bin/vp'),
                            ('rust', '/home/orbit/.cargo/bin/rustc'), ('cargo', '/home/orbit/.cargo/bin/cargo'),
@@ -260,9 +263,9 @@ def image_verify(payload):
                             if re.fullmatch(r'php[0-9]+\.[0-9]+-cli', name)]
             for name, binary in guest_tools:
                 if name in payload['tools']:
-                    root = binary_version(binary)
+                    expected = observed.get(name) if name in ('node', 'pnpm', 'bun', 'vp-cli') else binary_version(binary)
                     guest = binary_version(binary, prefix=IMAGE_GUEST)
-                    if root is None or guest != root:
+                    if expected is None or guest != expected:
                         raise RecipeFailure('verify', detail='Guest tool version failed: ' + name)
             image_guest_cache()
             for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
