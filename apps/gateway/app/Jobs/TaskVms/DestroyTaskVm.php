@@ -33,8 +33,9 @@ use Throwable;
  *
  * A VM that died before its workspace could be removed leaves the workspace behind: removal needs SSH to
  * the VM. Once that removal has failed for an ended group and the VM is absent or stays stopped, the job
- * starts a stopped VM to preserve unpublished reviewed work. A missing VM is forgotten offline, with the lost SHA
- * recorded in the group's evidence and assistance.
+ * starts a stopped ready VM to preserve unpublished reviewed work. Only a recorded failed row gives up that work:
+ * the host sweep confirms missing VMs, and resume fails a VM that cannot start. The lost SHA and failure stay in the
+ * group's evidence and assistance. Failed is final; destruction never retries its wake.
  *
  * The unique lock has no expiry, so the tick never queues a second copy while one waits or runs.
  */
@@ -70,19 +71,23 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 if (! Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->removalFailure()->exists()) {
                     return;
                 }
-                $observed = $guest->observeSettled($vm);
-                if ($observed !== null) {
-                    if ($commit !== null && ! $observed->running) {
-                        app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
+                if ($vm->state !== TaskVmState::Failed) {
+                    $observed = $guest->observeSettled($vm);
+                    if ($commit !== null) {
+                        if ($observed !== null && ! $observed->running) {
+                            app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
+                        }
+                        // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
+                        return;
                     }
-                    if ($commit !== null || $observed->running) {
+                    if ($observed?->running) {
                         return;
                     }
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null) {
-                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] is gone from its host. Waiting cannot recover the lost work.", replaceFailure: true);
+            if ($lostCommit !== null && $vm->state === TaskVmState::Failed) {
+                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] failed: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
             }
         }
 

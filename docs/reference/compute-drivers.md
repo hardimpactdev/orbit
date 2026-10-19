@@ -424,15 +424,15 @@ Workspace removal deletes a dead VM like a live one. Only the Project's teardown
 
 When the group has ended, or is `settling` or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
-The job reads the VM on its host. While the VM runs, it leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path queues its start and waits for the Node agent and Pi before removal retries the push.
+For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
 
-When the VM is absent, waiting cannot recover its work. Orbit records the lost reviewed SHA in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A stopped VM without work to preserve is removed the same way:
+A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job does not make its own missing verdict. A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and VM failure in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A stopped VM without work to preserve is removed the same way:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
 - It deletes the Instance's Process and Schedule records and the Instance row.
 
-Then it removes the Node and marks the row `destroyed`, as above. It clears the group's removal reason unless that reason records reviewed work that was lost. A removal journal that a normal removal left open is finished the same way. Unreviewed work is lost with the VM. A reviewed, unpublished head keeps an existing VM until preservation succeeds. A missing VM is removed, and its assistance about the lost work stays visible.
+Then it removes the Node and marks the row `destroyed`, as above. It clears the group's removal reason unless that reason records reviewed work that was lost. A removal journal that a normal removal left open is finished the same way. Unreviewed work is lost with the VM. A reviewed, unpublished head keeps a `ready` or `parked` VM while preservation runs. A `failed` VM is removed, and its assistance about the lost work stays visible.
 
 ### Place task VMs
 

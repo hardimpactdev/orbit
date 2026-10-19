@@ -13,7 +13,7 @@ use App\Models\TaskVm;
 /**
  * The gate before work that needs a group's task VM. Work goes on unless the VM is `parked`. A parked VM is
  * queued to start, and the work waits for a later tick: `ResumeTaskVm` sets the row `ready` once the Node agent
- * and Pi answer. A VM observed stopped enters the same parked/resume path before work retries.
+ * and Pi answer. A ready VM observed stopped enters the same parked/resume path before work retries. Failed stays final.
  */
 final readonly class WakeTaskVmAction
 {
@@ -39,11 +39,11 @@ final readonly class WakeTaskVmAction
         return $this->forVm(TaskVm::forNode($instance->node_id));
     }
 
-    /** Whether this VM is awake; a parked or observed stopped VM queues one resume through the shared wake gate. */
+    /** Whether this VM is awake; a parked VM or a ready VM observed stopped queues one resume through the shared wake gate. */
     public function forVm(?TaskVm $vm, bool $stopped = false): bool
     {
         if ($stopped && $vm instanceof TaskVm) {
-            TaskVm::query()->whereKey($vm->id)->whereIn('state', [TaskVmState::Ready, TaskVmState::Failed])
+            TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Ready)
                 ->update(['state' => TaskVmState::Parked]);
             $vm->refresh();
         }

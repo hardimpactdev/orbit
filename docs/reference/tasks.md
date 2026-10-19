@@ -1576,6 +1576,8 @@ Under review and merge, the latest reviewed-commit record selects the head; a la
 
 Every successful removal push records publication in the same state that selects the head, including per-subtask approvals. The shared rule first reconciles a queued push receipt for that exact SHA and destination branch, even if the VM died before the next removal attempt. A pending push waits without requesting removal assistance. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
 
+A stopped `ready` VM uses the shared wake path once before removal retries. A failed wake stays final. When the VM is `failed`, cleanup records the lost reviewed SHA and VM failure in Activity and removal assistance, then destroys it. A missing `ready` VM waits for the host sweep to confirm failure after two consecutive misses.
+
 An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
 A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The task keeps its `removal_failure` request open after it ends. A tick starts no removal after 60 seconds of removals. A success clears only an open `removal_failure` request. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
