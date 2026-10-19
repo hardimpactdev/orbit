@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
@@ -45,7 +46,7 @@ function nightlyRefreshEvidence(): array
     ];
 }
 
-function nightlyRefreshHttp(array $evidence): void
+function nightlyRefreshHttp(array $evidence, array $overrides = []): void
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
@@ -54,7 +55,7 @@ function nightlyRefreshHttp(array $evidence): void
     config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit', 'orbit.gateway_releases.check' => 'Required checks']);
     Http::preventStrayRequests();
     $base = 'https://api.github.com/repos/nckrtl/orbit';
-    Http::fake([
+    Http::fake(array_replace([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_refresh']),
         $base.'/git/ref/heads/main' => Http::response(['object' => ['sha' => $evidence['main']]]),
@@ -84,7 +85,7 @@ function nightlyRefreshHttp(array $evidence): void
             ? ($evidence['update_errors'] ? ['errors' => [['message' => 'Expected head changed']]] : ['data' => ['updateRefs' => ['clientMutationId' => null]]])
             : ['data' => ['repository' => ['id' => 'R_orbit', 'pullRequest' => ['userContentEdits' => ['nodes' => $evidence['edits'], 'pageInfo' => ['hasNextPage' => $evidence['more_edits']]]]]]]),
         $base.'/issues/99/comments' => Http::response([], $evidence['comment_status'] ?? 201),
-    ]);
+    ], $overrides));
 }
 
 it('recreates a red App nightly PR as one commit on current main without closing it', function (): void {
@@ -234,7 +235,7 @@ it('leaves older-date green closed and reviewed PRs unchanged in the recovery pa
 })->with(['green', 'closed', 'person edit', 'bot review']);
 
 // Exercise the same snapshot job the 03:00 Amsterdam schedule dispatches.
-it('closes a red older-date PR and opens only tonight’s replacement on the real nightly job', function (): void {
+it('opens tonight’s replacement without prematurely closing an older unsuperseded PR', function (): void {
     $evidence = nightlyRefreshEvidence();
     $this->travelTo(nightlyRefreshDate()->modify('+1 day')->setTimezone(new DateTimeZone('Europe/Amsterdam'))->setTime(3, 0));
     nightlyRefreshHttp($evidence);
@@ -255,8 +256,7 @@ it('closes a red older-date PR and opens only tonight’s replacement on the rea
     app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
 
     $branch = 'nightly/recipe-'.now('Europe/Amsterdam')->format('Ymd');
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99') && $request['state'] === 'closed');
-    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments') && str_contains($request['body'], 'Superseded'));
+    Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99'));
     Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls') && $request['head'] === $branch);
     expect(collect(Http::recorded())->filter(fn (array $pair): bool => $pair[0]->method() === 'POST' && str_ends_with($pair[0]->url(), '/pulls')))->toHaveCount(1);
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/graphql') && str_starts_with($request['query'], 'mutation'));
@@ -295,3 +295,44 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
     expect(app(PhpBuildBump::class)->called)->toBeTrue();
     expect($alerts->alerts)->toHaveCount($case === 'comment' ? 0 : 1);
 })->with(['list', 'update', 'comment']);
+
+it('uses the shared retirement rule before checking failed or green PR evidence in Refresh', function (string $trigger): void {
+    $evidence = nightlyRefreshEvidence();
+    $this->travelTo(nightlyRefreshDate());
+    if ($trigger === 'main snapshot') {
+        $evidence['main_content'] = $evidence['after'];
+        $evidence['runs'][0]['conclusion'] = 'success';
+    }
+    $replacement = $evidence['pr'];
+    $replacement['number'] = 100;
+    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['head']['ref'] = 'nightly/recipe-'.nightlyRefreshDate()->modify('+1 day')->format('Ymd');
+    $replacement['head']['sha'] = str_repeat('d', 40);
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $closed = false;
+    nightlyRefreshHttp($evidence, [
+        $base.'/pulls?*' => Http::response($trigger === 'main snapshot' ? [$evidence['pr']] : [$evidence['pr'], $replacement]),
+        $base.'/pulls/100' => Http::response($replacement),
+        $base.'/pulls/99' => function (Request $request) use ($evidence, &$closed) {
+            if ($request->method() === 'PATCH') {
+                $closed = true;
+            }
+
+            return Http::response($evidence['pr']);
+        },
+        $base.'/issues/99/comments' => function () use (&$closed) {
+            expect($closed)->toBeTrue();
+
+            return Http::response([], 201);
+        },
+    ]);
+    $snapshots = Mockery::mock(SnapshotAvailability::class);
+    $snapshots->shouldNotReceive('latest');
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    app(RefreshNightlyRecipePullRequestAction::class)->execute($evidence['main'], $evidence['main_content']);
+
+    expect($closed)->toBeTrue();
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/check-runs?') || str_contains($request->url(), '/commits?') || str_contains($request->url(), '/files?'));
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments') && str_contains($request['body'], $trigger === 'main snapshot' ? 'main’s Ubuntu snapshot' : 'pull/100'));
+})->with(['main snapshot', 'newer App PR']);

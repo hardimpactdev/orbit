@@ -20,7 +20,7 @@ use Throwable;
 /** Rebuild only an untouched, failed App snapshot commit whose parent main has superseded. */
 final readonly class RefreshNightlyRecipePullRequestAction
 {
-    public function __construct(private GitHubAppStore $store, private GitHubApi $github, private RepositoryPullRequestAccess $access, private RecipeLoader $loader, private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts) {}
+    public function __construct(private GitHubAppStore $store, private GitHubApi $github, private RepositoryPullRequestAccess $access, private RecipeLoader $loader, private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts, private RetireNightlyRecipePullRequestsAction $retire) {}
 
     public function execute(string $main, string $content): void
     {
@@ -37,8 +37,9 @@ final readonly class RefreshNightlyRecipePullRequestAction
             }
             $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
                 ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
+            $pulls = $this->retire->execute($http, $repository, $pulls, $credentials->slug.'[bot]', $content);
             foreach ($pulls as $pull) {
-                if (preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) !== 1 || $pull->authorLogin !== $credentials->slug.'[bot]') {
+                if ($this->contents->nightlySnapshot($pull->headRef) === null || $pull->authorLogin !== $credentials->slug.'[bot]') {
                     continue;
                 }
                 try {
@@ -69,6 +70,10 @@ final readonly class RefreshNightlyRecipePullRequestAction
             || data_get($pr, 'base.ref') !== 'main' || data_get($pr, 'base.repo.full_name') !== $name
             || data_get($pr, 'head.ref') !== $branch || data_get($pr, 'head.repo.full_name') !== $name
             || data_get($pr, 'commits') !== 1 || data_get($pr, 'changed_files') !== 1) {
+            return;
+        }
+        $today = now('Europe/Amsterdam')->format('Ymd').'T000000Z';
+        if ($this->contents->nightlySnapshot($branch) !== $today) {
             return;
         }
         $checksToken = $this->access->checksToken($repository);
@@ -117,19 +122,6 @@ final readonly class RefreshNightlyRecipePullRequestAction
         if (! is_string($repositoryId) || data_get($history, 'errors') !== null || ! is_array($edits)
             || data_get($history, 'data.repository.pullRequest.userContentEdits.pageInfo.hasNextPage') !== false
             || ! array_all($edits, static fn (mixed $edit): bool => data_get($edit, 'editor.login') === $author)) {
-            return;
-        }
-        $today = now('Europe/Amsterdam')->format('Ymd').'T000000Z';
-        if ($snapshot < $today) {
-            if ($http->get($path)->throw()->json() !== $pr || ! $this->untouched($http, $number, $author, $sha)) {
-                return;
-            }
-            $http->patch($path, ['state' => 'closed'])->throw();
-            $this->comment($http, $number, 'Superseded this failed nightly snapshot by tonight\'s date PR on current main. The original branch is unchanged.');
-
-            return;
-        }
-        if ($snapshot !== $today || $this->loader->decode($content)->snapshot >= $snapshot) {
             return;
         }
         $updated = $this->contents->replace($content, $this->loader->decode($content)->snapshot, $snapshot);

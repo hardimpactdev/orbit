@@ -569,7 +569,7 @@ describe('Composer configuration', function (): void {
                     'Validate Composer metadata', 'Compute PHPStan result cache prefix', 'Restore PHPStan result cache',
                     'Compute Pint cache prefix', 'Restore Pint cache', 'Run project quality checks',
                     'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
-                    'Read the Gateway test plan',
+                    'Read the Gateway test plan', 'Verify Ubuntu recipe pins against the named snapshot',
                 ], true)) {
                 expect($if)->toContain("matrix.part != 'subprocess'");
             } else {

@@ -26,7 +26,7 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
         $versions = $this->latest($recipe->snapshot, $recipe->architectures, $packages);
         foreach ($versions as $name => $version) {
             if ($recipe->tools[$name]->version !== $version) {
-                throw new RuntimeException("Tool [{$name}] version [{$recipe->tools[$name]->version}] architecture [{$recipe->architectures[0]}] unavailable in snapshot [{$recipe->snapshot}] as its newest version [{$version}]. Bump the snapshot and all Ubuntu pins together.");
+                throw new RuntimeException("Tool [{$name}] version [{$recipe->tools[$name]->version}] architectures [".implode(', ', $recipe->architectures)."] unavailable in snapshot [{$recipe->snapshot}] as its newest version [{$version}]. Bump the snapshot and all Ubuntu pins together.");
             }
         }
     }
