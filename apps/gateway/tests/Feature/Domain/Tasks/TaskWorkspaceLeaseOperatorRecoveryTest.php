@@ -170,6 +170,16 @@ it('scopes operator quiescence to its lease and fails closed on ambiguous manage
         unset($unit['Description']);
     } elseif ($condition === 'unreadable unit') {
         $unit['unreadable'] = true;
+    } elseif ($condition === 'vanished unit') {
+        $unit = ['unit' => $unit['unit'], 'LoadState' => 'not-found', 'ActiveState' => 'inactive', 'SubState' => 'dead',
+            'ControlGroup' => '', 'Job' => '', 'Description' => $unit['unit']];
+    } elseif ($condition === 'running unit without a file') {
+        $unit['LoadState'] = 'not-found';
+        $unit['ControlGroup'] = '/system.slice/'.$unit['unit'];
+        $unit['Job'] = '';
+        $unit['Description'] = $unit['unit'];
+    } elseif ($condition === 'unloaded unit') {
+        $unit['LoadState'] = 'error';
     }
     file_put_contents($this->receiptHome.'/units.json', json_encode([$unit], JSON_THROW_ON_ERROR));
     $parameters = ['lease-id' => (string) $lease->id, '--reason' => 'Shared node scoped proof'];
@@ -193,6 +203,9 @@ it('scopes operator quiescence to its lease and fails closed on ambiguous manage
     'check identity mismatch' => ['check identity mismatch', false],
     'missing description' => ['missing description', false],
     'unreadable unit' => ['unreadable unit', false],
+    'vanished unit' => ['vanished unit', true],
+    'running unit without a file' => ['running unit without a file', false],
+    'unloaded unit' => ['unloaded unit', false],
 ]);
 
 it('refuses inconsistent persisted lease identities before sealing any endpoint', function (string $condition): void {
@@ -516,7 +529,8 @@ it('proves native quiescence for only the target binding and check run without s
         'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo]);
     $process->start();
     try {
-        expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
+        $isReady = static fn (): bool => str_contains($process->getOutput(), "ready\n");
+        expect($isReady() || $process->waitUntil($isReady))->toBeTrue();
         $targetBinding = $relevant ? $binding : bin2hex(random_bytes(32));
         $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
         $probe = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
