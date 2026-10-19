@@ -9,6 +9,7 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Fleet\FleetRolloutStatus;
+use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Releases\ReleaseAlertKind;
@@ -100,14 +101,14 @@ final readonly class ProblemRecovery
                 ->where('id', '>', (int) $attempt)->where('recipe_identity', $desired)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('template_uuid')->exists()
                 ? 'verified_recipe_supersession' : null;
         }
-        if (str_starts_with($resource, 'recipe-image:')) {
-            $build = TaskVmImageBuild::query()->find((int) substr($resource, 13));
+        $imageBuildId = RecipeMaintenanceAlerts::parseImageIncident($resource);
+        if ($imageBuildId !== null) {
+            $build = TaskVmImageBuild::query()->find($imageBuildId);
             if (! $build instanceof TaskVmImageBuild) {
                 return 'resource_gone';
             }
-            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->first();
-            if ($desired !== null && is_string($desired->identity)
-                && ($desired->identity !== $build->recipe_identity || (int) $desired->generation > $build->recipe_generation)) {
+            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->value('identity');
+            if (is_string($desired) && $desired !== $build->recipe_identity) {
                 return 'recipe_generation_superseded';
             }
 

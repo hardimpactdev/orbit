@@ -809,7 +809,9 @@ The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source
 
 An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
 
-Image-build alerts use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Only failures that need operator recovery alert; unacknowledged queue submissions restart automatically without an alert. The incident resolves when a later attempt succeeds, the desired recipe identity or generation supersedes the build, or the build row is gone. An attempt that is still running or failed does not prove recovery.
+Image-build alerts use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Only failures that need operator recovery alert. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
+
+The incident resolves when a later attempt succeeds, the desired recipe identity differs from the build, or the build row is gone. An attempt that is still running or failed does not prove recovery. A recipe revert to the failed build’s identity does not resolve the incident, even at a newer generation.
 
 Recipe alerts without a build carry an explicit identity. A PR failure uses its PR number and head. A failed repository read uses its nightly date cycle. A failed maintenance job uses its queue job UUID. Alert wording and later Gateway releases do not prove that these incidents recovered.
 

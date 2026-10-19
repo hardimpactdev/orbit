@@ -17,6 +17,8 @@ use InvalidArgumentException;
 
 final readonly class RecipeMaintenanceAlerts
 {
+    private const string ImageIncidentPrefix = 'recipe-image:';
+
     public function __construct(private ReleaseAlertNotifier $notifier, private FleetServingRelease $serving) {}
 
     /** @return array<string, mixed> */
@@ -51,6 +53,18 @@ final readonly class RecipeMaintenanceAlerts
     public static function pullIncident(int $number, string $head, string $fault): ReleaseIncident
     {
         return new ReleaseIncident('recipe-pr:'.$number, $head, $fault);
+    }
+
+    public static function imageIncident(TaskVmImageBuild $build): ReleaseIncident
+    {
+        return new ReleaseIncident(self::ImageIncidentPrefix.$build->id, (string) $build->attempt, 'build_failed');
+    }
+
+    public static function parseImageIncident(string $resource): ?int
+    {
+        return str_starts_with($resource, self::ImageIncidentPrefix)
+            ? (int) substr($resource, strlen(self::ImageIncidentPrefix))
+            : null;
     }
 
     public static function jobIncident(string $type, string $uuid): ReleaseIncident
