@@ -31,7 +31,7 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 | Extension | What it adds |
 | --- | --- |
 | `tasks` | The [`tasks`](/cli/tasks) family, its MCP tools and API operations, and the Tasks pages. See [Tasks](/reference/tasks). |
-| `proxycli` | The [`proxycli`](/cli/proxycli) family, its MCP tools and API operations, and the Quota pages. See [proxycli](/reference/proxycli). |
+| `ai-router` | The [`ai-router`](/cli/ai-router) family, its MCP tools and API operations, and the AI router pages. See [ai-router](/reference/ai-router). |
 | `documents` | The [`project:document`](/cli/project#project-documents) and `project:document-storage` commands, their MCP tools and API operations, and the Project Documents page. See [Project Documents](/reference/project-documents). |
 | `vault` | The [`vault`](/cli/vault) family, its MCP tools and API operations, and the scheduled Vaultwarden sync. See [Vaultwarden](/reference/vaultwarden). |
 | `conn` | The Conn API under `/api/v1/conn` and its MCP tools, which Conn devices and T3 servers call. It has no CLI commands. See [Conn layer](/reference/conn). |
@@ -46,19 +46,19 @@ The Gateway lists the extensions that its registered extension providers declare
 | CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
 | Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
 
-`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the proxycli collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes. The Vaultwarden sync stops while `vault` is off and catches up when it is on again.
+`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the ai-router collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes. The Vaultwarden sync stops while `vault` is off and catches up when it is on again.
 
 A nested empty object in a tool argument stays an object through a direct `tools/call` and through `execute_tools`. [MCP](/reference/mcp) describes that shape.
 
 ## Extension state in the CLI
 
-The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, when it runs `extension:list`, and when it runs a ProxyCLI extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
+The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, when it runs `extension:list`, and when it runs a AI router extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
 
 When the CLI cannot read the switches, the state is unknown, not disabled. This happens when no Gateway profile is active, the Gateway CA is not trusted, or the Gateway does not answer in time.
 
 - `extension:list` shows `UNKNOWN` and the cause, such as `gateway.profile_missing`, `gateway.ca_untrusted`, or `gateway.unreachable`.
 - `list` and `help` hide the extension commands.
-- A ProxyCLI extension command fails with `extension.state_unknown` and sends no request.
+- A AI router extension command fails with `extension.state_unknown` and sends no request.
 
 Direct `tasks:*`, `project:document:*`, `project:document-storage:*`, and `vault:*` calls do not require switch discovery. They send the request even when discovery is denied or times out. The Gateway enforces the switch and returns `extension.disabled` while the extension is off.
 
@@ -84,9 +84,9 @@ orbit extension:enable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | `tasks`, `proxycli`, or `documents`. |
+| `extension` | yes | `tasks`, `ai-router`, or `documents`. |
 
-JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and leaves it enabled. An extension can depend on another one; enabling it while a dependency is off fails with `extension.dependency_disabled`. Enabling runs the extension's enable hook, which only does quick, repeatable setup, and then turns the switch on. When the hook fails, the switch stays off and the command reports the hook's error. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
+JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and leaves it enabled. An extension can depend on another one; enabling it while a dependency is off fails with `extension.dependency_disabled`. Enabling runs the extension's enable hook, which only does quick, repeatable setup, and then turns the switch on. When the hook fails, the switch stays off and the command reports the hook's error. An extension that needs fleet resources has its own setup command, such as [`ai-router:setup`](/cli/ai-router#orbit-ai-routersetup).
 
 ## orbit extension:disable
 
@@ -98,11 +98,11 @@ orbit extension:disable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | `tasks`, `proxycli`, or `documents`. |
+| `extension` | yes | `tasks`, `ai-router`, or `documents`. |
 
-JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling an extension that an enabled extension depends on fails with `extension.required`. Disabling `proxycli` does not stop its collector. Run [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) for that.
+JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling an extension that an enabled extension depends on fails with `extension.required`. Disabling `ai-router` does not stop its collector. Run [`ai-router:teardown`](/cli/ai-router#orbit-ai-routerteardown) for that.
 
-`tasks` depends on `proxycli`. Enable `proxycli` and run [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup) before you enable `tasks`; until then, enabling `tasks` fails with `proxycli.disabled`. Disable `tasks` before `proxycli`.
+`tasks` depends on `ai-router`. Enable `ai-router` and run [`ai-router:setup`](/cli/ai-router#orbit-ai-routersetup) before you enable `tasks`; until then, enabling `tasks` fails with `ai_router.disabled`. Disable `tasks` before `ai-router`.
 
 ## Errors
 
@@ -118,7 +118,7 @@ JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and c
 
 Each extension has one switch, and the Gateway owns it. A switch on each operator's machine could not hide Gateway routes, MCP tools, or web pages, so two operators could see different products. A cached copy in the CLI would become a second source of truth, so the CLI asks the Gateway in each process.
 
-The switch only shows or hides. Setting up proxycli needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command. Every extension then keeps the same small switch contract, and one extension has one switch name.
+The switch only shows or hides. Setting up ai-router needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command. Every extension then keeps the same small switch contract, and one extension has one switch name.
 
 API routes stay registered while an extension is off and refuse with `extension.disabled`. Removing routes at runtime would make the OpenAPI document, the SDK, and the generated MCP tools change with runtime state. MCP filters tools before listing, search, and execution, so no path can find or run a disabled tool.
 
@@ -127,5 +127,5 @@ An unknown state is not a disabled state. Treating an unreachable Gateway as "di
 ## Related
 
 - [`tasks`](/cli/tasks) describes task operations.
-- [`proxycli`](/cli/proxycli) describes collector setup, teardown, and quota commands.
+- [`ai-router`](/cli/ai-router) describes collector setup, teardown, and quota commands.
 - [Using the CLI](/cli/overview#select-a-gateway) describes Gateway selection.

@@ -11,21 +11,22 @@ use SplFileInfo;
 
 /**
  * The Gateway source files that a set of classes renders from: every class in the start directories, and
- * every `App\` class they import or name in their own namespace, followed transitively. Models, actions,
+ * every core or extension class they import or name in their own namespace, followed transitively. Models, actions,
  * controllers, commands, and providers are data or callers, not rendering code, so the walk stops there.
  */
 final class SourceClosure
 {
-    /** @var list<string> */
-    public const array StopNamespaces = ['App\\Models\\', 'App\\Actions\\', 'App\\Http\\', 'App\\Console\\', 'App\\Providers\\'];
+    private const string StopPattern = '/^(?:(?:Models|Actions|Http|Console|Providers)\\\\|[^\\\\]*ServiceProvider$)/';
 
     /** @var array<string, list<string>> */
     private static array $cache = [];
 
+    /** @var array<string, string>|null */
+    private static ?array $roots = null;
+
     /**
      * @param  list<string>  $directories  Directories relative to the Gateway's base path, such as `app/Infrastructure/Caddy`.
-     * @param  list<class-string>  $classes  More start classes outside those directories. The walk reads only `app/`,
-     *                                       so a start class outside it fails instead of dropping out unseen.
+     * @param  list<class-string>  $classes  More start classes under the core or extension PSR-4 roots.
      * @return list<string> Paths relative to the base path, sorted.
      */
     public static function of(array $directories, array $classes = []): array
@@ -37,8 +38,8 @@ final class SourceClosure
         }
 
         foreach ($classes as $class) {
-            if (! str_starts_with($class, 'App\\') || ! is_file(base_path(self::path($class)))) {
-                throw new LogicException("The source closure reads only classes under app/, not [{$class}].");
+            if (self::path($class) === null || ! is_file(base_path(self::path($class)))) {
+                throw new LogicException("The source closure reads only core and extension classes, not [{$class}].");
             }
         }
 
@@ -70,7 +71,7 @@ final class SourceClosure
 
             $seen[$class] = true;
             $path = self::path($class);
-            $source = @file_get_contents(base_path($path));
+            $source = $path === null ? false : @file_get_contents(base_path($path));
 
             if (! is_string($source)) {
                 continue;
@@ -94,33 +95,72 @@ final class SourceClosure
     private static function references(string $source): array
     {
         $namespace = preg_match('/^namespace ([^;]+);/m', $source, $match) === 1 ? $match[1] : 'App';
-        preg_match_all('/^use (App\\\\[A-Za-z0-9_\\\\]+)(?: as \w+)?;/m', $source, $imports);
+        preg_match_all('/^use ((?:App|Orbit\\\\Extensions)\\\\[A-Za-z0-9_\\\\]+)(?: as \w+)?;/m', $source, $imports);
         preg_match_all('/\b([A-Z][A-Za-z0-9_]+)\b/', $source, $words);
         $references = $imports[1];
 
         foreach (array_unique($words[1]) as $word) {
             $candidate = $namespace.'\\'.$word;
 
-            if (is_file(base_path(self::path($candidate)))) {
+            $path = self::path($candidate);
+            if ($path !== null && is_file(base_path($path))) {
                 $references[] = $candidate;
             }
         }
 
         return array_values(array_filter(
             array_unique($references),
-            static fn (string $class): bool => str_starts_with($class, 'App\\') && ! array_any(self::StopNamespaces, static fn (string $stop): bool => str_starts_with($class, $stop)),
+            static function (string $class): bool {
+                foreach (self::roots() as $namespace => $directory) {
+                    if (str_starts_with($class, $namespace)) {
+                        return preg_match(self::StopPattern, substr($class, strlen($namespace))) !== 1;
+                    }
+                }
+
+                return false;
+            },
         ));
     }
 
-    private static function path(string $class): string
+    /** @return array<string, string> */
+    private static function roots(): array
     {
-        return 'app/'.str_replace('\\', '/', substr($class, 4)).'.php';
+        if (self::$roots !== null) {
+            return self::$roots;
+        }
+        $composer = json_decode((string) file_get_contents(base_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
+        $autoload = is_array($composer) && is_array($composer['autoload'] ?? null) ? $composer['autoload'] : [];
+        $map = is_array($autoload['psr-4'] ?? null) ? $autoload['psr-4'] : [];
+        $roots = [];
+        foreach ($map as $namespace => $directory) {
+            if (is_string($namespace) && is_string($directory)
+                && ($namespace === 'App\\' || str_starts_with($namespace, 'Orbit\\Extensions\\'))) {
+                $roots[$namespace] = rtrim($directory, '/').'/';
+            }
+        }
+
+        return self::$roots = $roots;
+    }
+
+    private static function path(string $class): ?string
+    {
+        foreach (self::roots() as $namespace => $directory) {
+            if (str_starts_with($class, $namespace)) {
+                return $directory.str_replace('\\', '/', substr($class, strlen($namespace))).'.php';
+            }
+        }
+
+        return null;
     }
 
     private static function className(string $path): ?string
     {
-        return str_starts_with($path, 'app/') && str_ends_with($path, '.php')
-            ? 'App\\'.str_replace('/', '\\', substr($path, 4, -4))
-            : null;
+        foreach (self::roots() as $namespace => $directory) {
+            if (str_starts_with($path, $directory) && str_ends_with($path, '.php')) {
+                return $namespace.str_replace('/', '\\', substr($path, strlen($directory), -4));
+            }
+        }
+
+        return null;
     }
 }

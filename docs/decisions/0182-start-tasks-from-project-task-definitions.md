@@ -236,5 +236,5 @@ The definition has an `app` parameter and the schedule `0 3 * * 1` with that App
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
 - ADRs: amends [project-owned task policy](/reference/tasks#project-owned-task-policy)
-- Detail: [Tasks](/reference/tasks), [proxycli](/reference/proxycli), [Web app](/reference/web-app), [Tasks CLI](/cli/tasks), [Concepts](/concepts)
+- Detail: [Tasks](/reference/tasks), [ai-router](/reference/ai-router), [Web app](/reference/web-app), [Tasks CLI](/cli/tasks), [Concepts](/concepts)
 - Verify: slice 1: the migration test on a copy of the task tables and the existing task suite on the one model; slice 2: tests for each validation rule and definition operation, the proxycli models route, CLI and SDK fixtures, and web screenshots; slice 3: tests for starting now, `scheduled_at`, the upcoming task, the three schedule rules, and parameters; slices 4 to 6: tests for each kind and its outcomes and the `decide` threshold, and an Incus proof of the maintenance example, including the `skipped` path and a forced rollback

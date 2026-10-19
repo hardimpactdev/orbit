@@ -215,21 +215,21 @@ it('systemd-escapes accepted working and environment file paths with spaces', fu
 
 it('projects a persisted systemd environment map after the environment file', function (): void {
     $process = new Process([
-        'name' => 'proxycli',
+        'name' => 'ai-router',
         'runtime_config' => [
-            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
             'environment_file' => '',
             'environment' => [
-                'PROXYCLI_CACHE_HOST' => '10.44.0.8',
+                'AI_ROUTER_CACHE_HOST' => '10.44.0.8',
                 'CACHE_URL' => 'http://127.0.0.1:4848',
                 'CACHE_PORT' => '4848',
                 'SERVICE_URL' => 'http://127.0.0.1:4747',
                 'SERVICE_PORT' => '4747',
-                'PROXYCLI_MANAGEMENT_KEY' => 'management key',
-                'PROXYCLI_READ_TOKEN' => 'read-token',
+                'AI_ROUTER_MANAGEMENT_KEY' => 'management key',
+                'AI_ROUTER_READ_TOKEN' => 'read-token',
             ],
         ],
-        'working_directory' => '/var/lib/orbit/proxycli',
+        'working_directory' => '/var/lib/orbit/ai-router',
         'restart_policy' => 'unless-stopped',
     ]);
     $process->id = 14;
@@ -243,30 +243,30 @@ it('projects a persisted systemd environment map after the environment file', fu
     $unit = new SystemdProcessRenderer()->render($process, $target);
 
     expect($unit)
-        ->toContain('Environment=PROXYCLI_CACHE_HOST=10.44.0.8')
+        ->toContain('Environment=AI_ROUTER_CACHE_HOST=10.44.0.8')
         ->toContain('Environment=CACHE_URL=http://127.0.0.1:4848')
         ->toContain('Environment=CACHE_PORT=4848')
         ->toContain('Environment=SERVICE_URL=http://127.0.0.1:4747')
         ->toContain('Environment=SERVICE_PORT=4747')
-        ->toContain('Environment=PROXYCLI_MANAGEMENT_KEY=management\\x20key')
-        ->toContain('Environment=PROXYCLI_READ_TOKEN=read-token')
-        ->toContain('ExecStart="/usr/bin/python3" "/var/lib/orbit/proxycli/server.py"')
+        ->toContain('Environment=AI_ROUTER_MANAGEMENT_KEY=management\\x20key')
+        ->toContain('Environment=AI_ROUTER_READ_TOKEN=read-token')
+        ->toContain('ExecStart="/usr/bin/python3" "/var/lib/orbit/ai-router/collector.py"')
         ->not->toContain('EnvironmentFile=')
         ->not->toContain('/usr/bin/env')
-        ->not->toContain('PROXYCLI_MANAGEMENT_KEY=management key');
+        ->not->toContain('AI_ROUTER_MANAGEMENT_KEY=management key');
 
     expect(strpos(haystack: $unit, needle: 'Environment=NODE_USE_SYSTEM_CA=1'))
-        ->toBeLessThan(strpos(haystack: $unit, needle: 'Environment=PROXYCLI_CACHE_HOST='));
+        ->toBeLessThan(strpos(haystack: $unit, needle: 'Environment=AI_ROUTER_CACHE_HOST='));
 });
 
 it('rejects unsafe systemd environment input from persisted configuration', function (array $environment): void {
     $process = new Process([
-        'name' => 'proxycli',
+        'name' => 'ai-router',
         'runtime_config' => [
-            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
             'environment' => $environment,
         ],
-        'working_directory' => '/var/lib/orbit/proxycli',
+        'working_directory' => '/var/lib/orbit/ai-router',
         'restart_policy' => 'never',
     ]);
     $process->id = 15;
@@ -280,17 +280,17 @@ it('rejects unsafe systemd environment input from persisted configuration', func
         ->toThrow(InvalidArgumentException::class, 'environment');
 })->with([
     'unsafe name' => [['BAD-NAME' => 'value']],
-    'line feed' => [['PROXYCLI_READ_TOKEN' => "first\nsecond"]],
+    'line feed' => [['AI_ROUTER_READ_TOKEN' => "first\nsecond"]],
 ]);
 
 it('rejects a non-map systemd environment from persisted configuration', function (): void {
     $process = new Process([
-        'name' => 'proxycli',
+        'name' => 'ai-router',
         'runtime_config' => [
-            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
-            'environment' => 'PROXYCLI_READ_TOKEN=unsafe-shape',
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
+            'environment' => 'AI_ROUTER_READ_TOKEN=unsafe-shape',
         ],
-        'working_directory' => '/var/lib/orbit/proxycli',
+        'working_directory' => '/var/lib/orbit/ai-router',
         'restart_policy' => 'never',
     ]);
     $process->id = 16;

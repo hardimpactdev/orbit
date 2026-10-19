@@ -16,11 +16,11 @@ use App\Domain\Nodes\NodeCliInstallation;
 use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\ProxyCli\ProxyCliSourcePublisher;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterSourcePublisher;
 use Tests\Support\Fleet\FleetFixtures;
 
 final class RecordingCliInstaller implements NodeCliInstaller
@@ -136,12 +136,12 @@ describe('fleet integration', function (): void {
             ->and($installer->installed)->toBe([]);
     });
 
-    it('says whether the ProxyCli collector script changed', function (): void {
-        $script = $this->app->make(ProxyCliSourcePublisher::class)->command("print('x')\n");
+    it('says whether the AiRouter collector script changed', function (): void {
+        $script = $this->app->make(AiRouterSourcePublisher::class)->command("print('x')\n");
 
         expect((string) stream_get_contents($script->protectedInput?->stream() ?? fopen('php://memory', 'r')))
-            ->toContain('echo '.ProxyCliSourcePublisher::Unchanged)
-            ->toContain('echo '.ProxyCliSourcePublisher::Published);
+            ->toContain('echo '.AiRouterSourcePublisher::Unchanged)
+            ->toContain('echo '.AiRouterSourcePublisher::Published);
     });
 });
 

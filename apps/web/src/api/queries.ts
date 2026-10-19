@@ -17,7 +17,7 @@ import type {
     Node,
     Process,
     Project,
-    ProxyCliStatus,
+    AiRouterStatus,
     QueueReport,
     QueueState,
     QuotaProvider,
@@ -30,8 +30,8 @@ import type {
 /** How often views without record-change events reload, such as the task board and log panes. */
 export const POLL_SECONDS = 10;
 
-/** How often the proxycli quota reloads. The collector refreshes its snapshot about once a minute. */
-export const PROXYCLI_POLL_SECONDS = 60;
+/** How often the ai-router quota reloads. The collector refreshes its snapshot about once a minute. */
+export const AI_ROUTER_POLL_SECONDS = 60;
 
 const nodesQuery = queryOptions({
     queryKey: ["nodes"],
@@ -204,19 +204,19 @@ export const liveFirewallQuery = (nodeId: number) =>
         retry: false,
     });
 
-const disabledProxyCli = (): ProxyCliStatus => ({
+const disabledAiRouter = (): AiRouterStatus => ({
     enabled: false,
-    hostname: "collector.cli-proxy-api.orbit",
+    hostname: "collector.ai-router.orbit",
     node_id: null,
     cache_connection: null,
     collected_at: null,
 });
 
-/** Fleet proxycli status. A disabled or unreachable feature hides the Quota section. */
-export const proxycliStatusQuery = queryOptions({
-    queryKey: ["proxycli-status"],
-    refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
-    queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
+/** Fleet ai-router status. A disabled or unreachable feature hides the Quota section. */
+export const aiRouterStatusQuery = queryOptions({
+    queryKey: ["ai-router-status"],
+    refetchInterval: AI_ROUTER_POLL_SECONDS * 1000,
+    queryFn: () => get<AiRouterStatus>("/api/v1/ai-router").catch(() => disabledAiRouter()),
     retry: false,
 });
 
@@ -230,19 +230,19 @@ export const tasksStatusQuery = queryOptions({
 });
 
 /** Provider pools from the Valkey snapshot. A refresh never starts an upstream poll. */
-export const proxycliProvidersQuery = queryOptions({
-    queryKey: ["proxycli-providers"],
-    queryFn: () => get<QuotaProvider[]>("/api/v1/proxycli/providers"),
-    refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
+export const aiRouterProvidersQuery = queryOptions({
+    queryKey: ["ai-router-providers"],
+    queryFn: () => get<QuotaProvider[]>("/api/v1/ai-router/providers"),
+    refetchInterval: AI_ROUTER_POLL_SECONDS * 1000,
     retry: false,
 });
 
-export const proxycliProviderQuery = (provider: string) =>
+export const aiRouterProviderQuery = (provider: string) =>
     queryOptions({
-        queryKey: ["proxycli-providers", provider],
+        queryKey: ["ai-router-providers", provider],
         queryFn: () =>
-            get<QuotaProvider>(`/api/v1/proxycli/providers/${encodeURIComponent(provider)}`),
-        refetchInterval: PROXYCLI_POLL_SECONDS * 1000,
+            get<QuotaProvider>(`/api/v1/ai-router/providers/${encodeURIComponent(provider)}`),
+        refetchInterval: AI_ROUTER_POLL_SECONDS * 1000,
         retry: false,
     });
 

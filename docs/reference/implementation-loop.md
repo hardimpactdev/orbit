@@ -5,6 +5,7 @@ covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
   - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
+  - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/ci.yml,actions/php/action.yml}
@@ -323,13 +324,17 @@ TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs t
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
-Root `bin/test` runs all five project suites in parallel and splits the processes that [`ORBIT_CHECK_PROCESSES`](#parallel-processes) allows between them. It still reads the older `ORBIT_TEST_PROCESSES` when `ORBIT_CHECK_PROCESSES` is unset.
+Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how many: `ORBIT_CHECK_PROCESSES`. When it is unset, each tool uses the machine's core count, up to 4. An explicit value is used as it is, also above 4. `bin/check-processes` prints the value that the checks use and fails when the setting is not a positive integer.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1664 MiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker.
 
-| Tool | How it reads the setting |
+On Linux it reads CPU affinity and cgroup v2 CPU quotas. Available memory is the smaller of `/proc/meminfo`'s `MemAvailable` and each bounded cgroup's limit minus its working set, including ancestor bounds. The working set is `memory.current` minus `memory.stat`'s reclaimable `inactive_file` pages. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
+
+The floor of one can overcommit memory and OOM when less than the reserve plus one worker is available. The rule assumes one gate per task VM and does not reserve resources between concurrent gates on a shared host. CPU is schedulable capacity, not idle capacity: topology processes share it and can slow the gate.
+
+| Tool | How it reads the process count |
 | --- | --- |
 | Pest | `--processes=$(../../bin/check-processes)` in the `test` and `test:affected` scripts |
 | Pint | `--parallel --max-processes=$(../../bin/check-processes)` in the `format:check` script |
@@ -338,7 +343,7 @@ Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how 
 
 Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-Each PHPStan worker may use up to 1 GB, the `--memory-limit` of `composer analyse`, and a task VM may have 2 GB. That is why the default stops at 4. Lower the setting on a Node, a task VM, or a CI job with little memory, and raise it on a large machine. The candidate gate splits the setting between the projects it runs at once, as [Projects run at the same time](#projects-run-at-the-same-time) describes. CI sets its own Pest process counts, as [Gateway shards](#gateway-shards) describes.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
 
 ### The candidate gate
 
@@ -383,7 +388,7 @@ When that project has changed and `test:affected` selects no tests, the gate run
 
 #### Projects run at the same time
 
-The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `ORBIT_CHECK_PROCESSES` is the budget of the whole gate, and the tools of all groups together stay within it. The gate shares the budget in three ways:
+The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `bin/check-processes` supplies the budget of the whole gate, and the tools of all groups together stay within it. The gate shares the budget in three ways:
 
 1. It runs one more group than half the budget at once. So the largest group can keep at least half of the budget.
 2. It gives each command a share by the size of its group's test suites. The share compares the group with the groups that still run.
@@ -391,9 +396,9 @@ The gate groups its project checks by project and runs the groups at the same ti
 
 The largest group starts first. Its later commands get the processes that finished groups freed.
 
-A budget of 2 or less runs one group at a time. The budget counts workers, not each tool's main process. Two groups of PHPStan or Rector at once could outgrow a 2 GB task VM.
+A budget of 2 or less runs one group at a time. The budget counts workers, not each tool's main process.
 
-With the default of 4, the Gateway's checks run with two processes while two other groups run with one each. Set the budget to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
+With a budget of 4, the Gateway's checks run with two processes while two other groups run with one each. A budget of 1 checks one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
 
 The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
@@ -734,7 +739,45 @@ CI checks every file. It tests the merge result of a pull request, and its resul
 
 All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
 
-Memory is the real limit. A task VM with 2 GB cannot run 16 PHPStan workers, so the default stops at 4, and the gate shares that budget between the projects it runs at once instead of giving each project the whole budget. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. `ORBIT_CHECK_PROCESSES` changes every tool at once.
+Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
+
+The initial worker samples came from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these peaks. A later cold TIA run with two workers reached 1197.5 MiB per Pest worker. The single-worker Gateway measurement below sets the larger final allocation; measurements of the complete gate also account for the controllers.
+
+| Worker | Peak resident memory |
+| --- | --- |
+| Pest | 927.4 MiB |
+| PHPStan | 484.1 MiB |
+| Rector | 695.8 MiB |
+| Pint | 92.5 MiB |
+
+
+Whole-gate measurements on Beast used disposable task VMs from base image `46ccd3ced25598cdf6693a5b83213669ae44b8b9246f053ca10fa7a541773442`, recipe `5f4f8085d91f6523112b8ecb558db1fc85988e114356883afac08ebf8fba2100`, PHP 8.5.11, and the reviewed step 2 code. Each ran root `composer check` with `ORBIT_CHECK_SCOPE=full`, the main TIA graphs at `353ef196c`, and no worker-count override. This checks all quality-tool paths; the warm affected selections ran 748 E2E tests and no tests in the other four PHP projects, including Gateway. The normal size supports no topology. The other sizes kept their nested Nodes running after the harness passed readiness. Gates ran one at a time, with the other measurement VMs stopped.
+
+| VM | Nested Nodes | Derived workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS |
+| --- | --- | --- | --- | --- | --- | --- |
+| Normal: 2 CPUs, 4 GiB | None | 2 | 1.699 GiB | 1.525 GiB | 1.707 GiB | 226.9 MiB |
+| Medium: 4 CPUs, 8 GiB | Gateway, operator, app-dev | 1 | 1.173 GiB | 1.226 GiB | 1.843 GiB | 266.3 MiB |
+| Large: 6 CPUs, 12 GiB | Gateway, operator, app-dev, app-prod | 4 | 2.618 GiB | 2.151 GiB | 3.662 GiB | 501.6 MiB |
+
+All three gates passed on 2026-10-18 UTC, with no OOM events. These are samples at the recorded starting memory, not fixed worker counts for each VM size.
+
+The sampler ran in a separate systemd service and summed every process in the gate's cgroup at a nominal 200 ms interval. Its longest intervals were 0.387, 3.882, and 3.784 seconds on normal, medium, and large. Sampling can be delayed under load, so RSS is a sampled peak. Summed RSS counts shared pages more than once. The continuous kernel cgroup peak accounts for the gate's charged memory, including its descendants. Controller PSS divides shared pages between processes and excludes tool workers and their descendants. It measures the fixed overhead that the reserve covers.
+
+The initial 512 MiB reserve covered the normal and medium controllers, but a four-worker large run reached 513.4 MiB. The later Gateway selection below reached 538.0 MiB. The final 640 MiB reserve gives about 19% headroom above that larger peak. These three rows used the initial 1280 MiB worker allocation. The normal and medium rows used the initial reserve; the large row uses 640 MiB. These measurements used the earlier allocation; they do not give fixed counts under the final rule.
+
+These warm selections do not prove every possible test selection. A supplementary cold normal run finished the Gateway suite with 13,856 passes, 21 skips, and one failure at an existing five-second child-start wait, then stopped before the remaining projects. Its RSS sampling had a 186.887-second gap; the kernel memory peak and OOM counters remained continuous. Its worker high-water mark supplies the earlier cold sample above. The failed file passed unchanged afterward. A first large run also hit an unchanged three-second, 22-child barrier fixture; that fixture passed unchanged on the same topology before the complete repeat.
+
+A complete normal-VM gate on 2026-10-19 UTC then exercised the Gateway workers. Pi 0.87.1 stayed resident in idle RPC mode, with no model calls. The real diff against `353ef196c` selected all 847 Gateway test files from 104 changed files. Gateway `test:affected` passed 13,954 tests with 21 skips and 108,537 assertions in 2614.290 seconds. Its heaviest worker reached 1506.1 MiB `VmHWM`. The final allocation is 1664 MiB, about 10.5% above that measured peak.
+
+| VM and selection | Workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS | Gate seconds |
+| --- | --- | --- | --- | --- | --- | --- |
+| Normal: 2 CPUs, 4 GiB, resident Pi, Gateway and E2E tests | 1 | 3.864 GiB | 2.094 GiB | 1.185 GiB | 538.0 MiB | 3160.337 |
+
+That root `composer check` passed with zero OOM events. The nominal 200 ms sampler's longest interval was 1.214 seconds. Forked test children share pages, so summed RSS counts those mappings repeatedly; the continuous kernel peak records the gate's charged memory. The source was `0e6511df1` plus documentation changes, with receipt tree `0e342edbc5641a76fa917945cb49da8bd58a2364`. It used the initial 1280 MiB allocation and 640 MiB reserve. Both that rule and the final 1664 MiB allocation select one worker from its recorded 3.054 GiB available at start, so its lane shares are unchanged. Later source changes receive separate checks.
+
+Replaying the earlier warm starts through the final rule gives one, one and three workers for normal, medium with topology and large with topology.
+
+A count-only sample rebooted the owned VM at medium size, with four CPUs, 8 GiB, no topology and Pi resident. Its 7.056 GiB available selected three workers. Four workers need at least 7.125 GiB available under the final rule. The earlier medium gate with its topology selected one worker; size alone does not determine the count.
 
 ### Findings are fixed, not silenced
 

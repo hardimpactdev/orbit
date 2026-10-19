@@ -34,7 +34,7 @@ afterEach(function (): void {
 
 it('hides the vault commands according to the Gateway vault switch', function (bool $enabled): void {
     MockClient::global([ListExtensionsRequest::class => MockResponse::make([
-        'data' => ['tasks' => false, 'proxycli' => false, 'documents' => false, 'vault' => $enabled, 'conn' => false],
+        'data' => ['tasks' => false, 'ai-router' => false, 'documents' => false, 'vault' => $enabled, 'conn' => false],
         'meta' => ['request_id' => 'extensions-id'],
     ])]);
 

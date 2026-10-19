@@ -16,7 +16,7 @@ it('preserves scoped resources and exact inventories across the guest control li
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput())
-        ->and($process->getErrorOutput())->toContain('Ran 19 tests', 'OK')
+        ->and($process->getErrorOutput())->toContain('Ran 20 tests', 'OK')
         ->and($process->getOutput())->toBe('');
     expect(scandir($directory))->toBe(['.', '..', 'router-lan-firewall.py']);
 });

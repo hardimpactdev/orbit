@@ -4,18 +4,18 @@ import { queryClient } from "../../src/api/queryClient";
 import { openApp, pane, row } from "./app";
 import { screenText } from "./screen";
 
-it("keeps Quota out of the sidebar while proxycli is disabled", async () => {
+it("keeps AI router out of the sidebar while ai-router is disabled", async () => {
     await openApp("/");
 
     await expect.poll(() => screenText()).toContain("Dashboard");
-    expect(screenText()).not.toContain("Quota");
+    expect(screenText()).not.toContain("AI router");
 });
 
-it("shows provider quota when proxycli is configured and tasks are disabled", async () => {
-    await openApp("/quota", { proxycli: true, tasks: false });
+it("shows provider quota when ai-router is configured and tasks are disabled", async () => {
+    await openApp("/ai-router", { "ai-router": true, tasks: false });
 
-    await expect.element(row("Quota", "Codex")).toBeVisible();
-    await expect.element(row("Quota", "7d 60%")).toBeVisible();
+    await expect.element(row("AI router", "Codex")).toBeVisible();
+    await expect.element(row("AI router", "7d 60%")).toBeVisible();
     expect(screenText()).not.toContain(
         "require both the CLIProxyAPI collector and the tasks extension",
     );
@@ -27,58 +27,58 @@ it("shows provider quota when proxycli is configured and tasks are disabled", as
     expect(screenText()).not.toContain("Token spend");
 });
 
-it("shows Quota as unconfigured while the proxycli extension is enabled without collector setup", async () => {
-    const app = await openApp("/quota", { proxycliExtension: true });
+it("shows AI router as unconfigured while the ai-router extension is enabled without collector setup", async () => {
+    const app = await openApp("/ai-router", { aiRouterExtension: true });
     await expect
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: true,
-            proxycli: true,
+            "ai-router": true,
             documents: true,
             vault: false,
             conn: false,
         });
 
-    await expect.element(page.getByTestId("nav-quota")).toBeVisible();
+    await expect.element(page.getByTestId("nav-ai-router")).toBeVisible();
     await expect
         .element(page.getByTestId("quota-unavailable"))
         .toHaveTextContent("CLIProxyAPI collector is not configured");
     expect(
-        app.gateway.requests.some((request) => request.path === "/api/v1/proxycli/providers"),
+        app.gateway.requests.some((request) => request.path === "/api/v1/ai-router/providers"),
     ).toBe(false);
 });
 
-it("keeps Quota visible after the collector is torn down until the extension is disabled", async () => {
-    const app = await openApp("/quota", { proxycli: true });
-    await expect.element(row("Quota", "Codex")).toBeVisible();
-    app.gateway.teardownProxyCli();
-    await queryClient.invalidateQueries({ queryKey: ["proxycli-status"] });
+it("keeps AI router visible after the collector is torn down until the extension is disabled", async () => {
+    const app = await openApp("/ai-router", { "ai-router": true });
+    await expect.element(row("AI router", "Codex")).toBeVisible();
+    app.gateway.teardownAiRouter();
+    await queryClient.invalidateQueries({ queryKey: ["ai-router-status"] });
 
-    await expect.element(page.getByTestId("nav-quota")).toBeVisible();
+    await expect.element(page.getByTestId("nav-ai-router")).toBeVisible();
     await expect
         .element(page.getByTestId("quota-unavailable"))
         .toHaveTextContent("CLIProxyAPI collector is not configured");
 
-    app.gateway.disableProxyCliExtension();
+    app.gateway.disableAiRouterExtension();
     await queryClient.invalidateQueries({ queryKey: ["extensions"] });
     await expect
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: true,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
         });
-    await expect.poll(() => document.querySelector('[data-testid="nav-quota"]')).toBeNull();
+    await expect.poll(() => document.querySelector('[data-testid="nav-ai-router"]')).toBeNull();
 });
 
 it("lists provider windows from the snapshot without Primary or Secondary labels", async () => {
-    await openApp("/quota", { proxycli: true });
+    await openApp("/ai-router", { "ai-router": true });
 
-    await expect.element(row("Quota", "Codex")).toBeVisible();
-    await expect.element(row("Quota", "7d 60%")).toBeVisible();
-    await expect.element(row("Quota", "5h 90%")).toBeVisible();
+    await expect.element(row("AI router", "Codex")).toBeVisible();
+    await expect.element(row("AI router", "7d 60%")).toBeVisible();
+    await expect.element(row("AI router", "5h 90%")).toBeVisible();
     expect(screenText()).not.toContain("Not reported by Gateway");
     expect(screenText()).not.toContain("Token spend");
     expect(screenText()).not.toContain("Primary");
@@ -94,7 +94,7 @@ it("lists provider windows from the snapshot without Primary or Secondary labels
 });
 
 it("shows account controls and never renders a missing window as zero", async () => {
-    await openApp("/quota/codex", { proxycli: true });
+    await openApp("/ai-router/codex", { "ai-router": true });
 
     await expect.element(pane("Accounts")).toBeVisible();
     await expect.element(row("Accounts", "plus.json")).toHaveTextContent("7d 60%");
@@ -104,15 +104,15 @@ it("shows account controls and never renders a missing window as zero", async ()
 });
 
 it("shows successful and failed account toggle outcomes", async () => {
-    await openApp("/quota/codex", { proxycli: true });
+    await openApp("/ai-router/codex", { "ai-router": true });
     const control = row("Accounts", "disable").getByText("disable", { exact: true });
     await control.click();
     await expect.element(row("Accounts", "enable")).toBeVisible();
 
-    await openApp("/quota/codex", {
-        proxycli: true,
+    await openApp("/ai-router/codex", {
+        "ai-router": true,
         wrapTransport: (inner) => async (method, path, body) => {
-            if (method === "PATCH" && path.includes("/proxycli/accounts/")) {
+            if (method === "POST" && path.includes("/ai-router/accounts/")) {
                 throw new Error("Account toggle failed");
             }
             return inner(method, path, body);
@@ -125,8 +125,8 @@ it("shows successful and failed account toggle outcomes", async () => {
 it("positions a red even-pace marker and omits it without a reset", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-23T12:00:00Z"));
     try {
-        await openApp("/quota", { proxycli: true });
-        await expect.element(row("Quota", "7d 60%")).toBeVisible();
+        await openApp("/ai-router", { "ai-router": true });
+        await expect.element(row("AI router", "7d 60%")).toBeVisible();
         const weekly = document.querySelector('[role="meter"][aria-label="7d remaining"]')!;
         const marker = weekly.querySelector<HTMLElement>("[data-quota-pace]")!;
         expect(marker.style.left).toBe("50%");

@@ -3,7 +3,11 @@ import base64
 import copy
 import importlib.util
 import json
+import io
+import contextlib
+import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -76,6 +80,20 @@ class MemoryFixture(control.Fixture):
 
 
 class ControlTests(unittest.TestCase):
+    def test_root_transport_requires_its_own_marker_not_a_lane_share(self):
+        for environment, expected in [
+            ({'ORBIT_CHECK_PROCESSES': '1'}, 'requires root transport'),
+            ({'ORBIT_ROUTER_LAN_FIREWALL_FIXTURE': '1'}, 'Only fixed fixture operations'),
+        ]:
+            with self.subTest(environment=environment):
+                output = io.StringIO()
+                with patch.dict(os.environ, environment, clear=True), patch.object(os, 'geteuid', return_value=0), \
+                        patch.object(sys, 'argv', [control.__file__, 'invalid', '{}']), \
+                        contextlib.redirect_stderr(output), self.assertRaises(SystemExit) as exit:
+                    runpy.run_path(control.__file__, run_name='__main__')
+                self.assertEqual(exit.exception.code, 1)
+                self.assertIn(expected, output.getvalue())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)

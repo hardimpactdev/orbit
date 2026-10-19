@@ -1,1 +1,1 @@
-Orbit extension [proxycli] is disabled.
+Orbit extension [ai-router] is disabled.

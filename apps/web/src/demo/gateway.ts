@@ -126,7 +126,7 @@ export function createDemoGateway() {
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
     const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
-    const proxyModels = list<{ id: string; provider: string }>("GET /api/v1/proxycli/models");
+    const proxyModels = list<{ id: string; provider: string }>("GET /api/v1/ai-router/models");
     const activities = list<Activity>("GET /api/v1/activities");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
     const trackedInstances = new Set<string>();
@@ -156,8 +156,8 @@ export function createDemoGateway() {
             accounts: quotaAccounts,
         },
     ];
-    let proxycliExtensionEnabled = false;
-    let proxycliConfigured = false;
+    let aiRouterExtensionEnabled = false;
+    let aiRouterConfigured = false;
     let tasksEnabled = true;
     const operations: Operation[] = [];
     let documentsEnabled = true;
@@ -578,7 +578,7 @@ export function createDemoGateway() {
                 () =>
                     ok({
                         tasks: tasksEnabled,
-                        proxycli: proxycliExtensionEnabled,
+                        "ai-router": aiRouterExtensionEnabled,
                         documents: documentsEnabled,
                         vault: false,
                         conn: false,
@@ -586,14 +586,14 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/proxycli$/,
+                /^\/api\/v1\/ai-router$/,
                 () =>
                     ok({
-                        enabled: proxycliConfigured,
-                        hostname: "collector.cli-proxy-api.orbit",
-                        node_id: proxycliConfigured ? 2 : null,
-                        cache_connection: proxycliConfigured ? "valkey" : null,
-                        collected_at: proxycliConfigured ? "2026-09-20T12:00:00Z" : null,
+                        enabled: aiRouterConfigured,
+                        hostname: "collector.ai-router.orbit",
+                        node_id: aiRouterConfigured ? 2 : null,
+                        cache_connection: aiRouterConfigured ? "valkey" : null,
+                        collected_at: aiRouterConfigured ? "2026-09-20T12:00:00Z" : null,
                     }),
             ],
             [
@@ -625,25 +625,25 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/tasks\/status$/, () => ok({ enabled: tasksEnabled })],
             [
                 "GET",
-                /^\/api\/v1\/proxycli\/providers$/,
+                /^\/api\/v1\/ai-router\/providers$/,
                 () =>
-                    proxycliExtensionEnabled && proxycliConfigured
+                    aiRouterExtensionEnabled && aiRouterConfigured
                         ? ok(quotaProviders())
                         : failure(
                               409,
-                              "proxycli.disabled",
-                              "The proxycli extension is disabled or unconfigured.",
+                              "ai_router.disabled",
+                              "The ai-router extension is disabled or unconfigured.",
                           ),
             ],
             [
                 "GET",
-                /^\/api\/v1\/proxycli\/providers\/([^/]+)$/,
+                /^\/api\/v1\/ai-router\/providers\/([^/]+)$/,
                 ([provider = ""]) => {
-                    if (!proxycliExtensionEnabled || !proxycliConfigured) {
+                    if (!aiRouterExtensionEnabled || !aiRouterConfigured) {
                         return failure(
                             409,
-                            "proxycli.disabled",
-                            "The proxycli extension is disabled.",
+                            "ai_router.disabled",
+                            "The ai-router extension is disabled.",
                         );
                     }
 
@@ -653,14 +653,14 @@ export function createDemoGateway() {
                 },
             ],
             [
-                "PATCH",
-                /^\/api\/v1\/proxycli\/accounts\/([^/]+)$/,
-                ([account = ""], body) => {
-                    if (!proxycliExtensionEnabled || !proxycliConfigured) {
+                "POST",
+                /^\/api\/v1\/ai-router\/accounts\/([^/]+)\/(enable|disable)$/,
+                ([account = "", action = ""]) => {
+                    if (!aiRouterExtensionEnabled || !aiRouterConfigured) {
                         return failure(
                             409,
-                            "proxycli.disabled",
-                            "The proxycli extension is disabled.",
+                            "ai_router.disabled",
+                            "The ai-router extension is disabled.",
                         );
                     }
 
@@ -672,7 +672,7 @@ export function createDemoGateway() {
                         return notFound("Account");
                     }
 
-                    row.disabled = body.disabled === true;
+                    row.disabled = action === "disable";
 
                     return ok(row);
                 },
@@ -687,14 +687,14 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
             [
                 "GET",
-                /^\/api\/v1\/proxycli\/models$/,
+                /^\/api\/v1\/ai-router\/models$/,
                 () =>
-                    proxycliExtensionEnabled && proxycliConfigured
+                    aiRouterExtensionEnabled && aiRouterConfigured
                         ? ok(proxyModels)
                         : failure(
                               409,
-                              "proxycli.disabled",
-                              "The proxycli extension is disabled or unconfigured.",
+                              "ai_router.disabled",
+                              "The ai-router extension is disabled or unconfigured.",
                           ),
             ],
             ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
@@ -1268,18 +1268,18 @@ export function createDemoGateway() {
     return {
         transport,
         requests,
-        enableProxyCli(): void {
-            proxycliExtensionEnabled = true;
-            proxycliConfigured = true;
+        enableAiRouter(): void {
+            aiRouterExtensionEnabled = true;
+            aiRouterConfigured = true;
         },
-        enableProxyCliExtension(): void {
-            proxycliExtensionEnabled = true;
+        enableAiRouterExtension(): void {
+            aiRouterExtensionEnabled = true;
         },
-        teardownProxyCli(): void {
-            proxycliConfigured = false;
+        teardownAiRouter(): void {
+            aiRouterConfigured = false;
         },
-        disableProxyCliExtension(): void {
-            proxycliExtensionEnabled = false;
+        disableAiRouterExtension(): void {
+            aiRouterExtensionEnabled = false;
         },
         disableTasks(): void {
             tasksEnabled = false;

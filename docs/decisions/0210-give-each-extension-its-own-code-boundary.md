@@ -52,6 +52,8 @@ The provider registers its routes, migrations, console commands, schedule entrie
 
 Tasks and ProxyCli stay in core until their planned move. Their providers in `App\Providers` implement `Extension`, so they keep their switches. Tasks moves its realtime broadcast on a switch change into its `enable()` and `disable()` hooks.
 
+ADR 0212 step 3 moves ProxyCli to `extensions/ai-router` and renames it AI router, so core no longer owns its provider or code.
+
 ### Plug-in points
 
 Core defines an interface for each place where an extension adds behavior. The extension's provider tags its implementation with the interface name, and core resolves every tagged implementation. This pull request adds the two points that Documents needs:

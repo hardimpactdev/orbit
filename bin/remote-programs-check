@@ -5,7 +5,7 @@ Run from any directory:
 
     bin/remote-programs-check
 
-shellcheck checks every Bash program under apps/gateway/resources, and ruff 0.17.0 checks every Python program and
+shellcheck checks every Bash program under core and extension resources, and ruff 0.17.0 checks every Python program and
 the direct tests with apps/gateway/ruff.toml. A remote program with libraries, and a fragment that the Gateway appends to another program,
 is checked as the Node receives it; each finding names the file and line where it occurs. Then the direct program
 tests in apps/gateway/tests/Programs run with unittest. A missing tool fails the check.
@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GATEWAY = ROOT / 'apps/gateway'
 RESOURCES = GATEWAY / 'resources'
-REMOTE = RESOURCES / 'remote'
+RESOURCE_ROOTS = [RESOURCES, *sorted((GATEWAY / 'extensions').glob('*/resources'))]
 RUFF_VERSION = '0.17.0'
 UNIT_MARKER = '# ORBIT_TASK_UNIT_STATE'
 UNIT_LIBRARY = RESOURCES / 'tasks/unit-state.py'
@@ -68,11 +68,13 @@ def header_uses(text):
 
 def parts(path):
     """The files that make up what the Node receives for this program, in order."""
-    relative = path.relative_to(RESOURCES).as_posix()
-    if relative in FRAGMENTS:
+    root = next(root for root in RESOURCE_ROOTS if path.is_relative_to(root))
+    remote = root / 'remote'
+    relative = path.relative_to(root).as_posix()
+    if root == RESOURCES and relative in FRAGMENTS:
         return [RESOURCES / name for name in FRAGMENTS[relative]] + [path]
-    if path.is_relative_to(REMOTE) and path.parent != REMOTE and path.parent.name != 'lib':
-        return [REMOTE / name for name in header_uses(path.read_text())] + [path]
+    if path.is_relative_to(remote) and path.parent != remote and path.parent.name != 'lib':
+        return [remote / name for name in header_uses(path.read_text())] + [path]
     return [path]
 
 
@@ -163,7 +165,7 @@ def shellcheck(path, files):
 def programs():
     """Every Bash and Python file under the resources, libraries and fragments included."""
     found = []
-    for path in sorted(RESOURCES.rglob('*')):
+    for path in sorted(path for root in RESOURCE_ROOTS for path in root.rglob('*')):
         kind = language(path) if path.is_file() and 'node_modules' not in path.parts else None
         if kind is not None:
             found.append((path, kind))

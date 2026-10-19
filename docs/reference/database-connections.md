@@ -29,7 +29,7 @@ Each record has a unique slug: lowercase words joined by hyphens, at most 63 cha
 
 `host` is a hostname or an IP address, without a user or a port. `port` is 1 through 65535. `path` is an absolute Unix path of at most 1,024 characters. A redis `database` is the numeric database index. The Gateway returns `validation.failed` for a field that the driver does not take, such as `path` on mysql or `host` on sqlite.
 
-A redis `username` names an ACL user on the Redis server. Without it, the Gateway and the Processes that use the connection log in as the `default` user. One connection holds one username and one password for every client that uses it. To give one client its own ACL user, create a second connection on a [Valkey Database server](/reference/database-servers#create-an-acl-user-on-a-valkey-server). Do not change the shared connection, because the Processes that [follow it](/reference/proxycli#follow-the-cache-connection) move to the new user too. After setup, the [Gateway queue](/reference/gateway-queue#acl-users) uses `gateway-queue` this way.
+A redis `username` names an ACL user on the Redis server. Without it, the Gateway and the Processes that use the connection log in as the `default` user. One connection holds one username and one password for every client that uses it. To give one client its own ACL user, create a second connection on a [Valkey Database server](/reference/database-servers#create-an-acl-user-on-a-valkey-server). Do not change the shared connection, because the Processes that [follow it](/reference/ai-router#follow-the-cache-connection) move to the new user too. After setup, the [Gateway queue](/reference/gateway-queue#acl-users) uses `gateway-queue` this way.
 
 `node_id` links the record to a Node. The Node needs no `database` role. SQLite inspection needs this link, and it lets an Instance on the same Node reach a Docker Process locally.
 
@@ -53,11 +53,11 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
-Deletion returns `database_connection.required_by_ai_router` (409) while [ProxyCli setup](/reference/proxycli#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
+Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
-A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [proxycli collector](/reference/proxycli#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
+A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [ai-router collector](/reference/ai-router#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
 
-A validated connection change is stored before dependent runtimes converge and is not rolled back on a runtime failure. Retrying an identical update still checks and repairs stale dependents, even when no connection field changes. See [Connection persistence and retry recovery](/reference/proxycli#connection-persistence-and-retry-recovery) for lost responses, crashes, partial completion, and retry limits.
+A validated connection change is stored before dependent runtimes converge and is not rolled back on a runtime failure. Retrying an identical update still checks and repairs stale dependents, even when no connection field changes. See [Connection persistence and retry recovery](/reference/ai-router#connection-persistence-and-retry-recovery) for lost responses, crashes, partial completion, and retry limits.
 
 ## Inspect a registered connection
 

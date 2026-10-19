@@ -15,11 +15,11 @@ function process_specification_data(array $environment, ?string $user = null): A
     return new AddProcessData(
         targetType: ProcessTargetType::Node,
         targetId: 1,
-        name: 'proxycli',
+        name: 'ai-router',
         runtime: ProcessRuntime::Systemd,
-        command: ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        command: ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
         image: null,
-        workingDirectory: '/var/lib/orbit/proxycli',
+        workingDirectory: '/var/lib/orbit/ai-router',
         environment: $environment,
         ports: ['127.0.0.1:8787:8787/tcp'],
         volumes: [],
@@ -51,20 +51,20 @@ it('persists a systemd environment map in canonical key order', function (): voi
 
     $attributes = new ProcessSpecification()->attributes(
         process_specification_data([
-            'PROXYCLI_READ_TOKEN' => 'read',
-            'PROXYCLI_CACHE_HOST' => '10.44.0.8',
-            'PROXYCLI_PORT' => '8787',
+            'AI_ROUTER_READ_TOKEN' => 'read',
+            'AI_ROUTER_CACHE_HOST' => '10.44.0.8',
+            'AI_ROUTER_PORT' => '8787',
         ]),
         $target,
     );
 
     expect($attributes['runtime_config'])->toBe([
-        'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
         'environment_file' => '',
         'environment' => [
-            'PROXYCLI_CACHE_HOST' => '10.44.0.8',
-            'PROXYCLI_PORT' => '8787',
-            'PROXYCLI_READ_TOKEN' => 'read',
+            'AI_ROUTER_CACHE_HOST' => '10.44.0.8',
+            'AI_ROUTER_PORT' => '8787',
+            'AI_ROUTER_READ_TOKEN' => 'read',
         ],
     ]);
 });
@@ -80,7 +80,7 @@ it('omits an empty systemd environment map so existing units stay identical', fu
     $attributes = new ProcessSpecification()->attributes(process_specification_data([]), $target);
 
     expect($attributes['runtime_config'])->toBe([
-        'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
         'environment_file' => '',
     ]);
 });

@@ -29,8 +29,8 @@ use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\SshNodeCliInstaller;
-use App\Infrastructure\ProxyCli\ProxyCliFootprintArtifact;
 use Illuminate\Support\Facades\Artisan;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
 /** Reads a private dependency of a container-built object, so a nullable one the container left null shows. */
@@ -65,7 +65,7 @@ describe('fleet container wiring', function (): void {
                 PrivateDnsFootprintArtifact::class,
                 RouteResidueFootprintArtifact::class,
                 TmpfilesFootprintArtifact::class,
-                ProxyCliFootprintArtifact::class,
+                AiRouterFootprintArtifact::class,
             ]);
     });
 

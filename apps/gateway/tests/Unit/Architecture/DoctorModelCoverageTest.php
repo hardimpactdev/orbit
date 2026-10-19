@@ -45,7 +45,6 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
-use App\Models\ProxyCliProcessSource;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
@@ -66,6 +65,7 @@ use App\Models\TaskWorkspaceOperation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\UpCloudTaskVmImageBuild;
+use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Orbit\Extensions\Conn\Models\ConnProfile;
@@ -108,7 +108,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteAnalyticsTracking::class,
         RouteRemovalResidue::class,
         ProcessDefinition::class,
-        ProxyCliProcessSource::class,
+        AiRouterProcessSource::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,
     ];
@@ -165,7 +165,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     // Core models, and each extension's models under extensions/<name>/src/Models.
     $directories = ['App\\Models\\' => dirname($modelsDirectory)];
     foreach (glob(dirname(__DIR__, 3).'/extensions/*/src/Models', GLOB_ONLYDIR) ?: [] as $directory) {
-        $directories['Orbit\\Extensions\\'.ucfirst(basename(dirname($directory, 2))).'\\Models\\'] = $directory;
+        $directories['Orbit\\Extensions\\'.str_replace(' ', '', ucwords(str_replace('-', ' ', basename(dirname($directory, 2))))).'\\Models\\'] = $directory;
     }
     $models = [];
     foreach ($directories as $namespace => $directory) {

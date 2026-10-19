@@ -73,7 +73,7 @@ function activityTransport(rows: { current: Activity[] }): Transport {
 }
 
 it("lists Activity after Tasks and opens the newest rows", async () => {
-    const app = await openApp("/activity", { proxycli: true });
+    const app = await openApp("/activity", { "ai-router": true });
     await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
 
     await expect
@@ -85,7 +85,7 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
 
             return (
                 nav.indexOf("Tasks") < nav.indexOf("Activity") &&
-                nav.indexOf("Activity") < nav.indexOf("Quota")
+                nav.indexOf("Activity") < nav.indexOf("AI router")
             );
         })
         .toBe(true);
@@ -455,7 +455,7 @@ it("opens a row on its own route, including the stored properties, and back keep
 
 it("keeps the menu, filters, older rows and detail usable on a phone", async () => {
     await page.viewport(390, 800);
-    const app = await openApp("/", { proxycli: true });
+    const app = await openApp("/", { "ai-router": true });
     await expect
         .element(page.getByRole("button", { name: "Toggle navigation menu" }))
         .toBeVisible();
@@ -467,7 +467,7 @@ it("keeps the menu, filters, older rows and detail usable on a phone", async () 
 
             return (
                 menu.indexOf("Tasks") < menu.indexOf("Activity") &&
-                menu.indexOf("Activity") < menu.indexOf("Quota")
+                menu.indexOf("Activity") < menu.indexOf("AI router")
             );
         })
         .toBe(true);

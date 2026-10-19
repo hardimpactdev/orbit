@@ -115,7 +115,8 @@ describe('custom proxy Route create', function (): void {
         'foo.bar',
         'something.test',
         'cli-proxy-api.orbit',
-        'collector.proxycli.orbit',
+        'ai-router.orbit',
+        'collector.cli-proxy-api.orbit',
     ]);
 
     it('creates a custom proxy from a Node Process listener', function (): void {
@@ -149,7 +150,7 @@ describe('custom proxy Route refusals', function (): void {
     })->with([
         'gateway.orbit',
         'metrics.orbit',
-        'collector.cli-proxy-api.orbit',
+        'collector.ai-router.orbit',
     ]);
 
     it('refuses stealing a Project Route domain', function (): void {

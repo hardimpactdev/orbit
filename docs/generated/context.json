@@ -129,6 +129,24 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/ai-router.mdx",
+            "title": "ai-router",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/analytics.mdx",
             "title": "analytics",
             "kind": "product",
@@ -509,24 +527,6 @@
                 "Task",
                 "Task check",
                 "Task workspace"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/cli/proxycli.mdx",
-            "title": "proxycli",
-            "kind": "product",
-            "components": [
-                "apps/cli",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Placement",
-                "Process",
-                "Task"
             ],
             "governing_adrs": []
         },
@@ -1381,6 +1381,29 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/ai-router.md",
+            "title": "AI router",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/alpha.md",
             "title": "Source alpha",
             "kind": "reference",
@@ -1976,10 +1999,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0212",
-                "0221"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-recovery.md",
@@ -2660,29 +2680,6 @@
                 "Task check",
                 "Task workspace",
                 "Tool"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/proxycli.md",
-            "title": "proxycli",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Activity",
-                "Database server",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Placement",
-                "Process",
-                "Role",
-                "Route",
-                "Schedule",
-                "Task"
             ],
             "governing_adrs": []
         },

@@ -77,9 +77,9 @@ Doctor accepts the current Gateway family set, including Schedule and Database c
 
 The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an Instance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Query sends SQL and an optional write flag against a registered slug. Tables, schema, and describe are bodyless reads. Item, collection, attachment, and inspection responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, stored-environment writes, and inspection execution.
 
-## proxycli
+## ai-router
 
-The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, provider list, and model list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
+The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector. Setup sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, teardown, provider list, provider show, model list, and account enable and disable are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
 
 ## Vault
 

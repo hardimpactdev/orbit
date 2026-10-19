@@ -1362,6 +1362,8 @@ class ReviewGateTest(unittest.TestCase):
     # Reuse repository setup, without repeating the cache test cases.
     def gate_fixture(self):
         (self.root / 'bin').mkdir()
+        (self.root / 'tools').mkdir()
+        (self.root / 'tools/check_budget.py').write_bytes(Path(cache.__file__).parent.parent.joinpath('tools/check_budget.py').read_bytes())
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)
@@ -1538,7 +1540,7 @@ fi
     def test_the_heaviest_lane_gets_most_of_the_budget_and_the_processes_that_others_free(self):
         gate = self.gate_module(self.gate_fixture())
         weights = {'apps/gateway': 1500, 'apps/cli': 200, 'apps/docs': 20, 'apps/e2e': 100, 'packages/php-sdk': 80}
-        # The default budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
+        # A budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
         for first in ('apps/gateway', 'apps/cli'):
             with self.subTest(first=first):
                 budget = gate.ProcessBudget(4, weights)

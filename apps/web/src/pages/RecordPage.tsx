@@ -60,7 +60,7 @@ import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 import { OperationPanel } from "./OperationPanel";
 import { QueuePanel } from "./QueuePanel";
-import { QuotaProviderPage } from "./Quota";
+import { AiRouterProviderPage } from "../extensions/ai-router/AiRouter";
 import { RecordLayout } from "./RecordLayout";
 import { ProjectMenu } from "./ProjectMenu";
 
@@ -544,8 +544,8 @@ export function RecordPage() {
         rows.find((row) => String(row.id) === id);
 
     const page = (() => {
-        if (section === "quota") {
-            return <QuotaProviderPage />;
+        if (section === "ai-router") {
+            return <AiRouterProviderPage />;
         }
 
         switch (section) {

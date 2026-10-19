@@ -54,6 +54,8 @@ The harness assigns the roles in the table and the roles each entry adds, and no
 
 Prepare the active Cluster through the normal Orbit CLI: `app-dev` is its Router, `app-prod` its eligible member, and `operator` remains a nonmember. The fixture verifies these identities and their managed HTTPS/UDP53/TCP53 rules. The harness holds the issue operation lock, checks the current lease and fresh Incus ownership before every guest call, and the guest control rechecks the mounted lease/token and its root-owned resource journal before each mutation. Group membership never supplies privilege. The fixture never adopts an existing rule with the same shape. Deletion resolves only journaled comment identities in the last verified ordered inventory.
 
+The harness passes `ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1` for this fixed control. It is independent of the gate's internal worker shares; setting a worker count grants no fixture authorization.
+
 | Operation | Result |
 | --- | --- |
 | `prepare` | Inventories UFW runtime, persistent files and operator records before creating owned endpoints, bridge, veth, namespace client and bridge-scoped DNS allowances. |
