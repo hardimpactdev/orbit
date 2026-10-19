@@ -101,8 +101,9 @@ final readonly class ProblemRecovery
                 ->where('id', '>', (int) $attempt)->where('recipe_identity', $desired)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('template_uuid')->exists()
                 ? 'verified_recipe_supersession' : null;
         }
-        if (str_starts_with($resource, 'recipe-image:')) {
-            $build = TaskVmImageBuild::query()->find((int) substr($resource, 13));
+        $imageBuildId = RecipeMaintenanceAlerts::parseImageIncident($resource);
+        if ($imageBuildId !== null) {
+            $build = TaskVmImageBuild::query()->find($imageBuildId);
             if (! $build instanceof TaskVmImageBuild) {
                 return 'resource_gone';
             }
@@ -111,9 +112,7 @@ final readonly class ProblemRecovery
                 return 'recipe_generation_superseded';
             }
 
-            $incident = RecipeMaintenanceAlerts::imageIncident($build);
-
-            return $build->state === TaskVmImageBuildState::Succeeded && (int) $incident->attempt > (int) $attempt ? 'verified_image_build' : null;
+            return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
         }
         if (str_starts_with($resource, 'recipe-fleet:')) {
             $parts = explode(':', $attempt);
