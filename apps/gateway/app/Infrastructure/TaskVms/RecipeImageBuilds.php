@@ -7,7 +7,6 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -38,7 +37,7 @@ final readonly class RecipeImageBuilds
             $existing = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)->first();
             if ($existing !== null) {
                 $reactivate = $existing->state === TaskVmImageBuildState::Succeeded && $existing->recipe_generation !== $generation;
-                $restart = $existing->state === TaskVmImageBuildState::Failed && ($retry || $existing->current_step === TaskVmImageBuildStep::Launch);
+                $restart = $existing->restartsAutomatically() || ($retry && $existing->state === TaskVmImageBuildState::Failed);
                 $builds[] = $reactivate || $restart
                     ? $this->chain->requeueRecipe(Node::query()->findOrFail($host->nodeId), $existing, $generation, $restart)
                     : $existing;

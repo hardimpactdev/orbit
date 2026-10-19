@@ -100,6 +100,19 @@ final readonly class ProblemRecovery
                 ->where('id', '>', (int) $attempt)->where('recipe_identity', $desired)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('template_uuid')->exists()
                 ? 'verified_recipe_supersession' : null;
         }
+        if (str_starts_with($resource, 'recipe-image:')) {
+            $build = TaskVmImageBuild::query()->find((int) substr($resource, 13));
+            if (! $build instanceof TaskVmImageBuild) {
+                return 'resource_gone';
+            }
+            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->first();
+            if ($desired !== null && is_string($desired->identity)
+                && ($desired->identity !== $build->recipe_identity || (int) $desired->generation > $build->recipe_generation)) {
+                return 'recipe_generation_superseded';
+            }
+
+            return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
+        }
         if (str_starts_with($resource, 'recipe-fleet:')) {
             $parts = explode(':', $attempt);
             $generation = (int) $parts[0];

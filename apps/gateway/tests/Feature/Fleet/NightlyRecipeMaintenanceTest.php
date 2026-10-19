@@ -9,16 +9,20 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\MaintainMachineRecipe;
+use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakePhpBuildRunner;
@@ -171,20 +175,65 @@ it('halts at a Doctor failure without retrying or touching later Nodes and alert
     expect($prod->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
     expect($alerts->alerts)->toHaveCount(1);
     expect($alerts->alerts[0]->summary)->toContain('Doctor', 'No automatic rollback or retry');
+
+    $halt = $record->fleet_convergence;
+    Bus::fake();
+    $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
+    $doctor->failNode = null;
+    $action->execute();
+
+    expect($record->refresh()->fleet_convergence)->toBe($halt);
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id]);
+    expect($alerts->alerts)->toHaveCount(1);
 });
 
-it('halts on a failed image build before visiting any Node', function (): void {
+it('waits after an image failure then starts convergence when retry promotes both hosts', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    Bus::fake();
     $record->update(['state' => TaskVmImageBuildState::Running, 'promoted_at' => null]);
-    $other->update(['state' => TaskVmImageBuildState::Failed]);
+    $other->update(['state' => TaskVmImageBuildState::Running, 'promoted_at' => null]);
+    ImageBuildJob::recordFailure($other->id, 1, TaskVmImageBuildStep::Program, 'base:packages', new RuntimeException('Package install failed.'));
+    ImageBuildJob::recordFailure($other->id, 1, TaskVmImageBuildStep::Program, 'base:packages', new RuntimeException('Duplicate failure callback.'));
+    $action = app(ConvergeFleetRecipeAction::class);
 
-    app(ConvergeFleetRecipeAction::class)->execute();
-    app(ConvergeFleetRecipeAction::class)->execute();
+    $action->execute();
+    $action->execute();
 
     expect($doctor->visited)->toBe([]);
-    expect($record->refresh()->fleet_convergence['status'])->toBe('halted');
+    expect($record->refresh()->fleet_convergence)->toBeNull();
     expect($alerts->alerts)->toHaveCount(1);
-    expect($alerts->alerts[0]->summary)->toContain('Image build ['.$other->id.'] failed');
+    expect($alerts->alerts[0]->summary)->toContain('Image build ['.$other->id.'] failed', 'base:packages', 'task-vms:build-recipe --retry');
+
+    $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
+    expect($other->refresh()->attempt)->toBe(2);
+    expect($other->state)->toBe(TaskVmImageBuildState::Running);
+    $action->execute();
+    expect($doctor->visited)->toBe([]);
+    $record->update(['state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()]);
+    $action->execute();
+    expect($doctor->visited)->toBe([]);
+    $other->update(['state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()]);
+    $action->execute();
+
+    expect($doctor->visited)->toBe([$record->host_node_id]);
+    expect($record->refresh()->fleet_convergence['status'])->toBe('ready');
+    expect($alerts->alerts)->toHaveCount(1);
+});
+
+it('automatically retries repeated unacknowledged submissions without operator alerts', function (): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    Bus::fake();
+    $other->update(['state' => TaskVmImageBuildState::Running, 'promoted_at' => null]);
+
+    for ($attempt = 1; $attempt <= 3; $attempt++) {
+        $other->update(['submission_pending_at' => now()->subMinutes(11)->toISOString()]);
+        app(RecipeImageBuilds::class)->reconcile();
+        expect($other->refresh()->attempt)->toBe($attempt + 1);
+        expect($other->state)->toBe(TaskVmImageBuildState::Running);
+    }
+
+    expect($alerts->alerts)->toBe([]);
+    expect($doctor->visited)->toBe([]);
 });
 
 it('halts an interrupted visit and preserves its stopping point instead of retrying it', function (): void {
@@ -196,6 +245,12 @@ it('halts an interrupted visit and preserves its stopping point instead of retry
     expect($doctor->visited)->toBe([]);
     expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'halted', 'node_id' => $other->host_node_id]);
     expect($alerts->alerts[0]->summary)->toContain('Interrupted visit');
+
+    $halt = $record->fleet_convergence;
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($record->refresh()->fleet_convergence)->toBe($halt);
+    expect($alerts->alerts)->toHaveCount(1);
 });
 
 it('does not overlap visits or advance an undeployed desired identity', function (): void {

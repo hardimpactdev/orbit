@@ -69,11 +69,6 @@ final readonly class ConvergeFleetRecipeAction
             $ready = true;
             foreach ($hosts as $host) {
                 $build = $builds->firstWhere('host_node_id', $host);
-                if ($build?->state === TaskVmImageBuildState::Failed) {
-                    $this->halt($record, $progress, "Image build [{$build->id}] failed on host [{$host}]. Inspect its build steps before recovery.");
-
-                    return;
-                }
                 if ($build?->state !== TaskVmImageBuildState::Succeeded || $build->promoted_at === null || $build->recipe_generation !== $generation || ! isset($build->images['base'])) {
                     $ready = false;
                 }
