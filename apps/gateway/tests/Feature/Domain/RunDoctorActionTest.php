@@ -429,7 +429,7 @@ describe('RunDoctorAction', function (): void {
             ->and($families[1]->checked)->toBe(0)
             ->and($families[1]->issues)->toHaveCount(1)
             ->and($families[1]->issues[0]->code)->toBe('tool.inspection_failed')
-            ->and($families[1]->issues[0]->resourceId)->toBeNull()
+            ->and($families[1]->issues[0]->resourceId)->toBe("node:{$node->id}:inventory")
             ->and($ssh->calls)->toBe(1)
             ->and(Tool::query()->count())->toBe($toolsBefore)
             ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);

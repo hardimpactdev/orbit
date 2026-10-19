@@ -525,7 +525,7 @@ function apt_tool_known_hosts(): KnownHostsStore
 }
 
 it('isolates unmanageable APT names from supported installed packages', function (): void {
-    [$manager] = apt_tool_manager([apt_result("Bad_Name\tinstall ok installed\t1.0\nunreadable\tinstall ok installed\t?\njq\tinstall ok installed\t1.7.1\n")]);
+    [$manager] = apt_tool_manager([apt_result("Bad_Name\tinstall ok installed\t1.0\nunreadable\tinstall ok installed\tbad\x01version\njq\tinstall ok installed\t1.7.1\n")]);
 
     $inventory = $manager->installedInventory(apt_tool_node());
 

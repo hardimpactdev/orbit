@@ -973,7 +973,7 @@ it('refuses an unverifiable formula inventory instead of reporting absent Tools'
 ]);
 
 it('isolates unmanageable formula names and unreadable versions', function (): void {
-    [$manager] = homebrew_tool_manager([homebrew_result("other/tap/formula 1.0\nbad;name 2.0\nunreadable ?\njq 1.7.1\n")]);
+    [$manager] = homebrew_tool_manager([homebrew_result("other/tap/formula 1.0\nbad;name 2.0\nunreadable bad\x01version\njq 1.7.1\n")]);
 
     $inventory = $manager->installedInventory(homebrew_tool_node());
 
