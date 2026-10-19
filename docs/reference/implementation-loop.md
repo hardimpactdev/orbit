@@ -165,7 +165,7 @@ A `watch()` pattern matches the whole path relative to the project. `*` stays in
 
 Fixture changes run the full suite under TIA anyway. Docs and E2E tests read files across the repository, so these projects run their full suite whenever a file outside them changes. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the selection from a contributor's view.
 
-An affected run on `main` also runs the architecture tests; PR full suites already include them. It runs the `subprocess` group when a change since the graph's commit is inside the project.
+An affected run on `main` also runs the architecture tests. PR coverage follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop). The affected main run also runs the `subprocess` group when a change since the graph's commit is inside the project.
 
 After a passing run, `bin/ci-tia finish` requires the graph to record the tested commit and to hold a result for every test file it links. Pest records the commit itself after it runs tests. When no test is affected, Pest stops before it records the commit, so `finish` records it. The job then saves the graph to the cache.
 
@@ -199,7 +199,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
 
-The plan assigns classes longest first using recorded timings plus 0.2 seconds per test for application boot. Unknown classes use the median class time. No selection threshold or unsharded TIA path exists for pull requests.
+The plan assigns classes longest first using recorded timings plus 0.2 seconds per test for application boot. Unknown classes use the median class time. PR selection follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
 
 The shards run different numbers of Pest processes: 6 for the first shard on Sabre, 4 for each of the others. So the plan gives each class, longest first, to the shard that would end first: its process seconds divided by its processes.
 
@@ -678,7 +678,7 @@ TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible
 
 TIA does not link a test to the code that it runs in a PHP subprocess. So a run that is not full also runs the `subprocess` group, and a contract test keeps each test that starts PHP in that group. Running those test files by path is a rejected alternative, because Paratest takes one path per run, and about fifty files would each pay its startup time. Leaving these tests to the nightly full run is also rejected, because a broken `main` commit can then ship before the nightly run fails.
 
-The group costs about two minutes on the Gateway and E2E jobs. So a run skips it when no change reaches the project, with the rules that `bin/ci-tia` already uses for unrelated paths. Running the separate group on every affected main run is rejected when no change reaches that project. PR full suites include the group regardless of paths. Docs and E2E tests read files across the repository, so these projects run the group on every change.
+The group costs about two minutes on the Gateway and E2E jobs. So a run skips it when no change reaches the project, with the rules that `bin/ci-tia` already uses for unrelated paths. Running the separate group on every affected main run is rejected when no change reaches that project. PR coverage follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop). Docs and E2E tests read files across the repository, so these projects run the group on every change.
 
 Some misses remain:
 

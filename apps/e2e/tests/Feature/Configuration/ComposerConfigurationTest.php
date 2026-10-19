@@ -362,7 +362,6 @@ describe('Composer configuration', function (): void {
             // Each run on main saves its own graph, so a full run on an already tested commit still refreshes the cache.
             ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
             ->toContain("\${{ format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) }}")
-            ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
             ->toContain("\${{ format('orbit-tia-php8.5-{0}-', matrix.project.directory) }}")
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
@@ -422,8 +421,8 @@ describe('Composer configuration', function (): void {
             ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
             ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
-            ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
-            ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\s*$/m');
+            ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
+            ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\s*$/m');
 
         expect(strpos($workflow, 'Install dependencies'))
             ->toBeLessThan(strpos($workflow, 'Restore PHPStan result cache'));
@@ -464,9 +463,14 @@ describe('Composer configuration', function (): void {
             ->toMatchArray(['name' => 'gateway-plan', 'overwrite' => true, 'retention-days' => 30]);
         // The plan checks out the same merge ref and restores the same main graph as the Gateway job of a pull request.
         expect($planSteps['Check out repository']['with']['ref'])->toBe('${{ github.ref }}');
-        expect($planSteps['Restore Pest TIA graph']['with']['restore-keys'])
-            ->toContain("format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha)")
-            ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-');
+        expect($planSteps['Restore Pest TIA graph']['with'])
+            ->toMatchArray([
+                'path' => 'apps/gateway/.orbit-tia',
+                'restore-keys' => <<<'KEYS'
+${{ format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) }}
+${{ steps.orbit-tia-key.outputs.prefix }}-main-
+KEYS."\n",
+            ]);
 
         expect($projectSteps['Restore Pest TIA graph']['if'])->toBe("github.event_name != 'pull_request'");
 
