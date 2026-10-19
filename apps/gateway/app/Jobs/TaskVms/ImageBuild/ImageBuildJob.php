@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms\ImageBuild;
 
+use App\Domain\Fleet\RecipeMaintenanceAlerts;
+use App\Domain\Releases\ReleaseIncident;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -138,6 +140,17 @@ abstract class ImageBuildJob implements ShouldQueue
                 'seconds' => max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($started)->getTimestampMs() / 1000),
                 'error' => mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 4000)];
             $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed, 'current_step' => $step, 'current_program' => $program])->save();
+            if ($build->recipe_identity !== null && ! $build->restartsAutomatically()) {
+                // Only the winning failure write alerts, after its outermost transaction commits.
+                DB::afterCommit(static function () use ($build, $step, $program): void {
+                    $phase = $program ?? $step->value;
+                    app(RecipeMaintenanceAlerts::class)->halted(
+                        "Image build [{$build->id}] failed on host [{$build->host_node_id}] during [{$phase}]. Inspect task-vms:image-builds, fix the build, then run task-vms:build-recipe --retry.",
+                        $build->id,
+                        incident: new ReleaseIncident('recipe-image:'.$build->id, (string) $build->attempt, 'build_failed'),
+                    );
+                });
+            }
         });
     }
 }

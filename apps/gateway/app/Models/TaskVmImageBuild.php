@@ -72,6 +72,11 @@ final class TaskVmImageBuild extends Model
         ];
     }
 
+    public function restartsAutomatically(): bool
+    {
+        return $this->state === TaskVmImageBuildState::Failed && $this->current_step === TaskVmImageBuildStep::Launch;
+    }
+
     /**
      * Let the database arbitrate concurrent starts and resumes. Assign the builder name in the same transaction
      * as the insert, once SQLite has assigned the build id.

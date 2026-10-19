@@ -26,9 +26,11 @@ use App\Models\Node;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 it('files a repro-first group when a fingerprint is over the threshold', function (): void {
@@ -1039,4 +1041,46 @@ it('retires historical Doctor incidents before filing their scoped replacement',
     'unscoped instruction briefs' => ['doctor|tool.inspection_failed|tool|none', 'instructions', 'tool.inspection_failed'],
     'hashed symptom briefs' => ['doctor#0123456789ab', 'symptom', null],
     'hashed instruction briefs' => ['doctor#0123456789ab', 'instructions', null],
+]);
+
+it('resolves an image-build incident only after recovery or supersession', function (string $recovery, string $reason): void {
+    problem_filer_project();
+    $recipe = 'sha256:'.str_repeat('d', 64);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => $recipe, 'generation' => 14]);
+    $host = Node::query()->create(['name' => 'image-host', 'status' => 'active', 'public_ssh_host' => 'image-host.test']);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => $recipe,
+        'recipe_generation' => 14, 'state' => TaskVmImageBuildState::Failed]);
+    app(ProblemCollector::class)->recordRelease('rollout_halted|recipe-image:'.$build->id.'|1|build_failed', [
+        'summary' => 'Image failed', 'release_kind' => 'rollout_halted', 'incident_resource' => 'recipe-image:'.$build->id,
+        'incident_attempt' => '1', 'incident_fault' => 'build_failed',
+    ]);
+    Artisan::call('problems:file');
+    $group = Task::topLevel()->sole();
+    $fingerprint = ProblemFingerprint::query()->sole();
+    $build->update(['state' => TaskVmImageBuildState::Succeeded]);
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+    $build->update(['state' => TaskVmImageBuildState::Running, 'attempt' => 2]);
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    Artisan::call('problems:file');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+    expect($fingerprint->refresh()->evidence)->not->toHaveKey('resolved_at');
+
+    match ($recovery) {
+        'success' => $build->update(['state' => TaskVmImageBuildState::Succeeded]),
+        'generation' => DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => 15]),
+        'identity' => DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('e', 64)]),
+        'gone' => $build->delete(),
+    };
+    Artisan::call('problems:file');
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    expect($fingerprint->refresh()->evidence['resolution'])->toBe($reason);
+})->with([
+    'later attempt succeeded' => ['success', 'verified_image_build'],
+    'generation superseded' => ['generation', 'recipe_generation_superseded'],
+    'identity superseded' => ['identity', 'recipe_generation_superseded'],
+    'build removed' => ['gone', 'resource_gone'],
 ]);
