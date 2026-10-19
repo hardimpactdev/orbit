@@ -25,6 +25,8 @@ final readonly class TaskClaimAdmission
 {
     private const string WorkspaceStartedActivity = 'Task workspace started.';
 
+    private const string WorkspaceFailedActivity = 'Task workspace provisioning failed.';
+
     public function __construct(
         private TaskSubtaskRunner $runner,
         private InstanceProvisioning $provisioning,
@@ -52,14 +54,14 @@ final readonly class TaskClaimAdmission
             return $resumed;
         }
         while (true) {
-            $reserved = DB::transaction(function () use ($skipped): ?Task {
+            $reserved = DB::transaction(function () use ($scheduler, $skipped): ?Task {
                 $group = Task::topLevel()
                     ->where('status', TaskGroupStatus::Todo)
                     ->whereNotIn('id', TaskVm::query()->where('state', TaskVmState::Failed)->select('group_id')->whereNotNull('group_id'))
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
                     ->orderBy('id')
                     ->lockForUpdate()
-                    ->first();
+                    ->get()->first(fn (Task $group): bool => $scheduler->retryIsDue($this->provisioningFailureKey($group), 'workspace provisioning'));
                 if (! $group instanceof Task) {
                     return null;
                 }
@@ -75,6 +77,7 @@ final readonly class TaskClaimAdmission
                 return null;
             }
 
+            $provisionError = null;
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
@@ -90,12 +93,12 @@ final readonly class TaskClaimAdmission
 
                 continue;
             } catch (Throwable $exception) {
-                report($exception);
+                $provisionError = $exception;
                 $instance = InstanceProvisionFailure::fromException($exception);
             }
 
             if (! $instance instanceof Instance) {
-                $this->releaseProvisioningFailure($scheduler, $reserved, $instance);
+                $this->releaseProvisioningFailure($scheduler, $reserved, $instance, $provisionError);
                 $this->endClaim($reserved);
                 $skipped[] = $reserved->id;
 
@@ -248,9 +251,9 @@ final readonly class TaskClaimAdmission
     }
 
     /** Counts a failed claim and requests assistance only while its reservation is still current. */
-    private function releaseProvisioningFailure(TaskScheduler $scheduler, Task $reserved, ?InstanceProvisionFailure $failure): void
+    private function releaseProvisioningFailure(TaskScheduler $scheduler, Task $reserved, ?InstanceProvisionFailure $failure, ?Throwable $error = null): void
     {
-        DB::transaction(function () use ($scheduler, $reserved, $failure): void {
+        DB::transaction(function () use ($scheduler, $reserved, $failure, $error): void {
             $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
@@ -258,8 +261,23 @@ final readonly class TaskClaimAdmission
 
             $key = $this->provisioningFailureKey($group);
             $failures = ($scheduler->readBackoff($key, 'workspace provisioning')['failures'] ?? 0) + 1;
-            if (! $scheduler->rememberBackoff($key, ['failures' => $failures, 'due' => 0], 'workspace provisioning')) {
+            if (! $scheduler->rememberBackoff($key, ['failures' => $failures, 'due' => now()->getTimestamp() + $scheduler->retryDelaySeconds($failures)], 'workspace provisioning')) {
                 $failures = 1;
+            }
+            $fingerprint = hash('sha256', $failure->cause ?? '');
+            $last = Activity::query()->where('log_name', 'tasks')->where('subject_type', $group::class)
+                ->where('subject_id', $group->id)->whereIn('description', [self::WorkspaceStartedActivity, self::WorkspaceFailedActivity])
+                ->latest('id')->first();
+            if ($last?->description !== self::WorkspaceFailedActivity || $last->properties?->get('failure_fingerprint') !== $fingerprint) {
+                Activity::query()->create([
+                    'log_name' => 'tasks', 'description' => self::WorkspaceFailedActivity,
+                    'subject_type' => $group::class, 'subject_id' => $group->id,
+                    'properties' => ['failure_fingerprint' => $fingerprint],
+                    'request_id' => (string) Str::uuid(), 'command' => 'tasks:tick', 'status' => 'failed',
+                ]);
+                if ($error !== null) {
+                    DB::afterCommit(static fn () => report($error));
+                }
             }
             $reason = TaskScheduler::ProvisioningFailedReason.($failure === null ? '' : ' '.$failure->cause);
             $group->status = TaskGroupStatus::Todo;

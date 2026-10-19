@@ -12,7 +12,8 @@ use Throwable;
 final class BuildTaskVmRecipeCommand extends Command
 {
     #[\Override]
-    protected $signature = 'task-vms:build-recipe {--retry : Restart failed Incus builds and retry missing UpCloud templates, reusing published immutable images}';
+    protected $signature = 'task-vms:build-recipe {--retry : Restart failed Incus builds and retry missing UpCloud templates, reusing published immutable images}
+        {--rebuild : Cold rebuild the current recipe from stock on every configured backend}';
 
     #[\Override]
     protected $description = 'Queue the current recipe on configured Incus hosts and UpCloud';
@@ -20,7 +21,7 @@ final class BuildTaskVmRecipeCommand extends Command
     public function handle(RecipeImageBuilds $builds): int
     {
         try {
-            $records = $builds->reconcile(retry: (bool) $this->option('retry'));
+            $records = $builds->reconcile(retry: (bool) $this->option('retry'), rebuild: (bool) $this->option('rebuild'));
             foreach ($records as $build) {
                 $this->line("Build [{$build->id}] | {$build->hostNode->name} | {$build->recipe_identity} | {$build->state->value}");
             }
@@ -30,6 +31,9 @@ final class BuildTaskVmRecipeCommand extends Command
                 $attempt = $upcloud['attempt'];
                 if ($attempt !== null) {
                     $this->line("UpCloud build [{$attempt->id}] | {$attempt->recipe_identity} | {$attempt->status()}");
+                }
+                if ($this->option('rebuild')) {
+                    $this->line('UpCloud cold rebuild requested | '.$upcloud['identity']);
                 }
                 if ($upcloud['template'] !== null) {
                     $this->line('UpCloud verified template: '.$upcloud['template']);

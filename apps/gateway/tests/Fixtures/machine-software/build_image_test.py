@@ -32,7 +32,8 @@ class ImageRecipeTest(unittest.TestCase):
 
     def run_command(self, argv, **kwargs):
         self.commands.append(argv)
-        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, '', '')
+        output = 'PHP 8.5.11' if argv[-2:] == ['/usr/bin/php8.5', '--version'] else ''
+        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, output, '')
 
     def publish(self, path, content, *args):
         self.files[str(path)] = content
@@ -134,7 +135,8 @@ print(json.dumps({'outcome': 'current'}))
             return original_exists(path)
         with patch.object(recipe.Path, 'read_text', read_text), \
              patch.object(recipe.Path, 'exists', exists), \
-             patch.object(recipe, 'publish', side_effect=self.publish):
+             patch.object(recipe, 'publish', side_effect=self.publish), \
+             patch.object(recipe, 'image_guest_cache'):
             yield
 
     def test_verify_after_cleanup_gives_assessment_and_php_the_same_snapshot_without_refresh(self):
@@ -293,6 +295,75 @@ print(json.dumps({'outcome': 'current'}))
             with self.assertRaises(recipe.RecipeFailure):
                 recipe.image_verify(self.payload)
         self.assertEqual(command.call_args.args[0][-2:], ['/usr/local/bin/pnpm', '--version'])
+
+    def test_verification_rejects_tools_that_root_can_run_but_the_guest_cannot(self):
+        for name, binary in [('bun', '/opt/orbit/bun/bin/bun'), ('node', '/usr/local/bin/node'),
+                             ('cargo', '/home/orbit/.cargo/bin/cargo'), ('rust', '/home/orbit/.cargo/bin/rustc'),
+                             ('composer', '/usr/bin/composer'), ('git', '/usr/bin/git'), ('php8.5-cli', '/usr/bin/php8.5')]:
+            with self.subTest(tool=name):
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.3',
+                                     'artifacts': {'amd64': {'sha256': 'a' * 64}}}}})
+                def command(argv, **kwargs):
+                    if argv[-2:] == [binary, '--version'] and argv[:4] == ['sudo', '-u', 'orbit', '-H']:
+                        raise recipe.RecipeFailure('guest permission denied')
+                    return subprocess.CompletedProcess(argv, 0, '1.2.3', '')
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={name: '1.2.3'}), \
+                     patch.object(recipe, 'assess', return_value={name: {'status': 'current'}}), \
+                     patch.object(recipe, 'json_file', return_value={name: {'sha256': 'a' * 64}}), \
+                     patch.object(recipe, 'run', side_effect=command):
+                    with self.assertRaisesRegex(recipe.RecipeFailure, 'guest permission denied'):
+                        recipe.image_verify(self.payload)
+
+    def test_guest_cache_probe_only_reads_the_existing_parent(self):
+        with patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('guest cache read failed')) as command, \
+             patch.object(recipe.tempfile, 'TemporaryDirectory') as temporary:
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'guest cache read failed'):
+                recipe.image_guest_cache()
+        command.assert_called_once_with(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                                         'ls', '-A', '--', '/opt/orbit/.'])
+        temporary.assert_not_called()
+
+    def test_guest_access_check_accepts_the_same_newer_ubuntu_binary_as_root(self):
+        self.payload.update({'identity': 'sha256:current', 'tools': {'git': {'source': 'ubuntu', 'version': '2.54.0', 'package': 'git'}}})
+        with self.verification(), \
+             patch.object(recipe, 'inspect', return_value={'git': '2.55.0'}), \
+             patch.object(recipe, 'assess', return_value={'git': {'status': 'newer_than_recipe'}}), \
+             patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'git version 2.55.0', '')) as command:
+            recipe.image_verify(self.payload)
+        self.assertIn(unittest.mock.call(['/usr/bin/git', '--version'], required=False, env=None), command.call_args_list)
+        self.assertIn(unittest.mock.call(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                                         '/usr/bin/git', '--version'], required=False, env=None), command.call_args_list)
+
+    def test_guest_launchers_only_run_as_orbit_and_match_the_inspected_version(self):
+        for name, binary in [('node', '/usr/local/bin/node'), ('pnpm', '/usr/local/bin/pnpm'),
+                             ('bun', '/opt/orbit/bun/bin/bun'), ('vp-cli', '/usr/local/bin/vp')]:
+            with self.subTest(tool=name):
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.2'}}})
+                def command(argv, **kwargs):
+                    if argv[-2:] == [binary, '--version']:
+                        self.assertEqual(argv[:-2], recipe.IMAGE_GUEST, 'Guest launcher ran as root')
+                    return subprocess.CompletedProcess(argv, 0, '1.2.3', '')
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={name: '1.2.3'}), \
+                     patch.object(recipe, 'assess', return_value={name: {'status': 'current'}}), \
+                     patch.object(recipe, 'run', side_effect=command) as run:
+                    recipe.image_verify(self.payload)
+                self.assertIn(unittest.mock.call([*recipe.IMAGE_GUEST, binary, '--version'], required=False, env=None), run.call_args_list)
+
+    def test_rust_and_cargo_must_report_the_pinned_version_even_with_a_matching_receipt(self):
+        for name in ('rust', 'cargo'):
+            with self.subTest(tool=name):
+                artifact = {'sha256': 'a' * 64}
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.3',
+                                     'artifacts': {'amd64': artifact}}}})
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={}), \
+                     patch.object(recipe, 'assess', return_value={}), \
+                     patch.object(recipe, 'json_file', return_value={name: artifact}), \
+                     patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, '1.2.4', '')):
+                    with self.assertRaises(recipe.RecipeFailure):
+                        recipe.image_verify(self.payload)
 
     def test_puts_orbit_in_incus_admin_after_the_packages_only_when_the_profile_installs_incus(self):
         self.packages()

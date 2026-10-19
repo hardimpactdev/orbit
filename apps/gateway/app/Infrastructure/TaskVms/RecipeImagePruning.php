@@ -26,7 +26,7 @@ final readonly class RecipeImagePruning
         $node = $current->hostNode;
         $builds = TaskVmImageBuild::query()->where('host_node_id', $node->id)->whereNotNull('recipe_identity')
             ->orderByDesc('promoted_at')->orderByDesc('id')->get();
-        $previous = $builds->first(static fn (TaskVmImageBuild $build): bool => $build->recipe_identity !== $current->recipe_identity && $build->promoted_at !== null);
+        $previous = $builds->first(static fn (TaskVmImageBuild $build): bool => $build->id !== $current->id && $build->state === TaskVmImageBuildState::Succeeded && $build->promoted_at !== null);
         $obsolete = [];
         $inUse = array_values($this->image->instances($host, $node));
         $protected = $inUse;
@@ -34,11 +34,17 @@ final readonly class RecipeImagePruning
             $running = $build->id !== $current->id && $build->state === TaskVmImageBuildState::Running;
             $keepBase = $build->id === $current->id || $build->id === $previous?->id || $running;
             if (! $keepBase) {
-                $obsolete[] = RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base');
+                // Publishing may finish before its reply or the image metadata is persisted.
+                $obsolete[] = RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, 'base', $build->id);
+                if (isset($build->images['base'])) {
+                    $obsolete[] = $build->images['base']['alias'];
+                }
             }
             if (! $running) {
                 foreach (self::RetiredProfiles as $profile) {
-                    $obsolete[] = RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, $profile);
+                    if (isset($build->images[$profile])) {
+                        $obsolete[] = $build->images[$profile]['alias'];
+                    }
                 }
             }
             if ($running) {

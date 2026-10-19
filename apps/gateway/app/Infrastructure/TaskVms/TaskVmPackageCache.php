@@ -8,6 +8,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
@@ -68,7 +69,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
         $node = $vm->incusHostNode();
         $this->host($node, ['operation' => 'initialize']);
         $read = $this->incus->query($host, $node, 'GET', '/1.0/instances/'.rawurlencode($vm->name), '');
-        $this->checked($read);
+        $this->checked($read, 'read device', self::GuestPath);
         $config = IncusHost::json('package cache device', $read);
         $devices = is_array($config['devices'] ?? null) ? $config['devices'] : [];
         $expected = ['type' => 'disk', 'source' => self::HostPath, 'path' => self::GuestPath, 'readonly' => 'true'];
@@ -77,24 +78,28 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
                 throw new TaskVmException('task_vm.package_cache_mount_invalid', 'The package cache device is not the expected read-only host mount.');
             }
         } else {
-            $this->checked($this->incus->run($host, $node, ['project', 'set', '--', $host->project, 'restricted.devices.disk=allow', 'restricted.devices.disk.paths='.self::HostPath]));
-            $this->checked($this->incus->run($host, $node, ['config', 'device', 'add', '--', $vm->name, self::Device, 'disk', 'source='.self::HostPath, 'path='.self::GuestPath, 'readonly=true']));
+            $this->checked($this->incus->run($host, $node, ['project', 'set', '--', $host->project, 'restricted.devices.disk=allow', 'restricted.devices.disk.paths='.self::HostPath]), 'permit host mount', self::HostPath);
+            $this->checked($this->incus->run($host, $node, ['config', 'device', 'add', '--', $vm->name, self::Device, 'disk', 'source='.self::HostPath, 'path='.self::GuestPath, 'readonly=true']), 'attach mount', self::GuestPath);
         }
         $shell = new IncusGuestShell($this->incus, $host, $node, $vm->name);
         $artifacts = PackageCacheSnapshot::query()->find($project->id)->artifacts ?? [];
-        $this->checked($shell->asUser(['python3', '-c', File::get(resource_path('task-vms/package-cache-seed.py')), self::GuestPath], json_encode($artifacts, JSON_THROW_ON_ERROR)));
+        $this->checked($shell->asUser(['python3', '-c', File::get(resource_path('task-vms/package-cache-seed.py')), self::GuestPath], json_encode($artifacts, JSON_THROW_ON_ERROR)), 'seed', self::GuestPath);
     }
 
-    /** @param array<string, mixed> $request */
+    /** @param array{operation: string, artifacts?: array<mixed>, max_bytes?: int, github_token?: string|null} $request */
     private function host(Node $node, #[\SensitiveParameter] array $request): CommandResult
     {
-        return $this->checked($this->incus->root($node, ['python3', '-c', File::get(resource_path('task-vms/package-cache.py'))], ProtectedInput::fromString(json_encode($request, JSON_THROW_ON_ERROR)), 1600.0));
+        return $this->checked($this->incus->root($node, ['python3', '-c', File::get(resource_path('task-vms/package-cache.py'))], ProtectedInput::fromString(json_encode($request, JSON_THROW_ON_ERROR)), 1600.0), $request['operation'], self::HostPath);
     }
 
-    private function checked(CommandResult $result): CommandResult
+    private function checked(CommandResult $result, string $operation, string $path): CommandResult
     {
         if (! $result->succeeded()) {
-            throw new TaskVmException('task_vm.package_cache_failed', 'The trusted package cache operation failed.', 502);
+            $detail = new CommandActivityInputSanitizer()->redactText(mb_scrub($result->stderr, 'UTF-8'));
+            $detail = preg_replace('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $detail) ?? '';
+            $tail = mb_substr(trim($detail), -1200);
+
+            throw new TaskVmException('task_vm.package_cache_failed', "The trusted package cache operation [{$operation}] failed for [{$path}] (exit {$result->exitCode}).".($tail === '' ? '' : "\n{$tail}"), 502);
         }
 
         return $result;

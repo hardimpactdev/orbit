@@ -574,9 +574,11 @@ it('provisioning failures raise assistance after three exceptions without blocki
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(1)
         ->and($second->fresh()->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()->assistance_requested)->toBeFalse();
+    $this->travel(1800)->seconds();
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(0)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and($group->fresh()->assistance_requested)->toBeFalse();
+    $this->travel(1800)->seconds();
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(0)
         ->and($group->fresh()->assistance_requested)->toBeTrue()
         ->and($group->fresh()->assistance_kind)->toBe(AssistanceKind::Failure)
@@ -602,19 +604,26 @@ it('provisioning failures raise assistance only after the configured threshold a
     };
     app()->instance(InstanceProvisioning::class, $provisioner);
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     $provisioner->succeed = true;
+    $this->travel(1800)->seconds();
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(1)
         ->and($group->fresh()->assistance_reason)->toBeNull();
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
     $provisioner->succeed = false;
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeFalse();
     config(['orbit.tasks.provisioning_failure_threshold' => 5]);
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeFalse();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeTrue()
         ->and($group->fresh()->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason);
@@ -628,8 +637,10 @@ it('records threshold assistance once and does not repeat it on another failure'
 
     expect($scheduler->claimAvailable())->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
+    $this->travel(1800)->seconds();
     expect($scheduler->claimAvailable())->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeTrue();
+    $this->travel(1800)->seconds();
     expect($scheduler->claimAvailable())->toBe(0);
     $entries = Activity::query()->where('subject_id', $group->id)->where('description', 'assistance requested')->get();
     expect($entries)->toHaveCount(1)
@@ -696,15 +707,15 @@ it('provisioning failures raise assistance safely when the cache cannot read or 
     $cache->shouldReceive('get')->with($key)->andReturn(['failures' => 2, 'due' => 0])->byDefault();
     $cache->shouldReceive('forever')->with($key, Mockery::any())->andReturnTrue()->byDefault();
     if ($operation === 'read') {
-        $cache->shouldReceive('get')->with($key)->once()->andThrow(new RuntimeException('cache unavailable'));
+        $cache->shouldReceive('get')->with($key)->twice()->andThrow(new RuntimeException('cache unavailable'));
     } else {
-        $cache->shouldReceive('forever')->with($key, ['failures' => 3, 'due' => 0])->once()->andThrow(new RuntimeException('cache unavailable'));
+        $cache->shouldReceive('forever')->with($key, Mockery::on(fn (array $value): bool => $value['failures'] === 3 && $value['due'] > now()->getTimestamp()))->once()->andThrow(new RuntimeException('cache unavailable'));
     }
 
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(0)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and($group->fresh()->assistance_requested)->toBeFalse();
-    Log::shouldHaveReceived('warning')->with('The workspace provisioning backoff could not be '.($operation === 'read' ? 'read' : 'written').'.', Mockery::any())->once();
+    Log::shouldHaveReceived('warning')->with('The workspace provisioning backoff could not be '.($operation === 'read' ? 'read' : 'written').'.', Mockery::any())->times($operation === 'read' ? 2 : 1);
 })->with(['read', 'write']);
 
 it('provisioning failures raise assistance only while the original reservation is held', function (): void {
@@ -735,6 +746,7 @@ it('provisioning failures raise assistance that clears on a capacity wait or bac
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     for ($tick = 0; $tick < 3; $tick++) {
         app(TaskScheduler::class)->claimAvailable();
+        $this->travel(1800)->seconds();
     }
     expect($group->fresh()->assistance_requested)->toBeTrue();
     if ($direction) {
@@ -780,7 +792,7 @@ it('provisioning failures raise assistance safely when a cache write returns fal
     Log::spy();
     $cache = Cache::partialMock();
     $cache->shouldReceive('get')->with($key)->andReturn(['failures' => 2, 'due' => 0]);
-    $cache->shouldReceive('forever')->with($key, ['failures' => 3, 'due' => 0])->andReturnFalse();
+    $cache->shouldReceive('forever')->with($key, Mockery::on(fn (array $value): bool => $value['failures'] === 3 && $value['due'] > now()->getTimestamp()))->andReturnFalse();
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
 
     expect(app(TaskScheduler::class)->claimAvailable())->toBe(0)
@@ -812,6 +824,7 @@ it('provisioning failures raise assistance using the original streak after a sta
     $instance = scheduler_instance($project, scheduler_node('rollback-node', '10.44.0.99'), 'rollback', $group);
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     $group->refresh()->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
 
@@ -823,6 +836,7 @@ it('provisioning failures raise assistance using the original streak after a sta
         ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'Task workspace started.')->exists())->toBeFalse()
         ->and(Cache::get('tasks:provisioning-failures:'.$group->id)['failures'])->toBe(2);
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeTrue();
 });
@@ -833,6 +847,7 @@ it('provisioning failures raise assistance from a new generation after a success
     $instance = scheduler_instance($project, scheduler_node('crash-after-node', '10.44.0.100'), 'crash-after', $group);
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     $group->refresh()->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
 
@@ -855,7 +870,9 @@ it('provisioning failures raise assistance from a new generation after a success
     expect(Cache::get('tasks:provisioning-failures:'.$group->id)['failures'])->toBe(2);
     $firstGeneration = Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'Task workspace started.')->sole()->id;
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeFalse()
         ->and(Cache::get('tasks:provisioning-failures:'.$group->id.':'.$firstGeneration)['failures'])->toBe(2);
@@ -863,7 +880,9 @@ it('provisioning failures raise assistance from a new generation after a success
     $group->refresh()->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
     DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'startReserved'))->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $group, $instance));
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
+    $this->travel(1800)->seconds();
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeFalse();
     if ($cleanup !== 'crash') {
@@ -3836,4 +3855,44 @@ describe('tick failure assistance', function (): void {
             ->and($group->tasks()->sole()->assistance_reason)->toBe($reason);
         Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $failure->message);
     });
+});
+
+it('backs off workspace failures without blocking later groups and reports each cause once under a direction hold', function (): void {
+    Exceptions::fake();
+    $project = scheduler_app('provision-backoff');
+    $group = queued_group($project, 'Failing setup');
+    test_update_task($group, test_assistance_attributes(AssistanceKind::Direction, 'Branch?', 'Keep this direction.'));
+    $provisioner = new class implements InstanceProvisioning
+    {
+        public int $calls = 0;
+
+        public string $cause = 'cache seed permission denied';
+
+        public function provision(InstanceProvisionIntent $intent): ?Instance
+        {
+            $this->calls++;
+            throw new RuntimeException($this->cause);
+        }
+    };
+    app()->instance(InstanceProvisioning::class, $provisioner);
+    $scheduler = app(TaskScheduler::class);
+    $scheduler->claimAvailable();
+    Exceptions::assertReportedCount(1);
+    $this->travel(20)->seconds();
+    $scheduler->claimAvailable();
+    expect($provisioner->calls)->toBe(1);
+    $this->travel(40)->seconds();
+    $scheduler->claimAvailable();
+    expect($provisioner->calls)->toBe(2);
+    Exceptions::assertReportedCount(1);
+    $provisioner->cause = 'bun permission denied';
+    $this->travel(120)->seconds();
+    $scheduler->claimAvailable();
+    Exceptions::assertReportedCount(2);
+    expect($group->fresh()->assistance_reason)->toBe('Keep this direction.');
+    $later = queued_group($project, 'Later setup');
+    $scheduler->claimAvailable();
+    expect($provisioner->calls)->toBe(4)
+        ->and($later->fresh()->status)->toBe(TaskGroupStatus::Todo);
+    Exceptions::assertReportedCount(3);
 });

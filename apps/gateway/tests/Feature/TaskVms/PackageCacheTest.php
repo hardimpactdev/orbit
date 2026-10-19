@@ -191,6 +191,44 @@ function package_cache_transport(SshExecutor $ssh): TaskVmPackageCache
     return new TaskVmPackageCache(new IncusHost($ssh, $keys, $known));
 }
 
+it('names the failed cache operation and path with bounded sanitized evidence', function (string $operation, string $path, int $failureAt): void {
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
+    $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'private']);
+    $ssh = new class($failureAt) implements SshExecutor
+    {
+        public int $calls = 0;
+
+        public function __construct(private readonly int $failureAt) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return $this->calls++ === $this->failureAt
+                ? new CommandResult(1, '', "old output\n".str_repeat("progress\n", 1000)."PASSWORD=cache-secret\nPermissionError: '/opt/orbit/package-cache/.orbit-owned'\n", 1, false)
+                : new CommandResult(0, '{"devices":{}}', '', 1, false);
+        }
+    };
+    $cache = package_cache_transport($ssh);
+
+    expect(fn () => $operation === 'fill' ? $cache->fill($settings->host($node->id), $node, []) : $cache->prepare($vm, $project))
+        ->toThrow(function (TaskVmException $exception) use ($operation, $path): void {
+            expect($exception->getMessage())->toContain("[{$operation}]", "[{$path}]", 'exit 1', 'PermissionError')
+                ->and(mb_strlen($exception->getMessage()))->toBeLessThanOrEqual(TaskVmException::MessageLimit);
+            foreach (['old output', 'cache-secret'] as $private) {
+                expect($exception->getMessage())->not->toContain($private);
+            }
+        });
+    expect($ssh->calls)->toBe($failureAt + 1);
+})->with([
+    ['fill', '/var/lib/orbit/package-cache', 0],
+    ['initialize', '/var/lib/orbit/package-cache', 0],
+    ['read device', '/opt/orbit/package-cache', 1],
+    ['permit host mount', '/var/lib/orbit/package-cache', 2],
+    ['attach mount', '/opt/orbit/package-cache', 3],
+    ['seed', '/opt/orbit/package-cache', 4],
+]);
+
 it('attaches a host-enforced read-only directory and refuses a writable existing device', function (): void {
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
     $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);

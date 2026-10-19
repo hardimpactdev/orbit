@@ -4,6 +4,7 @@ import traceback
 
 IMAGE_LOG = None
 IMAGE_APT = Path('/var/tmp/orbit-image-apt')
+IMAGE_GUEST = ['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit']
 
 
 def command_output(result):
@@ -208,6 +209,15 @@ def php_install(payload):
         raise RecipeFailure()
 
 
+def image_guest_run(argv):
+    return run([*IMAGE_GUEST, *argv])
+
+
+def image_guest_cache():
+    # Images have no mounted cache. Read its existing parent as the guest without changing the image.
+    image_guest_run(['ls', '-A', '--', '/opt/orbit/.'])
+
+
 def image_verify(payload):
     marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
     if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
@@ -224,17 +234,14 @@ def image_verify(payload):
             assessment = assess(selected, observed, git_names=git_packages(payload))
             if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
                 raise RecipeFailure()
-            if 'pnpm' in selected:
-                result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
-                              '/usr/local/bin/pnpm', '--version'])
-                if result.stdout.strip() != selected['pnpm']['version']:
-                    raise RecipeFailure()
             if 'incus' in payload['tools'] and 'incus-admin' not in run(['id', '-nG', 'orbit']).stdout.split():
                 raise RecipeFailure()
             for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
                 if name in payload['tools']:
                     artifact = payload['tools'][name]['artifacts'][payload['architecture']]
                     algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+                    image_guest_run(['test', '-x', path])
+                    image_guest_run([algorithm + 'sum', path])
                     with open(path, 'rb') as stream:
                         if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
                             raise RecipeFailure()
@@ -248,6 +255,19 @@ def image_verify(payload):
             for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
                 if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
                     raise RecipeFailure()
+            guest_tools = [('node', '/usr/local/bin/node'), ('bun', '/opt/orbit/bun/bin/bun'),
+                           ('pnpm', '/usr/local/bin/pnpm'), ('vp-cli', '/usr/local/bin/vp'),
+                           ('rust', '/home/orbit/.cargo/bin/rustc'), ('cargo', '/home/orbit/.cargo/bin/cargo'),
+                           ('composer', '/usr/bin/composer'), ('git', '/usr/bin/git')]
+            guest_tools += [(name, '/usr/bin/' + name.removesuffix('-cli')) for name in payload['tools']
+                            if re.fullmatch(r'php[0-9]+\.[0-9]+-cli', name)]
+            for name, binary in guest_tools:
+                if name in payload['tools']:
+                    expected = observed.get(name) if name in ('node', 'pnpm', 'bun', 'vp-cli') else binary_version(binary)
+                    guest = binary_version(binary, prefix=IMAGE_GUEST)
+                    if expected is None or guest != expected:
+                        raise RecipeFailure('verify', detail='Guest tool version failed: ' + name)
+            image_guest_cache()
             for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
                 if Path(path).exists():
                     raise RecipeFailure()

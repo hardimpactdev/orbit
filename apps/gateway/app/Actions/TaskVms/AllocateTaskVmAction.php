@@ -86,7 +86,7 @@ final readonly class AllocateTaskVmAction
             foreach ($hosts as [$host, $node]) {
                 $build = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)
                     ->where('recipe_identity', $recipe->identity)->where('state', TaskVmImageBuildState::Succeeded)
-                    ->whereNotNull('promoted_at')->first();
+                    ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
                 $base = $build?->images['base'] ?? null;
                 if ($base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
                     $images[$host->nodeId] = $base['fingerprint'];

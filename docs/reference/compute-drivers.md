@@ -468,6 +468,14 @@ A subtask whose topology needs a larger VM than its group got waits before its f
 
 Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
 
+Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. The existing assessment owns version policy; Rust and Cargo must also report their pinned versions.
+
+Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
+
+Cache failures name the operation, path, exit code, and a bounded, sanitized stderr tail; checking the mount marker preserves access errors instead of treating them as a missing mount.
+
+Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
+
 When the default branch moves in the Gateway Git mirror, Orbit compares the blob IDs of `composer.lock`, `package-lock.json`, `bun.lock`, and `pnpm-lock.yaml`, at the root and below `apps/` and `packages/`. A lock contributes only when the same directory contains a regular `composer.json` for Composer or `package.json` for JavaScript. This excludes standalone example and test fixture locks.
 
 An unchanged commit reuses its snapshot. Changed or removed lock blobs replace the Project's desired inventory, invalidate its recorded host inventory, and queue a fill on each configured host. A Project stays pending until every configured host has verified all its selected archives. Pending fills coalesce by host; workers drop duplicates that overlap a running fill. A fill clears pending only for the inventory it read. A lock change during a fill stays pending for the next mirror fetch, including at an unchanged commit.
@@ -745,6 +753,12 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 ### Build the base image
 
 Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
+
+Use `php artisan task-vms:build-recipe --rebuild` after an image-builder fix, or whenever the current recipe needs a fresh image. It rebuilds the unchanged recipe from stock on every configured Incus host and UpCloud. It cannot be combined with `--retry`. It refuses while a build for the same recipe is running or its UpCloud rebuild request is pending, or while a configured Incus host is building another recipe.
+
+Each candidate runs the normal build, verify, smoke, topology-seed (Incus), and promote path with the desired-recipe and generation fences. A cold rebuild stays inside the current desired generation: it does not resume a halted Node rollout or resolve its incident. If the deployed recipe is not yet desired, reconcile it before requesting a cold rebuild.
+
+A failed candidate leaves the promoted image in service. A newer promoted build for the same host and recipe resolves the failed candidate's image-build incident. Promotion swaps the image only after the candidate passes. Build records and candidate aliases distinguish rebuilds of the same recipe; the recipe identity used by Nodes does not change.
 
 A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
