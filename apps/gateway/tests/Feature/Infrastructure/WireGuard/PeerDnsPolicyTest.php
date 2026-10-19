@@ -245,7 +245,7 @@ it('reports SSH inspection failure as unverifiable without attempting repair', f
     [$node, $ssh] = peer_dns_inspection_fixture();
     $ssh->fault = 'ssh';
     $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->message, 'DNS')));
+    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->summary, 'DNS')));
 
     expect($dnsIssues)->toHaveCount(1)
         ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
@@ -329,7 +329,7 @@ it('reports a lookup transport failure as unverifiable', function (): void {
     $ssh->fault = 'query-ssh';
 
     $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->message, 'DNS')));
+    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->summary, 'DNS')));
     expect($dnsIssues)->toHaveCount(1)
         ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
         ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
