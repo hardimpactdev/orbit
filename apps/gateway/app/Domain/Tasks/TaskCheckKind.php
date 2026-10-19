@@ -15,5 +15,4 @@ enum TaskCheckKind: string
     case Handoff = 'handoff';
 
     /** The gate on a mechanical default-branch merge; no implementer or deliverable commands. */
-    case BaseMerge = 'base_merge';
 }

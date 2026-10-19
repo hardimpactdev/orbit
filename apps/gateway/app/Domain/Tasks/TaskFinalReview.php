@@ -27,13 +27,8 @@ final readonly class TaskFinalReview
 
     public const string FixupTitle = 'Address final review';
 
-    /** A delta-only final review of an overlapping mechanical main merge; not an agent fixup. */
-    public const string BaseMergeReview = 'base-merge-review';
-
     /** Final-review fixups in one window before the task asks for assistance. */
     public const int FixupLimit = 2;
-
-    public const int DeltaReviewLimit = 3;
 
     /** Assistance set when someone other than Orbit pushed to an Orbit task branch. */
     public const string UnreviewedHeadPrefix = 'The pull request head was not reviewed by Orbit: ';
@@ -191,16 +186,6 @@ final readonly class TaskFinalReview
             ->max('position');
 
         return $ordered->filter(static fn (Task $task): bool => $task->fixup_problem === self::FixupProblem
-            && ($boundary === null || $task->position > $boundary))->count();
-    }
-
-    /** @param  Collection<int, Task>  $tasks */
-    public static function deltaReviewsInWindow(Collection $tasks): int
-    {
-        $boundary = $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === null
-            && ! $task->isFinalReview() && $task->status === TaskStatus::Completed)->max('position');
-
-        return $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === self::BaseMergeReview
             && ($boundary === null || $task->position > $boundary))->count();
     }
 

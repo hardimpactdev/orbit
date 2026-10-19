@@ -2858,7 +2858,7 @@ it('reconciles remote finished checks under the lease while preserving assistanc
     }
 
     // Even attributed mutations cannot resolve an existing assistance request.
-    scheduler_record_merge_lease($group, $checks);
+    scheduler_record_fast_forward_lease($group, $checks);
 
     app(TaskScheduler::class)->tick();
 
@@ -3029,11 +3029,11 @@ it('asks for assistance immediately for an unattributed HEAD or tree change and 
         ->and($dispatcher->commands)->toBe([]);
 })->with(['working tree edit' => 'edit', 'reviewer commit' => 'commit', 'reviewer commits reviewed tree' => 'same_tree_commit']);
 
-function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks): void
+function scheduler_record_fast_forward_lease(Task $group, FakeTaskCheckRunner $checks): void
 {
     TaskWorkspaceLeaseRecord::query()->create([
         'instance_id' => $group->taskable_id, 'group_id' => $group->id,
-        'kind' => 'main_merge', 'owner' => 'main-merge:'.$group->id, 'status' => 'released', 'orbit_mutation' => true,
+        'kind' => 'workspace_fast_forward', 'owner' => 'resume-fast-forward:'.$group->id, 'status' => 'released', 'orbit_mutation' => true,
         'acquisition_sequence' => 2,
         'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
         'head_after' => $checks->head, 'tree_after' => $checks->tree,
@@ -3041,23 +3041,23 @@ function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks):
     ]);
 }
 
-it('re-requests a review on an Orbit main merge with a fresh baseline and delta scope', function (): void {
+it('re-requests a review on an Orbit workspace fast-forward with a fresh baseline and delta scope', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskTurnReceipts::contents('approved', 'Reviewed before the merge.'),
-        FakeTaskTurnReceipts::contents('approved', 'Reviewed the merge delta.'),
+        FakeTaskTurnReceipts::contents('approved', 'Reviewed before the fast-forward.'),
+        FakeTaskTurnReceipts::contents('approved', 'Reviewed the fast-forward delta.'),
     ]);
     $checks->head = str_repeat('d', 40);
     $checks->tree = str_repeat('e', 40);
     $checks->commitTree = $checks->tree;
     $task->checks()->create([
-        'kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
         'pid' => 0, 'process_started' => '',
         'head_before' => $checks->head, 'tree_before' => $checks->tree,
         'head_after' => $checks->head, 'tree_after' => $checks->tree,
         'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
     ]);
 
-    scheduler_record_merge_lease($group, $checks);
+    scheduler_record_fast_forward_lease($group, $checks);
 
     app(TaskScheduler::class)->tick();
 
@@ -3071,14 +3071,14 @@ it('re-requests a review on an Orbit main merge with a fresh baseline and delta 
         ->and($dispatcher->commands)->toBe([])
         ->and($signer->messages)->toBe([]);
 
-    $reader->turnId = 'merge-delta-review';
+    $reader->turnId = 'fast-forward-delta-review';
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($signer->messages)->toBe([$task->title."\n\nReviewed the merge delta."]);
+        ->and($signer->messages)->toBe([$task->title."\n\nReviewed the fast-forward delta."]);
 });
 
-it('preserves existing review assistance regardless of its text and historical merge evidence', function (string $reason, bool $recorded, bool $agentEdit, ?string $groupReason = null, bool $failedSnapshots = false): void {
+it('preserves existing review assistance regardless of its text and earlier check evidence', function (string $reason, bool $recorded, bool $agentEdit, ?string $groupReason = null, bool $failedSnapshots = false): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
     $task->update(['type' => TaskType::FinalReview]);
     $group->tasks()->where('id', '!=', $task->id)->delete();
@@ -3098,7 +3098,7 @@ it('preserves existing review assistance regardless of its text and historical m
     $checks->commitTree = $checks->tree;
     if ($recorded) {
         $task->checks()->create([
-            'kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+            'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
             'pid' => 0, 'process_started' => '',
             'head_before' => $checks->head, 'tree_before' => $checks->tree,
             'head_after' => $checks->head, 'tree_after' => $checks->tree,
@@ -3106,7 +3106,7 @@ it('preserves existing review assistance regardless of its text and historical m
         ]);
     }
     if ($recorded) {
-        scheduler_record_merge_lease($group, $checks);
+        scheduler_record_fast_forward_lease($group, $checks);
     }
     if ($agentEdit) {
         $checks->tree = str_repeat('f', 40);

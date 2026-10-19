@@ -53,7 +53,7 @@ describe('workspace lease', function (): void {
         expect($next->id)->not->toBe($holder->id);
         expect($leases->status($group)[0]['holder']['owner'])->toBe('second');
     })->with(function (): iterable {
-        $actors = ['implementer', 'reviewer', 'check', 'main_merge', 'publication', 'settle', 'teardown', 'verdict'];
+        $actors = ['implementer', 'reviewer', 'check', 'workspace_fast_forward', 'publication', 'settle', 'teardown', 'verdict'];
         foreach ($actors as $first) {
             foreach ($actors as $second) {
                 yield $first.' / '.$second => [$first, $second];
@@ -325,12 +325,12 @@ it('preserves merge provenance when the same lease continues into its detached g
     $task = $group->tasks->first();
     $beforeHead = $checks->head;
     $beforeTree = $checks->tree;
-    $leases->run($group, 'main_merge', 'merge', function () use ($group, $task, $checks, $leases): void {
+    $leases->run($group, 'workspace_fast_forward', 'merge', function () use ($group, $task, $checks, $leases): void {
         $checks->head = str_repeat('c', 40);
         $checks->tree = str_repeat('d', 40);
         $process = $leases->startCheck($group, $task, 'check');
         $check = $task->checks()->where('pid', $process->pid)->where('process_started', $process->started)->sole();
-        $check->update(['kind' => TaskCheckKind::BaseMerge]);
+        $check->update(['kind' => TaskCheckKind::Handoff]);
         expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->check_id)->toBe($check->id);
         $leases->finishedCheck($check, TaskCheckReading::finished(0, $checks->head, $checks->tree, [], 'done'));
     });
@@ -345,13 +345,13 @@ it('refuses historical merge attribution without a review baseline lease', funct
     $merged = str_repeat('c', 40);
     $mergedTree = str_repeat('d', 40);
     TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $head, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $task->id]);
-    $task->checks()->create(['kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Passed,
+    $task->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
         'pid' => 123, 'process_started' => 'start', 'started_at' => now()->subMinute(), 'finished_at' => now()->subSecond(),
         'head_before' => $merged, 'tree_before' => $mergedTree, 'head_after' => $merged, 'tree_after' => $mergedTree]);
     $leases = app(TaskWorkspaceLease::class);
     $snapshot = new TaskWorkspaceSnapshot($merged, $mergedTree, $head, $mergedTree, $tree, str_repeat('e', 40));
     expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeFalse();
-    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $merged, 'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $task->id]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $merged, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $task->id]);
     expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, 'outside-tree', $head, $mergedTree, $tree, str_repeat('e', 40))))->toBeFalse();
     expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($merged, $mergedTree, $head, $mergedTree, 'different-base', str_repeat('e', 40))))->toBeFalse();
     expect($leases->ownedChange($group, $head, $tree, $snapshot))->toBeFalse();

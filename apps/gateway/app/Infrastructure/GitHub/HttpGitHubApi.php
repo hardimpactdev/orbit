@@ -163,6 +163,58 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['metadata' => 'read']);
     }
 
+    public function repositoryAdministrationReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['administration' => 'read']);
+    }
+
+    public function rulesRequireUpToDate(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): bool
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository).'/rules/branches/'.rawurlencode($branch)));
+        $rules = $response->json();
+        if (! $response->successful() || ! is_array($rules) || ! array_is_list($rules)) {
+            throw GitHubApiException::unavailable();
+        }
+        $strict = false;
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! is_string($rule['type'] ?? null)) {
+                throw GitHubApiException::unavailable();
+            }
+            if ($rule['type'] === 'required_status_checks') {
+                $parameters = $rule['parameters'] ?? null;
+                $required = is_array($parameters) ? ($parameters['strict_required_status_checks_policy'] ?? null) : null;
+                if (! is_bool($required)) {
+                    throw GitHubApiException::unavailable();
+                }
+                $strict = $strict || $required;
+            }
+        }
+
+        return $strict;
+    }
+
+    public function protectionRequiresUpToDate(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): bool
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository).'/branches/'.rawurlencode($branch).'/protection'));
+        if ($response->status() === 404) {
+            return false;
+        }
+        $protection = $response->json();
+        if (! $response->successful() || ! is_array($protection) || ! is_object($response->object())) {
+            throw GitHubApiException::unavailable();
+        }
+        if (($protection['required_status_checks'] ?? null) === null) {
+            return false;
+        }
+        $checks = $protection['required_status_checks'];
+        $strict = is_array($checks) ? ($checks['strict'] ?? null) : null;
+        if (! is_bool($strict)) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $strict;
+    }
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

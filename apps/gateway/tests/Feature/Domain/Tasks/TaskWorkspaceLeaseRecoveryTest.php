@@ -72,7 +72,7 @@ it('recovers ownership after a delayed snapshot without crediting its uncertain 
     $head = $this->leaseChecks->head;
     $before = $this->leaseChecks->tree;
     $mutations = 0;
-    $leases->run($this->leaseGroup, 'main_merge', 'main-once', function () use ($leases, &$mutations): void {
+    $leases->run($this->leaseGroup, 'workspace_fast_forward', 'main-once', function () use ($leases, &$mutations): void {
         $record = $leases->remoteStarted($this->leaseGroup->taskable, changesCheckout: true);
         $mutations++;
         $this->leaseChecks->tree = str_repeat('c', 40);
@@ -309,7 +309,7 @@ it('does not attribute an outside edit after synchronous mutation when Gateway d
     $leases->release($baseline);
     $head = $checks->head;
     $before = $checks->tree;
-    $lease = $leases->acquire($group, 'main_merge', 'interrupted-callback');
+    $lease = $leases->acquire($group, 'workspace_fast_forward', 'interrupted-callback');
     $lease->update(['head_before' => $head, 'tree_before' => $before]);
     $leases->within($lease, function () use ($leases, $group, $checks): void {
         $record = $leases->remoteStarted($group->taskable, changesCheckout: true);

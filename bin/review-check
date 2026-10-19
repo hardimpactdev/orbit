@@ -103,8 +103,6 @@ def lane_key(entries):
     return SHARED_LANES.get(entries[0][1], entries[0][1])
 
 
-
-
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 

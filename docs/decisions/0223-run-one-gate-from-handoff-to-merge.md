@@ -124,11 +124,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
   - the classic branch protection, with `GET /repos/{owner}/{repo}/branches/{branch}/protection`, which needs `Administration: read`. A 404 there means that the branch has no classic protection.
 - It refuses when either source requires an up-to-date branch: `strict_required_status_checks_policy` in a ruleset, or `required_status_checks.strict` in classic protection.
 - It also refuses when it cannot read either source, because then the policy is unknown.
-- The protection read needs `Administration: read`. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) plans `Administration: write` on the same App, for runner registration. Write covers read, so both ADRs share one permission change:
-  - Whichever ADR's step builds first adds `administration: write` to the App manifest, once.
-  - Nick accepts that change on the installation, once.
-  - The other ADR reuses the same grant. It adds no read-level permission and never lowers the grant to read.
-  - The token for the protection read is minted with only `administration: read`. Runner tokens keep only `administration: write`.
+- The protection read and App manifest need `Administration: read` only. The App never receives Administration write, which permits repository deletion. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) needs its own decision for runner registration: a user-owned repository has no narrower runner permission.
 - An installation that has not accepted the grant cannot turn review and merge on until it does. Projects that already have it on are not read again.
 - Rules can change after that. When GitHub refuses a merge because the branch is behind, Orbit records `refused`, merges nothing, and asks for assistance once, with that reason. So the pull request never waits without a signal.
 - Projects without review and merge keep GitHub's branch update, as today.
@@ -236,7 +232,9 @@ The data does not show what a tree base saves. The only rework measured after #1
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
 - The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, its seconds, its exit code, and a free `detail` text.
+- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, selected test count, `budget_seconds`, and a free `detail` text. Each Project setup step records its name, seconds and exit code in that same receipt.
+- Budgets report overruns; they never stop work. Use baseline 600 seconds, handoff 1200 seconds, Gateway `test:affected` 600 seconds, other commands 300 seconds, and reviews 900 seconds. `tools/checks.json` owns command budgets. Each overrun writes one Activity row `tasks.<stage>_over_budget`; `ProblemCollector` treats `_over_budget` codes as server-class so existing fingerprints and filing apply. Add no separate mechanism.
+- After setup timings are stored, propose each Project 46 setup timeout at about three times its p90. List exact values in the receipt PR; Nick applies the Project settings.
 - Orbit stores the list in a new JSON column of the check row.
 - Orbit's `bin/review-check` writes the list from `result.json`, with the selected test count as `detail`.
 - The 16 KiB output tail stays.
@@ -257,7 +255,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - It deletes every `base_merge` check row, of open and ended groups.
    - It converts every `base_merge` reviewed commit to `orbit_push`. The head of an open group may be such a commit, and it inherited its review, so `mergeWhenReady` keeps accepting it.
    - Deploy it when no `base_merge` check is running.
-   - Add the strict-base refusal to `project:update`, with both rule reads. When ADR 0213's registration through the GitHub App has not added `administration: write` to `GitHubAppManifestPage` yet, this step adds it, and the [GitHub App](/reference/github-app) page names both uses.
+   - Add the strict-base refusal to `project:update`, with both rule reads. Add only `administration: read` to `GitHubAppManifestPage`, and document the protection read on the [GitHub App](/reference/github-app) page. Runner registration needs its own decision.
    - Add the assistance on a behind refusal to `mergeWhenReady`.
    - Delete `TaskCheckKind::BaseMerge` and `TaskReviewedCommitSource::BaseMerge`.
    - Delete `TaskPublication::appendBaseMerge`, `prepareBaseMerge`, `queueBaseMergeRetry`, `appendAgentBaseMerge`, `appendDeltaReview`, and `conflictOutput`, with the repair, retry, and lost states of the gate.
@@ -278,7 +276,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Fill the handoff cache after a passed baseline too.
    - Delete the passed-handoff-tree rule of `TaskReviewBase::testBase` and the `slug === 'orbit'` case.
    - Delete the "A handoff tree is not a Pest commit" and "The gate selects against main" sections of [Feature delivery](/reference/implementation-loop#why-it-works-this-way).
-5. **One check definition.** Add `tools/checks.json` and the `run` and `architecture` commands.
+5. **One check definition.** Add `tools/checks.json`, including report-only `budget_seconds` per command, and the `run` and `architecture` commands.
    - Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`.
    - Delete the `case` list in the architecture-test step and the copied commands and path conditions of the check jobs in `ci.yml`.
    - Delete the copied list in `tia-cache-tests.py`.
@@ -290,7 +288,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Change the tests that call `bin/tia-cache`: `WorktreeLifecycleTest.php:30`, `TestDatabaseGateTest.php:36`, `BuilderGateSelectionTest.php:105`, `ComposerConfigurationTest.php:371`, and the Gateway tests `CiCacheSetupTest.php` and `TiaBaselineSetupTest.php`.
    - Delete the `bin/tia-cache` comment in `bin/tooling-baseline:18`.
    - Delete [Refresh from CI](/reference/implementation-loop#refresh-from-ci), "Only main CI publishes", "Maintenance runs in the background", "Clones find the store through a registration", and the worker text of [Failures on main](/reference/implementation-loop#failures-on-main), with the text on legacy failure records. Failures on main keeps one line: GitHub's CI status is the record.
-7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list.
+7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list with per-command seconds, selected test counts and budgets, plus each Project setup step's seconds. Report overruns through one Activity row and the existing problem filing rule above. Propose the exact Project 46 setup timeouts from recorded p90 values; Nick applies them.
    - Delete the terminal-result synthesis and the after-result tree check in `status()`.
    - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
    - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.
@@ -325,7 +323,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
-- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; its `Administration: write` grant also covers the protection read, and whichever ADR builds first adds it once
+- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision because a user-owned repository has no narrower runner permission
 - Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.

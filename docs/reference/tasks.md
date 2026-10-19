@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge,remove_task_base_merge_gates}.php"
 ---
 
 # Tasks
@@ -538,7 +538,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Workspace lease
 
-One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, main merges, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
+One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
 A busy workspace queues the next actor. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 
@@ -588,7 +588,7 @@ Existing assistance stays open until an operator resolves it. A review without a
 
 ### Why the workspace has one lease
 
-Separate guards for reviewers, checks, and main merges leave other actor pairs free to overlap. One durable lease gives every actor the same ownership rule and preserves detached ownership after a Gateway restart. Process locks alone end before an agent turn or detached check ends. Expiring locks could admit a second writer while the first still runs, so ownership ends only after authoritative reconciliation. Treating every changed HEAD as an Orbit mutation would allow an outside edit to bypass review protection. Exact recorded ownership keeps automatic recovery narrow.
+Separate guards for reviewers, checks, and workspace fast-forwards leave other actor pairs free to overlap. One durable lease gives every actor the same ownership rule and preserves detached ownership after a Gateway restart. Process locks alone end before an agent turn or detached check ends. Expiring locks could admit a second writer while the first still runs, so ownership ends only after authoritative reconciliation. Treating every changed HEAD as an Orbit mutation would allow an outside edit to bypass review protection. Exact recorded ownership keeps automatic recovery narrow.
 
 System services retain completion evidence after an SSH client or Gateway process dies. Orbit verifies that the exact service is terminal and its cgroup is empty before it releases ownership. A raw SSH exit status or a missing supervisor PID cannot prove that descendants stopped. Atomic tombstones exclude requests that reach the remote host after recovery. Missing or unreadable evidence keeps the fence; no elapsed-time expiry or blind release command bypasses it.
 
@@ -1221,8 +1221,6 @@ Project slugs and CI job names do not change that order. A task gets at most two
 | Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.` |
 | Trusted requested changes | `Address GitHub review {review_id}` | The immutable findings packet below, with the source head, reviewer identity, review URL, and bounded scope. No rebase or force-push. |
 
-The base may already fix a failed check. Before Orbit appends a check fixup, it reads the tip of the pull request base. When that tip is strictly ahead of its merge base with the head, and the Project's `merge_check` passed on it, the brief starts with `Merge origin/{base} first; base may already fix this.` Without a `merge_check`, Orbit reads `Required checks`. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit). The title, identity, and caps do not change. A failed read leaves the brief as shown above.
-
 Conflict and check fixups have one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The handoff runs the current Project check, as every handoff does. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables.
 
 A fixup records the head it was created for. No new fixup starts while the head is still that commit. These guards and the shared caps apply to feedback, CI, and conflict fixups together. Completing an operator subtask resets the cap window, but never resets review consumption.
@@ -1343,9 +1341,9 @@ The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite
 
 A Project can opt in to review and merge. Orbit then holds three rules:
 
-1. Orbit pushes a commit that a final review approved, or a conflict-free main merge of that reviewed work that passed the Project gate.
+1. Orbit pushes only a commit that a final review approved.
 2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
-3. Orbit merges a pull request through the GitHub App. The head must have recorded review or mechanical-merge evidence, and CI must pass on that head.
+3. Orbit merges a pull request through the GitHub App. The head must have recorded final-review evidence, and CI must pass on that head.
 
 No cloud agent reviews or fixes the work. Orbit hands no pull request to Cursor, Codex, or Copilot.
 
@@ -1361,13 +1359,7 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 ### Final review
 
-A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate.
-
-Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate records `failed_step` as `gate` or `environment`, with its check ID and output, rather than claiming that Git conflicted (`merge_conflict`). The final review starts only after this preparation succeeds.
-
-Orbit checks a failed merged tree against both merge parents, reusing a stored passing handoff result when its tree matches the approved first parent. Only the main parent needs another run in that case. Parent runs have the same timeout as the Project gate, not the shorter command-deliverable base-run limit. Orbit keeps the merged run's failure tail in the check output even when parent runs produce long logs.
-
-If both parents pass, the merge caused the failure and Orbit appends an agent fixup, subject to the final-review fixup cap. A failure on either parent, or a missing tool (including exit 127), asks for assistance instead.
+A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Orbit fetches the default branch to find the review base. It does not merge it or run another Project check. CI on the pull request merge ref is the integration gate.
 
 It has no implementer and starts in `reviewing` with a fresh reviewer.
 
@@ -1383,13 +1375,7 @@ For the first final review, its start commit is the merge base of the workspace 
 
 A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`.
 
-Orbit does not merge each new main tip while the reviewer works. After approval, just before pushing or opening the pull request, Orbit merges main once more and runs only the Project task check if HEAD changed. It compares the merge's changed paths with the group's paths before that merge. No overlap keeps the approved final review.
-
-An overlap starts a delta-only final review from the approved tree, with no implementer. Publication retries keep the gated head instead of chasing another main tip. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
-
-When a main merge's Project gate fails for an environment reason, repair the prerequisite and post a normal `resolution` on the blocked final-review subtask, including a completed final review after the PR opened. Orbit retains the approval and merged head, records a new gate attempt, and resumes on the next tick without another merge or agent turn. This also retries a gate that failed before the reviewer started. The earlier failed check remains evidence.
-
-The retry requires the same head and tree: source changes cannot inherit the retained approval. A failed retry stays blocked until another repair and resolution. After the PR opens, the retry may merge newer main before checking again; before publication, it keeps the same merged tree.
+A final-review approval pushes the exact reviewed head. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
 
 The fixup fixes each blocking finding at its root cause, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
@@ -1399,13 +1385,9 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 ### Every push is reviewed
 
-In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes the feature commits. A later mechanical main merge uses the gate and inherits that review as described below.
+In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review.
 
-Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge that changes none of the group's paths inherits the prior head's review and is pushed without an agent or another review. Its recorded source is `base_merge`. An overlapping merge receives only a delta re-review against the earlier approved tree. CI must still pass on that exact head.
-
-A failed merge gate after the final review completes requests assistance on the active group. A resolution on that completed review retries the gate without reopening its assistance.
-
-Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the agent fixup cap. Delta-only final reviews have their own cap of three per window, after which Orbit asks for assistance. Both windows reset after completed operator-added implementation work. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
+Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 
@@ -1439,7 +1421,7 @@ The App can review the pull request because the pull request author is a person,
 
 Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
 
-1. The head SHA has recorded final-review evidence or inherits it through a gated mechanical main merge, and no newer approved work waits for its final review.
+1. The head SHA has recorded final-review evidence, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 3. The pull request base is the Project's default branch, which the final review diffed against.
 4. GitHub reports the pull request mergeable, with no conflict.
@@ -1459,7 +1441,7 @@ A head that Orbit did not record means someone else pushed. On an incoming pull 
 
 ### Records and status
 
-`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit, `pull_request_review` for an incoming head Orbit approved as it was, and `base_merge` for a gated mechanical main merge that inherits the prior head's review. Only a recorded SHA can merge.
+`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit and `pull_request_review` for an incoming head Orbit approved as it was. Only a recorded SHA can merge.
 
 Activity records `final review appended`, `final review approved`, `final review requested changes`, `reviewed commit pushed`, `pull request approved`, `pull request changes requested`, `incoming pull request task created`, `pull request merged`, and each change of the merge result as `merge waiting` or `merge refused`. The task stores the latest merge result in `merge_status` and `merge_reason`. [`tasks:show`](/cli/tasks#orbit-tasksshow) and [`tasks:status`](/cli/tasks#orbit-tasksstatus) show them.
 
@@ -1835,15 +1817,13 @@ The author list is Gateway configuration, like reviewer trust. A pull request ca
 
 The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
 
-Orbit merges main locally and records the Project gate on the exact merge commit. Every checkout actor uses the [workspace lease](#workspace-lease), including review verdicts, main merges, publication, and teardown. The group execution lock serializes admission; the durable Instance lease owns the checkout through each remote turn or detached check. Waiters retain FIFO order. Cancelling a subtask removes its queued intents but never discards an active or uncertain holder.
+Every checkout actor uses the [workspace lease](#workspace-lease), including review verdicts, workspace fast-forwards, publication, and teardown. The group execution lock serializes admission; the durable Instance lease owns the checkout through each remote turn or detached check. Waiters retain FIFO order. Cancelling a subtask removes its queued intents but never discards an active or uncertain holder.
 
 Orbit captures the review baseline after reviewer admission and preparation, immediately before dispatch. If HEAD or the working tree changes, automatic delta review requires an exact durable chain of proven Orbit mutations from that baseline. A read-only lease, a changed HEAD alone, or an old check snapshot does not prove ownership. Unexplained edits and reviewer edits still need assistance. A review without a recorded baseline lease cannot inherit attribution from merge or check records from before leases existed.
 
 A reviewer whose completed turn has durable confirmation does not regain ownership when its runtime later becomes unreadable. Working, paused, and unknown uncompleted turns retain the lease, including older conversations. Orbit reconciles authoritative completion before assistance gating and never expires an uncertain holder by elapsed time.
 
 Lease reconciliation reads running checks before assistance gating. A finished check updates its durable result and releases its holder only with terminal evidence. A failed read or an unproven process lifetime keeps the holder fenced. If the exact managed check unit has stopped and its cgroup is empty but its result is missing, Orbit records a failed check with uncertain tree attribution. That terminal proof releases ownership without approving the check or its changes. Reconciliation never clears assistance by matching its text; an operator resolves an existing request.
-
-A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
 
 A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
 

@@ -9,7 +9,6 @@ use App\Domain\GitHub\GitHubReviewEvent;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -299,11 +298,7 @@ final readonly class TaskReviewOutcome
             return true;
         }
         $tree = $task->review_workspace_tree;
-        $merge = $task->isFinalReview() ? $task->checks()->where('kind', TaskCheckKind::BaseMerge)
-            ->where('task_comment_id', $receipt->id)->latest('id')->first() : null;
-        $mergedHead = $merge instanceof TaskCheck && $current->head === ($merge->head_after ?? $merge->head_before)
-            && $current->tree === ($merge->tree_after ?? $merge->tree_before);
-        if (! $mergedHead && ($current->head !== $receipt->commit_sha || (is_string($tree) && $tree !== '' && $current->tree !== $tree))) {
+        if ($current->head !== $receipt->commit_sha || (is_string($tree) && $tree !== '' && $current->tree !== $tree)) {
             // ADR 0133: the workspace no longer holds the approved commit. The reviewer outcome path reminds or asks for assistance.
             return false;
         }
@@ -466,8 +461,7 @@ final readonly class TaskReviewOutcome
             if (! $alreadyFetched) {
                 $this->turnFetcher->fetch($group);
             }
-            $preparingMerge = $task->fixup_problem === TaskFinalReview::BaseMergeReview || $task->checks()->where('kind', TaskCheckKind::BaseMerge)->exists();
-            if ($group->reviewsIncomingPullRequest() && ! TaskFinalReview::hasUnreviewedWork($group) && ! $preparingMerge) {
+            if ($group->reviewsIncomingPullRequest() && ! TaskFinalReview::hasUnreviewedWork($group)) {
                 // The author can push before the review starts. Review the head the pull request has now.
                 $current = $this->pullRequestWatcher->health($group)?->headSha;
                 if (is_string($current) && $current !== '' && $current !== $task->fixup_head_sha) {
@@ -481,17 +475,6 @@ final readonly class TaskReviewOutcome
                     throw new TaskPullRequestException('Orbit could not read the pull request head.');
                 }
                 $this->bases->moveTo($group, $head);
-            }
-            $merge = $task->fixup_problem === TaskFinalReview::BaseMergeReview ? 'passed' : $scheduler->prepareBaseMerge($group, $task);
-            if ($merge === 'conflict') {
-                $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-                $group->update(['status' => TaskGroupStatus::Settling]);
-                $scheduler->appendAgentBaseMerge($group, (string) $group->project->default_branch);
-
-                return;
-            }
-            if ($merge === 'waiting') {
-                return;
             }
             $base = $this->bases->mergeBase($group);
         } catch (TaskWorkspaceWaiting) {

@@ -50,30 +50,6 @@ interface TaskBaseBranchFetcher
      */
     public function mergeBase(Task $group): string;
 
-    /**
-     * Merges the fetched default branch directly, returning HEAD or the conflicting paths.
-     * Refuses a dirty tracked tree or another branch. A conflict is aborted without losing work.
-     * Runs without credentials or repository hooks. An unchanged branch returns its existing HEAD.
-     *
-     * @throws TaskPullRequestException
-     */
-    public function mergeDefault(Task $group): TaskBaseMerge;
-
-    /**
-     * Paths changed by the merge that the group also changed before it. Both commits are immutable;
-     * this must not use a newer origin tip when a gate or publication is retried.
-     *
-     * @return list<string>
-     *
-     * @throws TaskPullRequestException
-     */
-    public function overlappingPaths(Task $group, string $before, string $after): array;
-
-    /**
-     * Moves the workspace branch to an already-fetched commit, such as an incoming pull request head.
-     * Refuses a workspace with tracked changes. The caller ensures no unpushed approved work is lost (ADR 0203).
-     *
-     * @throws TaskPullRequestException
-     */
+    /** Moves a clean workspace to the exact incoming pull request head. */
     public function moveTo(Task $group, string $sha): void;
 }

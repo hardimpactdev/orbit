@@ -33596,8 +33596,7 @@
             "type": "string",
             "enum": [
               "baseline",
-              "handoff",
-              "base_merge"
+              "handoff"
             ]
           },
           "status": {
@@ -33700,7 +33699,6 @@
             "type": "string",
             "enum": [
               "orbit_push",
-              "base_merge",
               "pull_request_review"
             ]
           },

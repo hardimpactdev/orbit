@@ -11,7 +11,6 @@ enum TaskReviewedCommitSource: string
     case OrbitPush = 'orbit_push';
 
     /** A conflict-free default-branch merge of reviewed work passed the Project gate. */
-    case BaseMerge = 'base_merge';
 
     /** Orbit's final review approved a pull request head that someone else pushed. */
     case PullRequestReview = 'pull_request_review';

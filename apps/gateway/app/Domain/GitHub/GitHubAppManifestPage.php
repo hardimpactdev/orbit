@@ -26,6 +26,7 @@ final readonly class GitHubAppManifestPage
             'public' => true,
             'default_permissions' => [
                 'actions' => 'read',
+                'administration' => 'read',
                 'checks' => 'read',
                 'contents' => 'write',
                 'metadata' => 'read',

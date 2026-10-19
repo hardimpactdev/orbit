@@ -11,7 +11,6 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -623,16 +622,6 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
         public function mergeBase(Task $group): string
         {
             return str_repeat('c', 40);
-        }
-
-        public function mergeDefault(Task $group): TaskBaseMerge
-        {
-            return new TaskBaseMerge(str_repeat('a', 40));
-        }
-
-        public function overlappingPaths(Task $group, string $before, string $after): array
-        {
-            return [];
         }
 
         public function moveTo(Task $group, string $sha): void {}
