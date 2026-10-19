@@ -95,7 +95,7 @@ final readonly class RecipeImagePrograms
                 '--property=KillMode=control-group', '--property=UMask=0077',
                 '--property=StandardOutput=append:'.$log, '--property=StandardError=append:'.$log,
                 ...($input === null ? [] : ['--property=StandardInput=file:'.$input]),
-                'flock', '--nonblock', '--conflict-exit-code=75', '/run/lock/orbit-recipe-image.lock', ...$command,
+                'flock', '--nonblock', '--conflict-exit-code=75', '/run/orbit-recipe-image.lock', ...$command,
             ], required: false);
             // Two deliveries may race to start the same unit. Only its recorded state determines the result.
             $status = $this->status($shell, $unit);
@@ -156,19 +156,20 @@ final readonly class RecipeImagePrograms
     }
 
     /** @param list<string> $command */
-    private function control(TaskVmGuestShell $shell, array $command, string|ProtectedInput|null $input = null, bool $required = true): CommandResult
+    private function control(TaskVmGuestShell $shell, array $command, string|ProtectedInput|null $input = null, bool $required = true, int $timeout = self::ControlSeconds): CommandResult
     {
         try {
-            $result = $shell->asRoot($command, $input, timeout: self::ControlSeconds);
+            $result = $shell->asRoot($command, $input, timeout: $timeout);
         } catch (ProcessTimedOutException $error) {
-            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image control command timed out after '.self::ControlSeconds.' seconds. The guest phase outcome is unknown; reconnecting to its unit.', previous: $error);
+            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image control command timed out after '.$timeout.' seconds. The guest phase outcome is unknown.', previous: $error);
         }
         $detail = mb_substr(new CommandActivityInputSanitizer()->redactText(trim($result->stderr)), -2000);
         if ($result->exitCode === 255) {
-            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image SSH channel closed (exit 255). The guest phase outcome is unknown; reconnecting to its unit.'.($detail === '' ? ' SSH returned no stderr.' : "\n{$detail}"));
+            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image SSH channel closed (exit 255). The guest phase outcome is unknown.'.($detail === '' ? ' SSH returned no stderr.' : "\n{$detail}"));
         }
         if ($result->truncated || ($required && ! $result->succeeded())) {
-            throw new TaskVmException('task_vm.image_build_failed', 'Image control command ['.$command[0].'] failed (exit '.$result->exitCode.').'.($detail === '' ? '' : "\n{$detail}"));
+            $reason = $result->truncated ? 'output exceeded the capture limit' : 'exit '.$result->exitCode;
+            throw new TaskVmException('task_vm.image_build_failed', 'Image control command ['.$command[0].'] failed ('.$reason.').'.($detail === '' ? '' : "\n{$detail}"));
         }
 
         return $result;
@@ -176,7 +177,7 @@ final readonly class RecipeImagePrograms
 
     public function verify(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): void
     {
-        $result = $shell->asRoot(['python3', '-', 'verify'], $this->script($this->payload($shell, $recipe, $profile)), timeout: 120);
+        $result = $this->control($shell, ['python3', '-', 'verify'], $this->script($this->payload($shell, $recipe, $profile)), required: false, timeout: 120);
         if (! $result->succeeded() || $result->truncated || trim($result->stdout) !== '{"ok":true}') {
             throw $this->failure($profile, 'verify', $result);
         }
