@@ -84,9 +84,9 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Job | Checks |
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
-| Gateway subprocess, E2E subprocess | The project's `subprocess` group on affected main runs; full suites include it already |
+| Gateway subprocess, E2E subprocess (non-PR runs only) | The project's `subprocess` group on affected main runs; full suites include it already |
 | Gateway plan | Pull requests only: lists the full Gateway suite and balances its classes across four shards |
-| Gateway shards (2) to Gateway shards (4) | Every pull request: full Gateway shards after the first |
+| Gateway shards (2), (3), (4) | Every pull request: full Gateway shards after the first |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -132,11 +132,11 @@ Then the pull request's CI runs, and `main` stays green after the merge. After t
 
 `Required checks` requires Docs (merge ref), Gateway plan and every Gateway shard to succeed on pull requests. These PR-only jobs must be skipped on main pushes, nightly runs and manual runs.
 
-On pull requests, all five Composer projects run full suites with TIA disabled, including architecture and subprocess tests. The full Gateway plan divides every non-privileged test among its shards. The required privileged job runs every privileged test.
+The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. The full Gateway plan divides every non-privileged test among its shards. The required privileged job runs every privileged test.
 
 On affected main runs, `bin/ci-tia subprocess` compares the tree with the restored graph's commit. A change inside the project, or on an outside path that its tests can read, runs the subprocess group. When changes cannot be read, the group runs. The PHP SDK has no subprocess tests, so only its step permits an empty group.
 
-Gateway and E2E keep separate subprocess jobs for affected main runs. A full run includes those tests in the primary suite, so the separate job runs no tests. A test that starts PHP declares `pest()->group('subprocess')` because runtime coverage cannot link the child process’s code to its parent test.
+Gateway and E2E start separate subprocess jobs only on non-PR runs, for affected main selection. A full run includes those tests in the primary suite, so the separate job runs no tests. A test that starts PHP declares `pest()->group('subprocess')` because runtime coverage cannot link the child process’s code to its parent test.
 
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
@@ -183,9 +183,9 @@ The upload includes hidden files and fails when the build produced nothing. The 
 
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 
-Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
+Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the PR test boundary.
 
-Each Composer project job checks out full history. Every pull request runs all five full Composer suites on its merge ref, with TIA disabled. Gateway uses balanced shards; every other project runs its full suite in its project job. Architecture and subprocess tests are included. On main, jobs retain their existing affected/full selection and graph refresh. Handoffs, reworks and fixups keep start-commit TIA in `bin/review-check`.
+Each Composer project job checks out full history and follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
 
 The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
 
@@ -197,7 +197,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 ### Gateway shards
 
-Every pull request runs the full Gateway suite in four balanced shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
+The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
 
 The plan assigns classes longest first using recorded timings plus 0.2 seconds per test for application boot. Unknown classes use the median class time. No selection threshold or unsharded TIA path exists for pull requests.
 
@@ -213,13 +213,13 @@ The Gateway job fails when the plan job fails, or when the plan does not end wit
 
 "Re-run failed jobs" copies the finished plan job and keeps its artifact, so a re-run of the Gateway job or a shard reads the same plan. A re-run of the Gateway job checks out `refs/pull/N/merge` again. When `main` moved since the first attempt, the merge ref names a new commit, and the job fails with an error that asks for "Re-run all jobs". A full re-run plans again and replaces the artifact.
 
-A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. On the pull request that added the shard runners, a touched boot file selected 604 classes. They ran as 201, 135, 134, and 134 classes, and the Gateway tests ended about 3.5 minutes after the Gateway job started. On the shard runner containers, 609 classes took about 4 minutes. One job runs the full suite of about 760 classes in about 13.5 minutes. At that rate, the same 604 classes would take about 11 minutes in one job.
+A pull request holds one Sabre runner and three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. At `9eb3a4da`, the plan listed 846 non-privileged classes. The four shards ran 13,756 cases in total, including one skipped case; the privileged job ran 599, giving 14,355 cases, the same as main. The shard test steps took 252, 235, 132 and 153 seconds; the privileged step took 139 seconds. `Required checks` completed 365 seconds after the run started.
 
-Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
+Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. The six-process full-run reference is about 510 seconds.
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards run on the [shard runners](#self-hosted-shard-runners) under the same condition. The Gateway plan, Gateway subprocess, and Gateway privileged jobs always run on GitHub-hosted runners. So a run takes one Sabre runner, and up to three shard runners when the Gateway tests run in shards.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards run on the [shard runners](#self-hosted-shard-runners) under the same condition. The Gateway plan, Gateway subprocess, and Gateway privileged jobs always run on GitHub-hosted runners. So a PR run takes one Sabre runner and three shard runners; main uses no shard runners.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
@@ -691,7 +691,7 @@ The nightly full run finds such a miss within a day, and its failure switches pu
 
 ### Full suites gate merges; TIA serves the task loop
 
-Nick decided on 2026-10-19 that PR Required checks run the full test suite of every touched project. Orbit runs all five Composer suites on each PR. Review and merge with `merge_check: Required checks` waits for that check on the reviewed head; handoff TIA is never merge evidence. GitHub’s merge API still checks the expected head. Main pushes keep their existing behavior.
+Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, with TIA disabled. Orbit runs all five Composer suites on each PR, including architecture and subprocess tests. Review and merge with `merge_check: Required checks` waits for that check on the reviewed head; handoff TIA is never merge evidence. GitHub’s merge API still checks the expected head. Main pushes keep their existing behavior.
 
 The [declaration-data audit](/solutions/test-impact-declaration-data) found that enum cases, constants, property and parameter defaults, and attribute arguments can change behavior without per-test coverage edges for later readers. Its seven-case fixture produced a TIA false green while the full suite failed four cases. A general declaration selector would widen 496 of 580 entries on main’s first-parent history that changed app code (85.5%, about 86%). That selector is rejected. Handoffs, reworks and fixups keep fast TIA against the subtask start commit.
 

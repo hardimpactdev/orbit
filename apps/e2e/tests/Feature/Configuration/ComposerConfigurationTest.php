@@ -195,13 +195,13 @@ describe('Composer configuration', function (): void {
             ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"');
         $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
         expect($projectSteps['Export main caches']['if'])
-            ->toBe("success() && matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
+            ->toBe("success() && matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
         expect($projectSteps['Publish main caches'])->toMatchArray([
             'if' => $projectSteps['Export main caches']['if'],
             'uses' => 'actions/upload-artifact@v7',
             'with' => [
                 'name' => 'sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}',
-                'path' => "\${{ matrix.directory }}/.orbit-tia/graph.json\n\${{ matrix.directory }}/.orbit-tia/manifest.json\n\${{ matrix.directory }}/.orbit-tia/quality/\n",
+                'path' => "\${{ matrix.project.directory }}/.orbit-tia/graph.json\n\${{ matrix.project.directory }}/.orbit-tia/manifest.json\n\${{ matrix.project.directory }}/.orbit-tia/quality/\n",
                 'include-hidden-files' => true,
                 'if-no-files-found' => 'error',
                 'retention-days' => 14,
@@ -221,21 +221,21 @@ describe('Composer configuration', function (): void {
 
         expect($steps['Install all project dependencies for E2E integration tests'])
             ->toMatchArray([
-                'if' => "matrix.directory == 'apps/e2e'",
+                'if' => "matrix.project.directory == 'apps/e2e'",
                 'working-directory' => '.',
                 'run' => 'bin/bootstrap --skip-checks',
             ]);
-        expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
+        expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
         expect($steps['Run project quality checks'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess'",
+                'if' => "matrix.project.part != 'subprocess'",
                 'run' => 'composer check',
                 'env' => ['ORBIT_CHECK_PROCESSES' => '${{ runner.environment == \'self-hosted\' && 6 || 4 }}'],
             ]);
         // Every non-Gateway Composer suite runs in full on pull requests.
         expect($steps['Run full PR test suite'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && matrix.directory != 'apps/gateway' && github.event_name == 'pull_request'",
+                'if' => "matrix.project.part != 'subprocess' && matrix.project.directory != 'apps/gateway' && github.event_name == 'pull_request'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact',
             ]);
         // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
@@ -258,7 +258,7 @@ describe('Composer configuration', function (): void {
             ]);
         expect($steps['Run tests affected since the main graph'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
+                'if' => "matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
                 // The bash shell sets pipefail, so a failing Pest run still fails the step.
                 'shell' => 'bash',
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"',
@@ -266,14 +266,14 @@ describe('Composer configuration', function (): void {
         // The fresh TIA run executes every test, so one run is both the full-suite gate and the graph refresh.
         expect($steps['Run full test suite and refresh Pest TIA graph'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'",
+                'if' => "matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
             ]);
         // The cache and the main cache artifact get the graph only when it describes the tested commit.
         expect($steps['Require the Pest TIA graph to describe this commit'])
             ->toMatchArray([
                 // A manual run on another branch records that branch's baseline, not main's.
-                'if' => "matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+                'if' => "matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
                 'run' => '../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"',
                 'env' => ['MODE' => '${{ steps.orbit-tia-plan.outputs.mode }}', 'BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
             ]);
@@ -290,9 +290,9 @@ describe('Composer configuration', function (): void {
         expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
         // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
         expect($project['runs-on'])
-            ->toContain("matrix.directory == 'apps/gateway'")
+            ->toContain("matrix.project.directory == 'apps/gateway'")
             // The subprocess job runs on a hosted runner, so a Gateway run takes one Sabre runner.
-            ->toContain("matrix.part != 'subprocess'")
+            ->toContain("matrix.project.part != 'subprocess'")
             ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
             ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
             ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
@@ -300,7 +300,7 @@ describe('Composer configuration', function (): void {
         // TIA does not link these contracts to the files they read, so pull requests and affected runs on main run them.
         expect($steps['Run architecture tests'])
             ->toMatchArray([
-                'if' => "always() && matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
+                'if' => "always() && matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
             ])
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')
@@ -325,19 +325,19 @@ describe('Composer configuration', function (): void {
             ->toBe([
                 'name' => 'Choose whether to run subprocess tests',
                 'id' => 'orbit-subprocess',
-                'if' => "always() && matrix.part != 'tests' && steps.orbit-tia-plan.outputs.mode == 'affected'",
-                // A pull request compares with its base, and a push to main with the commit of the restored graph.
+                'if' => "always() && matrix.project.part != 'tests' && steps.orbit-tia-plan.outputs.mode == 'affected'",
+                // An affected main run compares with the commit of the restored graph.
                 'env' => ['BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
                 'run' => '../../bin/ci-tia subprocess --base "$BASE"',
             ]);
         expect($steps['Run subprocess tests'])
             ->toBe([
                 'name' => 'Run subprocess tests',
-                'if' => "always() && matrix.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'",
+                'if' => "always() && matrix.project.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'",
                 // Only the PHP SDK, which has no subprocess tests, may pass with an empty group. Another project with
                 // an empty group fails, so an exclusion cannot silently skip its subprocess tests.
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --compact'
-                    ."\${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}",
+                    ."\${{ matrix.project.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}",
             ]);
     });
 
@@ -353,17 +353,17 @@ describe('Composer configuration', function (): void {
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
             ->toContain('actions/cache/restore@v6')
             ->toContain('actions/cache/save@v6')
-            ->toContain('path: ${{ matrix.directory }}/.orbit-tia')
-            ->toContain("format('{0}/composer.lock', matrix.directory)")
-            ->toContain("format('{0}/tests/Pest.php', matrix.directory)")
-            ->toContain("format('{0}/phpunit.xml', matrix.directory)")
-            ->toContain("format('{0}/phpunit.xml.dist', matrix.directory)")
-            ->toContain('orbit-tia-php8.5-${{ matrix.directory }}-')
+            ->toContain('path: ${{ matrix.project.directory }}/.orbit-tia')
+            ->toContain("format('{0}/composer.lock', matrix.project.directory)")
+            ->toContain("format('{0}/tests/Pest.php', matrix.project.directory)")
+            ->toContain("format('{0}/phpunit.xml', matrix.project.directory)")
+            ->toContain("format('{0}/phpunit.xml.dist', matrix.project.directory)")
+            ->toContain('orbit-tia-php8.5-${{ matrix.project.directory }}-')
             // Each run on main saves its own graph, so a full run on an already tested commit still refreshes the cache.
             ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
             ->toContain("\${{ format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) }}")
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}")
+            ->toContain("\${{ format('orbit-tia-php8.5-{0}-', matrix.project.directory) }}")
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
@@ -393,14 +393,14 @@ describe('Composer configuration', function (): void {
 
         expect($workflow)
             ->toBeString()
-            ->toContain('${{ matrix.directory }}/vendor/pint.cache')
-            ->not->toContain('${{ matrix.directory }}/vendor/rector/cache')
-            ->toContain("format('{0}/pint.json', matrix.directory)")
-            ->toContain("format('{0}/rector.php', matrix.directory)")
-            ->toContain('orbit-lint-php8.5-${{ matrix.directory }}-')
+            ->toContain('${{ matrix.project.directory }}/vendor/pint.cache')
+            ->not->toContain('${{ matrix.project.directory }}/vendor/rector/cache')
+            ->toContain("format('{0}/pint.json', matrix.project.directory)")
+            ->toContain("format('{0}/rector.php', matrix.project.directory)")
+            ->toContain('orbit-lint-php8.5-${{ matrix.project.directory }}-')
             ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.directory) || '' }}");
+            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}");
 
         expect(strpos($workflow, 'Install dependencies'))
             ->toBeLessThan(strpos($workflow, 'Restore Pint cache'));
@@ -415,13 +415,13 @@ describe('Composer configuration', function (): void {
 
         expect($workflow)
             ->toBeString()
-            ->toContain('path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php')
-            ->toContain("format('{0}/composer.lock', matrix.directory)")
-            ->toContain("format('{0}/phpstan.neon', matrix.directory)")
-            ->toContain('orbit-phpstan-php8.5-${{ matrix.directory }}-')
+            ->toContain('path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php')
+            ->toContain("format('{0}/composer.lock', matrix.project.directory)")
+            ->toContain("format('{0}/phpstan.neon', matrix.project.directory)")
+            ->toContain('orbit-phpstan-php8.5-${{ matrix.project.directory }}-')
             ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.directory) || '' }}")
+            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\s*$/m');
 
@@ -442,7 +442,7 @@ describe('Composer configuration', function (): void {
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
         foreach (['Save PHPStan result cache', 'Save Pint cache', 'Save Pest TIA graph'] as $name) {
-            expect($steps[$name]['if'])->toBe("success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'");
+            expect($steps[$name]['if'])->toBe("success() && matrix.project.part != 'subprocess' && github.event_name != 'pull_request'");
         }
     });
 
@@ -456,7 +456,7 @@ describe('Composer configuration', function (): void {
         // Only pull requests plan shards. A run on main keeps one Gateway job, which writes the whole Pest TIA graph.
         expect($jobs['gateway-plan']['if'])->toBe("github.event_name == 'pull_request'")
             ->and($jobs['gateway-plan']['runs-on'])->toBe('ubuntu-26.04')
-            ->and($planSteps['Set up PHP']['with']['coverage'])->toBe('pcov')
+            ->and($planSteps['Set up PHP']['with']['coverage'])->toBe('none')
             ->and($planSteps['Plan full Gateway shards']['run'])
             ->toBe('../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"')
             // One artifact name for every attempt: a partial re-run copies the plan job, and a full re-run replaces it.
@@ -473,7 +473,7 @@ describe('Composer configuration', function (): void {
         // Other projects run full suites without waiting for the Gateway plan.
         expect($jobs['project'])->not->toHaveKey('needs')
             ->and($projectSteps['Read the Gateway test plan']['if'])
-            ->toBe("matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && github.event_name == 'pull_request'")
+            ->toBe("matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && github.event_name == 'pull_request'")
             ->and($projectSteps['Read the Gateway test plan']['run'])
             ->toContain('select(.name == "Gateway plan")', '-n gateway-plan ', 'git rev-parse HEAD', 'Re-run all jobs')
             // One failed API answer is retried; twelve in a row fail the job.
@@ -481,7 +481,7 @@ describe('Composer configuration', function (): void {
             ->not->toContain('run_attempt');
         expect($projectSteps['Run Gateway shard 1'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && matrix.directory == 'apps/gateway' && github.event_name == 'pull_request'",
+                'if' => "matrix.project.part != 'subprocess' && matrix.project.directory == 'apps/gateway' && github.event_name == 'pull_request'",
                 'env' => ['FILTER' => '${{ steps.gateway-plan.outputs.filter }}'],
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --exclude-group=privileged --compact --filter "$FILTER"',
             ]);
@@ -497,7 +497,7 @@ describe('Composer configuration', function (): void {
             ->toMatchArray([
                 'needs' => 'gateway-plan',
                 'if' => "github.event_name == 'pull_request'",
-                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => "\${{ fromJSON(needs.gateway-plan.outputs.matrix || '[2]') }}"]],
+                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => '${{ fromJSON(needs.gateway-plan.outputs.matrix) }}']],
             ])
             ->and($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}')
@@ -542,23 +542,31 @@ describe('Composer configuration', function (): void {
 
     });
 
-    it('runs the Gateway and E2E subprocess groups in their own jobs beside the rest of the suite', function (): void {
+    it('starts subprocess jobs only outside pull requests and preserves project cache indexes', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
-        $include = $workflow['jobs']['project']['strategy']['matrix']['include'];
+        $matrix = $workflow['jobs']['project']['strategy']['matrix'];
         $steps = $workflow['jobs']['project']['steps'];
 
-        // New entries go last, so the job index in each main cache artifact name stays with its project.
-        expect(array_column($include, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK', 'Gateway subprocess', 'E2E subprocess'])
-            ->and(array_column($include, 'part', 'name'))->toBe([
+        expect(array_column($matrix['project'], 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK']);
+        // The expression appends subprocess jobs only outside PRs. The PR branch adds no jobs at all.
+        expect($matrix['include'])->toMatch("/^\\$\\{\\{ fromJSON\\(github\\.event_name != 'pull_request' && '([^']+)' \\|\\| '(\\[\\])'\\) \\}\\}$/");
+        preg_match("/&& '([^']+)' \\|\\| '([^']+)'/", $matrix['include'], $branches);
+        $main = [...$matrix['project'], ...array_column(json_decode($branches[1], true, flags: JSON_THROW_ON_ERROR), 'project')];
+        $pullRequest = [...$matrix['project'], ...json_decode($branches[2], true, flags: JSON_THROW_ON_ERROR)];
+
+        // New entries go last, so main's cache artifact indexes stay unchanged; PR suites own all subprocess tests.
+        expect(array_column($main, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK', 'Gateway subprocess', 'E2E subprocess'])
+            ->and(array_column($main, 'part', 'name'))->toBe([
                 'Gateway' => 'tests', 'E2E' => 'tests', 'Gateway subprocess' => 'subprocess', 'E2E subprocess' => 'subprocess',
-            ]);
+            ])
+            ->and(array_column($pullRequest, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK']);
 
         // A subprocess job sets up the project, restores the graph, and reads the main selection, then runs only the
         // subprocess group. It checks nothing else and saves or publishes nothing. A tests job never runs the group.
         foreach ($steps as $step) {
             $if = $step['if'] ?? '';
             if (in_array($step['name'], ['Choose whether to run subprocess tests', 'Run subprocess tests'], true)) {
-                expect($if)->toContain("matrix.part != 'tests'");
+                expect($if)->toContain("matrix.project.part != 'tests'");
             } elseif (isset($step['run']) && str_contains($step['run'], 'vendor/bin/pest')
                 || str_starts_with($step['uses'] ?? '', 'actions/cache/save')
                 || str_starts_with($step['uses'] ?? '', 'actions/upload-artifact')
@@ -568,9 +576,9 @@ describe('Composer configuration', function (): void {
                     'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
                     'Read the Gateway test plan', 'Verify Ubuntu recipe pins against the named snapshot',
                 ], true)) {
-                expect($if)->toContain("matrix.part != 'subprocess'");
+                expect($if)->toContain("matrix.project.part != 'subprocess'");
             } else {
-                expect($if)->not->toContain('matrix.part');
+                expect($if)->not->toContain('matrix.project.part');
             }
         }
     });

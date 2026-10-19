@@ -5,7 +5,7 @@ description: "The fixture and history evidence behind full PR suites and fast TI
 
 # Test impact analysis misses declaration data
 
-Nick decided on 2026-10-19 to run full suites before merge and keep start-commit TIA inside the task loop. No declaration selector is built. [Feature delivery](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) owns this rule.
+This audit informed Nick’s 2026-10-19 decision in [Feature delivery](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop). No declaration selector is built.
 
 ## Fixture evidence
 

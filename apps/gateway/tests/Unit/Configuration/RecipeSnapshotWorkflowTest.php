@@ -13,7 +13,7 @@ it('runs the shared Ubuntu snapshot check only for recipe changes in the Gateway
     $workflow = Yaml::parseFile(dirname(base_path(), 2).'/.github/workflows/ci.yml');
     $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
     $step = $steps['Verify Ubuntu recipe pins against the named snapshot'];
-    expect($step['if'])->toBe("matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || github.event_name == 'push')");
+    expect($step['if'])->toBe("matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && (github.event_name == 'pull_request' || github.event_name == 'push')");
     expect($step['env']['RECIPE_BASE'])->toBe(<<<'EXPRESSION'
 ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
 EXPRESSION);

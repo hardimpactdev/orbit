@@ -14,7 +14,7 @@ In progress.
 
 Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles): about 17 hours of main-merge gates in five days, and the implementer's duplicate run, are deleted. No principle exception is proposed.
 
-Nick amended this decision on 2026-10-19: TIA stays inside the task loop, and PR Required checks run the full suite of every touched project before merge. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so it is rejected.
+Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/nckrtl/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/nckrtl/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
 
 Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chooses the subtask start commit, from the data below.
 
@@ -113,9 +113,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 
 ### 2. CI on the merge ref is the only integration gate
 
-- PR `Required checks` runs the full test suite of every project the PR touches, including Gateway. Orbit CI runs all five Composer suites on every PR; Gateway keeps its time-balanced shards. No TIA-only result permits a merge.
-- Handoffs, reworks and fixups keep TIA against the subtask start commit. Main pushes keep their existing selection and rules for refreshing the graph with a full suite.
-
+- Nick chose full suites at merge and fast TIA in the task loop, rather than a declaration selector; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) defines the checks.
 - Orbit runs no Project check on a main merge. `TaskCheckKind::BaseMerge` goes.
 - Orbit does not merge main before a final review. The first final review still starts at the merge base of `HEAD` and `origin/{default branch}`, so it reviews the whole branch.
 - Orbit does not merge main before a push.

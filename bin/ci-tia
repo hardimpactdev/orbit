@@ -342,8 +342,7 @@ def main():
     finish_command.add_argument('--base', default='', help='the commit the restored graph described')
     finish_command.add_argument('--log', default=os.devnull, help='the output of the affected test run')
     subprocess_command = commands.add_parser('subprocess', help='choose whether to run the subprocess test group')
-    subprocess_command.add_argument('--base', default='', help='the commit to compare with: the pull request base, '
-                                    'or the commit the restored main graph described')
+    subprocess_command.add_argument('--base', default='', help='the commit the restored main graph described')
     shards_command = commands.add_parser('shards', help='balance the full Gateway suite of a pull request')
     shards_command.add_argument('--plan', required=True, help='the file that receives the plan as JSON')
     shards_command.add_argument('--pest', default='vendor/bin/pest', help='the Pest binary')
