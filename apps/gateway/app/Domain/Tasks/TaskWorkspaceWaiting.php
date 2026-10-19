@@ -6,5 +6,5 @@ namespace App\Domain\Tasks;
 
 use RuntimeException;
 
-/** Admission is queued; the scheduler retries it without failure accounting. */
+/** A workspace operation waits; the scheduler retries it without failure accounting. */
 final class TaskWorkspaceWaiting extends RuntimeException {}

@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Models\Node;
@@ -73,11 +74,15 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
                 if ($vm->state !== TaskVmState::Failed) {
                     $observed = $guest->observeSettled($vm);
+                    if ($observed !== null && $vm->hostSweepWaitReason() !== null) {
+                        $vm->update(['error_code' => null, 'error_message' => null]);
+                        $removal->clearFailure($group);
+                    }
                     if ($commit !== null) {
                         if ($observed !== null && ! $observed->running) {
                             app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
                         } elseif ($observed === null) {
-                            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$commit}] has not been pushed. Workspace removal waits for the host sweep to confirm loss. For an Incus VM, the sweep requires task VMs to be enabled and the host to be active.", replaceFailure: true);
+                            $this->waitForHostSweep($vm, $group, $commit);
                         }
 
                         // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
@@ -112,6 +117,23 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
             throw $exception;
         }
+    }
+
+    /** Owns both the recorded wait and its assistance; removal reads the wait without retrying its push. */
+    private function waitForHostSweep(TaskVm $vm, Task $group, string $commit): void
+    {
+        $reason = "Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$commit}] has not been pushed. Workspace removal waits for the host sweep to confirm loss.";
+        if ($vm->provider->needsHostNode()) {
+            if (! TaskVmSettings::scheduled()->enabled) {
+                $reason .= ' The Incus host sweep is paused because task VMs are disabled.';
+            } elseif ($vm->incusHostNode()->status !== LifecycleStatus::Active) {
+                $reason .= " The Incus host sweep is paused because host [{$vm->incusHostNode()->name}] is inactive.";
+            }
+        }
+        if ($vm->hostSweepWaitReason() !== $reason) {
+            $vm->update(['error_code' => TaskVmError::AwaitingHostSweep->value, 'error_message' => $reason]);
+        }
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $reason, replaceFailure: true);
     }
 
     private function gateway(): Node

@@ -57,6 +57,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -1147,29 +1148,72 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['observe', 'observe', 'start', 'destroy']);
     });
 
-    it('explains why a missing ready VM waits for its host sweep', function (bool $enabled, LifecycleStatus $hostStatus): void {
+    it('keeps one reason while a missing ready VM waits through removal sweeps', function (bool $enabled, LifecycleStatus $hostStatus, string $pause, TaskVmProviderKind $provider = TaskVmProviderKind::Incus): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         tvm_life_settings(enabled: $enabled);
         $this->host->update(['status' => $hostStatus]);
+        $vm->update(['provider' => $provider, 'host_node_id' => $provider->needsHostNode() ? $this->host->id : null]);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
         $sha = str_repeat('c', 40);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
         $this->provider->observation = null;
         Queue::fake([ResumeTaskVm::class]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->andThrow(new TaskPullRequestException('The task workspace is unavailable.'));
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        $this->freezeTime();
 
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        for ($cycle = 0; $cycle < 3; $cycle++) {
+            app()->call([new DestroyTaskVm($vm->id), 'handle']);
+            expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
+            $this->travel(31)->minutes();
+        }
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
         $this->assertModelExists($instance);
         expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($this->provider->calls)->toBe(['observe', 'observe']);
-        expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
-        expect($group->fresh()->assistance_reason)->toContain('was not found', $sha, 'host sweep', 'enabled', 'active');
-        expect($group->fresh()->assistance_reason)->not->toContain('Reviewed work lost');
+        expect($this->provider->calls)->toBe(['observe', 'observe', 'observe', 'observe']);
         expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->count())->toBe(1);
+        expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
+        expect($group->fresh()->assistance_reason)->toBe("Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$sha}] has not been pushed. Workspace removal waits for the host sweep to confirm loss.".$pause);
+        $publisher->shouldNotHaveReceived('push');
         Queue::assertNotPushed(ResumeTaskVm::class);
-    })->with(['task VMs disabled' => [false, LifecycleStatus::Active], 'host inactive' => [true, LifecycleStatus::Failed], 'sweep enabled' => [true, LifecycleStatus::Active]]);
+    })->with([
+        'task VMs disabled' => [false, LifecycleStatus::Active, ' The Incus host sweep is paused because task VMs are disabled.'],
+        'host inactive' => [true, LifecycleStatus::Failed, ' The Incus host sweep is paused because host [beast] is inactive.'],
+        'sweep enabled' => [true, LifecycleStatus::Active, ''],
+        'UpCloud with task VMs disabled' => [false, LifecycleStatus::Failed, '', TaskVmProviderKind::UpCloud],
+    ]);
+
+    it('retries the preservation push once the missing VM is found again', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $sha = str_repeat('c', 40);
+        $reviewed = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha);
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        $scheduler = app(TaskScheduler::class);
+        app()->instance(ProjectLifecycleRunner::class, Mockery::mock(app(ProjectLifecycleRunner::class))->shouldReceive('run')->andReturn(true)->getMock());
+        Queue::fake();
+        $this->provider->observation = null;
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        expect($scheduler->removeAbandonedWorkspaces())->toBe(0);
+        $this->assertModelExists($instance);
+        $this->provider->observation = new VmObservation(true, '10.251.77.20');
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        expect($vm->fresh()->error_code)->toBeNull();
+        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
+
+        $this->assertModelMissing($instance);
+        expect($reviewed->fresh()->pushed_at)->not->toBeNull();
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect($this->provider->calls)->toBe(['observe', 'observe', 'destroy']);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
 
     it('destroys a lost VM and records its lost reviewed SHA without clearing the evidence', function (TaskGroupStatus $status): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
