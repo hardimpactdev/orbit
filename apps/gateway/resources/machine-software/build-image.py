@@ -27,10 +27,9 @@ def image_apt_setup(payload, directory):
 
 
 def image_apt_configuration(directory):
-    # Exact recipe pins may require a non-candidate dependency, even one just upgraded by full-upgrade.
+    # Empty values disable stock config directories; APT resolves "-" to /etc/apt/-/ and warns.
     return ('Dir::Etc::parts "";\nDir::Etc::main "";\n'
             f'Dir::Etc::sourcelist "{directory}/ubuntu.sources";\nDir::Etc::sourceparts "";\n'
-            'APT::Solver::Strict-Pinning "false";\nAPT::Get::allow-downgrades "true";\n'
             'APT::Get::List-Cleanup "false";\n'
             'APT::Update::Error-Mode "any";\nDPkg::Lock::Timeout "300";\n')
 

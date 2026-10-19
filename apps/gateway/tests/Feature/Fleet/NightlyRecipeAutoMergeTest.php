@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
+use App\Actions\Fleet\NightlyRecipeContents;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\Fleet\FakeUbuntuSnapshot;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -41,6 +44,7 @@ function nightlyMergeEvidence(): array
 
 function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
 {
+    app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     GitHubTestSupport::storeApp();
@@ -66,7 +70,7 @@ function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
     return $alerts;
 }
 
-it('verifies a signed date-only commit independently of the serving tool catalog', function (): void {
+it('verifies a signed snapshot commit independently of the serving tool catalog', function (): void {
     $evidence = nightlyMergeEvidence();
     foreach (['before', 'after'] as $field) {
         $evidence[$field] = preg_replace('/^            "lock_sha256":.*\n/m', '', $evidence[$field]);
@@ -172,3 +176,39 @@ it('ignores task-group PRs and does not mint merge requests for them', function 
 
     Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/pulls/99'));
 });
+
+it('merges every refreshed Ubuntu pin but refuses even one stale pin in the snapshot bump', function (bool $stale): void {
+    $evidence = nightlyMergeEvidence();
+    $next = json_decode($evidence['after'], true, flags: JSON_THROW_ON_ERROR)['ubuntu']['snapshot'];
+    $contents = new NightlyRecipeContents(new FakeUbuntuSnapshot('+snapshot1'));
+    $evidence['after'] = $contents->replace($evidence['before'], new RecipeLoader()->load()->snapshot, $next);
+    if ($stale) {
+        $curl = new RecipeLoader()->load()->tools['curl']->version;
+        $evidence['after'] = str_replace('"version": "'.$curl.'+snapshot1"', '"version": "'.$curl.'"', $evidence['after']);
+    }
+    $patch = [];
+    $afterLines = explode("\n", $evidence['after']);
+    foreach (explode("\n", $evidence['before']) as $index => $line) {
+        if ($line !== $afterLines[$index]) {
+            $patch[] = '-'.$line;
+            $patch[] = '+'.$afterLines[$index];
+        }
+    }
+    $evidence['files'][0]['patch'] = implode("\n", $patch);
+    $evidence['files'][0]['additions'] = $evidence['files'][0]['deletions'] = intdiv(count($patch), 2);
+    $evidence['files'][0]['changes'] = count($patch);
+    $evidence['pr']['additions'] = $evidence['pr']['deletions'] = intdiv(count($patch), 2);
+    $evidence['final'] = $evidence['pr'];
+    $alerts = nightlyMergeHttp($evidence);
+    app()->instance(NightlyRecipeContents::class, $contents);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    if ($stale) {
+        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+        expect($alerts->alerts)->toHaveCount(1);
+    } else {
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+        expect($alerts->alerts)->toBe([]);
+    }
+})->with([false, true]);

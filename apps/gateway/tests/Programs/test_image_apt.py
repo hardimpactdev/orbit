@@ -30,16 +30,17 @@ class ImageAptTest(unittest.TestCase):
         (self.lists / 'partial').mkdir(parents=True)
         self.status = self.root / 'status'
         # The base full-upgrade can install a newer dependency before a missing recipe tool is installed.
-        self.status.write_text('Package: orbit-test-lib\nStatus: install ok installed\nArchitecture: amd64\n'
+        self.status.write_text('Package: bind9-libs\nStatus: install ok installed\nArchitecture: amd64\n'
                                'Version: 2.0\nDescription: fixture\n\n')
         self.payload = {'snapshot': '20261014T000000Z', 'architecture': 'amd64', 'profile': 'base',
-                        'tools': {'orbit-test-tool': {'source': 'ubuntu', 'package': 'orbit-test-tool', 'version': '1.0'}}}
+                        'tools': {'bind9-dnsutils': {'source': 'ubuntu', 'package': 'bind9-dnsutils', 'version': '2.0'}}}
         prefix = 'snapshot.ubuntu.com_ubuntu_20261014T000000Z_dists_resolute'
         (self.lists / (prefix + '_Release')).write_text('Origin: Ubuntu\nLabel: Ubuntu\nSuite: resolute\n'
                                                       'Codename: resolute\nVersion: 26.04\nArchitectures: amd64\nComponents: main\n')
         packages = ''
-        for name, version, dependency in [('orbit-test-tool', '1.0', 'orbit-test-lib (= 1.0)'),
-                                           ('orbit-test-lib', '1.0', ''), ('orbit-test-lib', '2.0', '')]:
+        for name, version, dependency in [('bind9-dnsutils', '1.0', 'bind9-libs (= 1.0)'),
+                                           ('bind9-dnsutils', '2.0', 'bind9-libs (= 2.0)'),
+                                           ('bind9-libs', '1.0', ''), ('bind9-libs', '2.0', '')]:
             packages += (f'Package: {name}\nVersion: {version}\nArchitecture: amd64\n'
                          + (f'Depends: {dependency}\n' if dependency else '')
                          + f'Filename: pool/{name}_{version}_amd64.deb\nSize: 1\nDescription: fixture\n\n')
@@ -78,11 +79,11 @@ class ImageAptTest(unittest.TestCase):
             update = self.apt(['apt-get', '--print-uris', 'update']).stdout
             self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/', update)
             self.assertNotIn('live.invalid', update)
-            policy = self.apt(['apt-cache', 'policy', 'orbit-test-lib']).stdout
+            policy = self.apt(['apt-cache', 'policy', 'bind9-libs']).stdout
             self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T000000Z', policy)
             self.assertIn('Candidate: 2.0', policy)
 
-    def test_packages_phase_resolves_exact_pin_and_older_dependency_from_snapshot(self):
+    def test_packages_phase_resolves_snapshot_pins_with_zero_downgrades(self):
         def run(argv, **kwargs):
             if argv[0] == 'apt-get':
                 # Run the real resolver without downloading or installing. All state is under the test directory.
@@ -94,20 +95,38 @@ class ImageAptTest(unittest.TestCase):
                     download = self.apt(['apt-get', '--print-uris', '--download-only', *argv[1:]], **kwargs)
                     uris = [line.split()[0].strip("'") for line in download.stdout.splitlines() if line.startswith("'")]
                     self.assertEqual(uris, [
-                        'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/pool/orbit-test-lib_1.0_amd64.deb',
-                        'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/pool/orbit-test-tool_1.0_amd64.deb',
+                        'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/pool/bind9-dnsutils_2.0_amd64.deb',
                     ])
                 return result
             self.assertTrue(argv == ['dpkg', '--audit'] or argv[:2] == ['systemctl', 'show'], argv)
             return subprocess.CompletedProcess(argv, 0, '', '')
 
         with patch.object(image, 'run', side_effect=run), \
-             patch.object(image, 'packages', return_value={'orbit-test-lib': '2.0'}):
+             patch.object(image, 'packages', return_value={'bind9-libs': '2.0'}):
             image.image_apt_source(self.payload)
             image.image_packages(self.payload)
 
         self.assertEqual([phase for phase, _ in self.results], ['update', 'full-upgrade', 'install', 'check'])
         install = next(output for phase, output in self.results if phase == 'install')
-        self.assertIn('Inst orbit-test-tool (1.0 Ubuntu:26.04/resolute [amd64])', install)
-        self.assertIn('Inst orbit-test-lib [2.0] (1.0 Ubuntu:26.04/resolute [amd64])', install)
+        self.assertIn('Inst bind9-dnsutils (2.0 Ubuntu:26.04/resolute [amd64])', install)
+        self.assertNotRegex(install, r'[1-9][0-9]* downgraded')
+        self.assertNotIn('DOWNGRADED', install)
+        self.assertNotIn('Inst bind9-libs [2.0] (1.0', install)
         self.assertFalse(image.POLICY.exists())
+
+    def test_strict_bind9_dependency_resolution_requires_the_snapshot_candidate_pin(self):
+        # Neither BIND package is installed: an older exact dependency conflicts with the newer candidate.
+        self.status.write_text('')
+        image.image_apt_setup(self.payload, image.IMAGE_APT)
+        with image.image_apt_environment(self.payload):
+            stale = subprocess.run(['apt-get', '--simulate', 'install', '-y', 'bind9-dnsutils=1.0'],
+                                   capture_output=True, text=True, check=False)
+            self.assertNotEqual(stale.returncode, 0)
+            resolved = self.apt(['apt-get', '--simulate', 'install', '-y', 'bind9-dnsutils=2.0']).stdout
+            self.assertIn('Inst bind9-libs (2.0', resolved)
+            self.assertNotRegex(resolved, r'[1-9][0-9]* downgraded')
+            self.assertNotIn('DOWNGRADED', resolved)
+            uris = self.apt(['apt-get', '--print-uris', '--download-only', 'install', '-y',
+                             'bind9-dnsutils=2.0']).stdout
+            self.assertIn('snapshot.ubuntu.com/ubuntu/20261014T000000Z/pool/bind9-libs_2.0', uris)
+            self.assertNotIn('live.invalid', uris)

@@ -68,8 +68,7 @@ final readonly class RefreshNightlyRecipePullRequestAction
             || data_get($pr, 'user.login') !== $author || data_get($pr, 'user.type') !== 'Bot'
             || data_get($pr, 'base.ref') !== 'main' || data_get($pr, 'base.repo.full_name') !== $name
             || data_get($pr, 'head.ref') !== $branch || data_get($pr, 'head.repo.full_name') !== $name
-            || data_get($pr, 'commits') !== 1 || data_get($pr, 'changed_files') !== 1
-            || data_get($pr, 'additions') !== 1 || data_get($pr, 'deletions') !== 1) {
+            || data_get($pr, 'commits') !== 1 || data_get($pr, 'changed_files') !== 1) {
             return;
         }
         $checksToken = $this->access->checksToken($repository);
@@ -93,8 +92,7 @@ final readonly class RefreshNightlyRecipePullRequestAction
         }
         $files = $http->get($path.'/files', ['per_page' => 2])->throw()->json();
         if (! is_array($files) || count($files) !== 1
-            || data_get($files, '0.filename') !== OpenNightlyRecipePullRequestAction::Path || data_get($files, '0.status') !== 'modified'
-            || data_get($files, '0.additions') !== 1 || data_get($files, '0.deletions') !== 1 || data_get($files, '0.changes') !== 2) {
+            || data_get($files, '0.filename') !== OpenNightlyRecipePullRequestAction::Path || data_get($files, '0.status') !== 'modified') {
             return;
         }
         $before = $this->contents->read($http, $parent);

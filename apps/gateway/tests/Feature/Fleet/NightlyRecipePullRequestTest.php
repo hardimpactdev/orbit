@@ -7,12 +7,14 @@ use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\Fleet\FakeUbuntuSnapshot;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 
@@ -34,6 +36,7 @@ function nightlyRecipeDate(int $days = 1): DateTimeImmutable
 
 function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pulls = [], bool $denyWrite = false): void
 {
+    app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     GitHubTestSupport::storeApp();
     config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit']);
     Http::preventStrayRequests();
@@ -56,7 +59,7 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
     ]);
 }
 
-it('reads exactly main and opens a date-only PR through the existing App publisher', function (): void {
+it('reads exactly main and opens a snapshot PR through the existing App publisher', function (): void {
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
     $branch = 'nightly/recipe-'.nightlyRecipeDate()->format('Ymd');
@@ -261,4 +264,26 @@ it('waits without alerting for main recipe definitions and catches up on the sam
     $sent = Http::recorded()->count();
     app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
     expect(Http::recorded()->count())->toBe($sent);
+});
+
+it('bumps every Ubuntu pin with the snapshot while preserving all artifact and profile definitions', function (): void {
+    $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
+    $file = nightlyRecipeFile();
+    nightlyRecipeGitHub($file);
+    app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot('+snapshot1'));
+
+    app(OpenNightlyRecipePullRequestAction::class)->execute();
+
+    $request = Http::recorded(fn (Request $request): bool => $request->method() === 'PUT')->sole()[0];
+    $before = json_decode(base64_decode($file['content']), true, flags: JSON_THROW_ON_ERROR);
+    $after = json_decode(base64_decode($request['content']), true, flags: JSON_THROW_ON_ERROR);
+    expect($after['ubuntu']['snapshot'])->toBe(nightlyRecipeDate()->format('Ymd\THis\Z'));
+    foreach ($before['tools'] as $name => $tool) {
+        if ($tool['source'] === 'ubuntu') {
+            expect($after['tools'][$name]['version'])->toBe($tool['version'].'+snapshot1');
+            $after['tools'][$name]['version'] = $tool['version'];
+        }
+    }
+    $after['ubuntu']['snapshot'] = $before['ubuntu']['snapshot'];
+    expect($after)->toBe($before);
 });
