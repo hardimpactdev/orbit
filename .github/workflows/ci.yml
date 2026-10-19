@@ -101,7 +101,7 @@ jobs:
 
       - name: Set up Homebrew
         if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
 
       - name: Install Gateway system dependencies
         if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
@@ -534,7 +534,7 @@ jobs:
 
       - name: Set up Homebrew
         if: runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
 
       - name: Install Gateway system dependencies
         if: runner.environment == 'github-hosted'
@@ -592,7 +592,7 @@ jobs:
         if: runner.environment == 'self-hosted'
         with:
           node-version: '24'
-      - uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
+      - uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c
         if: runner.environment == 'github-hosted'
       - name: Install hosted runner prerequisites
         if: runner.environment == 'github-hosted'
