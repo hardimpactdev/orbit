@@ -507,6 +507,14 @@ it('proves native quiescence for only the target binding and check run without s
     $runId = bin2hex(random_bytes(16));
     $unit = $kind === 'operation' ? 'orbit-workspace-operation-'.$operation.'.service' : 'orbit-task-check-'.$runId.'.service';
     $description = $kind === 'operation' ? 'Orbit workspace operation '.$binding : 'Orbit task check '.$runId;
+    // Keep other workers' disappearing units out of this fixture; property and cgroup reads stay native.
+    file_put_contents($this->receiptHome.'/bin/systemctl', str_replace('FIXTURE_UNIT', escapeshellarg($unit), <<<'SH'
+#!/bin/sh
+if test "$1" = list-units; then
+    exec /usr/bin/systemctl list-units --all --no-pager --output=json FIXTURE_UNIT
+fi
+exec /usr/bin/systemctl "$@"
+SH));
     $fifo = $this->receiptHome.'/native-finish';
     posix_mkfifo($fifo, 0o600);
     $process = new Process(['sudo', '-n', 'systemd-run', '--quiet', '--pipe', '--unit='.$unit,
@@ -521,7 +529,7 @@ it('proves native quiescence for only the target binding and check run without s
         $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
         $probe = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
             'seal', str_repeat('0', 32), $targetBinding, '0', '[]', json_encode($checkRuns, JSON_THROW_ON_ERROR)],
-            env: ['HOME' => $this->receiptHome]);
+            env: ['HOME' => $this->receiptHome, 'PATH' => $this->receiptHome.'/bin:'.getenv('PATH')]);
         $data = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         expect($data['state'])->toBe($relevant ? 'running' : 'sealed')
             ->and($process->isRunning())->toBeTrue();
