@@ -4,8 +4,8 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
-  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
+  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
@@ -29,6 +29,8 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | `ai-router` | `apps/gateway/extensions/ai-router`. See [AI router](/reference/ai-router). | nothing |
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
+
+Analytics is still a core role, not a sixth extension. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) keeps its persisted role identity in core and moves behavior through narrow typed contributions, after explicit Process ownership is proved. Its proposed disabled behavior preserves serving and data; no Analytics switch or migration is delivered by the proposal.
 
 Task agent turns and checkout operations share the [workspace lease](/reference/tasks#workspace-lease). Task drivers and remote operations use that ownership rule regardless of which caller starts the work. A disabled extension does not erase an existing holder or its recovery evidence.
 

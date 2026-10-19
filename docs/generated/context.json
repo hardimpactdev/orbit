@@ -860,13 +860,22 @@
             ],
             "concepts": [
                 "Activity",
+                "Database server",
+                "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
+                "Placement",
+                "Process",
                 "Project",
                 "Project Documents",
+                "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -1455,6 +1464,7 @@
                 "Cluster",
                 "Database server",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1464,7 +1474,9 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0210"
+            ]
         },
         {
             "path": "docs/reference/api-reference.md",
@@ -1971,6 +1983,7 @@
                 "Process",
                 "Project",
                 "Project Documents",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",

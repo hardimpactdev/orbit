@@ -2,18 +2,20 @@
 title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
-  - apps/gateway/app/Domain/Analytics/**
-  - apps/gateway/app/Infrastructure/Analytics/**
-  - apps/gateway/app/Actions/Analytics/**
+  - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
   - apps/gateway/app/Infrastructure/Nodes/Roles/AnalyticsRoleBaseline.php
   - apps/gateway/app/Actions/Routes/ConvergeAnalyticsTrackingPlacementAction.php
   - apps/gateway/resources/analytics/**
+  - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**
+  - apps/cli/app/Commands/Analytics/**
   - apps/cli/app/Commands/Instances/*InstanceAnalyticsCommand.php
 ---
 
 # Analytics role
 
 The `analytics` role runs Plausible Community Edition for the fleet. An Instance sends visits to it through a tracking host. The Gateway reads the visits back for the Orbit web Instance page. [`analytics`](/cli/analytics) lists the role commands. [Instance analytics stats](/reference/instance-analytics-stats) owns the read.
+
+Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
 
 ## Prepare the database Processes
 
@@ -59,6 +61,8 @@ The role then converges in this order.
 Plausible creates and migrates its PostgreSQL database each time it starts. The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
 You can read the logs of `plausible` and restart it like any other Process. You cannot remove it, or either storage Process, while the role is assigned (`process.required_by_analytics`). The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
+
+The current lifecycle identifies Plausible by its Node and the name `plausible`, not a persisted owning-role claim. A convergence with different configuration can remove that named Process through the internal owning-role path before recreating it; role removal and unreachable forget also select by name. Do not use an unrelated Process with that name on an Analytics Node. The [ownership proposal](/decisions/0210-give-each-extension-its-own-code-boundary#explicit-process-ownership-before-extraction) replaces this unsafe selection with explicit ownership; it is not implemented by this documentation change.
 
 `https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
 
