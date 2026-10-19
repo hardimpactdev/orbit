@@ -73,7 +73,7 @@ describe('authenticated Ubuntu snapshot availability', function (): void {
     it('rejects well-formed but unavailable exact Ubuntu versions', function (): void {
         fake_signed_snapshot();
         expect(fn () => snapshot_fixture_probe()->verify(snapshot_fixture_recipe('1.2.4-1ubuntu1')))
-            ->toThrow(RuntimeException::class, 'Tool [curl] version [1.2.4-1ubuntu1] architecture [amd64] unavailable in snapshot [20261014T000000Z]');
+            ->toThrow(RuntimeException::class, 'Tool [curl] version [1.2.4-1ubuntu1] architectures [amd64, arm64] unavailable in snapshot [20261014T000000Z]');
     });
 
     it('rejects a package index whose bytes differ from signed metadata', function (): void {

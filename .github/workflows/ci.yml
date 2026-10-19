@@ -132,6 +132,17 @@ jobs:
         if: matrix.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
+      # Use the same signed resolver as nightly publication. Do not fetch artifacts or indexes on unrelated changes.
+      - name: Verify Ubuntu recipe pins against the named snapshot
+        if: matrix.directory == 'apps/gateway' && matrix.part == 'tests' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        env:
+          RECIPE_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+        run: |
+          changed=$(git diff --name-only "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json)
+          if [ -n "$changed" ]; then
+            php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
+          fi
+
       # The Docs merge proof regenerates Gateway OpenAPI and web types in disposable clones.
       - name: Install generated merge proof dependencies
         if: matrix.directory == 'apps/docs'

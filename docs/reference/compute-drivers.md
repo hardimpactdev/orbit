@@ -42,7 +42,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names or `ci-runner`. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 
-An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a recipe pin available only from today's rolling archive fails online validation.
+An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. Every pin must equal the newest version across the release's archive, updates, and security pockets on every declared architecture. An older pin or one available only from today's rolling archive fails online validation.
 
 Ubuntu pins are version floors on installed machines. The same Debian package on the native architecture (or `all`) satisfies the recipe at the pinned version. A newer version also satisfies it when `dpkg --compare-versions` orders it above the pin and local APT policy confirms Ubuntu origin in the same release, updates, or security pocket. Convergence and base and role image verification use this rule. Plans and results label accepted newer packages `newer_than_recipe` and include both versions. Older or missing packages install the snapshot pin.
 
@@ -274,6 +274,8 @@ Add `--validate` to verify availability and integrity as well as structure. For 
 
 Online validation verifies that the exact snapshot exists for the release and architectures, and that every Ubuntu pin equals the newest version in its authenticated package indexes on all declared architectures. It also checks that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
 
+Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check only when `recipe.json` changes; a hand-edited snapshot date with stale pins fails Required checks.
+
 Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
 | Failure | Required diagnostic |
@@ -311,7 +313,7 @@ Purging extra PHP packages on every Node could break a client site that uses an 
 
 A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
 
-The PHP bump does not auto-merge with the snapshot. A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request auto-merges only the authenticated snapshot and Ubuntu pin bump.
+PHP artifact bumps still need maintainer review. The [nightly Ubuntu rollout policy](#nightly-ubuntu-rollout-policy) covers snapshot and Ubuntu pin bumps.
 
 Sabre did not wait for a `ci-runner` role. Its hand-managed PHP would keep breaking the cache match until then. A profile that a roleless Node selects manages it now.
 
@@ -734,7 +736,7 @@ Run `php artisan task-vms:build-recipe` on the Gateway to queue the current reci
 
 A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
-Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
+Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot and Ubuntu pin PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
 Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
@@ -744,7 +746,7 @@ Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`,
 
 Every image package command, including assessment and the separate PHP installer during verification, inherits the same snapshot configuration through `APT_CONFIG`. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies.
 
-Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes.
+Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
 
 The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes.
 
@@ -785,6 +787,12 @@ Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases
 
 ### Nightly recipe maintenance
 
+#### Nightly Ubuntu rollout policy
+
+Nick's decision of 2026-10-19 is that every Ubuntu pin follows the named snapshot, including `resolute-updates`. The Gateway auto-merges these PRs on green Required checks and converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
+
+Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin, and the merge accepts only the regenerated bump on the checked head. Verified images gate rollout. Ordered Node inventory, health, and Doctor checks stop a faulty rollout. These checks make automation safe without promising that an upstream package cannot regress.
+
 At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
 
 The job runs every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR checks finish. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
@@ -799,7 +807,9 @@ A cross-reference from another issue or PR is not a modification and does not bl
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. Closing an older failed PR instead avoids keeping both that PR and tonight's replacement open.
 
-Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time. It requires one App-authored commit with GitHub’s verified web-flow signature and its App as PR author. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA. This reuses the existing App and PR API without Actions secrets or a second publisher.
+Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time. It requires one App-authored commit with GitHub’s verified web-flow signature and its App as PR author. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+
+The Gateway records a blocked head and skips its evidence and index checks until the PR head changes. After correcting a block, push a new head to request another check. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.
 

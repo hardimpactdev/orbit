@@ -9,6 +9,7 @@ use App\Infrastructure\MachineSoftware\AuthenticatedUbuntuSnapshot;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use DateTimeImmutable;
 use Illuminate\Http\Client\PendingRequest;
+use RuntimeException;
 use UnexpectedValueException;
 
 /** Shared strict reads and authenticated snapshot-and-Ubuntu-pin bumps for nightly recipe PRs. */
@@ -20,7 +21,7 @@ final readonly class NightlyRecipeContents
     {
         $serving = file_get_contents(resource_path('machine-software/recipe.json'));
         if ($serving === false) {
-            throw new \RuntimeException('The serving recipe is missing.');
+            throw new RuntimeException('The serving recipe is missing.');
         }
         $main = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
         $deployed = json_decode($serving, true, flags: JSON_THROW_ON_ERROR);
@@ -82,7 +83,7 @@ final readonly class NightlyRecipeContents
         }
 
         $data = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($data) || ! is_array($data['tools'] ?? null) || ! is_array($data['architectures'] ?? null)
+        if (! is_array($data) || ! is_array($data['ubuntu'] ?? null) || ! is_array($data['tools'] ?? null) || ! is_array($data['architectures'] ?? null)
             || ! array_is_list($data['architectures']) || ! array_all($data['architectures'], static fn (mixed $architecture): bool => is_string($architecture))) {
             throw new UnexpectedValueException('The recipe tools or architectures are invalid.');
         }
@@ -95,13 +96,26 @@ final readonly class NightlyRecipeContents
                 $packages[] = $name;
             }
         }
-        $versions = $this->snapshots->latest($snapshot, $data['architectures'], $packages);
+        try {
+            $versions = $this->snapshots->latest($snapshot, $data['architectures'], $packages);
+        } catch (RuntimeException $error) {
+            throw new UnexpectedValueException('Ubuntu snapshot pins could not be verified: '.$error->getMessage(), previous: $error);
+        }
+        $data['ubuntu']['snapshot'] = $snapshot;
         foreach ($versions as $name => $version) {
+            if (! in_array($name, $packages, true)) {
+                throw new UnexpectedValueException("Snapshot resolution returned a non-Ubuntu tool [{$name}].");
+            }
+            $data['tools'][$name]['version'] = $version;
             $updated = preg_replace_callback('/("'.preg_quote($name, '/').'"\s*:\s*\{[^{}]*?"version"\s*:\s*")[^"]+(")/',
                 static fn (array $match): string => $match[1].$version.$match[2], $updated, 1, $count);
             if (! is_string($updated) || $count !== 1) {
                 throw new UnexpectedValueException("Ubuntu pin [{$name}] could not be replaced.");
             }
+        }
+
+        if (json_decode($updated, true, flags: JSON_THROW_ON_ERROR) !== $data) {
+            throw new UnexpectedValueException('Recipe rewrite changed fields outside the snapshot and Ubuntu versions.');
         }
 
         return $updated;

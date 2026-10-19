@@ -637,6 +637,25 @@ describe('machine recipe command', function (): void {
         }
     });
 
+    it('checks every Ubuntu pin without reading artifacts for the CI validation mode', function (): void {
+        $probe = machine_recipe_snapshot_probe();
+        $this->app->instance(SnapshotAvailability::class, $probe);
+        Http::preventStrayRequests();
+
+        expect(Artisan::call('orbit:machine-recipe', ['--validate-ubuntu' => true, '--json' => true, '--role' => 'operator']))->toBe(0);
+
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['validation'])->toBe('structure_ubuntu_snapshot');
+        expect($probe->called)->toBeTrue();
+        Http::assertNothingSent();
+    });
+
+    it('fails the CI validation mode when an Ubuntu pin does not match the snapshot', function (): void {
+        $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe('stale Ubuntu pin'));
+
+        $this->artisan('orbit:machine-recipe', ['--validate-ubuntu' => true, '--role' => 'operator'])
+            ->expectsOutputToContain('stale Ubuntu pin')->assertFailed();
+    });
+
     it('refuses unknown roles and unsupported Pi architecture', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'typo'])->expectsOutputToContain('Unknown role/profile')->assertFailed();
         $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('requires tool [pi]')->assertFailed();

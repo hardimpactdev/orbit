@@ -60,7 +60,7 @@ function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
         $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final']),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
-        $base.'/commits/'.str_repeat('b', 40).'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
+        $base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
         $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => static fn (Request $request) => Http::response([
             'content' => base64_encode(str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after']),
         ]),
@@ -215,3 +215,30 @@ it('merges every refreshed Ubuntu pin but refuses even one stale pin in the snap
         expect($alerts->alerts)->toBe([]);
     }
 })->with([false, true]);
+
+it('does not recheck a blocked head even after the alert expires and checks a changed head again', function (): void {
+    $evidence = nightlyMergeEvidence();
+    $alerts = nightlyMergeHttp($evidence);
+    $snapshots = Mockery::mock(SnapshotAvailability::class);
+    $snapshots->shouldReceive('latest')->once()->andThrow(new RuntimeException('snapshot download failed'));
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(2)->days();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    expect($alerts->alerts)->toHaveCount(1);
+    expect($alerts->alerts[0]->summary)->toContain('Ubuntu snapshot pins could not be verified: snapshot download failed');
+    expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+
+    $head = str_repeat('d', 40);
+    $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
+    $evidence['commits'][0]['sha'] = $evidence['runs'][0]['head_sha'] = $head;
+    $retried = nightlyMergeHttp($evidence);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $head);
+    expect($retried->alerts)->toBe([]);
+});

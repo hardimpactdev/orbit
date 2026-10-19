@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
@@ -295,3 +296,15 @@ it('bumps every Ubuntu pin with the snapshot while preserving all artifact and p
     $after['ubuntu']['snapshot'] = $before['ubuntu']['snapshot'];
     expect($after)->toBe($before);
 });
+
+it('refuses a rewrite that changes a similarly named field outside the Ubuntu pins', function (string $collision): void {
+    $before = file_get_contents(resource_path('machine-software/recipe.json'));
+    $snapshot = new RecipeLoader()->load()->snapshot;
+    $extra = $collision === 'snapshot'
+        ? '"snapshot": "'.$snapshot.'"'
+        : '"curl": {"version": "unrelated"}';
+    $before = preg_replace('/\{/', '{"metadata": {'.$extra.'},', $before, 1);
+
+    expect(fn () => new NightlyRecipeContents(new FakeUbuntuSnapshot('+snapshot1'))->replace($before, $snapshot, '20261020T000000Z'))
+        ->toThrow(UnexpectedValueException::class, 'Recipe rewrite changed fields outside the snapshot and Ubuntu versions.');
+})->with(['snapshot', 'tool']);

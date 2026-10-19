@@ -47,6 +47,10 @@ final readonly class MergeNightlyRecipePullRequestsAction
             if (preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) !== 1) {
                 continue;
             }
+            $blockedHeadKey = 'machine-recipe:blocked-pr-head:'.$repository->owner.'/'.$repository->name.':'.$pull->number;
+            if (Cache::get($blockedHeadKey) === $pull->headSha) {
+                continue;
+            }
             try {
                 $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
                     ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
@@ -73,6 +77,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 $merged = $this->github->mergePullRequest($token, $repository, $pull->number, $pull->headSha);
                 $this->require($merged->merged, 'GitHub refused the expected-head merge; recheck the PR and branch protection.');
             } catch (Throwable $error) {
+                Cache::forever($blockedHeadKey, $pull->headSha);
                 $reason = $error instanceof UnexpectedValueException ? $error->getMessage() : 'GitHub evidence could not be verified.';
                 $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] blocked: {$reason}");
             }

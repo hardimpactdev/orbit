@@ -20,7 +20,7 @@ final readonly class RecipeValidator
         if (isset($recipe->tools['vp'])) {
             VitePlusRuntimeLock::read($recipe->tools['vp']);
         }
-        $this->snapshots->verify($recipe);
+        $this->validateUbuntu($recipe);
         foreach ($recipe->tools as $name => $tool) {
             foreach ($tool->artifacts as $architecture => $artifact) {
                 $temporary = $tool->source !== 'internal';
@@ -58,5 +58,10 @@ final readonly class RecipeValidator
                 }
             }
         }
+    }
+
+    public function validateUbuntu(MachineRecipe $recipe): void
+    {
+        $this->snapshots->verify($recipe);
     }
 }
