@@ -295,7 +295,7 @@ it('batches Doctor reads and classifies failed requirements separately from acti
     $ssh->installed = $installed;
     $instance->update(['vp_environment' => (new VpEnvironment('/opt/orbit/vite-plus', '0.3.3', '24.22.0', 'npm', '11.12.0'))->record($status)]);
     $probe = new ToolDoctorProbe(app(ToolInspector::class), new VersionConstraint, new UnsupportedPackageInventory, $vp, app(ToolCommandBudget::class), app(ToolManagerRegistry::class));
-    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|tool.vp_store_missing|tool|node:'.$instance->node_id.':environments', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $instance->node_id, 'doctor_family' => 'tool', 'doctor_resource' => 'node:'.$instance->node_id.':environments', 'doctor_observed_at' => now()->toISOString()]]);
+    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|tool.vp_store_missing|tool|node:'.$instance->node_id.':environments', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $instance->node_id, 'doctor_family' => 'tool', 'doctor_code' => 'tool.vp_store_missing', 'doctor_resource' => 'node:'.$instance->node_id.':environments', 'doctor_observed_at' => now()->toISOString()]]);
     $this->travel(1)->minutes();
     $report = $probe->inspect(new DoctorNodeContext($instance->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
     app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($instance->node_id, $instance->node->name, [$report])]), now());

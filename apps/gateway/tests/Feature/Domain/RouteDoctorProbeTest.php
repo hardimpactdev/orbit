@@ -401,7 +401,7 @@ it('recovers a stored Route fault without claiming unobserved proxy health', fun
     $route = route_doctor_app_route($node);
     $rows = [];
     foreach (['route.lifecycle_not_active', 'route.caddy_mismatch'] as $code) {
-        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|route|'.$route->id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'route', 'doctor_resource' => (string) $route->id, 'doctor_observed_at' => now()->toISOString()]]);
+        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|route|'.$route->id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'route', 'doctor_code' => $code, 'doctor_resource' => (string) $route->id, 'doctor_observed_at' => now()->toISOString()]]);
     }
     $this->travel(1)->minutes();
     $inspector = Mockery::mock(CustomProxyRouteInspector::class);
