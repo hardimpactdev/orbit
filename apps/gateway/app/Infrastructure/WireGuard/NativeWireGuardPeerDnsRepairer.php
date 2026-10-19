@@ -24,8 +24,12 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
 
     public function repair(Node $node): void
     {
+        $policy = app(PeerDnsPolicy::class);
+        if (! $policy->manages($node)) {
+            return;
+        }
         $vpn = $this->configuration->forPeer($node);
-        $domains = app(PeerDnsPolicy::class)->domains($node);
+        $domains = $policy->domains($node);
         $dnsMode = 'wireguard';
         $result = $this->ssh->execute(
             new SshConnection(
@@ -222,6 +226,8 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                         return 1
                     fi
 
+                    uplink_snapshot=$(sed -n '3p' "$transaction")
+                    peer_dns_restore_uplink all || return 1
                     old_default_route=$(sed -n '2p' "$transaction")
                     case "$old_default_route" in yes|no) ;; *) return 1 ;; esac
                     resolvectl default-route orbit "$old_default_route" || return 1
@@ -314,12 +320,16 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 chown root:root "$dns_state_candidate"
                 chmod 0600 "$dns_state_candidate"
 
+                uplink_snapshot=
+                if [ "$old_dns_link" != orbit ]; then
+                    peer_dns_capture_uplink "$old_dns_link" || exit 43
+                fi
                 old_default_route=$(resolvectl default-route orbit)
                 old_default_route=${old_default_route##*: }
                 case "$old_default_route" in yes|no) ;; *) exit 43 ;; esac
                 if ! cp -a --no-dereference -- "$live" "$backup" \
                     || ! cp -a --no-dereference -- "$dns_state" "$dns_state_backup" \
-                    || ! printf '%s\n%s\n' "$transaction_owner" "$old_default_route" > "$transaction_candidate" \
+                    || ! printf '%s\n%s\n%s\n' "$transaction_owner" "$old_default_route" "$uplink_snapshot" > "$transaction_candidate" \
                     || ! chmod 0600 "$transaction_candidate" \
                     || ! mv -fT -- "$transaction_candidate" "$transaction"; then
                     rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" \
@@ -343,8 +353,8 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 uplink_failed=0
                 apply_failed=0
                 if [ "$old_dns_link" != "$dns_link" ]; then
-                    resolvectl dns "$old_dns_link" '' || apply_failed=1
-                    resolvectl domain "$old_dns_link" '' || apply_failed=1
+                    resolvectl revert "$old_dns_link" || apply_failed=1
+                    peer_dns_restore_uplink protocols || apply_failed=1
                     if [ "$old_dns_link" != orbit ] && [ "$dns_link" = orbit ]; then
                         timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link" || apply_failed=1
                         provider_usable=0

@@ -1873,6 +1873,28 @@ it('routes only private domains through VPN DNS by default', function (?string $
     'VPN domain TLD' => ['orbit', '\\~orbit'],
 ]);
 
+it('releases networkd overrides while preserving uplink protocols during migration', function (bool $retained): void {
+    $harness = remote_wireguard_peer_install_harness(filesPresent: true, activeState: 'active', enabledState: 'enabled');
+    try {
+        $result = $retained ? $harness->convergeRecoverably() : $harness->converge(false);
+        expect($result['exception'])->toBeNull()
+            ->and($result['resolver']['old0'])->toBe([
+                'dns' => ['198.51.100.53'],
+                'domains' => ['~underlay.example'],
+                'unrelated' => [
+                    'default-route' => 'yes',
+                    'llmnr' => 'resolve',
+                    'mdns' => 'yes',
+                    'dnssec' => 'allow-downgrade',
+                    'dnsovertls' => 'opportunistic',
+                    'nta' => "corp.example\nother.example",
+                ],
+            ]);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['finalized' => false, 'retained' => true]);
+
 it('preserves suffix-only routing for explicit DNS overrides', function (
     string $dnsServerOverride,
     string $expected,
@@ -2427,6 +2449,21 @@ function remote_wireguard_peer_install_harness(
             'nta' => 'underlay.example',
         ],
     );
+    $filesystem->makeDirectory("{$root}/state/resolver/old0", 0o700, true);
+    remote_wireguard_peer_write_resolver_state(
+        root: $root,
+        link: 'old0',
+        unrelated: [
+            'default-route' => 'no',
+            'llmnr' => 'resolve',
+            'mdns' => 'yes',
+            'dnssec' => 'allow-downgrade',
+            'dnsovertls' => 'opportunistic',
+            'nta' => "corp.example\nother.example",
+        ],
+    );
+    file_put_contents("{$root}/state/resolver/old0/dns", "10.43.0.53\n");
+    file_put_contents("{$root}/state/resolver/old0/domain", "~old.orbit.internal\n");
     file_put_contents("{$root}/state/resolver/eth0/dns", "198.51.100.53\n");
     file_put_contents("{$root}/state/active", $activeState);
     file_put_contents("{$root}/state/enabled", $enabledState);
@@ -2576,6 +2613,8 @@ function remote_wireguard_peer_install_harness(
                 exit 0
             fi
             mkdir -p "{$root}/state/resolver/\$2"
+            [ ! -f "{$root}/state/resolver/\$2/transient" ] || exit 0
+            printf 'yes\n' > "{$root}/state/resolver/\$2/default-route"
             printf '198.51.100.53\n' > "{$root}/state/resolver/\$2/dns"
             printf '~underlay.example\n' > "{$root}/state/resolver/\$2/domain"
             SH,
@@ -2619,6 +2658,7 @@ function remote_wireguard_peer_install_harness(
                     if [ -f "{$root}/state/rollback-failure" ]; then
                         exit 1
                     fi
+                    case "\$operation" in dns|domain) touch "\$resolver/transient" ;; esac
                     : > "\$resolver/\$operation"
                     for value in "\$@"; do
                         if [ -n "\$value" ]; then
@@ -2627,6 +2667,7 @@ function remote_wireguard_peer_install_harness(
                     done
                     ;;
                 revert)
+                    rm -f "\$resolver/transient"
                     if [ -f "{$root}/state/rollback-failure" ]; then
                         exit 1
                     fi
@@ -2889,6 +2930,7 @@ function remote_wireguard_peer_install_harness(
                 'resolver' => [
                     'orbit' => $this->resolverLinkState('orbit'),
                     'eth0' => $this->resolverLinkState('eth0'),
+                    'old0' => $this->resolverLinkState('old0'),
                 ],
                 'command_log' => $this->commandLog(),
                 'remote_arguments' => array_map(

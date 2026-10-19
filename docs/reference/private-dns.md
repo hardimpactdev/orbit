@@ -39,7 +39,9 @@ Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dn
 
 The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. On upgrade, data migrations clear existing per-Node DNS overrides and global VPN DNS values outside the usable WireGuard subnet; the next repair, provision, or scheduled pass applies the default server. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
 
-When repair moves an old underlay selection to `orbit`, it first requires a networkd-managed uplink. It reconfigures that uplink through networkd to restore provider or DHCP DNS and waits up to 15 seconds for networkd and resolved to expose a usable non-Orbit server. Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with exit 43 and retains or restores the previous DNS state.
+When repair moves an old underlay selection to `orbit`, it first requires a networkd-managed uplink. It removes the old transient DNS selection with `resolvectl revert` and preserves the uplink’s LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. It reconfigures the uplink through networkd to restore provider or DHCP DNS. It waits up to 15 seconds for networkd and resolved to expose a usable non-Orbit server.
+
+Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with exit 43 and retains or restores the previous DNS state. A durable transaction snapshot restores all preceding uplink resolver settings, including its default-route flag, if migration fails. Successful migration leaves the uplink default-route decision with networkd.
 
 A [Node without roles](/reference/node-provisioning#nodes-without-roles) keeps its client-owned `DNS =` line. macOS, the VPN holder, and the Gateway's separate bootstrap resolver are outside this managed peer policy. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override.
 
@@ -57,7 +59,7 @@ Read the saved state first to find the resolver link, server, and routing domain
 | `getent ahostsv4 example.com` | An ordinary name resolves through the provider or DHCP resolver. |
 | `ip route` | Application routes do not depend on the DNS selection. |
 
-The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it.
+The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it. Explicit peer DNS repair refuses the Gateway. AppDev TLD convergence also leaves its bootstrap resolver unchanged.
 
 ## The Gateway machine
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
-/** Shared resolver inspection and split-DNS preflight, without resolver changes. */
+/** Shared resolver inspection, split-DNS preflight, and uplink migration state. */
 final class PeerDnsProgram
 {
     public static function source(): string
@@ -27,6 +27,43 @@ final class PeerDnsProgram
                     }
                     exit(1);
                 ' -- "$private_server" "$previous_server"
+            }
+
+            # One encoded line fits either durable transaction format without shell evaluation.
+            peer_dns_capture_uplink() {
+                local link=$1 setting value snapshot
+                [[ "$link" =~ ^[A-Za-z0-9_.:+-]+$ ]] && [ "$link" != orbit ] || return 1
+                snapshot=$(printf '%s\n' "$link"
+                    for setting in dns domain default-route llmnr mdns dnssec dnsovertls nta; do
+                        value=$(resolvectl "$setting" "$link") || exit 1
+                        value=${value#*:}
+                        value=${value#"${value%%[![:space:]]*}"}
+                        printf 'v:'
+                        printf '%s\n' "$value" | base64 --wrap=0
+                        printf '\n'
+                    done) || return 1
+                uplink_snapshot=$(printf '%s\n' "$snapshot" | base64 --wrap=0)
+            }
+            peer_dns_restore_uplink() {
+                local mode=$1 snapshot link setting value index
+                local -a fields values
+                [ -n "${uplink_snapshot:-}" ] || return 0
+                snapshot=$(printf '%s' "$uplink_snapshot" | base64 --decode) || return 1
+                mapfile -t fields <<< "$snapshot"
+                [ "${#fields[@]}" -eq 9 ] || return 1
+                link=${fields[0]}
+                [[ "$link" =~ ^[A-Za-z0-9_.:+-]+$ ]] && [ "$link" != orbit ] || return 1
+                index=1
+                for setting in dns domain default-route llmnr mdns dnssec dnsovertls nta; do
+                    value=$(printf '%s' "${fields[index]#v:}" | base64 --decode) || return 1
+                    index=$((index + 1))
+                    if [ "$mode" = protocols ]; then
+                        case "$setting" in dns|domain|default-route) continue ;; esac
+                    fi
+                    read -r -a values <<< "${value//$'\n'/ }"
+                    if [ "${#values[@]}" -eq 0 ]; then values=(''); fi
+                    resolvectl "$setting" "$link" "${values[@]}" || return 1
+                done
             }
 
             if [ "${1:-}" = inspect ]; then

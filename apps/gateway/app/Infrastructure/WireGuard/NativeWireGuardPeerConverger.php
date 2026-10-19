@@ -251,7 +251,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     {
         $rollbackResult = $this->ssh->execute($connection, new RemoteCommand(
             arguments: ['sudo', 'bash', '-seu'],
-            input: <<<'BASH'
+            input: PeerDnsProgram::source().PHP_EOL.<<<'BASH'
                 exec 9>/run/lock/orbit-wireguard-peer.lock
                 flock -w 30 9
                 live=/etc/wireguard/orbit.conf
@@ -329,6 +329,11 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 fi
 
                 mapfile -t transaction_state < "$transaction"
+                uplink_snapshot=
+                if [[ "${transaction_state[-1]}" = uplink-v1:* ]]; then
+                    uplink_snapshot=${transaction_state[-1]#uplink-v1:}
+                    unset 'transaction_state[-1]'
+                fi
                 active_state=${transaction_state[0]:-}
                 enabled_state=${transaction_state[1]:-}
                 live_present=${transaction_state[2]:-}
@@ -458,6 +463,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     done
                     resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}"
                 fi
+                peer_dns_restore_uplink all
                 if [ "$resolver_snapshot" = resolver-v1 ]; then
                     apply_resolver_state
                 fi
@@ -674,6 +680,13 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         resolver_snapshot=resolver-v1
                     fi
 
+                    uplink_snapshot=
+                    if [ "$dns_mode" = wireguard ] && [ -s "$dns_state" ]; then
+                        previous_link=$(head -n 1 "$dns_state")
+                        if [ "$previous_link" != orbit ]; then
+                            peer_dns_capture_uplink "$previous_link" || exit 43
+                        fi
+                    fi
                     if [ -f "$live" ]; then
                         live_present=1
                         cp -a --no-dereference -- "$live" "$backup"
@@ -688,6 +701,9 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         "$resolver_dnssec" "$resolver_dnsovertls" "${#resolver_nta[@]}" > "$transaction_candidate"
                     if [ "${#resolver_nta[@]}" -gt 0 ]; then
                         printf '%s\n' "${resolver_nta[@]}" >> "$transaction_candidate"
+                    fi
+                    if [ -n "$uplink_snapshot" ]; then
+                        printf 'uplink-v1:%s\n' "$uplink_snapshot" >> "$transaction_candidate"
                     fi
                     chmod 0600 "$transaction_candidate"
                     mv -fT -- "$transaction_candidate" "$transaction"
@@ -795,6 +811,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                             return 1
                         fi
                         restore_dns || return 1
+                        peer_dns_restore_uplink all || return 1
                         if [ "$resolver_snapshot" = resolver-v1 ]; then
                             apply_resolver_state || return 1
                         fi
@@ -841,8 +858,8 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     if [ "$dns_mode" = wireguard ]; then
                         dns_link=orbit
                         if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
-                            if ! resolvectl dns "$old_dns_link" '' \
-                                || ! resolvectl domain "$old_dns_link" ''; then
+                            if ! resolvectl revert "$old_dns_link" \
+                                || ! peer_dns_restore_uplink protocols; then
                                 restore_after_failure || exit 1
                                 exit 43
                             fi

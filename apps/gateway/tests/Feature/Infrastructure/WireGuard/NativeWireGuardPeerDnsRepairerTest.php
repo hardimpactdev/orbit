@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -84,6 +85,23 @@ it('repairs live and persisted DNS repeatedly without restarting the tunnel', fu
     }
 });
 
+it('leaves a Gateway with AppDev and a separate VPN holder untouched', function (bool $tldConvergence): void {
+    $harness = wireguard_peer_dns_repair_harness(tld: 'custom.internal');
+    try {
+        $peer = Node::query()->where('name', 'peer-dns-repair')->firstOrFail();
+        $peer->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $before = $harness->state();
+        $result = $harness->repair($tldConvergence);
+        expect($result['exception'])->toBeNull()
+            ->and($result['resolver'])->toBe($before['resolver'])
+            ->and($result['live'])->toBe($before['live'])
+            ->and($result['dns'])->toBe($before['dns'])
+            ->and($result['connections'])->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['native repair' => false, 'AppDev TLD convergence' => true]);
+
 it('repairs a hookless managed configuration without adding a PreDown hook', function (): void {
     $harness = wireguard_peer_dns_repair_harness(hooklessResolverHooks: true);
 
@@ -114,14 +132,16 @@ it('repairs a hookless managed configuration without adding a PreDown hook', fun
 it('migrates an old hookless underlay override and restores provider DNS', function (): void {
     $harness = wireguard_peer_dns_repair_harness(tld: 'custom.internal', previousUnderlay: true);
     try {
+        $before = $harness->state();
         $result = $harness->repair();
         expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '')
+            ->and($result['resolver']['eth0']['unrelated'])->toBe(array_replace($before['resolver']['eth0']['unrelated'], ['default-route' => 'yes']))
             ->and($result['live'])->toContain('PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~custom.internal \\~orbit')
             ->and($result['dns'])->toBe("orbit\n10.43.0.53\ncustom.internal\norbit\n")
             ->and($result['resolver']['eth0']['dns'])->toBe(['198.51.100.53'])
             ->and($result['resolver']['eth0']['domains'])->toBe(['~underlay.example'])
             ->and($result['resolver']['orbit']['unrelated']['default-route'])->toBe('no')
-            ->and($result['commands'])->toContain('networkctl reconfigure eth0')->not->toContain('systemctl restart wg-quick@orbit');
+            ->and($result['commands'])->toContain('resolvectl revert eth0', 'networkctl reconfigure eth0')->not->toContain('systemctl restart wg-quick@orbit');
     } finally {
         $harness->cleanup();
     }
@@ -155,6 +175,32 @@ it('restores old DNS and the orbit default-route flag if provider restoration fa
         $harness->cleanup();
     }
 });
+
+it('restores a durable uplink snapshot after failure following revert', function (bool $recoveryFailure): void {
+    $harness = wireguard_peer_dns_repair_harness(tld: 'custom.internal', previousUnderlay: true);
+    try {
+        $before = $harness->state();
+        $harness->failLiveApply();
+        if ($recoveryFailure) {
+            $harness->failRecovery();
+        }
+        $result = $harness->repair();
+        expect($result['exception']?->result?->exitCode)->toBe($recoveryFailure ? 46 : 45)
+            ->and($result['commands'])->toContain('resolvectl revert eth0');
+        if ($recoveryFailure) {
+            $harness->allowFailures();
+            $harness->failProviderRestore();
+            $result = $harness->repair();
+            expect($result['exception']?->result?->exitCode)->toBe(43);
+        }
+        expect($result['resolver'])->toBe($before['resolver'])
+            ->and($result['live'])->toBe($before['live'])
+            ->and($result['dns'])->toBe($before['dns'])
+            ->and($result['artifacts'])->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['immediate recovery' => false, 'later recovery' => true]);
 
 it('preserves suffix-only routing for an explicit in-VPN DNS override', function (): void {
     $harness = wireguard_peer_dns_repair_harness('10.43.0.53', 'custom.internal');
@@ -418,7 +464,7 @@ function wireguard_peer_dns_repair_harness(
         dns: ['198.51.100.53'],
         domains: ['~underlay.example'],
         unrelated: [
-            'default-route' => 'yes',
+            'default-route' => $previousUnderlay ? 'no' : 'yes',
             'llmnr' => 'yes',
             'mdns' => 'resolve',
             'dnssec' => 'yes',
@@ -495,7 +541,7 @@ function wireguard_peer_dns_repair_harness(
     wireguard_peer_dns_repair_shim($root, 'resolvectl', <<<'SH'
         printf '%s\n' "resolvectl $*" >> "$ORBIT_TEST_ROOT/commands.log"
         if [ -f "$ORBIT_TEST_ROOT/state/apply-failure" ] && [ "$*" = 'domain orbit ~custom.internal ~orbit' ]; then exit 1; fi
-        if [ -f "$ORBIT_TEST_ROOT/state/recovery-failure" ] && [ "$*" = 'domain orbit ~orbit' ]; then exit 1; fi
+        if [ -f "$ORBIT_TEST_ROOT/state/recovery-failure" ] && { [ "$*" = 'domain orbit ~orbit' ] || [ "$*" = 'domain eth0 ~orbit' ]; }; then exit 1; fi
 
         if [ "$*" = dns ]; then
             if [ -f "$ORBIT_TEST_ROOT/state/provider-pending" ]; then
@@ -517,11 +563,11 @@ function wireguard_peer_dns_repair_harness(
         resolver="$ORBIT_TEST_ROOT/state/resolver/$link"
         [ -d "$resolver" ] || mkdir -p "$resolver"
         case "$operation" in
-            default-route)
+            default-route|llmnr|mdns|dnssec|dnsovertls|nta)
                 if [ "$#" = 0 ]; then
-                    printf 'Link 7 (%s): %s\n' "$link" "$(cat "$resolver/default-route")"
+                    printf 'Link 7 (%s): %s\n' "$link" "$(cat "$resolver/$operation")"
                 else
-                    printf '%s\n' "$1" > "$resolver/default-route"
+                    printf '%s\n' "$1" > "$resolver/$operation"
                 fi
                 ;;
             dns|domain)
@@ -536,6 +582,7 @@ function wireguard_peer_dns_repair_harness(
                     printf 'Link 7 (%s): %s\n' "$link" "$(paste -sd ' ' "$resolver/$operation")"
                     exit 0
                 fi
+                if [ "$link" = eth0 ]; then touch "$resolver/transient"; fi
                 : > "$resolver/$operation"
                 for value in "$@"; do
                     if [ -n "$value" ]; then
@@ -544,6 +591,7 @@ function wireguard_peer_dns_repair_harness(
                 done
                 ;;
             revert)
+                rm -f "$resolver/transient"
                 : > "$resolver/dns"
                 : > "$resolver/domain"
                 for setting in default-route llmnr mdns dnssec dnsovertls nta; do
@@ -564,6 +612,8 @@ function wireguard_peer_dns_repair_harness(
             exit 0
         fi
         if [ -f "$ORBIT_TEST_ROOT/state/provider-failure" ]; then exit 1; fi
+        if [ -f "$ORBIT_TEST_ROOT/state/resolver/eth0/transient" ]; then exit 0; fi
+        printf 'yes\n' > "$ORBIT_TEST_ROOT/state/resolver/eth0/default-route"
         if [ -f "$ORBIT_TEST_ROOT/state/provider-delay" ]; then
             touch "$ORBIT_TEST_ROOT/state/provider-pending"
             exit 0
@@ -709,10 +759,14 @@ function wireguard_peer_dns_repair_harness(
             private readonly object $ssh,
         ) {}
 
-        public function repair(): array
+        public function repair(bool $tldConvergence = false): array
         {
             try {
-                $this->repairer->repair($this->peer);
+                if ($tldConvergence) {
+                    new RemoteAppDevTldRouteManager($this->repairer)->converge($this->peer);
+                } else {
+                    $this->repairer->repair($this->peer);
+                }
                 $exception = null;
             } catch (NodeProvisioningException $failure) {
                 $exception = $failure;

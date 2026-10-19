@@ -54,6 +54,7 @@ it('refuses ineligible targets before remote DNS mutation', function (
     'missing Node' => [null, null, 'node.dns_repair_missing'],
     'inactive Node' => [LifecycleStatus::Failed, RoleName::AppDev, 'node.dns_repair_inactive'],
     'operator-owned Node' => [LifecycleStatus::Active, null, 'node.dns_repair_operator_owned'],
+    'Gateway without VPN role' => [LifecycleStatus::Active, RoleName::Gateway, 'node.dns_repair_unmanaged'],
     'VPN server Node' => [LifecycleStatus::Active, RoleName::Vpn, 'node.dns_repair_vpn_server'],
 ]);
 
