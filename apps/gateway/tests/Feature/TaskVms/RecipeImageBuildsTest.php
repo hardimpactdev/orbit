@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -33,6 +34,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
+use Tests\Support\IncusGuestCall;
 use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -287,6 +289,7 @@ it('uses the same boot fence while UpCloud waits for its phase', function (bool 
         if ($reboot) {
             $guest->bootId = '22222222-2222-4222-8222-222222222222';
             $guest->units = [];
+            $guest->running = false;
         }
     });
     $run = fn () => app(RecipeImagePrograms::class)->apply(recipePhaseShell($guest), new RecipeLoader()->decode(recipeImageDocument()), 'base', 'packages');
@@ -382,6 +385,34 @@ it('reuses a succeeded unit and restarts a failed unit only on explicit resume',
     expect($build->refresh()->steps[0]['phase_state']['boot_id'])->toBe($guest->bootId);
 })->with([true, false]);
 
+it('adopts a running unit on resume and reports its later failure without restarting', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    app(TaskVmImageBuildChain::class)->resume($host, $build->id);
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $job->buildAttempt = 2;
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['phase_state']['attempt'])->toBe(2);
+
+    $guest->running = false;
+    $guest->signaled = true;
+    foreach ($guest->units as &$unit) {
+        $unit['exit'] = 9;
+    }
+    unset($unit);
+    expect(fn () => $job->handle(app(RecipeImageBuildSteps::class)))->toThrow(TaskVmException::class, 'signal 9');
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
+    expect($guest->starts)->toBe(1);
+});
+
 it('observes explicit restart identity after a lost acknowledgement', function (bool $unsent, bool $succeeded): void {
     $host = recipeImageHost();
     $incus = recipeImageTransport($host);
@@ -414,6 +445,55 @@ it('observes explicit restart identity after a lost acknowledgement', function (
     expect($guest->starts)->toBe(2);
     expect($build->refresh()->steps[0]['phase_state']['attempt'])->toBe(2);
 })->with([false, true])->with([false, true]);
+
+it('keeps an actual installer traceback once when the unit routes its stderr', function (): void {
+    recipeImageTransport(recipeImageHost());
+    $directory = sys_get_temp_dir().'/recipe-traceback-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    $guest = null;
+    $guest = new RecipeImageUnitGuest(static function (string $profile, string $phase, string $source) use ($directory, &$guest): CommandResult {
+        $source = str_replace("Path('/var/log/orbit/recipe-images')", 'Path('.json_encode($directory, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).')', $source);
+        $source = str_replace("if __name__ == '__main__':", "def platform_check(architecture):\n    pass\ndef image_packages(payload):\n    raise RuntimeError('installer regression')\n\nif __name__ == '__main__':", $source);
+        $result = new NativeProcessRunner()->run(new ProcessInvocation(['python3', '-', $phase], timeout: 30, input: $source));
+        if (! is_file($directory.'/'.$profile.'-'.$phase.'.log')) {
+            throw new RuntimeException($result->stderr);
+        }
+        $guest->files['/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log'] = file_get_contents($directory.'/'.$profile.'-'.$phase.'.log');
+
+        return $result;
+    });
+    $state = [];
+    $failure = null;
+    try {
+        app(RecipeImagePrograms::class)->poll(recipePhaseShell($guest), new RecipeLoader()->decode(recipeImageDocument()), 'base', 'packages', 'traceback', $state);
+    } catch (TaskVmException $error) {
+        $failure = $error;
+    } finally {
+        foreach (glob($directory.'/*') as $file) {
+            unlink($file);
+        }
+        rmdir($directory);
+    }
+
+    expect($failure)->toBeInstanceOf(TaskVmException::class);
+    expect(substr_count($failure->getMessage(), 'Traceback (most recent call last):'))->toBe(1);
+    expect(substr_count($guest->files['/var/log/orbit/recipe-images/base-packages.log'], 'Traceback (most recent call last):'))->toBe(1);
+    expect($guest->journal)->toBe([]);
+});
+
+it('keeps stderr-only Pi installer failures in the phase log and build error', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'recipe base:pi';
+    $incus->recipeFailure = new CommandResult(1, '', 'mv: No space left on device', 1, false);
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'pi')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'mv: No space left on device');
+    expect($incus->unitGuests[$build->builder_vm_name]->files['/var/log/orbit/recipe-images/base-pi.log'])
+        ->toContain('mv: No space left on device');
+});
 
 it('reports a killed guest process as a signal without an exit code', function (): void {
     $host = recipeImageHost();
@@ -448,6 +528,40 @@ it('uses disk and a transfer budget for the protected Pi artifact', function ():
     expect($incus->connections[$index]->commandTimeout)->toBe(900.0);
     $start = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'systemd-run');
     expect(implode(' ', $start->argv))->toContain('--property=StandardInput=file:/var/tmp/');
+});
+
+it('bounds both staging transfers inside one delivery budget covered by the job', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $elapsed = 0.0;
+    $clock = static function () use (&$elapsed): float {
+        return $elapsed;
+    };
+    app()->instance(RecipeImagePrograms::class, new RecipeImagePrograms(new CommandDeadline($clock)));
+    $transfers = [];
+    $incus->afterExecute = static function ($command) use ($incus, &$elapsed, &$transfers): void {
+        $call = IncusGuestCall::decode($command);
+        $connection = $incus->connections[array_key_last($incus->connections)];
+        if ($command->protectedInput !== null || ($call->argv[0] === 'install' && ($call->argv[3] ?? null) === '/dev/stdin')) {
+            $transfers[] = $connection->commandTimeout;
+            $elapsed += $connection->commandTimeout;
+        } else {
+            $elapsed += 1;
+        }
+    };
+    $job = new BuildRecipeImageStep($build->id, 'base', 'pi');
+
+    $job->handle(app(RecipeImageBuildSteps::class));
+
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+    expect($incus->unitGuests[$build->builder_vm_name]->starts)->toBe(0);
+    expect($transfers)->toHaveCount(2);
+    expect($transfers[0])->toBe((float) RecipeImagePrograms::TransferSeconds);
+    expect($transfers[1])->toBeLessThan(RecipeImagePrograms::TransferSeconds);
+    expect($elapsed)->toBe((float) RecipeImagePrograms::PhaseSeconds);
+    expect($job->timeout)->toBeGreaterThan($elapsed);
 });
 
 it('publishes only complete uploads and removes partial disk staging files', function (bool $truncated): void {

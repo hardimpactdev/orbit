@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -11,6 +12,7 @@ use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeProgramInput;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
@@ -30,7 +32,11 @@ final readonly class RecipeImagePrograms
 
     public const int ObservationGraceSeconds = 60;
 
+    public const int TransferSeconds = 900;
+
     private const int ControlSeconds = 30;
+
+    public function __construct(private CommandDeadline $deadline) {}
 
     public function apply(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
     {
@@ -55,7 +61,9 @@ final readonly class RecipeImagePrograms
         $observedAt = $state['observed_at'];
         $unknown = null;
         try {
-            if ($this->observe($shell, $recipe, $profile, $phase, $execution, $state, $save, $attempt)) {
+            if ($this->deadline->within(self::PhaseSeconds, function () use ($shell, $recipe, $profile, $phase, $execution, &$state, $save, $attempt): bool {
+                return $this->observe($shell, $recipe, $profile, $phase, $execution, $state, $save, $attempt);
+            })) {
                 return true;
             }
         } catch (TaskVmException $error) {
@@ -84,10 +92,15 @@ final readonly class RecipeImagePrograms
             throw $this->unknown('The builder returned no readable boot ID.', $boot);
         }
         if (isset($state['boot_id']) && $state['boot_id'] !== $bootId) {
-            throw new TaskVmException('task_vm.image_build_failed', "The builder rebooted during phase [{$profile}:{$phase}]. Start a new build from stock.");
+            throw new TaskVmException('task_vm.image_build_failed', "The builder rebooted during phase [{$profile}:{$phase}]. Run task-vms:build-recipe --retry to start a new builder.");
         }
         $unit = 'orbit-recipe-image-'.substr(hash('sha256', $recipe->identity.':'.$profile.':'.$phase.':'.$execution), 0, 32).'.service';
         $status = $this->status($shell, $unit);
+        if ($status['LoadState'] === 'loaded' && ($state['attempt'] ?? $attempt) < $attempt
+            && $status['ActiveState'] !== 'failed' && ! isset($state['restart_from'])) {
+            $state['attempt'] = $attempt;
+            $save?->__invoke($state);
+        }
         if ($status['LoadState'] === 'loaded' && (isset($state['restart_from']) || (($status['ActiveState'] ?? null) === 'failed' && ($state['attempt'] ?? $attempt) < $attempt))) {
             $state['restart_from'] ??= $status['InvocationID'];
             $save?->__invoke($state);
@@ -123,7 +136,7 @@ final readonly class RecipeImagePrograms
                 $this->control($shell, ['install', '-d', '-m', '0700', '--', $directory]);
                 // Reuse the Pi installer's digest, disk staging, cleanup and atomic publication.
                 $this->control($shell, ['env', 'HOME='.$directory, 'bash', '-ceu', TaskVmRuntime::InstallPi, '--', $pin->digest],
-                    ProtectedInput::fromFile($file, '', TaskVmRuntime::ArtifactMaxBytes), timeout: 900);
+                    ProtectedInput::fromFile($file, '', TaskVmRuntime::ArtifactMaxBytes), timeout: self::TransferSeconds);
                 $input = $directory.'/.local/bin/pi-server';
                 $this->stage($shell, $program, TaskVmRuntime::InstallPi);
                 $this->control($shell, ['chmod', '0644', $program]);
@@ -211,7 +224,7 @@ final readonly class RecipeImagePrograms
             throw new TaskVmException('task_vm.image_build_failed', 'The builder returned an invalid staging path.');
         }
         try {
-            $this->control($shell, ['install', '-m', '0600', '/dev/stdin', $temporary.'/input'], $input, timeout: 900);
+            $this->control($shell, ['install', '-m', '0600', '/dev/stdin', $temporary.'/input'], $input, timeout: self::TransferSeconds);
             $this->control($shell, ['mv', '--no-clobber', '--', $temporary.'/input', $path]);
         } finally {
             $this->control($shell, ['rm', '-rf', '--', $temporary]);
@@ -228,10 +241,17 @@ final readonly class RecipeImagePrograms
     /** @param list<string> $command */
     private function control(TaskVmGuestShell $shell, array $command, string|ProtectedInput|null $input = null, bool $required = true, int $timeout = self::ControlSeconds, bool $observation = false): CommandResult
     {
+        $seconds = $timeout;
         try {
-            $result = $shell->asRoot($command, $input, timeout: $timeout);
+            $seconds = $this->deadline->cap($timeout);
+            $result = $shell->asRoot($command, $input, timeout: $seconds);
         } catch (ProcessTimedOutException $error) {
-            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image control command timed out after '.$timeout.' seconds. The guest phase outcome is unknown.', previous: $error);
+            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image control command timed out after '.$seconds.' seconds. The guest phase outcome is unknown.', previous: $error);
+        } catch (ResourceOperationException $error) {
+            if ($error->errorCode !== 'command.deadline_exceeded') {
+                throw $error;
+            }
+            throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image control delivery exhausted its '.self::PhaseSeconds.'-second budget. The guest phase outcome is unknown.', previous: $error);
         }
         $detail = mb_substr(new CommandActivityInputSanitizer()->redactText(trim($result->stderr)), -2000);
         if ($result->exitCode === 255) {
@@ -252,7 +272,8 @@ final readonly class RecipeImagePrograms
     {
         $result = $this->control($shell, ['python3', '-', 'verify'], $this->script($this->payload($shell, $recipe, $profile)), required: false, timeout: 120);
         if (! $result->succeeded() || $result->truncated || trim($result->stdout) !== '{"ok":true}') {
-            throw $this->failure($profile, 'verify', $result);
+            $tail = $this->control($shell, ['tail', '-n', '40', '--', IncusGuestShell::recipeLog($profile, 'verify')], required: false);
+            throw $this->failure($profile, 'verify', new CommandResult($result->exitCode, $tail->stdout, $result->stderr, $result->durationMs, $result->truncated));
         }
     }
 

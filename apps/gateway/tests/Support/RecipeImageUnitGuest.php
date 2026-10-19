@@ -17,6 +17,12 @@ final class RecipeImageUnitGuest
     /** @var array<string, array{state: string, result: string, exit: int, invocation: string}> */
     public array $units = [];
 
+    /** @var array<string, string> */
+    public array $journal = [];
+
+    /** @var array<string, bool> */
+    private array $stderrToJournal = [];
+
     public int $starts = 0;
 
     /** @var array<string, string> */
@@ -111,6 +117,7 @@ final class RecipeImageUnitGuest
             }
             $unit = substr($argv[2], strlen('--unit='));
             $this->phases[$unit] = in_array('python3', $argv, true) ? end($argv) : 'pi';
+            $this->stderrToJournal[$unit] = in_array('--property=StandardError=journal', $argv, true);
             $this->start($unit);
             if ($this->loseStartReply) {
                 $this->loseStartReply = false;
@@ -137,7 +144,13 @@ final class RecipeImageUnitGuest
         $name = $this->phases[$unit];
         $profile = $name === 'pi' ? 'base' : RecipeProgramPayload::read($source)['profile'];
         $result = ($this->execute)($profile, $name, $source);
-        $this->files['/var/log/orbit/recipe-images/'.$profile.'-'.$name.'.log'] = $result->stdout.$result->stderr;
+        $path = '/var/log/orbit/recipe-images/'.$profile.'-'.$name.'.log';
+        $this->files[$path] = ($this->files[$path] ?? '').$result->stdout;
+        if ($this->stderrToJournal[$unit]) {
+            $this->journal[$unit] = ($this->journal[$unit] ?? '').$result->stderr;
+        } else {
+            $this->files[$path] .= $result->stderr;
+        }
         $this->units[$unit] = ['state' => 'exited', 'result' => $result->succeeded() ? 'success' : 'exit-code', 'exit' => $result->exitCode, 'invocation' => str_pad((string) $this->starts, 32, '0', STR_PAD_LEFT)];
     }
 }
