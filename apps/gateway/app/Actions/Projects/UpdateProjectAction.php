@@ -8,6 +8,7 @@ use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\GitHub\GitHubBranchPolicy;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
@@ -56,6 +57,16 @@ final readonly class UpdateProjectAction
                 message: 'Provide at least one Project update.',
                 status: 422,
             );
+        }
+
+        if ($data->reviewAndMergeProvided && $data->reviewAndMerge && ! $project->review_and_merge) {
+            $origin = $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repository_url;
+            $branch = $data->defaultBranchProvided && is_string($data->defaultBranch) ? $data->defaultBranch : $project->default_branch;
+            if (! is_string($branch) || $branch === '') {
+                $access = $data->sourceAccessProvided && $data->sourceAccess instanceof ProjectSourceAccess ? $data->sourceAccess : $project->source_access;
+                $branch = $this->branches->resolve($origin, $access);
+            }
+            app(GitHubBranchPolicy::class)->assertNonStrict($origin, $branch);
         }
 
         if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided || $data->sourceAccessProvided)) {

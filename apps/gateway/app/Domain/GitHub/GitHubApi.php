@@ -48,6 +48,12 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
+    public function repositoryAdministrationReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string;
+
+    public function rulesRequireUpToDate(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): bool;
+
+    public function protectionRequiresUpToDate(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): bool;
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

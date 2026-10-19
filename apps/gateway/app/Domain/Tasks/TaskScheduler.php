@@ -229,27 +229,6 @@ final readonly class TaskScheduler
         $this->publication->mergeWhenReady($this, $group, $health, $reviews);
     }
 
-    public function appendBaseMerge(Task $group, string $base): void
-    {
-        $this->publication->appendBaseMerge($this, $group, $base);
-    }
-
-    /**
-     * Runs Git and one stored gate, never an agent. The pending row also keeps a merge whose reply was lost
-     * subject to the gate. A passed row applies only to the exact current head and tree.
-     *
-     * @return 'passed'|'waiting'|'conflict'|'failed'
-     */
-    public function prepareBaseMerge(Task $group, Task $task): string
-    {
-        return $this->publication->prepareBaseMerge($this, $group, $task);
-    }
-
-    public function appendAgentBaseMerge(Task $group, string $base): void
-    {
-        $this->publication->appendAgentBaseMerge($this, $group, $base);
-    }
-
     /** Whether the group waits for an operator because an approved commit missed its merged pull request. */
     public function orphanedCommit(Task $group): bool
     {

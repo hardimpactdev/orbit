@@ -1067,10 +1067,10 @@ describe(DestroyTaskVm::class, function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Base merge', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
+        $task = $group->tasks()->create(['position' => 1, 'title' => 'Reviewed work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
         $reviewed = str_repeat('c', 40);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $reviewed, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Later base merge, delta review requested changes.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => str_repeat('d', 40)]);
+        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Later work, final review requested changes.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => str_repeat('d', 40)]);
         $publisher = Mockery::mock(TaskPullRequestPublisher::class);
         $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $sha): bool => $pushed->id === $group->id && $sha === $reviewed);
         app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -1363,7 +1363,7 @@ describe(DestroyTaskVm::class, function (): void {
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('d', 40), 'source' => TaskReviewedCommitSource::BaseMerge, 'pushed_at' => now()]);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('d', 40), 'source' => TaskReviewedCommitSource::OrbitPush, 'pushed_at' => now()]);
         $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
         $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => str_repeat('c', 40)]);
         $publisher = Mockery::mock(TaskPullRequestPublisher::class);

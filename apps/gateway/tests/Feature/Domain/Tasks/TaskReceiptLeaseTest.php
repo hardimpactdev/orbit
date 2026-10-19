@@ -50,7 +50,7 @@ it('queues receipt collection behind another group and does no checkout read or 
     $other = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Other group', 'brief' => 'Shares the Instance.', 'status' => 'running']);
     $other->setRelation('taskable', $group->taskable);
     $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($other, 'main_merge', 'other-group');
+    $holder = $leases->acquire($other, 'workspace_fast_forward', 'other-group');
     $receipts = new FakeTaskTurnReceipts;
     app()->instance(TaskTurnReceipts::class, $receipts);
 

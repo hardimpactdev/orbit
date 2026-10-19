@@ -171,7 +171,7 @@ describe('publish and fetch', function (): void {
         app()->instance(SshExecutor::class, $transport);
 
         try {
-            app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'fetch-test',
+            app(TaskWorkspaceLease::class)->run($group, 'workspace_fast_forward', 'fetch-test',
                 fn () => app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main'));
             $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
             $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
