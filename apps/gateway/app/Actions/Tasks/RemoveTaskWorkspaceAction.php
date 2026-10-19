@@ -28,6 +28,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
@@ -68,8 +69,7 @@ final readonly class RemoveTaskWorkspaceAction
     public function claimInFlight(Task $group): bool
     {
         return $group->status === TaskGroupStatus::Reserved
-            && $group->reserved_at instanceof CarbonInterface
-            && $group->reserved_at->greaterThan(self::reservationCutoff());
+            && ! Task::topLevel()->whereKey($group->id)->workspaceClaimReleased()->exists();
     }
 
     public static function reservationCutoff(): CarbonInterface
@@ -94,9 +94,13 @@ final readonly class RemoveTaskWorkspaceAction
         $group->setRelation('taskable', $instance);
         $leases = app(TaskWorkspaceLease::class);
         $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance, $leases): void {
+            if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
+                throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
+            }
             $commit = TaskFinalReview::removalPushCommit($group);
             if ($commit !== null) {
                 $this->publisher->push($group, $commit);
+                TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $commit)->whereNull('pushed_at')->update(['pushed_at' => now()]);
                 Log::info('Pushed approved work before removing a task workspace.', [
                     'task_group_id' => $group->id, 'instance_id' => $instance->id,
                     'commit_sha' => $commit, 'branch' => TaskRemoteBranch::for($group),
@@ -134,9 +138,6 @@ final readonly class RemoveTaskWorkspaceAction
 
     private function removeWithLease(Instance $instance): void
     {
-        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-        }
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);

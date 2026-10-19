@@ -14,8 +14,10 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -134,6 +136,10 @@ final readonly class CancelTaskGroupAction
     /** The probe is the one check that separates a Node that is gone from a Node that answered and refused. */
     private function nodeUnreachable(Instance $instance): bool
     {
+        // A parked VM is intentionally offline; normal removal starts it before preservation.
+        if (TaskVm::forNode($instance->node_id)?->state === TaskVmState::Parked) {
+            return false;
+        }
         $instance->loadMissing('node');
 
         return $this->reachability->degradation($instance->node) === ExporterDegradationReason::Unreachable;

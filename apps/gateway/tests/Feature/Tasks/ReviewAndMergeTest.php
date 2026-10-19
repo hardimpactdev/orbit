@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
 use App\Domain\GitHub\GitHubListedPullRequest;
@@ -14,6 +15,7 @@ use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskBranchUpdate;
@@ -1473,6 +1475,74 @@ it('recognizes the original approval in a merged mechanical head but still holds
 
     expect($group->fresh()?->assistance_requested)->toBe($newer);
 })->with(['inherited approval' => false, 'newer missed approval' => true]);
+
+it('completes a merged base-merge head after main moved without repushing its approved ancestor', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    test_vm_group($group);
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
+    Queue::fake();
+    $final = $group->tasks->sole();
+    $instance = $group->taskable;
+    $instance->update(['root' => 'public']);
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    $runtime = rm_runtime();
+    $runtime->pushFailures = 1;
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_COMMIT));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->assistance_reason)->toBeNull();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect($runtime->pushes)->toBe([]);
+    expect($runtime->pushFailures)->toBe(1);
+    $this->assertModelMissing($instance);
+});
+
+it('completes a merged incoming pull request without pushing the author branch', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL, prBranch: 'author/feature');
+    test_vm_group($group);
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
+    Queue::fake();
+    $final = $group->tasks->sole();
+    $instance = $group->taskable;
+    $instance->update(['root' => 'public']);
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_PR_HEAD]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_PR_HEAD, 'source' => TaskReviewedCommitSource::PullRequestReview, 'review_task_id' => $final->id]);
+    $runtime = rm_runtime();
+    $runtime->pushFailures = 1;
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_PR_HEAD));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->assistance_reason)->toBeNull();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect($runtime->pushes)->toBe([]);
+    expect($runtime->pushFailures)->toBe(1);
+    $this->assertModelMissing($instance);
+});
+
+it('keeps appended work when retrying merged cleanup', function (): void {
+    $group = rm_group([['Appended work', TaskStatus::Todo]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $instance = $group->taskable;
+    $group->update(['watched_pr_completion' => 'merged', 'settled_at' => now()]);
+    TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'unavailable');
+    rm_runtime();
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->tasks()->sole()->status)->toBe(TaskStatus::Todo)
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toContain('open subtasks');
+    $this->assertModelExists($instance);
+});
 
 it('retries publication of the gated merge before considering another main tip', function (): void {
     $group = rm_settled();

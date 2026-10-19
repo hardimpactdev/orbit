@@ -392,7 +392,9 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the group pushes its eligible stored approval to origin under the shared [removal rule](/reference/tasks#complete-and-cleanup) and logs the SHA. A failed or pending push keeps the workspace and VM. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
+An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the group pushes its latest reviewed, unpublished head to origin under the shared [removal rule](/reference/tasks#complete-and-cleanup) and logs the SHA. A failed or pending push keeps the workspace and VM, including a stopped VM. A merged task is never pushed during cleanup.
+
+A parked VM starts before preservation is attempted. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
 2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its volumes.
@@ -422,13 +424,13 @@ Workspace removal deletes a dead VM like a live one. Only the Project's teardown
 
 When the group has ended, or is `settling` or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
-The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+The job keeps the VM while the shared removal rule requires an unconfirmed preservation push, even when the guest is stopped. Otherwise it reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
 - It deletes the Instance's Process and Schedule records and the Instance row, and clears the group's removal reason.
 
-Then it removes the Node and marks the row `destroyed`, as above. A removal journal that a normal removal left open is finished the same way. A cancelled group's stored approval is lost with the VM.
+Then it removes the Node and marks the row `destroyed`, as above. A removal journal that a normal removal left open is finished the same way. Unreviewed work is lost with the VM. A reviewed, unpublished head keeps the VM until preservation succeeds.
 
 ### Place task VMs
 

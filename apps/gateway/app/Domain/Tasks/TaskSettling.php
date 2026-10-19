@@ -19,7 +19,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use Closure;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +57,16 @@ final readonly class TaskSettling
             } catch (Throwable $exception) {
                 report($exception);
             }
+
+            return;
+        }
+        if ($group->watched_pr_completion === 'merged' && in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            if ($group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
+                TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The pull request merged, but open subtasks still need an operator decision before completion.', replaceFailure: true);
+
+                return;
+            }
+            $this->completeMergedGroup($group);
 
             return;
         }
@@ -165,7 +174,7 @@ final readonly class TaskSettling
 
             $instance = Instance::query()->find($workspace->id);
             $group = Task::topLevel()->find($workspace->task_workspace_owner_id);
-            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
+            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group)) {
                 continue;
             }
             // A parked task VM starts first. The removal waits for it without a failure or a backoff.
@@ -176,7 +185,7 @@ final readonly class TaskSettling
             try {
                 $didRemove = app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $instance, $backoffKey): bool {
                     $group->refresh();
-                    if (! $this->shouldRemoveWorkspace($group, $instance)) {
+                    if (! $this->shouldRemoveWorkspace($group)) {
                         return false;
                     }
                     $group->setRelation('taskable', $instance);
@@ -232,6 +241,7 @@ final readonly class TaskSettling
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
                 TaskAssistance::apply($group);
             }
+            $group->update(['watched_pr_completion' => 'merged']);
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
@@ -246,16 +256,9 @@ final readonly class TaskSettling
         }
     }
 
-    private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
+    private function shouldRemoveWorkspace(Task $group): bool
     {
-        if (! Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->exists()) {
-            return false;
-        }
-
-        return ! in_array($group->status, TaskGroupStatus::endedStatuses(), true)
-            || $group->taskable_id === $instance->id
-            || ! $group->reserved_at instanceof Carbon
-            || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
+        return Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->exists();
     }
 
     private function releaseRemovedWorkspace(Task $group, int $instanceId): void
@@ -343,18 +346,10 @@ final readonly class TaskSettling
     /** @return Collection<int, Instance> */
     private function abandonedWorkspaces(): Collection
     {
-        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-
         return Instance::query()
             ->select('instances.*')
             ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
             ->whereIn('tasks.id', Task::topLevel()->workspaceRemovalRetry()->select('tasks.id'))
-            ->where(static fn ($eligible) => $eligible
-                ->whereNotIn('tasks.status', TaskGroupStatus::endedStatuses())
-                ->orWhere(static fn ($reservation) => $reservation
-                    ->whereColumn('tasks.taskable_id', 'instances.id')
-                    ->orWhereNull('tasks.reserved_at')
-                    ->orWhere('tasks.reserved_at', '<=', $cutoff)))
             ->orderBy('instances.id')
             ->get();
     }

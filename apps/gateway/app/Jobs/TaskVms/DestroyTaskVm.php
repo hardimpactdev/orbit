@@ -9,7 +9,7 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
@@ -30,7 +30,7 @@ use Throwable;
  *
  * A VM that died before its workspace could be removed leaves the workspace behind: removal needs SSH to
  * the VM. Once that removal has failed for an ended group and the VM is absent or stays stopped, the job
- * deletes the VM and then forgets the workspace records offline.
+ * deletes the VM and then forgets the workspace records offline, unless preservation still needs a push.
  *
  * The unique lock has no expiry, so the tick never queues a second copy while one waits or runs.
  */
@@ -61,8 +61,11 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
             return;
         }
+        if ($workspace && TaskFinalReview::removalPushCommit($group) !== null) {
+            return;
+        }
         // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
+        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
             return;
         }
 

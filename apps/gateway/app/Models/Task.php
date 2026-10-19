@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
@@ -360,14 +361,27 @@ final class Task extends Model
             ->where($query->qualifyColumn('assistance_kind'), AssistanceKind::RemovalFailure);
     }
 
+    /** A claim no longer owns provisioning once its workspace is attached or its reservation expires.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeWorkspaceClaimReleased(Builder $query): void
+    {
+        $query->where(static fn (Builder $claim) => $claim
+            ->whereNull($query->qualifyColumn('reserved_at'))
+            ->orWhere($query->qualifyColumn('reserved_at'), '<=', RemoveTaskWorkspaceAction::reservationCutoff())
+            ->orWhereHas('workspace', static fn (Builder $workspace) => $workspace->whereColumn('instances.id', 'tasks.taskable_id')));
+    }
+
     /** @param  Builder<Task>  $query */
     public function scopeWorkspaceRemovalRetry(Builder $query): void
     {
-        $query->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())
+        $query->workspaceClaimReleased()->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())
             ->where(static fn (Builder $eligible) => $eligible
                 ->whereIn('status', TaskGroupStatus::endedStatuses())
                 ->orWhere(static fn (Builder $published) => $published
-                    ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()));
+                    ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()
+                    ->whereDoesntHave('tasks', static fn (Builder $subtasks) => $subtasks->whereIn('status', [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing]))));
     }
 
     /** @return BelongsTo<Task, $this> */

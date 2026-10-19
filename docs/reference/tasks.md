@@ -58,7 +58,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
-| `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end. Null until then. Resume does not call GitHub |
+| `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
@@ -92,7 +92,7 @@ A task moves through these statuses from preparation to its end.
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
 
-An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, server-restart resume, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves eligible approved work on origin; a failed push keeps the VM and requests removal assistance.
+An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, server-restart resume, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves the latest reviewed, unpublished head on origin; a failed push keeps the VM and requests removal assistance. A stopped VM also stays while that push is unconfirmed.
 
 The Gateway keeps task checks and their stored output, consumed turn receipts as comments, other comments, approval records, and Activity after workspace removal. [Readable agent transcripts](#archive-finished-threads) are copied before a ready VM is deleted. Unconsumed receipt files, raw VM logs, approved commits that no final review approved in review-and-merge groups, other unpublished Git objects, uncommitted edits, and unreadable transcripts are not durable Gateway evidence and go with the VM.
 
@@ -1538,7 +1538,9 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 A merged pull request completes its `settling` task on the next tick when every subtask has ended. `tasks:complete` completes a `settling` task by hand, without reading the pull request again.
 
-It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. The branch watch does not set this column. The receipt is a durable execution hold, even when the task has no ended-PR assistance reason. Fresh locked transitions and agent or check start/send boundaries honor it. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
+It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. Automatic merge cleanup also stores `merged` here before it removes the workspace. If an operator appends an open subtask before cleanup finishes, automatic cleanup keeps the workspace and asks for an operator decision. The branch watch does not set this column.
+
+The receipt is a durable execution hold, even when the task has no ended-PR assistance reason. Fresh locked transitions and agent or check start/send boundaries honor it. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
 
 Resume stops a running implementer or reviewer and any running check before the database transaction, using the same stop as subtask cancel. A failed stop returns HTTP 502 `tasks.subtask_interrupt_failed`, leaves the task and open subtasks in their statuses, and keeps `watched_pr_completion` for retry. Resume marks each `todo`, `running`, and `reviewing` subtask `cancelled` and marks the task `completed` in one database transaction. Subtasks already `completed`, `failed`, or `cancelled` stay as they are. A failed transaction rolls back, so the parent stays `running` or `reviewing` and its open subtasks stay open. The stored `watched_pr_completion` remains.
 
@@ -1568,7 +1570,9 @@ Each tick sweeps workspaces that still exist:
 - of an ended group, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
 - of a `settling` or `waiting_for_review` task with a published pull request whose cleanup failed. A refused cancellation of an unpublished task stays outside the sweep until cancel is retried.
 
-The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. Before any workspace removal, Orbit pushes the latest eligible approved commit to the task branch on origin and logs its SHA. This includes completed, failed, and cancelled groups. Under review and merge, only a head approved by final review is eligible, as under cancellation. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. Before workspace removal, Orbit pushes the latest reviewed head that publication never pushed, and logs its SHA. A task completed by a merge never pushes during cleanup.
+
+Under review and merge, the latest reviewed-commit record selects the head; a later unreviewed approval cannot hide it. A published head and an incoming author head need no push. Without review and merge, the latest subtask approval is eligible only while publication has not handled it. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
 
 An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
@@ -1827,7 +1831,9 @@ On 2026-10-08 the maintainer decided that Orbit does not use or rely on cloud ag
 
 Pushing each subtask and reviewing only before the merge was rejected. A pushed commit is unreviewed, and a person or a fleet reviewer acts on what GitHub shows. A separate final-review state machine on the task was rejected. It would repeat the reviewer thread, receipt, reminder, restart, topology, and direction handling that a subtask already has. So a final review is a subtask without an implementer.
 
-The cost is that approved work waits in the workspace until final review. A lost workspace loses it. Removal after completion, failure, or cancellation pushes only the latest eligible head that a final review approved; approved work that no final review saw is discarded. The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
+The cost is that approved work waits in the workspace until final review. A lost workspace loses it. Removal after failure or cancellation pushes the latest final-reviewed head only when publication never pushed it. A later unreviewed approval does not hide that reviewed head. A published head, an incoming author head, and a task completed by a merge need no preservation push. Approved work that no final review saw is discarded.
+
+The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
 
 ### Incoming pull requests become tasks
 

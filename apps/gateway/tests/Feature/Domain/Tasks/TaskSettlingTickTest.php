@@ -49,7 +49,6 @@ use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Domain\TaskVms\TaskVmPublishState;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Models\Activity;
 use App\Models\AgentThread;
@@ -1306,18 +1305,14 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
     $group = tick_settling_group();
     $group->update(['settled_at' => now()]);
     mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->once()->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
-    $head = str_repeat('a', 40);
-    $commit = $orphaned ? str_repeat('d', 40) : $head;
-    TaskVm::forGroup($group)->update([
-        'publish_commit' => $head, 'publish_branch' => 'task-'.$group->id, 'publish_state' => TaskVmPublishState::Pushed,
-    ]);
+    $commit = $orphaned ? str_repeat('d', 40) : 'abc123';
     TaskComment::query()->create([
         'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
         'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
     ]);
     tick_running_agents(fetchFails: true);
-    $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null, 'head' => ['sha' => $head]]);
-    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'head' => ['sha' => $head]]), $merged, $merged], [$head => []]);
+    $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null]);
+    tick_watch_pulls([tick_open_pull(['mergeable' => false]), $merged, $merged], ['abc123' => []]);
     app(TaskScheduler::class)->tick();
     $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
     $this->travel(60)->seconds();

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\TaskVm;
@@ -26,14 +25,13 @@ final readonly class DestroyEndedTaskVmsAction
             ->whereColumn('instances.node_id', 'task_vms.node_id')
             ->whereColumn('instances.task_workspace_owner_id', 'task_vms.group_id');
         $vms = TaskVm::query()->live()
-            ->whereHas('group', static fn ($group) => $group
-                ->where(static fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff())))
+            ->whereHas('group', static fn ($group) => $group->workspaceClaimReleased())
             ->where(static fn ($query) => $query
                 ->where(static fn ($ended) => $ended
                     ->whereHas('group', static fn ($group) => $group->whereIn('status', TaskGroupStatus::endedStatuses()))
                     ->whereNotExists($workspace))
                 ->orWhere(static fn ($stranded) => $stranded
-                    ->whereHas('group', static fn ($group) => $group->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())->removalFailure())
+                    ->whereHas('group', static fn ($group) => $group->workspaceRemovalRetry()->removalFailure())
                     ->whereExists($workspace)))
             ->get(['id']);
 

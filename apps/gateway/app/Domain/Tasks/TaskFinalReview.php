@@ -112,22 +112,31 @@ final readonly class TaskFinalReview
     }
 
     /**
-     * The approved commit that every workspace removal pushes first, or null. A review-and-merge task
-     * pushes only a commit a final review approved, so unreviewed approved work is not pushed.
+     * The latest reviewed head that publication has not pushed. A merge needs no preservation push.
+     * Incoming author heads already live on origin. With per-subtask publication, a handled approval is pushed.
      */
     public static function removalPushCommit(Task $group): ?string
     {
-        $commit = TaskComment::query()
+        if ($group->watched_pr_completion === 'merged' || $group->merged_sha !== null) {
+            return null;
+        }
+        if ($group->reviewsBeforePush()) {
+            $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->latest('id')->first();
+
+            return $reviewed instanceof TaskReviewedCommit && $reviewed->pushed_at === null
+                && $reviewed->source !== TaskReviewedCommitSource::PullRequestReview ? $reviewed->sha : null;
+        }
+        $approval = TaskComment::query()
             ->where('task_group_id', $group->id)
             ->where('type', TaskCommentType::Approved)
             ->whereNotNull('commit_sha')
-            ->latest('id')
-            ->value('commit_sha');
-        if (! is_string($commit) || $commit === '') {
+            ->latest('id')->first();
+        if (! $approval instanceof TaskComment || ! is_string($approval->commit_sha) || $approval->commit_sha === ''
+            || ($approval->task->review_handled_comment_id ?? 0) >= $approval->id) {
             return null;
         }
 
-        return ! $group->reviewsBeforePush() || self::isReviewed($group, $commit) ? $commit : null;
+        return $approval->commit_sha;
     }
 
     public static function isReviewed(Task $group, string $sha): bool
