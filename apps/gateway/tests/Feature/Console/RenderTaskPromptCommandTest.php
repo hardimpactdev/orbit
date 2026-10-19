@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskReviewDiff;
@@ -80,7 +81,7 @@ function production_spawner_prompt(string $method): array
     [$project, $group, $task] = production_task_prompt_models();
     $spawner = new TaskAgentSpawner(
         new AgentDriverRegistry([]),
-        new TaskReviewPacketBuilder(new NullTaskReviewDiff),
+        new TaskReviewPacketBuilder(new NullTaskReviewDiff, app(TaskCheckOutputBuilder::class)),
         Mockery::mock(TaskWorkspaceMcp::class),
     );
     $reflection = new ReflectionMethod(TaskAgentSpawner::class, $method);
@@ -211,7 +212,7 @@ function production_review_prompt(bool $continued): array
             ];
         }
     };
-    $prompt = (new TaskReviewPacketBuilder($diff))->build($task, $continued, 32);
+    $prompt = (new TaskReviewPacketBuilder($diff, app(TaskCheckOutputBuilder::class)))->build($task, $continued, 32);
     $packet = render_task_prompt_review_packet($continued);
     $packet['opens_pull_request'] = false;
 

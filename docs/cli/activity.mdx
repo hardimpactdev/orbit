@@ -142,6 +142,10 @@ These rules apply when an Activity is stored. They do not rewrite records that a
 
 Doctor writes one ordinary Activity for each run and stores no findings in it.
 
+### Text-redaction failures
+
+If a text-redaction pass fails, the Gateway replaces that text with `Output withheld: redaction failed.` and logs an error with the PCRE error code and an exception, without the input, so the problem collector can report it. This rule applies to every Gateway text-redaction caller, including Activity, logs, and database results.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

@@ -144,7 +144,7 @@ Lines above a rate are dropped and counted in `dropped`. The agent never queues 
 
 ## Redaction
 
-The agent redacts each line before it leaves the Node. The Gateway redacts it again before it publishes it.
+The agent redacts each line before it leaves the Node. The Gateway redacts it again before it publishes it. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
 
 | Where | What is replaced with `[REDACTED]` |
 | --- | --- |

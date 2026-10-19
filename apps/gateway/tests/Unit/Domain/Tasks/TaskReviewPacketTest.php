@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewContext;
@@ -10,6 +11,7 @@ use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTurnInstructions;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\ReviewFindings;
@@ -105,9 +107,18 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and(packet_section($packet, 'Handoff'))->toBe(implode("\n", [
             'Status: passed',
             '`composer check` in . exited 0',
-            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit: Class \"HomeScreen\" not found",
-            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 0: ok",
-            '`bun test` in apps/web exited 0: ok',
+            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit:",
+            '```',
+            'Class "HomeScreen" not found',
+            '```',
+            "`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 0:",
+            '```',
+            'ok',
+            '```',
+            '`bun test` in apps/web exited 0:',
+            '```',
+            'ok',
+            '```',
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
         ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence')
@@ -204,7 +215,7 @@ it('lists packet handoff commands with their directory and exit code and keeps a
     $handoff = packet_section(review_packet(), 'Handoff');
 
     expect($handoff)->toContain('`composer check` in . exited 0')
-        ->and($handoff)->toContain("`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit: Class \"HomeScreen\" not found")
+        ->and($handoff)->toContain("`vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'` in apps/gateway exited 2 on the start commit:\n```\nClass \"HomeScreen\" not found\n```")
         ->and($handoff)->toContain('`bun test` in apps/web exited 0')
         ->and($handoff)->not->toContain('reference-page')
         ->and($handoff)->not->toContain('$(git rev-parse --git-path orbit)/check.log');
@@ -665,6 +676,7 @@ function review_packet(array $overrides = []): string
     }
 
     return new TaskReviewPacket(
+        outputBuilder: new TaskCheckOutputBuilder(new CommandActivityInputSanitizer),
         groupBrief: $values['groupBrief'],
         subtaskId: $values['subtaskId'],
         subtaskTitle: $values['subtaskTitle'],
@@ -869,3 +881,16 @@ it('names the declared topology and the evidence the approval needs, also in a c
 it('has no topology section for a subtask without one', function (): void {
     expect(review_packet())->not->toContain("Topology\n")->not->toContain('topology_requested');
 });
+
+it('quotes stored working and start-commit command evidence without redacting it again', function (string $field): void {
+    $run = ['exit_code' => 0, 'output' => '', 'base_started' => true, 'base_exit_code' => 1, 'base_output' => ''];
+    $builder = new TaskCheckOutputBuilder(new CommandActivityInputSanitizer);
+    $run[$field] = $builder->tail('TOKEN='.str_repeat('s', 40_000)."\n--token=\"v\"name\"\nLast line");
+    $packet = review_packet([
+        'deliverables' => [TaskDeliverable::fromArray(['id' => 'probe', 'type' => 'command', 'description' => 'Probe.', 'command' => 'test', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['probe.php']])],
+        'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => ['probe' => $run]]),
+    ]);
+
+    expect(packet_section($packet, 'Handoff'))->toContain('TOKEN=[REDACTED]', '--token=[REDACTED]name"', 'Last line')
+        ->not->toContain('ssss');
+})->with(['output', 'base_output']);

@@ -16,6 +16,10 @@ final readonly class TaskPullRequestCheck
     public function __construct(
         public string $name,
         public ?string $url,
+        public ?int $id = null,
+        public ?string $appSlug = null,
+        public ?string $outputTitle = null,
+        public ?string $outputSummary = null,
     ) {}
 
     public function rollup(): bool

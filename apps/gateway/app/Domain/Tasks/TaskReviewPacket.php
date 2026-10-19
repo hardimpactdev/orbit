@@ -56,6 +56,7 @@ final readonly class TaskReviewPacket
      * @param  list<array{question: string, answer: string}>  $consults  answered consults, oldest first
      */
     public function __construct(
+        private TaskCheckOutputBuilder $outputBuilder,
         private string $groupBrief,
         private int $subtaskId,
         private string $subtaskTitle,
@@ -389,7 +390,7 @@ final readonly class TaskReviewPacket
         $included = 0;
         foreach ($tails as $lineIndex => $tail) {
             $trial = $lines;
-            $trial[$lineIndex] .= ': '.$tail;
+            $trial[$lineIndex] .= ":\n".$tail;
             if (mb_strlen($assemble($trial, $included + 1)) > self::HandoffLimit) {
                 break;
             }
@@ -447,7 +448,7 @@ final readonly class TaskReviewPacket
     {
         return [
             'line' => '`'.mb_substr($command, 0, self::CommandLimit).'` in '.$directory.' exited '.$exitCode.$suffix,
-            'tail' => $tail,
+            'tail' => $tail === null ? null : $this->outputBuilder->build($tail),
             'truncated' => mb_strlen($command) > self::CommandLimit,
         ];
     }

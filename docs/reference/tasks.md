@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge,remove_task_base_merge_gates}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,redact_stored_task_check_output,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge,remove_task_base_merge_gates}.php"
 ---
 
 # Tasks
@@ -260,7 +260,7 @@ The base run extracts an archive of the start commit into a directory under the 
 
 A command that needs another installed tree, such as a Python virtualenv or a Rust `target` directory, can fail on that base tree only because the tree is missing. That nonzero exit satisfies `fails_on_base` and is not evidence that the command reproduced a bug. This copy is retained. A follow-up has to widen it or stop counting a missing dependency as reproduction evidence.
 
-The base run stops after 600 seconds, and a timed-out run counts as failing on the start commit. Exit 126 or 127 means the command did not run, so the deliverable fails. When the base command exits 0, the deliverable fails because the command does not reproduce the failure. The check stores the exit code and the tail of the output, at most 4,096 characters. It records `base_started`, `base_exit_code`, and `base_output`. A timed-out run also records `base_timed_out` and `base_timeout_seconds`. The engine does not read test names or runner output. The Project's command does that. Show and the turn file include `fails_on_base`. An omitted input is stored as `false`.
+The base run stops after 600 seconds, and a timed-out run counts as failing on the start commit. Exit 126 or 127 means the command did not run, so the deliverable fails. When the base command exits 0, the deliverable fails because the command does not reproduce the failure. The stored exit code and output follow the [shared output policy](#check-output). It records `base_started`, `base_exit_code`, and `base_output`. A timed-out run also records `base_timed_out` and `base_timeout_seconds`. The engine does not read test names or runner output. The Project's command does that. Show and the turn file include `fails_on_base`. An omitted input is stored as `false`.
 
 Task create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` is the JSON boolean `true` or `false`, and `paths` is a list of strings. Any other value is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
@@ -964,7 +964,7 @@ Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `
 | --- | --- |
 | `running` | The tick waits. The subtask's `check` shows the start time. |
 | `passed` | Exit code 0, and HEAD and the tree did not change. Orbit [verifies the deliverables](#verify-deliverables), and the reviewer starts. |
-| `failed` | The exit code is not 0, or an invalid deliverable or an error in the check script stopped it. The reminder holds the exit code and the end of the output. |
+| `failed` | The exit code is not 0, or an invalid deliverable or an error in the check script stopped it. The reminder holds the exit code and the [redacted output tail](#check-output). |
 | `changed` | HEAD or the tree changed. The check does not restart; a handoff requires implementer correction, and a baseline asks for assistance. |
 | `lost` | The supervisor left no terminal result. Its lease stays held because descendants may still run. No replacement check starts without authoritative completion. |
 | `cancelled` | An operator cancelled it. The reminder says so. |
@@ -973,9 +973,17 @@ A tree-changing check retains its original result and names the changed paths. L
 
 The scheduler identifies the process by its id and its start time, so a reused process id does not count. The start time is the kernel's count of clock ticks after boot, from `/proc/<pid>/stat`. A wall-clock start time would move while the clock of a freshly booted task VM settles, and a running check would look lost. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
 
-`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
+`tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and a redacted output tail of at most 16 KiB.
 
 Every Project handoff receives the subtask start commit in `ORBIT_TASK_CHECK_BASE`, including rework and final-review fixups. A Project that does not read it is unaffected. Orbit's gate uses the [candidate gate's test-base rule](/reference/implementation-loop#the-candidate-gate). File deliverables and reproduction commands also use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base.
+
+### Check output
+
+Stored check output, API responses, check reminders, CI fixup briefs, and command-deliverable evidence for implementers and reviewers use the same output rule. Orbit removes timestamps and ANSI codes, redacts secrets with the [Activity text rule](/cli/activity#redaction), then keeps up to 16 KiB from the end of each output record. Agent briefs quote the excerpt with a Markdown fence long enough to contain any embedded backticks. Assistance reasons contain a short sentence that names the check and its stored output; they contain no log text.
+
+Every raw output passes through one shared builder. It keeps at most the last 100 KiB, drops an incomplete first line when a later line exists, then removes timestamps and ANSI codes and redacts once before taking the 16 KiB tail. A final line longer than the window retains its last bounded bytes. Streamed CI logs use the same window. Stored tails are quoted for agents without redacting them again. If a window starts inside a PEM block, Orbit drops the orphan body through its END marker before redaction. Other multiline secrets can lose their identifying key when they cross the cut.
+
+The Orbit check transport uses the same window rule and shared 100 KiB limit for each check, command, and start-commit output record. No record is discarded to fit the 8 MiB status response. The shared [text-redaction failure rule](/cli/activity#text-redaction-failures) applies. A data migration applies the same output rule to check output stored before this rule was introduced.
 
 ### Baseline check
 
@@ -1224,8 +1232,12 @@ Project slugs and CI job names do not change that order. A task gets at most two
 | Fixup | Title | Brief |
 | --- | --- | --- |
 | Conflict | `Merge origin/{base}` | `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` |
-| Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.` |
+| Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.`, followed by the CI evidence described below. |
 | Trusted requested changes | `Address GitHub review {review_id}` | The immutable findings packet below, with the source head, reviewer identity, review URL, and bounded scope. No rebase or force-push. |
+
+For a GitHub Actions check, Orbit reads the failed job log with the Gateway App and adds the [check output excerpt](#check-output) to the fixup brief. It streams the log within the request deadline, so logs larger than 16 MiB still provide failure evidence.
+
+For another App, Orbit includes the check output title and summary. If the evidence is unavailable, the brief says `Orbit could not read the log.` and the fixup continues without requesting assistance. Logs are read only for the selected fixup, after the fixup caps are checked.
 
 Conflict and check fixups have one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The handoff runs the current Project check, as every handoff does. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables.
 

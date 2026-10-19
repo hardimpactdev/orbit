@@ -32,6 +32,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -1324,7 +1325,9 @@ it('accepts at plan time exactly the command paths that the handoff check accept
         loader.exec_module(module)
         print(json.dumps([module.deliverable_path(sys.argv[2], path) is not None for path in json.loads(sys.argv[3])]))
         PY;
-    $process = new Process(['python3', '-I', '-c', $program, resource_path('tasks/check'), $checkout, json_encode($paths, JSON_THROW_ON_ERROR)]);
+    $script = $checkout.'/check.py';
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
+    $process = new Process(['python3', '-I', '-c', $program, $script, $checkout, json_encode($paths, JSON_THROW_ON_ERROR)]);
     $process->mustRun();
     $handoff = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
@@ -1345,3 +1348,27 @@ it('refuses retired notification inputs when creating a task', function (string 
     ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect(Task::topLevel()->count())->toBe(0);
 })->with(['notify_coder', 'notify_on_settle']);
+
+it('returns the migrated redacted 16 KiB check tail on show and list', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $group = Task::query()->create(['project_id' => tasks_app()->id, 'title' => 'Checked', 'brief' => 'Check.', 'status' => TaskGroupStatus::Backlog]);
+    $task = $group->tasks()->create(['position' => 1, 'title' => 'Run', 'brief' => 'Run.', 'status' => TaskStatus::Todo]);
+    TaskCheck::query()->create([
+        'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed,
+        'pid' => 1, 'process_started' => 'start', 'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+        'output' => "Early line\n".str_repeat("padding\n", 15_000).'TOKEN='.str_repeat('s', 40_000)."\nFAILED last line",
+    ]);
+
+    (require database_path('migrations/2026_11_17_000000_redact_stored_task_check_output.php'))->up();
+
+    $shown = $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->json('data.tasks.0.check.output');
+    $listed = $this->getJson('/api/v1/task-groups?compact=0')->assertOk()->json('data.0.tasks.0.check.output');
+
+    foreach ([$shown, $listed] as $output) {
+        expect($output)->toBeString()->toContain('TOKEN=[REDACTED]', 'FAILED last line')
+            ->not->toContain('ssss')->not->toContain('Early line')
+            ->and(strlen($output))->toBeLessThanOrEqual(16 * 1024);
+    }
+});

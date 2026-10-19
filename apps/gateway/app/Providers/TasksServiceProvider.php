@@ -14,8 +14,10 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskPullRequestCheckOutput;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
@@ -36,6 +38,7 @@ use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
@@ -79,6 +82,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
+        TaskPullRequestCheckOutput::class => GitHubTaskPullRequestCheckOutput::class,
         TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
         TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
@@ -123,7 +127,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
-        $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class)));
+        $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class), $app->make(TaskCheckOutputBuilder::class)));
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));

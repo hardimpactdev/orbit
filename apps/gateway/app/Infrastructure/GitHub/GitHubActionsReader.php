@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
+use Generator;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 use Throwable;
@@ -100,7 +101,25 @@ final readonly class GitHubActionsReader
      */
     public function archiveLocation(GitHubRepository $repository, int $artifactId, #[SensitiveParameter] string $token): string
     {
-        $url = self::Api.self::repositoryPath($repository).'/actions/artifacts/'.$artifactId.'/zip';
+        return $this->storageLocation(self::repositoryPath($repository).'/actions/artifacts/'.$artifactId.'/zip', $token);
+    }
+
+    /**
+     * Streams the job log for redaction before excerpting; the token never reaches log storage.
+     *
+     * @return Generator<int, string>
+     */
+    public function jobLog(GitHubRepository $repository, int $jobId): Generator
+    {
+        $token = $this->token($repository);
+        $location = $this->storageLocation(self::repositoryPath($repository).'/actions/jobs/'.$jobId.'/logs', $token);
+
+        yield from $this->stream($location, null, PHP_INT_MAX, null, 10.0);
+    }
+
+    private function storageLocation(string $path, #[SensitiveParameter] string $token): string
+    {
+        $url = self::Api.$path;
 
         try {
             $response = Http::withToken($token)->withoutRedirecting()->timeout($this->deadline->cap(10))
@@ -141,9 +160,9 @@ final readonly class GitHubActionsReader
         float $timeout = 10.0,
     ): string {
         $body = '';
-        $this->stream($url, $token, $limit, $payload, $timeout, static function (string $chunk) use (&$body): void {
+        foreach ($this->stream($url, $token, $limit, $payload, $timeout) as $chunk) {
             $body .= $chunk;
-        });
+        }
 
         return $body;
     }
@@ -166,13 +185,13 @@ final readonly class GitHubActionsReader
         $hash = hash_init('sha256');
 
         try {
-            $this->stream($url, null, $limit, null, $timeout, static function (string $chunk) use ($handle, $hash): void {
+            foreach ($this->stream($url, null, $limit, null, $timeout) as $chunk) {
                 hash_update($hash, $chunk);
 
                 if (@fwrite($handle, $chunk) !== strlen($chunk)) {
                     throw new GitHubActionsUnavailable;
                 }
-            });
+            }
         } finally {
             fclose($handle);
         }
@@ -182,7 +201,7 @@ final readonly class GitHubActionsReader
 
     /**
      * @param  array<string, mixed>|null  $payload
-     * @param  callable(string): void  $chunk
+     * @return Generator<int, string>
      */
     private function stream(
         string $url,
@@ -190,8 +209,7 @@ final readonly class GitHubActionsReader
         int $limit,
         ?array $payload,
         float $timeout,
-        callable $chunk,
-    ): void {
+    ): Generator {
         $stream = null;
 
         try {
@@ -220,7 +238,7 @@ final readonly class GitHubActionsReader
                     throw new GitHubActionsUnavailable;
                 }
 
-                $chunk($data);
+                yield $data;
             }
         } catch (ResourceOperationException|GitHubActionsUnavailable $exception) {
             throw $exception;

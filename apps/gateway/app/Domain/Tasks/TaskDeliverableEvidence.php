@@ -7,8 +7,6 @@ namespace App\Domain\Tasks;
 /** Evidence captured by Orbit's handoff check for a subtask's diff and command runs. */
 final readonly class TaskDeliverableEvidence
 {
-    private const int MessageTail = 4096;
-
     /**
      * @param  list<array{status: string, path: string}>|null  $diff
      * @param  array<string, array{exit_code: int, output: string, base_started?: bool, base_exit_code?: int, base_output?: string, base_timed_out?: bool, base_timeout_seconds?: int}>  $commands
@@ -37,7 +35,7 @@ final readonly class TaskDeliverableEvidence
                 $commands[$id]['base_exit_code'] = $run['base_exit_code'];
             }
             if (is_string($run['base_output'] ?? null)) {
-                $commands[$id]['base_output'] = mb_substr($run['base_output'], -self::MessageTail);
+                $commands[$id]['base_output'] = $run['base_output'];
             }
             if (($run['base_timed_out'] ?? null) === true) {
                 $commands[$id]['base_timed_out'] = true;

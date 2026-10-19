@@ -849,7 +849,7 @@ it('appends one check fixup naming the failed check and its url', function (Task
     $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
     expect($fixup->fixup_head_sha)->toBe('abc123')
         ->and($fixup->title)->toBe('Fix Custom')
-        ->and($fixup->brief)->toBe('Check Custom failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
+        ->and($fixup->brief)->toBe('Check Custom failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.'."\n\nOrbit could not read the log.")
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
             'id' => 'fixup-review', 'type' => 'review',
@@ -859,6 +859,79 @@ it('appends one check fixup naming the failed check and its url', function (Task
         ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
+
+it('puts redacted CI job evidence in the selected fixup brief without storage authentication', function (): void {
+    Exceptions::fake()->throwOnReport();
+    $group = tick_settling_group();
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'id' => 9, 'name' => 'Remote programs', 'status' => 'completed', 'conclusion' => 'failure',
+        'html_url' => 'https://github.com/acme/orbit/actions/runs/1/job/9', 'app' => ['slug' => 'github-actions'],
+    ]]]);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/actions/jobs/9/logs' => Http::response('', 302, ['Location' => 'https://logs.blob.core.windows.net/job?sig=storage-secret']),
+        'https://logs.blob.core.windows.net/job?sig=storage-secret' => Http::response("2026-10-18T10:11:12.123Z \e[31m##[error]Remote program failed\e[0m\nTOKEN=ci-secret-value\n"),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Remote programs')->sole()->brief)
+        ->toContain('This is the CI evidence', '##[error]Remote program failed', 'TOKEN=[REDACTED]')
+        ->not->toContain('ci-secret-value')
+        ->not->toContain('storage-secret')
+        ->not->toContain('2026-10-18T')
+        ->not->toContain("\e[")
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/actions/jobs/9/logs') && $request->hasHeader('Authorization', 'Bearer ghs_watch'));
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'logs.blob.core.windows.net') && ! $request->hasHeader('Authorization'));
+});
+
+it('keeps a check fixup running when GitHub refuses its log', function (): void {
+    Exceptions::fake()->throwOnReport();
+    $group = tick_settling_group();
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'id' => 9, 'name' => 'Remote programs', 'status' => 'completed', 'conclusion' => 'failure', 'app' => ['slug' => 'github-actions'],
+    ]]]);
+    Http::fake(['https://api.github.com/repos/acme/orbit/actions/jobs/9/logs' => Http::response('private-log-detail', 403)]);
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'check:Remote programs')->sole();
+    expect($fixup->brief)->toBe("Check Remote programs failed. Do not rebase and do not force-push.\n\nOrbit could not read the log.")
+        ->and($fixup->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('includes another Apps check summary without requesting an Actions log', function (): void {
+    tick_settling_group();
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'id' => 9, 'name' => 'Security scan', 'status' => 'completed', 'conclusion' => 'failure', 'app' => ['slug' => 'scanner'],
+        'output' => ['title' => 'Dependency issue', 'summary' => 'Update the dependency. TOKEN=ci-secret-value'],
+    ]]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Security scan')->sole()->brief)
+        ->toContain('This is the CI evidence', 'Dependency issue', 'Update the dependency. TOKEN=[REDACTED]')
+        ->not->toContain('ci-secret-value');
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/'));
+});
+
+it('does not read job logs when the check fixup cap is spent', function (): void {
+    $group = tick_settling_group();
+    tick_spent_fixup($group, 'check:Remote programs');
+    tick_spent_fixup($group, 'check:Remote programs');
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'id' => 9, 'name' => 'Remote programs', 'status' => 'completed', 'conclusion' => 'failure', 'app' => ['slug' => 'github-actions'],
+    ]]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Remote programs')->count())->toBe(2);
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/'));
+});
 
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
@@ -871,7 +944,7 @@ it('runs make check for a fixup on a non-Orbit Project and on orbit', function (
     app(TaskScheduler::class)->tick();
 
     $fixup = Task::query()->where('fixup_problem', 'check:Rust agent')->sole();
-    expect($fixup->brief)->toBe('Check Rust agent failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
+    expect($fixup->brief)->toBe('Check Rust agent failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.'."\n\nOrbit could not read the log.")
         ->and($fixup->deliverables)->toBe([[
             'id' => 'fixup-review', 'type' => 'review',
             'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
@@ -971,7 +1044,7 @@ it('appends a check fixup without a url when the run has none', function (): voi
     app(TaskScheduler::class)->tick();
 
     expect(Task::query()->where('fixup_problem', 'check:Deploy')->sole()->brief)
-        ->toBe('Check Deploy failed. Do not rebase and do not force-push.');
+        ->toBe('Check Deploy failed. Do not rebase and do not force-push.'."\n\nOrbit could not read the log.");
 });
 
 it('appends a fresh conflict fixup after operator work', function (): void {

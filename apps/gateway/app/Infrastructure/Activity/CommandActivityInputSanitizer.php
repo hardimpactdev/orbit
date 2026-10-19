@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Activity;
 
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final readonly class CommandActivityInputSanitizer
 {
     private const string REDACTED = '[REDACTED]';
+
+    private const string REDACTION_FAILURE = 'Output withheld: redaction failed.';
 
     private const string INVALID_ENVIRONMENT_NAME = '[INVALID_ENVIRONMENT_NAME]';
 
@@ -129,45 +133,56 @@ final readonly class CommandActivityInputSanitizer
                 pattern: self::PEM_BLOCK_PATTERN,
                 replacement: self::REDACTED,
                 subject: $value,
-            ) ?? $value;
+            ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
                 pattern: '/\b([a-z][a-z0-9+.-]*:\/\/)[^\/@\s]+@/i',
                 replacement: '$1'.self::REDACTED.'@',
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
                 pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*(?!\[REDACTED\])[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
                 pattern: '/\bBearer\s+(?:"[^"]*"|\'[^\']*\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,})/i',
                 replacement: 'Bearer '.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
         $keys = self::SECRET_KEY_IDENTIFIER;
         $redacted =
             preg_replace(
                 pattern: '/\b('.$keys.')\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s&#]+)/i',
                 replacement: '$1='.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
                 pattern: '/("(?:'.$keys.')"\s*:\s*)(?:"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^,}\s]+)/i',
                 replacement: '$1"'.self::REDACTED.'"',
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
 
         return
             preg_replace(
                 pattern: '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
-            ) ?? $redacted;
+            ) ?? $this->redactionFailed();
+    }
+
+    private function redactionFailed(): string
+    {
+        $error = preg_last_error();
+        Log::error(self::REDACTION_FAILURE, [
+            'pcre_error' => $error,
+            'exception' => new RuntimeException(self::REDACTION_FAILURE, $error),
+        ]);
+
+        return self::REDACTION_FAILURE;
     }
 
     /**

@@ -44,6 +44,7 @@ final readonly class TaskSettling
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
+        private TaskPullRequestCheckOutput $checkOutput,
     ) {}
 
     public function tickPullRequest(TaskScheduler $scheduler, Task $group): void
@@ -647,6 +648,9 @@ final readonly class TaskSettling
             return;
         }
 
+        if ($plan->check instanceof TaskPullRequestCheck) {
+            $plan = $plan->withCheckOutput($this->checkOutput->read($group, $plan->check));
+        }
         if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($scheduler, $group);
         }

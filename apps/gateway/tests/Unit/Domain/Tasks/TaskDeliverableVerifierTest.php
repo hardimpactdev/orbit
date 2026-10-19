@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskDeliverableVerifier;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 
 it('matches file deliverable globs where * stays in one directory and ** crosses directories', function (): void {
     expect(TaskDeliverableVerifier::matches('docs/**/*.md', 'docs/reference/tasks.md'))->toBeTrue()
@@ -50,8 +52,8 @@ it('verifies a file deliverable whose path uses brace alternation', function ():
         'diff' => [['status' => 'A', 'path' => 'app/Other/PantrySync/X.php']], 'commands' => [],
     ]);
 
-    expect(TaskDeliverableVerifier::failures([$deliverable], $match))->toBe([])
-        ->and(TaskDeliverableVerifier::failures([$deliverable], $miss))->toBe([
+    expect(TaskDeliverableVerifier::failures([$deliverable], $match, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $miss, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             "pantry-sync (file): no path in the subtask's diff matches app/{Data,Enums}/PantrySync/**/*.php.",
         ]);
 });
@@ -112,18 +114,18 @@ it('requires a passing working-tree command and a failing base command', functio
         'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 126, 'base_output' => 'permission denied', 'exit_code' => 0, 'output' => '']],
     ]);
 
-    expect(TaskDeliverableVerifier::failures([$deliverable], $pass))->toBe([])
-        ->and(TaskDeliverableVerifier::failures([$deliverable], $basePass))->toBe([
+    expect(TaskDeliverableVerifier::failures([$deliverable], $pass, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $basePass, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             'layout-repro (command): `check-layout` in apps/gateway also exited 0 on the start commit, so it does not reproduce the failure.',
         ])
-        ->and(implode(' ', TaskDeliverableVerifier::failures([$deliverable], $workingTreeFails)))->toContain('`check-layout` in apps/gateway exited with 2.')
-        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseDidNotStart))->toBe([
+        ->and(implode(' ', TaskDeliverableVerifier::failures([$deliverable], $workingTreeFails, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer))))->toContain('`check-layout` in apps/gateway exited with 2.')
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseDidNotStart, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit.',
         ])
-        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandMissing))->toBe([
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandMissing, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 127).',
         ])
-        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandNotExecutable))->toBe([
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandNotExecutable, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 126).',
         ]);
 });
@@ -141,7 +143,7 @@ it('accepts a timed out base command as nonzero evidence and renders both exit c
         ]],
     ]);
 
-    expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->toBe([])
+    expect(TaskDeliverableVerifier::failures([$deliverable], $evidence, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([])
         ->and($evidence?->baseRunReview([$deliverable]))->toContain('layout-repro: base command exited 124 (timed out after 600 seconds); working-tree command exited 0');
 });
 
@@ -151,7 +153,7 @@ it('continues to verify file deliverables against the subtask diff', function ()
     ]);
     $evidence = TaskDeliverableEvidence::fromArray(['diff' => [['status' => 'M', 'path' => 'docs/reference/tasks.md']], 'commands' => []]);
 
-    expect(TaskDeliverableVerifier::failures([$file], $evidence))->toBe([]);
+    expect(TaskDeliverableVerifier::failures([$file], $evidence, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([]);
 });
 
 it('requires implementers to confirm all deliverables and reviewers to confirm review deliverables', function (): void {
@@ -162,4 +164,15 @@ it('requires implementers to confirm all deliverables and reviewers to confirm r
 
     expect(TaskDeliverableVerifier::unconfirmed($deliverables, [], TaskThreadRole::Implementer))->toBe(['lint', 'copy'])
         ->and(TaskDeliverableVerifier::unconfirmed($deliverables, [], TaskThreadRole::Reviewer))->toBe(['copy']);
+});
+
+it('quotes the stored command failure without redacting it a second time', function (): void {
+    $builder = new TaskCheckOutputBuilder(new CommandActivityInputSanitizer);
+    $deliverable = TaskDeliverable::fromArray(['id' => 'probe', 'type' => 'command', 'description' => 'Probe', 'command' => 'probe']);
+    $evidence = TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => ['probe' => [
+        'exit_code' => 1, 'output' => $builder->tail('--token="v"name"'),
+    ]]]);
+
+    expect(implode("\n", TaskDeliverableVerifier::failures([$deliverable], $evidence, $builder)))
+        ->toContain('--token=[REDACTED]name"');
 });

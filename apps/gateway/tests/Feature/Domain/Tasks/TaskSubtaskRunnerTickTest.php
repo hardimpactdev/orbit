@@ -480,7 +480,7 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->assistance_requested)->toBeTrue()
-            ->and($group->fresh()?->assistance_reason)->toStartWith("Checks still failed after the reminder. Orbit could not verify these deliverables:\n- web-tests (command): `bun test` in apps/web exited with 2.")
+            ->and($group->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. Deliverable verification failed; see check #'.TaskCheck::query()->latest('id')->firstOrFail()->id.' for its evidence.')
             ->and($checks->starts)->toBe(2)
             ->and(app(AgentCommandDispatcher::class)->commands)->toHaveCount(1);
     });
@@ -537,7 +537,7 @@ describe('subtask deliverables at handoff', function (): void {
 
     it('asks for assistance when a command overlay path is invalid, without reminding the implementer', function (): void {
         $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
-        $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $reason."\n", failedStep: 'invalid_deliverable');
+        $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $reason."\nTOKEN=synthetic-secret-value\n", failedStep: 'invalid_deliverable');
         [$group, $task, $checks] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
@@ -557,9 +557,11 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($group->fresh()?->assistance_requested)->toBeTrue()
-            ->and($group->fresh()?->assistance_reason)->toBe($reason)
-            ->and($task->fresh()?->assistance_reason)->toBe($reason)
-            ->and($group->fresh()?->assistance_reason)->toBe($reason)
+            ->and($group->fresh()?->assistance_reason)->toBe('Command deliverable validation failed in check #'.TaskCheck::query()->sole()->id.'; see its output for the invalid directory or overlay path.')
+            ->and($group->fresh()?->assistance_reason)->not->toContain('synthetic-secret-value')
+            ->and($task->fresh()?->assistance_reason)->toBe($group->fresh()?->assistance_reason)
+            ->and(TaskCheck::query()->sole()->output)->toContain($reason, 'TOKEN=[REDACTED]')
+            ->and($task->fresh()?->assistance_reason)->not->toContain('synthetic-secret-value')
             ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
             ->and($checks->starts)->toBe(1)
             ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
@@ -568,7 +570,7 @@ describe('subtask deliverables at handoff', function (): void {
 
     it('asks for assistance for an invalid deliverable even when the tree changed', function (): void {
         $reason = 'Deliverable sweep-test names invalid overlay path missing.sh.';
-        $failed = TaskCheckReading::finished(1, str_repeat('d', 40), str_repeat('c', 40), ['app'], $reason."\n", failedStep: 'invalid_deliverable');
+        $failed = TaskCheckReading::finished(1, str_repeat('d', 40), str_repeat('c', 40), ['app'], $reason."\nTOKEN=synthetic-secret-value\n", failedStep: 'invalid_deliverable');
         [$group, $task, $checks] = tick_deliverables(
             [[
                 'id' => 'sweep-test',
@@ -588,9 +590,11 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($group->fresh()?->assistance_requested)->toBeTrue()
-            ->and($group->fresh()?->assistance_reason)->toBe($reason)
-            ->and($task->fresh()?->assistance_reason)->toBe($reason)
-            ->and($group->fresh()?->assistance_reason)->toBe($reason)
+            ->and($group->fresh()?->assistance_reason)->toBe('Command deliverable validation failed in check #'.TaskCheck::query()->sole()->id.'; see its output for the invalid directory or overlay path.')
+            ->and($group->fresh()?->assistance_reason)->not->toContain('synthetic-secret-value')
+            ->and($task->fresh()?->assistance_reason)->toBe($group->fresh()?->assistance_reason)
+            ->and(TaskCheck::query()->sole()->output)->toContain($reason, 'TOKEN=[REDACTED]')
+            ->and($task->fresh()?->assistance_reason)->not->toContain('synthetic-secret-value')
             ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
             ->and($checks->starts)->toBe(1)
             ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed)
@@ -1151,3 +1155,19 @@ it('preserves another parent failure or sibling request when a baseline resoluti
     expect($task->fresh()->assistance_requested)->toBeFalse();
     expect($group->fresh()->only(array_keys($before)))->toBe($before);
 })->with(['failure', 'sibling']);
+
+it('redacts command-deliverable failure evidence before reminding the implementer', function (): void {
+    tick_deliverables(
+        tick_all_deliverables(), tick_all_confirmations(),
+        tick_evidence(['commands' => [
+            'export-test' => ['exit_code' => 0, 'output' => ''],
+            'web-tests' => ['exit_code' => 2, 'output' => 'TOKEN='.str_repeat('s', 40_000)."\nLast line"],
+        ]]),
+    );
+
+    tick_deliverable_reminder();
+
+    $message = app(AgentCommandDispatcher::class)->commands[0]['message']['text'];
+    expect($message)->toContain('web-tests', 'TOKEN=[REDACTED]', 'Last line')
+        ->not->toContain('ssss');
+});

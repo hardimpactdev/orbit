@@ -67,7 +67,7 @@ A query takes `sql`, at most 16,384 characters, and `write`. It runs one stateme
 
 Without `write: true`, the Gateway refuses a statement whose leading verb writes, such as `INSERT`, `UPDATE`, `DELETE`, `CREATE`, or `DROP`, with `database.write_required`. That check reads only the leading verb. For mysql and pgsql the statement then runs in a normal session, so a statement with side effects that does not start with a write verb, such as `SET` or a `SELECT` that calls a function, runs without `write`. Only SQLite opens the file read-only.
 
-`write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. For a write, it is the count that the driver reports. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result.
+`write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. For a write, it is the count that the driver reports. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
 
 | Driver | Where it runs |
 | --- | --- |
