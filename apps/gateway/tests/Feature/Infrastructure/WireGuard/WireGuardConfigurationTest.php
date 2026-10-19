@@ -32,7 +32,7 @@ it('resolves peer overrides and renders the complete server peer set', function 
             'wireguard_ip' => '10.44.0.2',
             'wireguard_public_key' => 'PEER_PUBLIC',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
-            'dns_server_override' => '10.0.0.2',
+            'dns_server_override' => '10.44.0.53',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
         $settings->configure(subnet: '10.44.0.0/24', domain: 'test');
@@ -44,11 +44,8 @@ it('resolves peer overrides and renders the complete server peer set', function 
         expect($vpn->endpoint)
             ->toBe('10.0.0.2:51820')
             ->and($vpn->dnsServer)
-            ->toBe('10.0.0.2')
-            ->and($vpn->dnsThroughWireGuard)
-            ->toBeFalse()
-            ->and($vpn->usesDefaultDnsResolver)
-            ->toBeFalse()
+            ->toBe('10.44.0.53')
+
             ->and($vpn->peerAddress)
             ->toBe('10.44.0.2/24')
             ->and($rendered)
@@ -163,26 +160,16 @@ it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell 
 
         $peer->update(['dns_server_override' => null]);
 
-        expect($configuration->forPeer($peer)->dnsThroughWireGuard)
-            ->toBeTrue()
-            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
-            ->toBeTrue();
+        expect($configuration->forPeer($peer)->dnsServer)->toBe($peer->dns_server_override ?? '10.44.0.1');
 
         $peer->update(['dns_server_override' => '2001:db8::53']);
-
-        expect($configuration->forPeer($peer)->dnsThroughWireGuard)
-            ->toBeFalse()
-            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
-            ->toBeFalse();
+        expect(fn () => $configuration->forPeer($peer))->toThrow(NodeProvisioningException::class, 'The private DNS server must be a usable address in the WireGuard subnet.');
 
         $peer->update(['dns_server_override' => '10.44.0.53']);
 
-        expect($configuration->forPeer($peer)->dnsThroughWireGuard)
-            ->toBeTrue()
-            ->and($configuration->forPeer($peer)->usesDefaultDnsResolver)
-            ->toBeFalse();
+        expect($configuration->forPeer($peer)->dnsServer)->toBe($peer->dns_server_override ?? '10.44.0.1');
 
-        $peer->update(['dns_server_override' => '10.0.0.2']);
+        $peer->update(['dns_server_override' => null]);
         $settings->configure(subnet: '10.44.0.0/24', domain: 'orbit; touch /tmp/orbit-injected');
 
         expect(fn () => $configuration->forPeer($peer))

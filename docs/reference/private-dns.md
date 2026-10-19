@@ -4,15 +4,15 @@ description: "How a managed Node selects its resolver, how the Gateway answers C
 covers:
   - apps/gateway/app/Infrastructure/AppDev/{DnsmasqPrivateDnsManager,DevelopmentDnsConfigRenderer,PrivateDns*,*PrivateDns*,*DnsRequester*,DnsAddress,DecodedDnsQuery,VpnDnsmasqBackendListen,NativeClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
-  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,UplinkDnsResolvers}.php
+  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy,PeerDnsInspector,UplinkDnsResolvers}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
-  - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Console/Commands/RepairNodeDnsCommand}.php
+  - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Actions/Nodes/ReconcilePeerDnsAction,Console/Commands/RepairNodeDnsCommand,Console/Commands/CheckNodeDnsCommand,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
 # Private DNS
 
-Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
+Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
 [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) is in progress. It proposes moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. The approved behavior returns members automatically to healthy LAN DNS after VPN fallback. The recovery mechanism and member acceptance checks remain implementation gates. Until the DNS service and member steps are built, this page describes the listener.
 
@@ -22,18 +22,28 @@ Before later Cluster DNS enablement, the [firewall rollout](/cli/firewall#safe-d
 
 ## Resolver selection
 
-The Gateway selects the resolver policy when it provisions a managed Linux peer.
+Managed Linux peers send only Orbit names to private DNS. The Gateway renders the private VPN domain, every Cluster TLD, every Node TLD, and every private Route domain outside those suffixes. It removes duplicates and suffixes already covered by another suffix. All other names use the machine's normal provider or DHCP resolver. A VPN DNS outage therefore leaves public resolution available while that resolver and network work.
 
-| Peer configuration | DNS server | Routing domains | Result |
-| --- | --- | --- | --- |
-| No per-Node DNS override | Orbit VPN DNS | `~.` | The normal resolver sends every query, private and ordinary, to Orbit VPN DNS. Node and Cluster TLDs do not change this. |
-| Per-Node `--dns-server` override | The supplied address | The private VPN domain, and the Node TLD when the Node has one | Only those suffixes go to the supplied server, also when its address is inside the WireGuard subnet. |
+| Peer configuration | DNS server | Routing domains |
+| --- | --- | --- |
+| Default | Orbit VPN DNS | The rendered Orbit private-name set, such as `~orbit ~test` |
+| Per-Node `--dns-server` | A usable WireGuard-subnet address that answers Orbit names | The same complete private-name set |
 
-The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` alone and needs no local DNS server, host records, or list of Route suffixes on the peer. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override. A peer changes its resolver only when you provision it again or [repair](#repair-one-peer) it.
+A routing domain for an outside-TLD Route, such as `~app.example.com`, also captures descendants. It creates no private wildcard answer: VPN DNS still forwards descendants that have no private record. Resolver routing cannot select only the exact name. A private Route on an apex such as `example.com` also moves every descendant lookup to VPN DNS; choose a narrower name when those descendants must keep public resolution.
 
-A [Node without roles](/reference/node-provisioning#nodes-without-roles) uses neither row. Its tunnel configuration has a `DNS =` line with the WireGuard address of the `vpn` Node, and no `PostUp` hook or `orbit.dns-link`. It ignores a `--dns-server` override.
+Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. The Gateway reconciles active managed peers every five minutes with `orbit:peer-dns-reconcile`. It checks persisted and live settings and repairs only mismatches. The delay is five minutes plus queue and traversal time; unreachable peers wait for a later successful pass. Record changes do not block on fleet SSH.
 
-If Orbit VPN DNS is down, a peer that uses it by default loses both private and ordinary name resolution. Existing IP connections and routes stay. New lookups can fail until the DNS service or the tunnel recovers.
+Private Route, Cluster TLD, and Node TLD writes validate names in a serialized database transaction. A change is refused only if the rendered count increases beyond 512 domains. Deletion or rollback that keeps or reduces an already oversized count is allowed. The renderer also refuses invalid stored names or more than 512 domains before peer mutation, never truncating or using `~.`. systemd 259 allows 1,024 domains per link. Orbit reserves half that capacity so a complete replacement can allocate new domains before resolved removes old ones.
+
+Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. SSH inspection failures are unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
+
+The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. On upgrade, data migrations clear existing per-Node DNS overrides and global VPN DNS values outside the usable WireGuard subnet; the next repair, provision, or scheduled pass applies the default server. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
+
+When repair moves an old underlay selection to `orbit`, it first requires a networkd-managed uplink. It removes the old transient DNS selection with `resolvectl revert` and preserves the uplink’s LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. It reconfigures the uplink through networkd to restore provider or DHCP DNS. It waits up to 15 seconds for networkd and resolved to expose a usable non-Orbit server.
+
+Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with exit 47 (`vpn.peer_dns_uplink_missing`) and retains or restores the previous DNS state. A durable transaction snapshot restores all preceding uplink resolver settings, including its default-route flag, if migration fails. Successful migration leaves the uplink default-route decision with networkd.
+
+A [Node without roles](/reference/node-provisioning#nodes-without-roles) keeps its client-owned `DNS =` line. macOS, the VPN holder, and the Gateway's separate bootstrap resolver are outside this managed peer policy. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override.
 
 ### Inspect a peer
 
@@ -41,21 +51,23 @@ Read the saved state first to find the resolver link, server, and routing domain
 
 | Command | Expected result for the default policy |
 | --- | --- |
-| `sudo cat /etc/wireguard/orbit.dns-link` | Line 1 is the resolver link, line 2 is the Orbit VPN DNS address, and the last line is `.`. |
-| `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and routing domain `~.`. |
-| `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` sets the DNS server and `~.`. There is no `PreDown`. |
+| `sudo cat /etc/wireguard/orbit.dns-link` | Line 1 is the resolver link, line 2 is the Orbit VPN DNS address, and the remaining lines are the rendered private domains without `~`. |
+| `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and the rendered route-only domains, such as `~orbit ~test`. |
+| `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` sets the DNS server and the rendered private domains. There is no `PreDown`. |
 | `getent ahostsv4 <route-domain>` | The normal resolver returns the private Route address. |
 | `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query returns the same answer. |
-| `getent ahostsv4 example.com` | An ordinary name resolves through the same policy. |
+| `getent ahostsv4 example.com` | An ordinary name resolves through the provider or DHCP resolver. |
 | `ip route` | Application routes do not depend on the DNS selection. |
 
-The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. An explicit override can use a link other than `orbit`. Read line 1 of `orbit.dns-link`, then run `resolvectl status <link>` for that link.
+Peer DNS programs use Bash and the base system tools, including awk; they do not require PHP on the peer. Routing domains travel in the script input, keeping the serialized SSH command small at the 512-domain cap.
+
+The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it. Native peer DNS repair refuses unmanaged targets with `vpn.peer_dns_unmanaged`. Explicit repair also refuses the Gateway. AppDev TLD convergence reports the refusal and leaves its bootstrap resolver unchanged.
 
 ## The Gateway machine
 
 The Gateway machine is not a managed peer. When it also holds `vpn`, its tunnel is the hub. When `gateway` moved to another machine, that machine keeps the tunnel it joined with. So the Gateway sets its own resolver in a separate step.
 
-Gateway bootstrap and every `gateway` role convergence send queries for the private VPN domain to Orbit VPN DNS over the `orbit` link. The address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node. Every other query, including names under Node and Cluster TLDs, stays on the uplink resolvers. So the Gateway still resolves package mirrors, GitHub, and ACME endpoints while Orbit VPN DNS is down. The Orbit CLI on the Gateway machine resolves `reverb.orbit` and stays live.
+Gateway bootstrap and every `gateway` role convergence send queries for the private VPN domain to Orbit VPN DNS over the `orbit` link. The address is the configured VPN DNS server, or the WireGuard address of the `vpn` Node. Every other query, including names under Node and Cluster TLDs, stays on the uplink resolvers when the Gateway machine is outside the managed peer policy. So the Gateway still resolves package mirrors, GitHub, and ACME endpoints while Orbit VPN DNS is down. The Orbit CLI on the Gateway machine resolves `reverb.orbit` and stays live.
 
 The drop-in `/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf` applies the route whenever the tunnel starts. It sets the routing domain and turns off the link's default DNS route before it sets the server, so the link never routes every name. A failure there never fails the tunnel. When `/etc/wireguard/orbit.dns-link` exists, the machine is a managed peer, and the step leaves the peer's policy in place.
 
@@ -186,13 +198,25 @@ Run this command on the Gateway to update the resolver settings of one active ma
 php artisan orbit:node-dns-repair <node-name>
 ```
 
+After the Gateway release and its migration are installed, repair app-prod and verify separate resolver paths with these Gateway commands:
+
+```bash
+php artisan orbit:node-dns-repair app-prod
+php artisan orbit:node-dns-check app-prod ai-cli-proxy.test --public-domain=example.com
+orbit doctor --node=4 --family=node
+```
+
+`orbit:node-dns-check` is read-only. It runs uncached A queries through the peer's normal resolved policy. It succeeds only when the private name resolves on `orbit` and the public name resolves on another link or a global resolver. The output shows both answers and links. It refuses names that do not fit the private and public scopes. This verifies provider selection without stopping VPN DNS. `orbit node:converge app-prod --force` also applies the peer policy through the `peer-dns` footprint artifact.
+
 DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
 
 The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 
 Record the [inspect](#inspect-a-peer) commands, `systemctl is-active wg-quick@orbit`, each role's service state, and a fingerprint of `wg show orbit public-key` before and after the repair. The DNS server, routing domains, hooks, and saved DNS state can change. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
 
-The repair takes `/run/lock/orbit-wireguard-peer.lock` and validates the proposed configuration. It backs up managed files, writes the hooks and DNS state, and then applies the resolver settings. Repeating the command gives the same result. It changes only the DNS servers and routing domains of each resolver link. Other link settings stay, such as the default-route preference, LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors.
+The repair takes `/run/lock/orbit-wireguard-peer.lock` and validates the proposed configuration. It backs up managed files, writes the hooks and DNS state, and then applies the resolver settings. Repeating the command gives the same result.
+
+On the `orbit` link, it changes DNS servers and routing domains and sets `DefaultRoute=no`. It preserves LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. When it migrates an old underlay selection, networkd restores the uplink configuration.
 
 Each failure reports one code without remote command output.
 
@@ -213,9 +237,11 @@ Peer convergence and repair save the live WireGuard configuration, DNS state, an
 
 These reasons explain the design. Check them before you propose a change.
 
-### VPN DNS as the default resolver on peers
+### Split private DNS on peers
 
-A peer that resolves through Orbit VPN DNS needs no list of private suffixes. So a Cluster or Node naming change needs no client change. Rejected alternatives: send every private suffix to every peer, run a DNS server on every peer, and send all application traffic through the VPN. The cost is that a VPN DNS outage also stops ordinary lookups on those peers.
+Nick approved split private DNS on 2026-10-19. Public names must not depend on the VPN Node. The Gateway owns the private namespace, so it renders and reconciles the routing domains from its records. One renderer serves provision, repair, scheduled reconciliation, and Doctor. The scheduled pass keeps fleet SSH out of record mutations. It retries unreachable peers independently.
+
+The former `~.` default is rejected because a VPN DNS outage also breaks public lookups. A VPN-first, public-second fallback chain is rejected because systemd-resolved stays on the second server after failover, where private names remain broken. Static hosts are rejected because Routes and Router placement change and TLDs need DNS. The cost of split DNS is propagating private namespace changes and respecting the 512-domain bound.
 
 ### Suffix-only routing on the Gateway machine
 

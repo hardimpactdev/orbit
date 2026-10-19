@@ -20,11 +20,14 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\NodeCliState;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\WireGuard\PeerDnsInspector;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Database\Eloquent\Collection;
@@ -121,6 +124,34 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
             );
 
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+        }
+        $dnsPolicy = app(PeerDnsPolicy::class);
+        if ($dnsPolicy->manages($node)) {
+            try {
+                $inspector = app(PeerDnsInspector::class);
+                $dns = $inspector->inspect($node);
+                $domains = $dnsPolicy->domains($node);
+                $publicDomain = array_find(['example.com', 'example.net', 'example.org'], static fn (string $name): bool => ! array_any($domains, static fn (string $domain): bool => $name === $domain || str_ends_with($name, '.'.$domain)));
+                if ($publicDomain === null) {
+                    throw new \RuntimeException('No public DNS probe is outside the private namespace.');
+                }
+                $queries = $inspector->queries($node, 'gateway.orbit', $publicDomain);
+                $gatewayAddress = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway->value))->first()?->wireguard_ip;
+                $privateAnswers = $queries['private_valid'] && is_string($gatewayAddress)
+                    && preg_match('/(?<![0-9.])'.preg_quote($gatewayAddress, '/').'(?![0-9.])/', $queries['private'] ?? '') === 1;
+                foreach ([
+                    [$dns['uplink'], NodeDoctorIssueCode::PrivateDnsUplinkMissing, 'No usable non-Orbit DNS server is configured.'],
+                    [$dns['policy'], NodeDoctorIssueCode::PrivateDnsPolicyMismatch, 'Managed private DNS policy does not match.'],
+                    [$privateAnswers, NodeDoctorIssueCode::PrivateDnsUnreachable, 'Private DNS does not return the expected Gateway address.'],
+                    [$queries['public_valid'], NodeDoctorIssueCode::PublicDnsUnreachable, 'Public DNS does not resolve through a non-Orbit resolver.'],
+                ] as [$valid, $code, $message]) {
+                    if (! $valid) {
+                        $issues[] = new DoctorIssueData($code, DoctorIssueKind::Drift, 'node', $node->id, $node->name, $message, expected: true, observed: false);
+                    }
+                }
+            } catch (Throwable) {
+                $issues[] = new DoctorIssueData(NodeDoctorIssueCode::InspectionFailed, DoctorIssueKind::Unverifiable, 'node', $node->id, $node->name, 'Managed private DNS policy could not be inspected.', expected: true, observed: false);
+            }
         }
         $expectedPlatform = match (strtolower($node->platform)) {
             'linux' => 'linux',

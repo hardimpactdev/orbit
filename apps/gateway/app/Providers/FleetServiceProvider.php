@@ -30,6 +30,7 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
@@ -75,6 +76,7 @@ final class FleetServiceProvider extends ServiceProvider
             AgentFootprintArtifact::class,
             CaddyPackageFootprintArtifact::class,
             CaddyFootprintArtifact::class,
+            PeerDnsFootprintArtifact::class,
             PrivateDnsFootprintArtifact::class,
             RouteResidueFootprintArtifact::class,
             TmpfilesFootprintArtifact::class,

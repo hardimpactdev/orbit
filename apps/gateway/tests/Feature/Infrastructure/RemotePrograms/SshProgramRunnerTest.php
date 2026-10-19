@@ -180,6 +180,26 @@ describe('SshProgramRunner', function (): void {
                 ->and($exception->log)->toContain('need Python 3.10 or newer'));
     });
 
+    it('includes a bounded sanitized stderr tail and exit status in every missing-result failure', function (int $exitCode): void {
+        $stderr = "old output\n".str_repeat("progress\n", 1000)
+            ."https://user:secret@example.test/file?token=url-secret\n"
+            ."Authorization: Bearer header-secret\nPASSWORD=env-secret\n"
+            ."-----BEGIN PRIVATE KEY-----\npem-secret\n-----END PRIVATE KEY-----\n"
+            ."Traceback: PermissionError: root-owned repack tree\n";
+        $runner = remote_program_runner(new RemoteProgramTransport(new CommandResult($exitCode, '', $stderr, 3, false)));
+
+        expect(fn () => $runner->run(remote_program_node(), remote_program_python(''), []))
+            ->toThrow(function (RemoteProgramFailed $exception) use ($exitCode): void {
+                expect($exception->getMessage())->toContain('no_result', "exit {$exitCode}", 'PermissionError: root-owned repack tree')
+                    ->and(strlen($exception->log))->toBeLessThanOrEqual(4096)
+                    ->and($exception->exitCode)->toBe($exitCode);
+                foreach (['old output', 'secret@example', 'url-secret', 'header-secret', 'env-secret', 'pem-secret'] as $secret) {
+                    expect($exception->log)->not->toContain($secret);
+                    expect($exception->getMessage())->not->toContain($secret);
+                }
+            });
+    })->with([1, 137, 255]);
+
     it('fails before SSH for a Node without a WireGuard address', function (): void {
         $transport = new RemoteProgramTransport;
 

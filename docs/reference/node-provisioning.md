@@ -296,6 +296,7 @@ The step reads the path again under the Node's update lock before it installs, b
 | `agent` | Every managed Linux Node | The [agent converge](/reference/node-agent#install-and-upgrade). It restarts the agent only when a file changed |
 | `caddy-package` | A Node with a Caddy role or Caddy sites | The [Caddy package step](#package-sources). It installs Caddy only when it is missing or below the floor, so a running Caddy is not restarted |
 | `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). It reloads Caddy gracefully, only when the Caddyfile changed |
+| `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart. Its digest includes the routing domains and selected DNS server |
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 | `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
@@ -307,7 +308,9 @@ Each artifact has a digest that the Gateway computes from its own code and pins,
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the agent pin and the inputs its unit renders from, the collector script, and the tmpfiles rule.
 
-A user's sites, Routes, and DNS records never change a digest. Their own operations publish them, and Doctor reports their drift. The `route-residue` digest is the exception: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
+A user's sites and Routes do not change the code digests. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
+
+The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
 
 Removing a registered artifact changes the aggregate footprint digest. Converge invokes only artifacts that are still registered and apply to the Node. Unless forced, it skips each remaining artifact whose own digest is unchanged. After a successful converge, the Gateway drops the removed name from the stored artifact metadata. Removal itself does not delete or rewrite any Node files; files left by the removed artifact stay untouched.
 
@@ -506,7 +509,7 @@ After an online removal, the machine keeps its WireGuard tunnel, which can still
 
 The bootstrap then uses the machine's own DNS for the base packages and restores the earlier link values. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. When the machine's own DNS cannot resolve the sources either, the bootstrap fails before it sets up the managed user. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
 
-Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. When the Node sends private DNS through WireGuard, the configuration has a `PostUp` hook that points the link at Orbit DNS. It never has a `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
+Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. When the Node sends private DNS through WireGuard, the configuration has a `PostUp` hook that sends only the [rendered Orbit private domains](/reference/private-dns#resolver-selection) to Orbit DNS. Public names keep the provider or DHCP resolver. Every split-DNS apply first requires a non-`orbit` per-link or global DNS server; absent one, it refuses with exit 47 (`vpn.peer_dns_uplink_missing`). Existing per-Node DNS overrides and global DNS overrides outside the usable WireGuard subnet are cleared by migrations; endpoint overrides stay unchanged. It never has a `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
 
 ## Why it works this way
 

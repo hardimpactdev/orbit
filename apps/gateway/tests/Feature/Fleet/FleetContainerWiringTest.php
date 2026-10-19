@@ -20,6 +20,7 @@ use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
@@ -62,6 +63,7 @@ describe('fleet container wiring', function (): void {
                 AgentFootprintArtifact::class,
                 CaddyPackageFootprintArtifact::class,
                 CaddyFootprintArtifact::class,
+                PeerDnsFootprintArtifact::class,
                 PrivateDnsFootprintArtifact::class,
                 RouteResidueFootprintArtifact::class,
                 TmpfilesFootprintArtifact::class,

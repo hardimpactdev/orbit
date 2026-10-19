@@ -194,6 +194,8 @@ Every rollback file must carry the installed package name, version, and architec
 
 The rebuild leaves out each conffile that is not on disk. An operator or Orbit may remove a conffile on purpose, such as the default `www` pool of `php<version>-fpm`, and `dpkg-repack` alone then refuses the package. Sury deletes old builds and the mirror holds only pinned ones, so a download by version is not a reliable source.
 
+The installer removes its temporary work directory with the same privilege used to repack packages. Repacked trees belong to root even when the installer runs as the enrolled SSH user. Rollback files are already in Orbit's cache before this cleanup and the package swap.
+
 The installer keeps a disabled default pool disabled. When `php<version>-fpm` is installed and `pool.d/www.conf` is absent before the change, an install or a rollback that brings it back is undone at once. An enabled default pool stays as it is, and a first install of `php<version>-fpm` keeps the pool it brings.
 
 Then it swaps the build:
@@ -845,7 +847,7 @@ The shared closing rule applies even to a green PR whose merge was refused. Supe
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts.
 
-A failed build keeps convergence waiting for images; it does not halt the sequence. The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. After every host promotes the same identity and generation, convergence starts on the next available tick without a new generation. Unacknowledged queue submissions restart automatically without an operator alert. Halts caused by Node visits remain unchanged.
+A failed build keeps convergence waiting for images; it does not halt the sequence. The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. After every host promotes the same identity and generation, convergence starts on the next available tick without a new generation. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`. Halts caused by Node visits remain unchanged.
 
 The two image-build workers check `builds` before `builds-optional`, so a waiting Incus chain step takes priority over the optional UpCloud job. A running UpCloud build is not interrupted. UpCloud remains one synchronous job, with no new lock. Failures from the recipe installers and recipe verification store their phase, exit status, and bounded, sanitized stderr before deleting the builder. Other stages, including launch, cloud-init, templatize, and smoke checks outside recipe verification, report their stage error without that structured diagnostic. `php artisan task-vms:image-builds` shows the retained diagnostics. The failed-attempt fence remains; only `php artisan task-vms:build-recipe --retry` admits another attempt. This command also retries failed Incus builds.
 

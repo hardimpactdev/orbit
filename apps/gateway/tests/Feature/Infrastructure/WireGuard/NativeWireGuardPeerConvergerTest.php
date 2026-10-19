@@ -10,10 +10,12 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -22,14 +24,33 @@ use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
+use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Tests\Support\AppDevFakeProcessRunner;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
 use Tests\Support\TestToolchain;
+
+it('rejects invalid stored DNS names before generating keys or projecting the hub', function (bool $recoverable): void {
+    $processes = new AppDevFakeProcessRunner;
+    $ssh = new AppDevFakeSshExecutor;
+    [$converger, $peer, $connection, $home] = wireguard_peer_harness($processes, $ssh);
+    Node::query()->whereKey($peer->id)->toBase()->update(['tld' => 'bad;name']);
+    $peer->refresh();
+    try {
+        expect(fn () => $recoverable
+            ? $converger->convergeRecoverably($peer, $connection, static function (): void {})
+            : $converger->converge($peer, $connection))->toThrow(NodeProvisioningException::class);
+        expect($ssh->commands)->toBe([])->and($processes->invocations)->toBe([]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with([false, true]);
 
 it('validates a candidate config under /etc/wireguard before replacing the live server config', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
@@ -61,7 +82,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
         $settings->configure(
             subnet: '10.44.0.0/24',
             endpoint: '10.0.0.2:51820',
-            dnsServer: '10.0.0.2',
+            dnsServer: '10.44.0.53',
         );
 
         $processes = new class implements ProcessRunner
@@ -177,26 +198,17 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'systemctl restart wg-quick@orbit || service_failed=1',
                 'restore_exact_configuration || return 1',
                 'printf -v dns_server_escaped \'%q\' "$dns_server"',
-                'if [ "$dns_policy" = default ]; then',
-                'dns_domains=(".")',
-                'dns_domains+=("$app_dev_tld")',
+                "dns_domains=('orbit')",
                 'printf -v dns_domain_escaped \'%q\' "~$dns_domain"',
-                'app_dev_tld=$8',
-                'dns_mode=$9',
-                'operator_dns=${10}',
-                'transaction_mode=${11}',
-                'dns_policy=${12}',
+                'dns_mode=$8',
+                'operator_dns=$9',
+                'transaction_mode=${10}',
                 'dns_state=/etc/wireguard/orbit.dns-link',
                 'restore_dns() {',
                 'if [ "$dns_mode" = wireguard ]; then',
                 'if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then',
                 'operator_dns_line="DNS = $operator_dns_escaped"',
                 'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}',
-                'route=$(ip -o route get "$dns_server")',
-                'if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then',
-                'Could not resolve DNS interface.',
-                'resolvectl dns "$dns_link" "$dns_server"',
-                'resolvectl_domain+=("~$dns_domain")',
                 'printf \'%s\\n\' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"',
             )
             ->not->toContain(
@@ -207,10 +219,10 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             );
 
         expect($ssh->commands[1]->arguments)
-            ->toContain('custom.internal');
+            ->not->toContain('custom.internal');
 
-        expect(array_slice($ssh->commands[1]->arguments, -4))
-            ->toBe(['operator', '10.44.0.1', 'finalize', 'default']);
+        expect(array_slice($ssh->commands[1]->arguments, -3))
+            ->toBe(['operator', '10.44.0.1', 'finalize']);
 
         $remoteScript = $ssh->commands[1]->input ?? '';
         $dnsStateWrite = mb_strpos(
@@ -396,7 +408,7 @@ it('does not replace or restart the live service when candidate validation fails
         $settings->configure(
             subnet: '10.44.0.0/24',
             endpoint: '10.0.0.2:51820',
-            dnsServer: '10.0.0.2',
+            dnsServer: '10.44.0.53',
         );
 
         $processes = new class implements ProcessRunner
@@ -517,7 +529,7 @@ it('attempts candidate cleanup and preserves the original failure when atomic re
         $settings->configure(
             subnet: '10.44.0.0/24',
             endpoint: '10.0.0.2:51820',
-            dnsServer: '10.0.0.2',
+            dnsServer: '10.44.0.53',
         );
 
         $processes = new class implements ProcessRunner
@@ -1639,7 +1651,7 @@ it('uses a wg-quick compatible candidate filename', function (): void {
         $settings->configure(
             subnet: '10.44.0.0/24',
             endpoint: '10.0.0.2:51820',
-            dnsServer: '10.0.0.2',
+            dnsServer: '10.44.0.53',
         );
 
         $processes = new class implements ProcessRunner
@@ -1820,7 +1832,7 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Clo
     $settings->configure(
         subnet: '10.44.0.0/24',
         endpoint: '10.0.0.2:51820',
-        dnsServer: '10.0.0.2',
+        dnsServer: '10.44.0.53',
     );
 
     return [
@@ -1848,34 +1860,76 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Clo
     ];
 }
 
-it('uses VPN DNS as the default resolver regardless of the peer TLD', function (?string $tld): void {
-    $harness = remote_wireguard_peer_install_harness(
-        filesPresent: false,
-        activeState: 'inactive',
-        enabledState: 'disabled',
-        peerTld: $tld,
-    );
+it('keeps native SSH argv small at the maximum namespace and endpoint length', function (): void {
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, str_repeat('A', 43).'=', '', 0, false)]);
+    [$converger, $peer, $connection, $home] = wireguard_peer_harness(new AppDevFakeProcessRunner, $ssh);
+    try {
+        $rows = [];
+        for ($i = 0; $i < 511; $i++) {
+            $domain = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_pad((string) $i, 61, 'x', STR_PAD_LEFT);
+            $rows[] = ['name' => 'c'.$i, 'tld' => $domain];
+        }
+        Cluster::query()->insert($rows);
+        $endpoint = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_repeat('d', 61).':51820';
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', endpoint: $endpoint, dnsServer: '10.44.0.53');
+        $converger->converge($peer, $connection);
+        $command = $ssh->commands[1];
+        $runner = new class implements ProcessRunner
+        {
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                // Exercise execve with the actual single command argument OpenSSH receives.
+                return new NativeProcessRunner()->run(new ProcessInvocation(
+                    ['true', $invocation->arguments[array_key_last($invocation->arguments)]], timeout: 5,
+                ));
+            }
+        };
+        $result = new NativeSshExecutor($runner)->execute($connection, $command);
+        expect($result->exitCode)->toBe(0)
+            ->and(strlen($command->shellCommand()))->toBeLessThan(4096)
+            ->and(strlen($command->input ?? ''))->toBeGreaterThan(130_000);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
 
+it('routes only private domains through VPN DNS by default', function (?string $tld, string $expectedDomains): void {
+    $harness = remote_wireguard_peer_install_harness(filesPresent: false, activeState: 'inactive', enabledState: 'disabled', peerTld: $tld);
     try {
         $result = $harness->converge(false);
-
-        expect($result['succeeded'])
-            ->toBeTrue($result['stderr'])
-            ->and($result['live']['contents'] ?? '')
-            ->toContain('PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~.')
-            ->not->toContain('\\~orbit', '\\~custom.internal')
-            ->and($result['dns']['contents'])
-            ->toBe("orbit\n10.43.0.53\n.\n")
-            ->and($result['remote_arguments'][1][array_key_last($result['remote_arguments'][1])])
-            ->toBe('default');
+        expect($result['succeeded'])->toBeTrue($result['stderr'])
+            ->and($result['live']['contents'] ?? '')->toContain('resolvectl domain %i '.$expectedDomains)->not->toContain('\\~.')
+            ->and($result['resolver']['eth0']['domains'])->toBe([]);
     } finally {
         $harness->cleanup();
     }
 })->with([
-    'distinct TLD' => 'custom.internal',
-    'null TLD' => null,
-    'VPN domain TLD' => 'orbit',
+    'distinct TLD' => ['custom.internal', '\\~custom.internal \\~orbit'],
+    'null TLD' => [null, '\\~orbit'],
+    'VPN domain TLD' => ['orbit', '\\~orbit'],
 ]);
+
+it('releases networkd overrides while preserving uplink protocols during migration', function (bool $retained): void {
+    $harness = remote_wireguard_peer_install_harness(filesPresent: true, activeState: 'active', enabledState: 'enabled');
+    try {
+        $result = $retained ? $harness->convergeRecoverably() : $harness->converge(false);
+        expect($result['exception'])->toBeNull()
+            ->and($result['resolver']['old0'])->toBe([
+                'dns' => ['198.51.100.53'],
+                'domains' => ['~underlay.example'],
+                'unrelated' => [
+                    'default-route' => 'yes',
+                    'llmnr' => 'resolve',
+                    'mdns' => 'yes',
+                    'dnssec' => 'allow-downgrade',
+                    'dnsovertls' => 'opportunistic',
+                    'nta' => "corp.example\nother.example",
+                ],
+            ]);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['finalized' => false, 'retained' => true]);
 
 it('preserves suffix-only routing for explicit DNS overrides', function (
     string $dnsServerOverride,
@@ -1900,15 +1954,11 @@ it('preserves suffix-only routing for explicit DNS overrides', function (
             ->and($resolverSelection)
             ->toContain($expected)
             ->and($result['dns']['contents'])
-            ->toBe($dnsServerOverride === '192.0.2.53'
-                ? "eth0\n192.0.2.53\norbit\ncustom.internal\n"
-                : "orbit\n10.43.0.53\norbit\ncustom.internal\n")
-            ->and($result['remote_arguments'][1][array_key_last($result['remote_arguments'][1])])
-            ->toBe('split')
+            ->toBe("orbit\n{$dnsServerOverride}\ncustom.internal\norbit\n")
             ->and($result['resolver'][$expectedLink]['dns'])
             ->toBe([$dnsServerOverride])
             ->and($result['resolver'][$expectedLink]['domains'])
-            ->toBe(['~orbit', '~custom.internal'])
+            ->toBe(['~custom.internal', '~orbit'])
             ->and($result['resolver']['orbit']['unrelated'])
             ->toBe($before['resolver']['orbit']['unrelated'])
             ->and($result['resolver']['eth0']['unrelated'])
@@ -1919,13 +1969,13 @@ it('preserves suffix-only routing for explicit DNS overrides', function (
 })->with([
     'override through WireGuard' => [
         '10.43.0.53',
-        'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit \\~custom.internal',
+        'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~custom.internal \\~orbit',
         'orbit',
     ],
-    'override through underlay' => [
-        '192.0.2.53',
-        'resolvectl domain eth0 ~orbit ~custom.internal',
-        'eth0',
+    'another private DNS server' => [
+        '10.43.0.54',
+        'PostUp = resolvectl dns %i 10.43.0.54; resolvectl domain %i \\~custom.internal \\~orbit',
+        'orbit',
     ],
 ]);
 
@@ -1942,7 +1992,7 @@ it('restores a prior root-domain resolver selection after convergence fails', fu
     try {
         $first = $harness->converge(false);
         $harness->peer()->update([
-            'dns_server_override' => '192.0.2.53',
+            'dns_server_override' => '10.43.0.54',
             'tld' => 'custom.internal',
         ]);
         $harness->clearCommandLog();
@@ -1956,17 +2006,16 @@ it('restores a prior root-domain resolver selection after convergence fails', fu
         expect($first['succeeded'])
             ->toBeTrue($first['stderr'])
             ->and($first['dns']['contents'])
-            ->toBe("orbit\n10.43.0.53\n.\n")
+            ->toBe("orbit\n10.43.0.53\norbit\n")
             ->and($result['succeeded'])
             ->toBeFalse()
             ->and($result['dns']['contents'])
-            ->toBe("orbit\n10.43.0.53\n.\n")
+            ->toBe("orbit\n10.43.0.53\norbit\n")
             ->and($result['resolver'])
             ->toBe($first['resolver'])
             ->and($result['command_log'])
             ->toContain(
-                'resolvectl domain eth0 ~orbit ~custom.internal',
-                'resolvectl domain orbit ~.',
+                'resolvectl domain orbit ~orbit',
             );
     } finally {
         $harness->cleanup();
@@ -1998,7 +2047,7 @@ it('retains default resolver state across repeated convergence without changing 
             ->and($second['dns'])
             ->toBe($first['dns'])
             ->and($second['dns']['contents'])
-            ->toBe("orbit\n10.43.0.53\n.\n")
+            ->toBe("orbit\n10.43.0.53\norbit\n")
             ->and($second['resolver'])
             ->toBe($first['resolver'])
             ->and($second['command_log'])
@@ -2009,7 +2058,7 @@ it('retains default resolver state across repeated convergence without changing 
     }
 });
 
-it('restores every prior DNS domain after a successive underlay convergence fails', function (
+it('restores every prior DNS domain after a successive private DNS convergence fails', function (
     string $failureMode,
 ): void {
     $harness = remote_wireguard_peer_install_harness(
@@ -2017,7 +2066,7 @@ it('restores every prior DNS domain after a successive underlay convergence fail
         activeState: 'inactive',
         enabledState: 'disabled',
         peerTld: 'first.internal',
-        dnsServerOverride: '192.0.2.53',
+        dnsServerOverride: '10.43.0.54',
     );
 
     try {
@@ -2034,20 +2083,20 @@ it('restores every prior DNS domain after a successive underlay convergence fail
         expect($first['succeeded'])
             ->toBeTrue($first['stderr'])
             ->and($first['dns']['contents'])
-            ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n");
+            ->toBe("orbit\n10.43.0.54\nfirst.internal\norbit\n");
         expect($result['succeeded'])
             ->toBeFalse()
             ->and($result['exception'])
             ->toBeInstanceOf(RuntimeException::class)
             ->not->toBeInstanceOf(ErrorException::class)
             ->and($result['dns']['contents'])
-            ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n")
+            ->toBe("orbit\n10.43.0.54\nfirst.internal\norbit\n")
             ->and($result['resolver'])
             ->toBe($first['resolver'])
             ->and($result['command_log'])
             ->toContain(
-                'resolvectl domain eth0 ~orbit ~second.internal',
-                'resolvectl domain eth0 ~orbit ~first.internal',
+                'resolvectl domain orbit ~orbit ~second.internal',
+                'resolvectl domain orbit ~first.internal ~orbit',
             );
     } finally {
         $harness->cleanup();
@@ -2436,6 +2485,22 @@ function remote_wireguard_peer_install_harness(
             'nta' => 'underlay.example',
         ],
     );
+    $filesystem->makeDirectory("{$root}/state/resolver/old0", 0o700, true);
+    remote_wireguard_peer_write_resolver_state(
+        root: $root,
+        link: 'old0',
+        unrelated: [
+            'default-route' => 'no',
+            'llmnr' => 'resolve',
+            'mdns' => 'yes',
+            'dnssec' => 'allow-downgrade',
+            'dnsovertls' => 'opportunistic',
+            'nta' => "corp.example\nother.example",
+        ],
+    );
+    file_put_contents("{$root}/state/resolver/old0/dns", "10.43.0.53\n");
+    file_put_contents("{$root}/state/resolver/old0/domain", "~old.orbit.internal\n");
+    file_put_contents("{$root}/state/resolver/eth0/dns", "198.51.100.53\n");
     file_put_contents("{$root}/state/active", $activeState);
     file_put_contents("{$root}/state/enabled", $enabledState);
     file_put_contents("{$root}/wireguard/orbit.key", str_repeat(string: 'S', times: 43).'=');
@@ -2456,6 +2521,7 @@ function remote_wireguard_peer_install_harness(
         }
     }
 
+    remote_wireguard_peer_write_shim($root, 'php', 'exit 127');
     remote_wireguard_peer_write_shim(
         root: $root,
         name: 'mv',
@@ -2576,6 +2642,22 @@ function remote_wireguard_peer_install_harness(
     );
     remote_wireguard_peer_write_shim(
         root: $root,
+        name: 'networkctl',
+        body: <<<SH
+            printf '%s\n' "networkctl \$*" >> "{$root}/commands.log"
+            if [ "\$1" = --no-legend ]; then
+                printf '3 %s ether routable configured\n' "\$5"
+                exit 0
+            fi
+            mkdir -p "{$root}/state/resolver/\$2"
+            [ ! -f "{$root}/state/resolver/\$2/transient" ] || exit 0
+            printf 'yes\n' > "{$root}/state/resolver/\$2/default-route"
+            printf '198.51.100.53\n' > "{$root}/state/resolver/\$2/dns"
+            printf '~underlay.example\n' > "{$root}/state/resolver/\$2/domain"
+            SH,
+    );
+    remote_wireguard_peer_write_shim(
+        root: $root,
         name: 'ip',
         body: <<<SH
             printf '%s\n' "ip \$*" >> "{$root}/commands.log"
@@ -2587,6 +2669,13 @@ function remote_wireguard_peer_install_harness(
         name: 'resolvectl',
         body: <<<SH
             printf '%s\n' "resolvectl \$*" >> "{$root}/commands.log"
+            if [ "\$*" = dns ]; then
+                printf 'Global: %s\n' "\$(cat "{$root}/state/global-dns" 2>/dev/null || true)"
+                for dir in "{$root}/state/resolver/"*; do
+                    printf 'Link 7 (%s): %s\n' "\${dir##*/}" "\$(cat "\$dir/dns")"
+                done
+                exit 0
+            fi
             operation=\$1
             link=\$2
             shift 2
@@ -2606,6 +2695,7 @@ function remote_wireguard_peer_install_harness(
                     if [ -f "{$root}/state/rollback-failure" ]; then
                         exit 1
                     fi
+                    case "\$operation" in dns|domain) touch "\$resolver/transient" ;; esac
                     : > "\$resolver/\$operation"
                     for value in "\$@"; do
                         if [ -n "\$value" ]; then
@@ -2614,6 +2704,7 @@ function remote_wireguard_peer_install_harness(
                     done
                     ;;
                 revert)
+                    rm -f "\$resolver/transient"
                     if [ -f "{$root}/state/rollback-failure" ]; then
                         exit 1
                     fi
@@ -2876,6 +2967,7 @@ function remote_wireguard_peer_install_harness(
                 'resolver' => [
                     'orbit' => $this->resolverLinkState('orbit'),
                     'eth0' => $this->resolverLinkState('eth0'),
+                    'old0' => $this->resolverLinkState('old0'),
                 ],
                 'command_log' => $this->commandLog(),
                 'remote_arguments' => array_map(
@@ -3018,3 +3110,37 @@ it('keeps automatic WireGuard port selection for an ordinary fleet peer', functi
         $harness->cleanup();
     }
 });
+
+it('requires public DNS before both new and root-to-split peer convergence', function (bool $existing, bool $recoverable, string $link, string $global, bool $allowed): void {
+    $harness = remote_wireguard_peer_install_harness($existing, $existing ? 'active' : 'inactive', 'enabled');
+    try {
+        $root = $harness->root();
+        if ($existing) {
+            file_put_contents($root.'/wireguard/orbit.dns-link', "orbit\n10.43.0.53\n.\n");
+        }
+        file_put_contents($root.'/state/resolver/eth0/dns', $link);
+        file_put_contents($root.'/state/global-dns', $global);
+        $before = $harness->state();
+        $result = $recoverable ? $harness->convergeRecoverably() : $harness->converge(false);
+        if ($allowed) {
+            expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '');
+        } else {
+            expect($result['exception']?->result?->exitCode)->toBe(47)
+                ->and($result['exception']?->errorCode)->toBe('vpn.peer_dns_uplink_missing')
+                ->and($result['live'])->toBe($before['live'])
+                ->and($result['dns'])->toBe($before['dns'])
+                ->and($result['resolver'])->toBe($before['resolver']);
+        }
+    } finally {
+        $harness->cleanup();
+    }
+})->with([
+    [false, false, '', '', false],
+    [false, true, '', '', false],
+    [true, false, '', '', false],
+    [true, true, '', '', false],
+    [true, false, '', '198.51.100.53', true],
+    [true, true, '', '198.51.100.53', true],
+    [true, false, '198.51.100.53', '', true],
+    [true, true, '198.51.100.53', '', true],
+]);

@@ -323,6 +323,13 @@ jobs:
         if: matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
+      - name: Run redaction cases without PCRE JIT
+        if: always() && matrix.directory == 'apps/gateway' && matrix.part != 'subprocess'
+        env:
+          PCRE_JIT: '0'
+        # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
+
       # TIA does not link these contracts to the files they read, so every affected run also runs them.
       - name: Run architecture tests
         if: always() && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')

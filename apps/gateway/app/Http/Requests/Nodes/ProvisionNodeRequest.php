@@ -10,6 +10,8 @@ use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
 use App\Rules\ValidNodeTld;
@@ -121,7 +123,15 @@ final class ProvisionNodeRequest extends FormRequest
                     }
                 },
             ],
-            'dns_server_override' => ['nullable', 'ip'],
+            'dns_server_override' => ['bail', 'nullable', 'ip', function (string $attribute, mixed $value, Closure $fail): void {
+                if ($this->input('platform') === 'macos') {
+                    return;
+                }
+                $subnet = Ipv4Subnet::from(app(VpnSettings::class)->subnet());
+                if (! is_string($value) || ! $subnet->containsUsableAddress($value)) {
+                    $fail('A per-Node DNS server must be a usable address in the WireGuard subnet.');
+                }
+            }],
             'host_key_fingerprint' => [
                 'nullable',
                 'string',

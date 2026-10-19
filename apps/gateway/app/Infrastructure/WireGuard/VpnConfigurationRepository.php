@@ -65,16 +65,13 @@ final readonly class VpnConfigurationRepository
                 $server->public_ssh_host,
                 $port,
             );
-        $dnsServer = $peer->dns_server_override ?? $this->settings->dnsServer() ?? $serverAddress;
         $domain = $this->settings->domain();
 
         if (! WireGuardEndpoint::isValid($endpoint)) {
             throw $this->invalid('The WireGuard endpoint is invalid.');
         }
 
-        if (filter_var($dnsServer, FILTER_VALIDATE_IP) === false) {
-            throw $this->invalid('The DNS server is invalid.');
-        }
+        $dnsServer = app(PeerDnsPolicy::class)->server($peer, $serverAddress);
 
         if (filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
             throw $this->invalid('The private DNS domain is invalid.');
@@ -87,8 +84,6 @@ final readonly class VpnConfigurationRepository
             port: $port,
             endpoint: $endpoint,
             dnsServer: $dnsServer,
-            dnsThroughWireGuard: $subnet->contains($dnsServer),
-            usesDefaultDnsResolver: $peer->dns_server_override === null,
             domain: $domain,
             serverAddress: "{$serverAddress}/{$prefixLength}",
             peerAddress: "{$peerAddress}/{$prefixLength}",

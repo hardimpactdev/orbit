@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 SURY = re.compile(r'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php', re.I)
@@ -83,6 +84,16 @@ class Host:
 
     def ok(self, argv, *, privileged=False):
         return self.run(argv, privileged=privileged, check=False).returncode == 0
+
+
+@contextmanager
+def workspace(host):
+    """Repacking creates root-owned trees. Their owner must also remove them before the package swap."""
+    directory = Path(tempfile.mkdtemp(prefix='orbit-php-build-'))
+    try:
+        yield directory
+    finally:
+        host.run(['rm', '-rf', '--', str(directory)], privileged=True)
 
 
 def installed(host):
@@ -559,8 +570,7 @@ def main(payload):
     host.run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', str(host.path(CACHE))], privileged=True)
     before = {version: links(host, version) for version in versions}
     pools = disabled_pools(host, versions, packages)
-    with tempfile.TemporaryDirectory(prefix='orbit-php-build-') as directory:
-        work = Path(directory)
+    with workspace(host) as work:
         files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
                  for name in pending + repair]
         replaced = [name for name in pending + repair if name in packages] + purge
