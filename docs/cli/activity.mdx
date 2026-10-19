@@ -144,6 +144,8 @@ Doctor writes one ordinary Activity for each run and stores no findings in it.
 
 ### Text-redaction failures
 
+The Gateway and Node agent use the same text-redaction rules, checked against one shared corpus in `apps/agent/tests/redaction_cases.json`. The regex passes take linear time, including on long hyphenated names and base64 values. PHP uses possessive matches and skips failed name prefixes so PCRE does not retry their suffixes; Rust's regex engine provides the linear scan. A PEM `BEGIN` without an `END` hides the rest of the text.
+
 If a text-redaction pass fails, the Gateway replaces that text with `Output withheld: redaction failed.` and logs an error with the PCRE error code and an exception, without the input, so the problem collector can report it. This rule applies to every Gateway text-redaction caller, including Activity, logs, and database results.
 
 ## Why it works this way

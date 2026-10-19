@@ -68,17 +68,23 @@ final readonly class CommandActivityInputSanitizer
     /** Secret-named fields whose numeric values are usage counts, such as `tokens` or `token_count`. */
     private const array NUMERIC_METRIC_SUFFIXES = ['tokens', 'count'];
 
-    private const string SECRET_KEY_PREFIX = '(?:[A-Za-z][A-Za-z0-9]*[_-])';
+    private const string SECRET_KEY_PREFIX = '(?:[A-Za-z][A-Za-z0-9]*+[_-])';
 
     private const string SECRET_KEY_SUFFIX = '(?:[_-](?:HASH|BASE))?';
 
-    /** A bare `key` in text is prose such as `Missing key: name`, so a key word needs a prefix such as `API_KEY`. */
-    private const string SECRET_KEY_IDENTIFIER =
-        '(?:'.self::SECRET_KEY_PREFIX.'*'
-        .'(?:TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)'
-        .'|'.self::SECRET_KEY_PREFIX.'+KEYS?)'.self::SECRET_KEY_SUFFIX;
+    private const string SECRET_TEXT_WORDS = '(?:TOKENS?|SECRETS?|PASSWORDS?|PASSWD|PASSPHRASE|CREDENTIALS?|BEARER|APIKEY|APPKEY|AUTHTOKEN|ACCESSTOKEN|PRIVATEKEY)';
 
-    private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/';
+    /** Leave the segment before a final HASH or BASE suffix for the secret-word match. */
+    private const string NON_TERMINAL_SECRET_PREFIX = '(?![A-Za-z0-9]++[_-](?:HASH|BASE)(?![A-Za-z0-9_-]))'.self::SECRET_KEY_PREFIX;
+
+    /** A bare `key` is prose, so it needs at least one prefix. Possessive repeats use no per-segment backtracking stack. */
+    private const string SECRET_KEY_IDENTIFIER = '(?:(?:'.self::NON_TERMINAL_SECRET_PREFIX.')++(?:'.self::SECRET_TEXT_WORDS.'|KEYS?)'
+        .'|'.self::SECRET_TEXT_WORDS.')'.self::SECRET_KEY_SUFFIX;
+
+    /** A failed key must skip its prefixes, otherwise each word after a hyphen scans the same tail again. */
+    private const string SKIP_KEY_PREFIX = '|\b'.self::SECRET_KEY_PREFIX.'++(*SKIP)(*F)';
+
+    private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]++-----[\s\S]*?(?:-----END [A-Z0-9 ]++-----|\z)/';
 
     public function sanitize(mixed $value, ?string $key = null): mixed
     {
@@ -136,39 +142,39 @@ final readonly class CommandActivityInputSanitizer
             ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
-                pattern: '/\b([a-z][a-z0-9+.-]*:\/\/)[^\/@\s]+@/i',
+                pattern: '/\b([a-z][a-z0-9+.-]*+:\/\/)[^\/@\s]++@|\b[a-z][a-z0-9+.-]*+(*SKIP)(*F)/i',
                 replacement: '$1'.self::REDACTED.'@',
                 subject: $redacted,
             ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
-                pattern: '/\b((?:Proxy-)?Authorization)\s*:\s*(?!\[REDACTED\])[^\s\'\"]+(?:\s+[^\s\'\"]+)?/i',
+                pattern: '/\b((?:Proxy-)?Authorization)\s*+:\s*+(?!\[REDACTED\])[^\s\'\"]++(?:\s++[^\s\'\"]++)?+/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
             ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
-                pattern: '/\bBearer\s+(?:"[^"]*"|\'[^\']*\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,})/i',
+                pattern: '/\bBearer\s++(?:"[^"]*+"|\'[^\']*+\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,}+)/i',
                 replacement: 'Bearer '.self::REDACTED,
                 subject: $redacted,
             ) ?? $this->redactionFailed();
         $keys = self::SECRET_KEY_IDENTIFIER;
         $redacted =
             preg_replace(
-                pattern: '/\b('.$keys.')\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s&#]+)/i',
+                pattern: '/\b('.$keys.')\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s&#]++)'.self::SKIP_KEY_PREFIX.'/i',
                 replacement: '$1='.self::REDACTED,
                 subject: $redacted,
             ) ?? $this->redactionFailed();
         $redacted =
             preg_replace(
-                pattern: '/("(?:'.$keys.')"\s*:\s*)(?:"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^,}\s]+)/i',
+                pattern: '/("(?:'.$keys.')"\s*+:\s*+)(?:"(?:\\\\.|[^"\\\\])*+"|\'(?:\\\\.|[^\'\\\\])*+\'|[^,}\s]++)/i',
                 replacement: '$1"'.self::REDACTED.'"',
                 subject: $redacted,
             ) ?? $this->redactionFailed();
 
         return
             preg_replace(
-                pattern: '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
+                pattern: '/\b('.$keys.')\s*+:\s*+(?:"[^"]*+"|\'[^\']*+\'|\S++)'.self::SKIP_KEY_PREFIX.'/i',
                 replacement: '$1: '.self::REDACTED,
                 subject: $redacted,
             ) ?? $this->redactionFailed();

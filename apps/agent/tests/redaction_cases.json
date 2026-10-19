@@ -362,7 +362,7 @@
     {
         "name": "pem begin only",
         "input": "prefix -----BEGIN CERTIFICATE----- only begin",
-        "expected": "prefix -----BEGIN CERTIFICATE----- only begin"
+        "expected": "prefix [REDACTED]"
     },
     {
         "name": "pem lowercase not matched",
@@ -418,5 +418,516 @@
         "name": "many secrets",
         "input": "Authorization: Bearer abcdefgh123 API_KEY=x {\"password\":\"y\"} https://a:b@c.d",
         "expected": "Authorization: [REDACTED] API_KEY=[REDACTED] {\"password\":\"[REDACTED]\"} https://[REDACTED]@c.d"
+    },
+    {
+        "name": "PHP hash assignments and colon",
+        "input": "PASSWORD_HASH=abc123 SECRET_KEY_BASE=def456 status=ok API_KEY: abc123",
+        "expected": "PASSWORD_HASH=[REDACTED] SECRET_KEY_BASE=[REDACTED] status=ok API_KEY: [REDACTED]"
+    },
+    {
+        "name": "PHP JSON password hash",
+        "input": "{\"password_hash\":\"abc123\"}",
+        "expected": "{\"password_hash\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "PHP duplicate bare keys prose",
+        "input": "Duplicate keys: APP_NAME, APP_ENV",
+        "expected": "Duplicate keys: APP_NAME, APP_ENV"
+    },
+    {
+        "name": "PHP mixed ordinary assignments",
+        "input": "secretary=active token_count=3 status=ok",
+        "expected": "secretary=active token_count=3 status=ok"
+    },
+    {
+        "name": "api-token= shape",
+        "input": "api-token='sentinel value'",
+        "expected": "api-token=[REDACTED]"
+    },
+    {
+        "name": "api-token: shape",
+        "input": "api-token:sentinel",
+        "expected": "api-token: [REDACTED]"
+    },
+    {
+        "name": "access_token= shape",
+        "input": "access_token='sentinel value'",
+        "expected": "access_token=[REDACTED]"
+    },
+    {
+        "name": "access_token: shape",
+        "input": "access_token:sentinel",
+        "expected": "access_token: [REDACTED]"
+    },
+    {
+        "name": "refresh-token= shape",
+        "input": "refresh-token='sentinel value'",
+        "expected": "refresh-token=[REDACTED]"
+    },
+    {
+        "name": "refresh-token: shape",
+        "input": "refresh-token:sentinel",
+        "expected": "refresh-token: [REDACTED]"
+    },
+    {
+        "name": "cliproxy_management_key= shape",
+        "input": "cliproxy_management_key='sentinel value'",
+        "expected": "cliproxy_management_key=[REDACTED]"
+    },
+    {
+        "name": "cliproxy_management_key: shape",
+        "input": "cliproxy_management_key:sentinel",
+        "expected": "cliproxy_management_key: [REDACTED]"
+    },
+    {
+        "name": "signing_keys= shape",
+        "input": "signing_keys='sentinel value'",
+        "expected": "signing_keys=[REDACTED]"
+    },
+    {
+        "name": "signing_keys: shape",
+        "input": "signing_keys:sentinel",
+        "expected": "signing_keys: [REDACTED]"
+    },
+    {
+        "name": "client_secrets= shape",
+        "input": "client_secrets='sentinel value'",
+        "expected": "client_secrets=[REDACTED]"
+    },
+    {
+        "name": "client_secrets: shape",
+        "input": "client_secrets:sentinel",
+        "expected": "client_secrets: [REDACTED]"
+    },
+    {
+        "name": "refresh_tokens= shape",
+        "input": "refresh_tokens='sentinel value'",
+        "expected": "refresh_tokens=[REDACTED]"
+    },
+    {
+        "name": "refresh_tokens: shape",
+        "input": "refresh_tokens:sentinel",
+        "expected": "refresh_tokens: [REDACTED]"
+    },
+    {
+        "name": "service_credentials= shape",
+        "input": "service_credentials='sentinel value'",
+        "expected": "service_credentials=[REDACTED]"
+    },
+    {
+        "name": "service_credentials: shape",
+        "input": "service_credentials:sentinel",
+        "expected": "service_credentials: [REDACTED]"
+    },
+    {
+        "name": "credential= shape",
+        "input": "credential='sentinel value'",
+        "expected": "credential=[REDACTED]"
+    },
+    {
+        "name": "credential: shape",
+        "input": "credential:sentinel",
+        "expected": "credential: [REDACTED]"
+    },
+    {
+        "name": "BEARER= shape",
+        "input": "BEARER='sentinel value'",
+        "expected": "BEARER=[REDACTED]"
+    },
+    {
+        "name": "BEARER: shape",
+        "input": "BEARER:sentinel",
+        "expected": "BEARER: [REDACTED]"
+    },
+    {
+        "name": "PRIVATEKEY= shape",
+        "input": "PRIVATEKEY='sentinel value'",
+        "expected": "PRIVATEKEY=[REDACTED]"
+    },
+    {
+        "name": "PRIVATEKEY: shape",
+        "input": "PRIVATEKEY:sentinel",
+        "expected": "PRIVATEKEY: [REDACTED]"
+    },
+    {
+        "name": "PASSWORDS= shape",
+        "input": "PASSWORDS='sentinel value'",
+        "expected": "PASSWORDS=[REDACTED]"
+    },
+    {
+        "name": "PASSWORDS: shape",
+        "input": "PASSWORDS:sentinel",
+        "expected": "PASSWORDS: [REDACTED]"
+    },
+    {
+        "name": "SECRETS= shape",
+        "input": "SECRETS='sentinel value'",
+        "expected": "SECRETS=[REDACTED]"
+    },
+    {
+        "name": "SECRETS: shape",
+        "input": "SECRETS:sentinel",
+        "expected": "SECRETS: [REDACTED]"
+    },
+    {
+        "name": "PHP query token",
+        "input": "https://example.test/repo.git?token=sentinel&branch=main",
+        "expected": "https://example.test/repo.git?token=[REDACTED]&branch=main"
+    },
+    {
+        "name": "PHP query api key",
+        "input": "error: https://example.test/repo.git?api_key=sentinel&branch=main",
+        "expected": "error: https://example.test/repo.git?api_key=[REDACTED]&branch=main"
+    },
+    {
+        "name": "PHP query access token",
+        "input": "https://example.test/repo.git?branch=main&access_token=sentinel&depth=1",
+        "expected": "https://example.test/repo.git?branch=main&access_token=[REDACTED]&depth=1"
+    },
+    {
+        "name": "PHP ordinary query",
+        "input": "https://example.test/repo.git?branch=main&token_count=3",
+        "expected": "https://example.test/repo.git?branch=main&token_count=3"
+    },
+    {
+        "name": "PHP complete multiline PEM",
+        "input": "peer material:\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj\n-----END PRIVATE KEY-----\nstatus=ok",
+        "expected": "peer material:\n[REDACTED]\nstatus=ok"
+    },
+    {
+        "name": "PHP PEM prose",
+        "input": "The BEGIN of the ceremony was delayed until END of day",
+        "expected": "The BEGIN of the ceremony was delayed until END of day"
+    },
+    {
+        "name": "Rust multiline PEM and trailing password",
+        "input": "key follows: -----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\nAAAAC3NzaC1lZDI1NTE5AAAAIGQ\n-----END OPENSSH PRIVATE KEY----- password=hunter2\nnext line",
+        "expected": "key follows: [REDACTED] password=[REDACTED]\nnext line"
+    },
+    {
+        "name": "Rust closed then unclosed same line",
+        "input": "a -----BEGIN X-----y-----END X----- b -----BEGIN Y----- z",
+        "expected": "a [REDACTED] b [REDACTED]"
+    },
+    {
+        "name": "unclosed PEM multiline hides to EOF",
+        "input": "before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\nnot a secret assignment\n",
+        "expected": "before\n[REDACTED]"
+    },
+    {
+        "name": "unclosed PEM over former stream limit",
+        "input": [
+            "-----BEGIN CERTIFICATE-----\n",
+            {
+                "text": "MIIBszCCAVmgAwIBAgIU\n",
+                "repeat": 250
+            }
+        ],
+        "expected": "[REDACTED]"
+    },
+    {
+        "name": "hyphen restart a--",
+        "input": "a--password-hash=sentinel",
+        "expected": "a--password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen restart a-123-",
+        "input": "a-123-password-hash=sentinel",
+        "expected": "a-123-password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen restart _foo-",
+        "input": "_foo-password-hash=sentinel",
+        "expected": "_foo-password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen restart a-_foo-",
+        "input": "a-_foo-password-hash=sentinel",
+        "expected": "a-_foo-password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen restart 9foo-",
+        "input": "9foo-password-hash=sentinel",
+        "expected": "9foo-password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen restart a-foo--",
+        "input": "a-foo--password-hash=sentinel",
+        "expected": "a-foo--password-hash=[REDACTED]"
+    },
+    {
+        "name": "hyphen key suffix forms",
+        "input": "a-secret-key-base=sentinel a-token-hash=sentinel a-key-hash: sentinel",
+        "expected": "a-secret-key-base=[REDACTED] a-token-hash=[REDACTED] a-key-hash: [REDACTED]"
+    },
+    {
+        "name": "nonsecret hyphen suffix",
+        "input": "a-token-count=3 a-key-bogus=x",
+        "expected": "a-token-count=3 a-key-bogus=x"
+    },
+    {
+        "name": "100 KiB hyphenated run then secrets",
+        "input": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            ": x\npassword: do-not-store-password\nTOKEN=do-not-store-token\nFAILED last line"
+        ],
+        "expected": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            ": x\npassword: [REDACTED]\nTOKEN=[REDACTED]\nFAILED last line"
+        ]
+    },
+    {
+        "name": "long valid hyphenated secret key",
+        "input": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            "password=sentinel"
+        ],
+        "expected": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            "password=[REDACTED]"
+        ]
+    },
+    {
+        "name": "long hyphen-only run",
+        "input": [
+            {
+                "text": "-",
+                "repeat": 102400
+            },
+            " password=sentinel"
+        ],
+        "expected": [
+            {
+                "text": "-",
+                "repeat": 102400
+            },
+            " password=[REDACTED]"
+        ]
+    },
+    {
+        "name": "long bare base64 run",
+        "input": [
+            {
+                "text": "abCD019+/=",
+                "repeat": 10240
+            },
+            " TOKEN=sentinel"
+        ],
+        "expected": [
+            {
+                "text": "abCD019+/=",
+                "repeat": 10240
+            },
+            " TOKEN=[REDACTED]"
+        ]
+    },
+    {
+        "name": "long secret base64 value",
+        "input": [
+            "APP_KEY=",
+            {
+                "text": "abCD019+/=",
+                "repeat": 10240
+            },
+            "\nFAILED last line"
+        ],
+        "expected": "APP_KEY=[REDACTED]\nFAILED last line"
+    },
+    {
+        "name": "long quoted JSON base64 value",
+        "input": [
+            "{\"password\":\"",
+            {
+                "text": "abCD019+/=",
+                "repeat": 10240
+            },
+            "\"}"
+        ],
+        "expected": "{\"password\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "long escaped JSON value",
+        "input": [
+            "{\"password\":\"",
+            {
+                "text": "x\\\"",
+                "repeat": 40000
+            },
+            "\"}"
+        ],
+        "expected": "{\"password\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "long URL-like run",
+        "input": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            ":/not-a-url password=sentinel"
+        ],
+        "expected": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            ":/not-a-url password=[REDACTED]"
+        ]
+    },
+    {
+        "name": "long PEM body",
+        "input": [
+            "-----BEGIN PRIVATE KEY-----\n",
+            {
+                "text": "MIIEabCD019+/=",
+                "repeat": 8192
+            },
+            "\n-----END PRIVATE KEY-----\nFAILED last line"
+        ],
+        "expected": "[REDACTED]\nFAILED last line"
+    },
+    {
+        "name": "long unclosed PEM body",
+        "input": [
+            "-----BEGIN PRIVATE KEY-----\n",
+            {
+                "text": "MIIEabCD019+/=",
+                "repeat": 8192
+            },
+            "\nFAILED last line"
+        ],
+        "expected": "[REDACTED]"
+    },
+    {
+        "name": "40 PEM blocks",
+        "input": [
+            {
+                "text": "-----BEGIN PRIVATE KEY-----\nMIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=\n-----END PRIVATE KEY-----\n",
+                "repeat": 40
+            },
+            "FAILED last line"
+        ],
+        "expected": [
+            {
+                "text": "[REDACTED]\n",
+                "repeat": 40
+            },
+            "FAILED last line"
+        ]
+    },
+    {
+        "name": "40 unclosed PEM beginnings",
+        "input": [
+            {
+                "text": "-----BEGIN PRIVATE KEY-----\nMIIEabCD019+/=\n",
+                "repeat": 40
+            },
+            "tail"
+        ],
+        "expected": "[REDACTED]"
+    },
+    {
+        "name": "mixed pathological runs",
+        "input": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            "\n",
+            {
+                "text": "-",
+                "repeat": 102400
+            },
+            " APP_KEY=",
+            {
+                "text": "abCD019+/=",
+                "repeat": 10240
+            },
+            "\n",
+            {
+                "text": "-----BEGIN PRIVATE KEY-----\nMIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=MIIEabCD019+/=\n-----END PRIVATE KEY-----\n",
+                "repeat": 40
+            },
+            "password: sentinel\n"
+        ],
+        "expected": [
+            {
+                "text": "a-",
+                "repeat": 51200
+            },
+            "\n",
+            {
+                "text": "-",
+                "repeat": 102400
+            },
+            " APP_KEY=[REDACTED]\n",
+            {
+                "text": "[REDACTED]\n",
+                "repeat": 40
+            },
+            "password: [REDACTED]\n"
+        ]
+    },
+    {
+        "name": "adjacent redacted authorization headers",
+        "input": [
+            {
+                "text": "Authorization:[REDACTED]",
+                "repeat": 5000
+            }
+        ],
+        "expected": [
+            {
+                "text": "Authorization:[REDACTED]",
+                "repeat": 5000
+            }
+        ]
+    },
+    {
+        "name": "adjacent redacted proxy authorization headers",
+        "input": [
+            {
+                "text": "Proxy-Authorization:[redacted]",
+                "repeat": 5000
+            }
+        ],
+        "expected": [
+            {
+                "text": "Proxy-Authorization:[redacted]",
+                "repeat": 5000
+            }
+        ]
+    },
+    {
+        "name": "adjacent near-redacted authorization headers",
+        "input": [
+            {
+                "text": "Authorization:[REDACTEDX]",
+                "repeat": 5000
+            }
+        ],
+        "expected": "Authorization: [REDACTED]"
+    },
+    {
+        "name": "quoted value after multiline authorization",
+        "input": "Authorization: \n\"password\":\"sentinel\"",
+        "expected": "Authorization: \n\"password\":\"[REDACTED]\""
+    },
+    {
+        "name": "authorization followed by empty quoted value",
+        "input": "Proxy-Authorization: \"\" tail",
+        "expected": "Proxy-Authorization: \"\" tail"
     }
 ]
