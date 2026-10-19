@@ -220,7 +220,7 @@ One rule governs every step: **no task VM that holds a key loses the ability to 
 | `processes.proxycli_*` columns | Copied to `ai_router_process_sources`, then dropped. |
 | Caddy certificate rows with slug `proxycli` | Removed in step 3. The new hostname needs a new leaf before publication. |
 | Valkey keys | Renamed with Valkey `RENAME` while no collector runs, so each key keeps its TTL. The lock is deleted. See below the table. |
-| Collector Process 163 | Pending intent records the old Process and its Node while setup is enabled. The tick destroys the old Process through normal removal and creates its replacement. Tasks does not use the collector. |
+| Collector Process 163 | While setup is enabled, pending intent records the old Process and Node. The tick removes the old Process and creates its replacement. Tasks does not use it. |
 | Router Process 103 on `services` | Adopted. See below. |
 
 The key rename covers `raw`, `snapshot`, `model-files`, every `backoff:*`, and every `account:*`. Backoff deadlines and account schedules survive, so no failing account is polled before its `Retry-After`.

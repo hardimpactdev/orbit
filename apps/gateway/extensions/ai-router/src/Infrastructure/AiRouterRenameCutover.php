@@ -41,7 +41,7 @@ final readonly class AiRouterRenameCutover
     public function retire(Node $node): void
     {
         $id = DB::table('ai_router_cutovers')->where('node_id', $node->id)->value('process_id');
-        $process = Process::query()->find($id);
+        $process = Process::query()->where('id', $id)->first();
         if ($process !== null) {
             if ($process->owner_type !== Node::class || $process->owner_id !== $node->id || $process->name !== 'cli-proxy-api-collector') {
                 throw new RuntimeException('The retired collector no longer matches its recorded owner.');

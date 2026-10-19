@@ -7,15 +7,14 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 use App\Models\DatabaseConnection;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 use Predis\Client;
-use Predis\ClientInterface;
 use RuntimeException;
 use Throwable;
 
 final readonly class ValkeyAiRouterCache implements AiRouterCache
 {
-    private ClientInterface $client;
+    private Client $client;
 
-    public function __construct(DatabaseConnection $connection, ?ClientInterface $client = null)
+    public function __construct(DatabaseConnection $connection, ?Client $client = null)
     {
         $this->client = $client ?? new Client([
             'scheme' => 'tcp',
@@ -41,7 +40,7 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
         $cursor = '0';
         do {
             $page = $this->command(['SCAN', $cursor, 'MATCH', $from.'*', 'COUNT', '100']);
-            if (! is_array($page) || count($page) !== 2 || ! is_array($page[1])) {
+            if (! is_array($page) || ! isset($page[0], $page[1]) || (! is_string($page[0]) && ! is_int($page[0])) || ! is_array($page[1])) {
                 throw new RuntimeException('Could not scan the collector cache.');
             }
             $cursor = (string) $page[0];
@@ -69,6 +68,7 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
     /** @param list<string> $arguments */
     private function command(array $arguments): mixed
     {
+        $error = false;
         try {
             $reply = $this->client->executeRaw($arguments, $error);
         } catch (Throwable) {
