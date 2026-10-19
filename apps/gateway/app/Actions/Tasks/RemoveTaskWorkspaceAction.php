@@ -75,6 +75,18 @@ final readonly class RemoveTaskWorkspaceAction
         return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
+    /** Waits before lease admission can snapshot an unavailable VM with reviewed work still to preserve. */
+    public static function awaitVmPreservation(Task $group, Instance $instance): void
+    {
+        $vm = TaskVm::forNode($instance->node_id);
+        $reason = $vm?->state === TaskVmState::Destroying
+            ? "The task VM of Instance [{$instance->name}] is already being destroyed."
+            : $vm?->hostSweepWaitReason();
+        if ($reason !== null && TaskFinalReview::reconcileRemovalPush($group) !== null) {
+            throw new TaskWorkspaceWaiting($reason);
+        }
+    }
+
     /**
      * Removes the workspace the group owns, and returns it, or null when the group owns none. Every task path removes
      * a workspace here, so only the owner decides which Instance goes.
@@ -97,14 +109,6 @@ final readonly class RemoveTaskWorkspaceAction
             }
             $commit = TaskFinalReview::reconcileRemovalPush($group);
             if ($commit !== null) {
-                $vm = TaskVm::forNode($instance->node_id);
-                if ($vm?->state === TaskVmState::Destroying) {
-                    throw new TaskWorkspaceWaiting("The task VM of Instance [{$instance->name}] is already being destroyed.");
-                }
-                $waitReason = $vm?->hostSweepWaitReason();
-                if ($waitReason !== null) {
-                    throw new TaskWorkspaceWaiting($waitReason);
-                }
                 $this->publisher->push($group, $commit);
                 TaskFinalReview::recordRemovalPush($group, $commit);
             }

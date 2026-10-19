@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -219,6 +220,9 @@ final class TaskWorkspaceLease
     {
         if (! $group->taskable instanceof Instance) {
             return $operation();
+        }
+        if ($kind === 'teardown') {
+            RemoveTaskWorkspaceAction::awaitVmPreservation($group, $group->taskable);
         }
         $instanceId = $group->taskable->id;
         if ($this->activeScope($instanceId) instanceof TaskWorkspaceLeaseRecord) {
