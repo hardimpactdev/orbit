@@ -5,112 +5,76 @@ description: Use when preparing, implementing, or reviewing an Orbit task group.
 
 # Orbit Tasks
 
-The Gateway Tasks engine is generic; this file defines Orbit's repository policy. Orbit's Project task check enforces repository-specific requirements deterministically.
+The Gateway Tasks engine is generic. This file is Orbit's repository policy for task groups. The [quality bar](../../../AGENTS.md#quality-bar) and the check policy in the root `AGENTS.md` apply to every subtask. The Gateway's prompts carry the turn command, the blocking rule, and the handoff mechanics, so this file does not repeat them.
 
-## Prepare the feature contract
+## Plan a group
 
-When implementing a subtask in Orbit's allocated environment, you may create, modify, reset, and delete disposable fixtures, including Routes and publications, without asking for permission. Verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment's lease and cleanup rules. This permission does not extend to live or shared resources or another task's fixtures.
+Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour is agreed. The ADRs and documentation on the group's branch are the contract that every subtask implements.
 
-Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behavior is agreed and the ADRs and documentation are written on the group's branch. They are the contract that every subtask implements. Read the group's brief, ADRs, maintained documentation, and relevant code before splitting work. Look for prefactoring that makes the feature easier to build; put it first as its own subtask.
+- Plan at most five subtasks. A feature that needs more becomes several groups, and each group's pull request merges before the next group starts.
+- Give each subtask one goal that one implementation session can finish and verify, with at most five deliverables. Split a subtask when its acceptance would likely need another session.
+- Prefer a narrow vertical slice that a reviewer can verify end to end. Put a prefactoring step first. For a wide refactor, add the new form, move the callers, then remove the old form.
+- Keep CI, release, and deployment work apart from product code.
+- Subtasks carry no proof scripts. Behaviour tests and the review accept a subtask.
+- Do not add a subtask that only runs the final gate or prepares the pull request. Every handoff runs the task check, and the last approval proposes the pull request.
+- Never create a group to rebase a task branch or merge `main` into it. Orbit repairs a conflicting pull request with a fixup subtask.
 
-Every group starts with a docs subtask, before any implementation subtask. Run the deterministic impact check against the group's start commit and every planned path named in the brief, including paths that do not exist yet:
+### Documentation first
 
-```bash
-bin/docs-impact --base <start-commit> --paths <planned-path> --paths <another-planned-path>
-```
+Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit>` once, with one `--paths` for each planned path, including paths that do not exist yet; the start commit is the merge base with `origin/main`. The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask.
 
-The start commit is the merge base with `origin/main`. Repeat `--paths` for every planned path. For `docs_required`, update the impacted pages or run the named generator. For `no_docs_change`, provide the complete JSON report as the subtask deliverable; the reviewer must confirm that the report and planned paths are complete before implementation begins. Follow the [impact-check contract](../../../docs/contributor-guide.md#2-write-the-documentation) in the contributor guide for the report and handoff rules.
+Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
-Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record a significant decision in an ADR with the status `In progress.`, following `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+### Topology and web UI
 
-Plan the absorption into the last subtask that completes a decision, with a `file` deliverable for the absorbing page. That subtask writes the behavior and lasting reasons into the owning page, deletes the ADR, and adds its redirect and "Retired decisions" row. An implementer absorbs an ADR only when its deliverables name that page. A decision that spans several groups keeps its ADR until the group that completes it.
+A subtask that changes Node, agent, guest, deployment, or routing code declares the test nodes it needs in `topology`, such as `["app-dev", "app-prod+ingress"]`. The reviewer proves its deliverables there; see [using-incus-topologies](../using-incus-topologies/SKILL.md). A check on shared machines, such as beast or the live Gateway, is an operator step after deploy, listed in the pull request.
 
-Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
+A subtask that changes the web UI gets a `review` deliverable for the phone and desktop screenshots from `bin/web-verify`. The reviewer judges the phone layout as [verifying-web-ui](../verifying-web-ui/SKILL.md) describes.
 
-## Split the work
+### Bugs
 
-Give each subtask one concise goal that a capable agent can implement and verify in one implementation session. Include code, tests, generated contracts, required checks, and handoff evidence in that estimate. Keep each subtask independently verifiable and limit it to at most five deliverables. The deliverable limit is a ceiling, not proof that the scope fits a session.
-
-Assess session feasibility before presenting the breakdown, without waiting for the operator to request smaller tasks. Inspect the relevant code and count distinct behaviors, project boundaries, failure modes, and proof environments. Split a task when completing its full acceptance checks would likely need another session. In particular, do not bundle broad platform changes, several package-manager adapters, all client transports, UI work, and multi-environment proof under one goal or one review deliverable. Use the smallest complete, verifiable slice that makes sense; do not add tasks only to reach a target count.
-
-Name contract documents and paths in a brief when the contract requires them. Leave implementation paths to the implementer otherwise. A subtask's brief should state its goal, contract, dependencies, deliverables, and acceptance checks.
-
-Prefer a narrow vertical slice that a reviewer can verify from start to finish over a horizontal slice of one layer. When behavior spans several projects, split by project only when each project's tests prove its side of the contract. For a wide refactor that mechanically breaks many call sites, sequence separate expand, migrate, and contract subtasks: add the new form beside the old, move callers in batches, then remove the old form after no callers remain.
-
-Subtasks never carry proof scripts or proof deliverables. Behavior tests and the review accept a subtask. A subtask that changes Node, agent, guest, deployment, or routing code declares the test nodes it needs in `topology`, such as `["app-dev", "app-prod+ingress"]`. The declaration sizes the task VM, Orbit prepares those nodes nested in it, and the reviewer must prove the deliverables on them with recorded evidence; see [using-incus-topologies](../using-incus-topologies/SKILL.md). Without a declaration, such a change fails the handoff when the Project lists its paths in `task_vms.topology_paths`. This check compares the candidate tree, including uncommitted files, with the merge base of HEAD and the current `origin/main`. Changes inherited from main do not count; the group's own changes and merge resolutions still count. A check on shared machines, such as beast or the live Gateway, needs merged, deployed code, so list it in the PR as an operator step after deploy.
-
-Keep CI, release, and deployment work separate from product code. Subtasks run in dependency order on one shared branch; a later subtask may build on an earlier one but never finishes its work.
-
-Plan at most five subtasks in a group, the docs subtask included. A feature that needs more becomes several groups. Each group's pull request merges to `main` before the next group starts. A branch that stays open while `main` moves collects merge fixups and runtime changes it was not built for.
-
-Do not add a subtask that only runs the final gate or prepares the pull request. Every handoff already runs the task check, and the last subtask's approval proposes the pull request.
-
-A subtask that changes the web UI must include a screenshot `review` deliverable for the phone and desktop PNGs produced by `bin/web-verify`. The reviewer judges the phone layout as described in [Verifying web UI](../verifying-web-ui/SKILL.md): content starts near the top, controls are reachable, filters are not an awkward stack, and long lists and filters use native patterns such as infinite scroll and sheets. Reading the diff is not a substitute for this review. Count the screenshot deliverable toward the five-deliverable limit.
-
-## Bugs
-
-The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `command` deliverable with `fails_on_base` set to the JSON boolean `true` and `paths` listing the working-tree files needed for the base run. The command must exit nonzero on the subtask's start commit and zero on the working tree. The command itself applies Project-specific matching, such as selecting a test by name; the engine checks only the exit status. A docs-only subtask does not count as the first code-changing subtask. The [tasks reference](../../../docs/reference/tasks.md#prove-a-command-fails-on-the-start-commit) defines the two runs.
-
-Use a deliverable like this in that subtask's `deliverables` array:
+The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. If the command runs `pest --parallel`, give it one test path, with `--filter` if needed, because ParaTest takes only one path:
 
 ```json
-[
-  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
-]
+{"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
 ```
 
-When the bug cannot be reproduced automatically, for example an iOS behavior that shows up only on a device, say so in the brief. Add a `review` deliverable for the manual check, and do not set `fails_on_base`.
-
-## Review the breakdown
-
-Before presenting the breakdown, check that every subtask can meet its complete acceptance checks in one implementation session, that earlier dependencies supply everything it needs, and that later tasks do not finish its work. Check that the group has at most five subtasks. Revise oversized tasks yourself and state any remaining scope uncertainty.
-
-Before moving the group to Todo, present the breakdown to the operator as a numbered list. For each subtask show its title, what it builds on, its goal from the user's point of view, and its deliverables. Explain briefly why the larger slices fit one session. Ask whether the granularity is right, whether each dependency is real, and whether any subtask should be merged or split. Iterate until the operator approves.
+When no command can reproduce the bug, say so in the brief and add a `review` deliverable for the manual check instead. The [tasks reference](../../../docs/reference/tasks.md#prove-a-command-fails-on-the-start-commit) defines the two runs.
 
 ## Write the briefs
 
-Use this template for every subtask brief:
+Use this shape for every subtask brief:
 
 ```markdown
-**Goal:** the behavior this subtask makes work.
+**Goal:** the behaviour this subtask makes work, in one or two sentences.
 
-**Contract:** the ADR sections and documentation pages it implements, with anchors.
+**Evidence:** what shows the problem or the need, with file:line references and data.
 
-**Builds on:** the earlier subtasks it depends on, or "None".
+**Read first:** the ADR sections and reference pages it implements, with anchors.
 
-**Deliverables:**
-- One observable result per line, such as a behavior, an endpoint, a test that proves it, or a check that passes.
-- For a web UI change, a screenshot `review` deliverable. The reviewer opens the phone and desktop PNGs and judges the phone.
+**Risk:** what this change could break, for the reviewer to check first.
 
-**Acceptance:** the checks to run and what they must show.
+**Acceptance:** the tests that must fail on the start commit and pass after the change, and the checks that must pass.
+
+**Out of scope:** what this subtask must not touch.
 ```
 
-Every subtask that changes the web UI gets the screenshot `review` deliverable, even when UI work is only part of the subtask. Its description names the phone and desktop PNGs from `bin/web-verify` and the phone judgment described above.
+Name implementation paths only where the contract fixes them. Express each promised result as a typed deliverable; the [tasks reference](../../../docs/reference/tasks.md#deliverables) defines `file`, `command`, and `review`. A measurement or investigation result is a `command` deliverable, so the handoff check records its output.
 
-Name file paths only where the contract fixes them, such as an install path or documentation page. Leave other paths and code to the implementer, because they go stale.
+## Agree and create the group
 
-## Deliverables and handoff
+Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Use typed deliverables to describe observable results. The current engine supports `file`, `command`, and `review`; follow the [Tasks reference](../../../docs/reference/tasks.md#deliverables) for fields and verification. Prefer one deliverable for each explicit result promised in the brief. Measurement and investigation claims must be `command` deliverables, so Orbit's handoff check records the command output. Evidence at handoff says where or how each deliverable is met.
-
-Do not assume that every Project uses Composer, Pest, PHP, or any particular test runner. Use the task check configured for the Orbit Project and the deliverable type supported by the current engine.
+Create the group in Backlog with `tasks-create` for the Orbit Project, and its subtasks with `tasks-subtask-create`.
 
 ## Implement a subtask
 
-- Keep handoff evidence, such as impact reports, logs, and check output, under `.orbit-artifacts/`. Git ignores it. Do not commit evidence.
-- Build test fixtures from real output. Capture it from the real tool or its source, and do not invent it.
-- Make every new test able to fail. Confirm that it fails without the change.
-- Run `composer test:affected` in each changed project. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff.
+- Keep evidence, such as logs and check output, under `.orbit-artifacts/`. Git ignores it.
+- Build test fixtures from real output.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
 ## Review a subtask
 
-Block approval on defects within the subtask's brief and contract. Also block on data loss, a security gap, or a break in an earlier subtask. Refuse a handoff that commits evidence files.
+Check the risk that the brief names first, then the quality bar. The review prompt's blocking rule decides what blocks.
 
-Report other gaps as follow-ups, each with a one-line reason. The subtask that finishes the pull request decides every open follow-up. It fixes it, files it as a task, or records it as a limitation in the pull request.
-
-## Create the work in Orbit
-
-Find the Orbit Project and its id, then call `tasks-create` with that Project id to create the group. Create ordered subtasks with `tasks-subtask-create`, including their deliverables. Use the task APIs or MCP tools to keep the branch's task group consistent with the agreed contract. Move the group to Todo only after the operator approves the breakdown.
-
-Never create a group to rebase a task branch or merge `main` into it. Orbit repairs a conflicting pull request with a fixup subtask on the same branch.
+The reviewer whose approval opens the pull request puts any open follow-up that users must know about into `--pr-summary`. The operator decides which follow-ups become a later group.

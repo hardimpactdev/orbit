@@ -33,14 +33,14 @@ it('files a repro-first group when a fingerprint is over the threshold', functio
         ->and($group->brief)->toBe(problem_filer_brief())
         ->and($subtasks)->toHaveCount(2)
         ->and($subtasks[0]->title)->toBe('Document the owning page')
-        ->and($subtasks[0]->brief)->toBe('Clone failed')
+        ->and($subtasks[0]->brief)->toBe('Update the page that owns the failing behaviour so it describes the fixed behaviour, or confirm that no page changes.')
         ->and($subtasks[0]->deliverables)->toBe([[
             'id' => 'docs',
             'type' => 'review',
             'description' => 'The owning page matches the fix, or no page changes.',
         ]])
         ->and($subtasks[1]->title)->toBe('Reproduce the failure and fix it')
-        ->and($subtasks[1]->brief)->toBe('Clone failed')
+        ->and($subtasks[1]->brief)->toBe('Add a test that fails on the start commit for the symptom in the group brief. Then fix the root cause so it passes.')
         ->and($subtasks[1]->deliverables)->toBe([[
             'id' => 'test',
             'type' => 'review',
@@ -138,7 +138,7 @@ it('files a filed template with occurrence history and a review placeholder inst
         ]]);
 
     foreach ($subtasks as $subtask) {
-        expect($subtask->brief)->toBe('T3 subscription ended.');
+        expect($subtask->brief)->not->toContain('T3 subscription ended.');
 
         foreach ($subtask->deliverables as $deliverable) {
             expect($deliverable)->not->toHaveKey('command')

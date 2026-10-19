@@ -53,7 +53,8 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/",
-            "Orbit\\PHPStan\\": "../../tools/phpstan/"
+            "Orbit\\PHPStan\\": "../../tools/phpstan/",
+            "Orbit\\Boost\\": "../../tools/boost/"
         },
         "exclude-from-classmap": [
             "/tests/"
