@@ -1124,6 +1124,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Activity",
                 "Deliverable",
                 "Gateway",
                 "Instance",

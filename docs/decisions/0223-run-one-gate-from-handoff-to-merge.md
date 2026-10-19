@@ -117,7 +117,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 - In a review-and-merge group, Orbit never merges main itself. Only the implementer merges main, and only to resolve a conflict.
 - When GitHub reports that the pull request conflicts with its base, the group gets the settling fixup `Merge origin/{base}` from `TaskSettlingFixup::plans`. `healOpenPullRequest` already plans it for every group. The implementer merges and resolves. Its approval waits for a final review, as every approval in such a group does.
 - A failed `Required checks` already creates a `check:*` fixup. Its "merge the base first" variant (`mergingBaseFirst`) goes. CI tested the merge ref, so main at that time was already in the tested tree.
-- Merge on green requires final-review evidence on the head. A reviewed commit with source `base_merge` no longer exists, so a head inherits no review.
+- Merge on green requires final-review evidence on the head. A head inherits no review except a converted `base_merge` row with the migration’s stored `inherited_approval_sha`, as specified in build step 3.
 - Review and merge supports only base branches that do not require an up-to-date branch. Orbit's `main` does not: its ruleset has `strict_required_status_checks_policy: false`.
 - `project:update --review-and-merge=true` reads both sources of branch rules, because GitHub applies rulesets and classic branch protection together:
   - the rulesets, with `GET /repos/{owner}/{repo}/rules/branches/{branch}`, which needs `Metadata: read`;
@@ -169,11 +169,12 @@ The data does not show what a tree base saves. The only rework measured after #1
 
 ### 4. One definition of the checks
 
-- One file, `tools/checks.json`, lists each check: its project directory, its commands, its architecture tests, the paths that select it, and where it runs.
+- One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs; the same file holds stage time budgets in `stage_budgets`.
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
 - For a PHP project, the file holds `composer validate --strict`, `composer check`, and the architecture tests, which both gates run. It also holds `composer test:affected`, which only the local gate runs.
 - The test step of a PHP project in CI stays in `ci.yml`, because CI runs sharded Pest with its own TIA plan.
 - `bin/review-check` reads it.
+- The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
 - Path triggers select only the checks that TIA cannot narrow: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
 - Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today. TIA narrows their tests.
 - A handoff and a local `composer check` run a triggered check when a changed path matches its triggers.
@@ -232,9 +233,21 @@ The data does not show what a tree base saves. The only rework measured after #1
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
 - The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, its seconds, its exit code, and a free `detail` text.
+- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, `budget_seconds`, a free `detail` text, and `selected_test_count` for test commands only.
+- Orbit records the name, seconds and exit code of each Project setup step in the baseline receipt.
+- Time budgets report overruns and can never block or stop work.
+- `tools/checks.json` owns both the command time budgets and the stage defaults in `stage_budgets`: baseline 600 seconds, handoff 1200 seconds and review 900 seconds.
+- The command time budgets in Orbit’s `tools/checks.json` are Gateway `test:affected` 600 seconds and every other command 300 seconds.
+- A Project receipt command without `budget_seconds` uses the time budget default of its baseline or handoff stage.
+- The Gateway stores each review turn’s elapsed seconds from dispatch to terminal observation on the review thread row, keyed by turn ID and separate from the check receipt.
+- A time budget overrun writes at most one Activity row per overrun per run with code `tasks.<stage>_over_budget`, where `<stage>` is `baseline`, `handoff`, `review` or `command`.
+- Baseline, handoff and review overrun rows use Activity `command: tasks:tick`.
+- Command overrun rows use Activity `command: <project directory>:<command name>`, with the Project slug instead of a directory for Project receipts and no task or run IDs, so `command|code` fingerprints stay stable.
+- `ProblemCollector` treats `_over_budget` codes as server-class so the existing fingerprints and daily filing cap bound repeats without a new mechanism.
+- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets.
+- After step 7 is deployed and enough setup runs have recorded per-step timings for p90 values, propose exact Project 46 setup timeouts at about three times each p90 in a separate PR or note for Nick to apply, scaling them down to fit both the 540-second cap and the stored list total.
 - Orbit stores the list in a new JSON column of the check row.
-- Orbit's `bin/review-check` writes the list from `result.json`, with the selected test count as `detail`.
+- Orbit's `bin/review-check` writes the list from `result.json`, including a selected test count for each test command.
 - The 16 KiB output tail stays.
 
 ### Build order
@@ -252,6 +265,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 3. **No local main-merge gate.** The enum casts on `TaskCheck::kind` and `TaskReviewedCommit::source` refuse an old value, so a migration removes every `base_merge` value:
    - It refuses to run while any `base_merge` check is running. It cancels queued and held `main_merge` leases and leases for the checks it deletes, then deletes every `base_merge` check row, of open and ended groups.
    - It converts every `base_merge` reviewed commit to `orbit_push`. It records `inherited_approval_sha` only for converted rows whose review task has exactly one distinct approved commit in the group’s reviewed ledger. Only that stored approval can account for a converted head when the merged pull request returns. Native heads and ambiguous approval history still require exact approval.
+   - Once no converted reviewed-commit row belongs to an open group, delete `inherited_approval_sha` and the matching inherited-approval branch in `TaskPublication::checkReturningPullRequest`.
    - It clears `base-merge-review` fixup identities so retired delta reviews no longer count against the group fixup limit. Deploy it when no `base_merge` check is running.
    - Add the strict-base refusal to `project:update`, with both rule reads. Add only `administration: read` to `GitHubAppManifestPage`, and document the protection read on the [GitHub App](/reference/github-app) page. Runner registration needs its own decision.
    - Add the assistance on a behind refusal to `mergeWhenReady`.
@@ -274,7 +288,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Fill the handoff cache after a passed baseline too.
    - Delete the passed-handoff-tree rule of `TaskReviewBase::testBase` and the `slug === 'orbit'` case.
    - Delete the "A handoff tree is not a Pest commit" and "The gate selects against main" sections of [Feature delivery](/reference/implementation-loop#why-it-works-this-way).
-5. **One check definition.** Add `tools/checks.json` and the `run` and `architecture` commands.
+5. **One check definition.** Add `tools/checks.json`, including report-only `budget_seconds` per command and `stage_budgets` for the Gateway, and the `run` and `architecture` commands.
    - Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`.
    - Delete the `case` list in the architecture-test step and the copied commands and path conditions of the check jobs in `ci.yml`.
    - Delete the copied list in `tia-cache-tests.py`.
@@ -286,7 +300,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Change the tests that call `bin/tia-cache`: `WorktreeLifecycleTest.php:30`, `TestDatabaseGateTest.php:36`, `BuilderGateSelectionTest.php:105`, `ComposerConfigurationTest.php:371`, and the Gateway tests `CiCacheSetupTest.php` and `TiaBaselineSetupTest.php`.
    - Delete the `bin/tia-cache` comment in `bin/tooling-baseline:18`.
    - Delete [Refresh from CI](/reference/implementation-loop#refresh-from-ci), "Only main CI publishes", "Maintenance runs in the background", "Clones find the store through a registration", and the worker text of [Failures on main](/reference/implementation-loop#failures-on-main), with the text on legacy failure records. Failures on main keeps one line: GitHub's CI status is the record.
-7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list.
+7. **Check results.** Implement [§8: Check results and evidence](#8-check-results-and-evidence), including receipt storage, review-turn timing and report-only overruns.
    - Delete the terminal-result synthesis and the after-result tree check in `status()`.
    - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
    - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.
@@ -322,7 +336,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision because a user-owned repository has no narrower runner permission
-- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Environment variables](/reference/environment-variables)
+- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Tasks: Outer loop](/reference/tasks#outer-loop). [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Instance setup: Project 46](/reference/instance-setup#project-46). [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
@@ -333,3 +347,4 @@ Each step is one small pull request. Docs change with the code in the same pull 
   - The median rework handoff stays within 1.2 times the median first handoff.
   - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.
   - The check row of each handoff holds its command list.
+  - A time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row for that overrun in the run.
