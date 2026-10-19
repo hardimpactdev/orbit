@@ -12,7 +12,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -92,16 +91,6 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
         public function mergeBase(Task $group): string
         {
             return str_repeat('c', 40);
-        }
-
-        public function mergeDefault(Task $group): TaskBaseMerge
-        {
-            return new TaskBaseMerge(str_repeat('a', 40));
-        }
-
-        public function overlappingPaths(Task $group, string $before, string $after): array
-        {
-            return [];
         }
 
         public function moveTo(Task $group, string $sha): void {}

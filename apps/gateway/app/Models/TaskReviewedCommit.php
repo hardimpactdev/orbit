@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $task_id
  * @property string $sha
  * @property TaskReviewedCommitSource $source
+ * @property string|null $inherited_approval_sha
  * @property int|null $review_task_id
  * @property Carbon|null $pushed_at
  * @property int|null $github_review_id

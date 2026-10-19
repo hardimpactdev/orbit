@@ -148,6 +148,14 @@ final class TaskVm extends Model
         $this->update(self::errorFrom($exception));
     }
 
+    /** The recorded absence waits for the host sweep's verdict; only that verdict may fail a missing VM. */
+    public function hostSweepWaitReason(): ?string
+    {
+        return $this->state === TaskVmState::Ready && $this->error_code === TaskVmError::AwaitingHostSweep->value
+            ? $this->error_message
+            : null;
+    }
+
     /** The group's live task VM, or null when it has none. */
     public static function forGroup(Task $group): ?self
     {

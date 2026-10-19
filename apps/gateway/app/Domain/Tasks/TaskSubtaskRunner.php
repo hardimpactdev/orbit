@@ -266,10 +266,7 @@ final readonly class TaskSubtaskRunner
                 'output' => $reading->output,
                 'deliverable_evidence' => $reading->deliverables === null ? null : json_encode($reading->deliverables, JSON_THROW_ON_ERROR),
             ];
-        if ($check->kind === TaskCheckKind::BaseMerge && $values['status'] === TaskCheckStatus::Failed->value) {
-            // Reconciliation may finish this gate before the publication path sees it.
-            $values['failed_step'] = $reading->exitCode !== 127 && $reading->failedStep === 'gate' ? 'gate' : 'environment';
-        }
+
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
         $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);

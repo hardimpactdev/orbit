@@ -26,6 +26,7 @@ enum TaskVmError: string
     case JobFailed = 'task_vm.job_failed';
     case PoolStartTimeout = 'task_vm.pool_start_timeout';
     case VmMissing = 'task_vm.vm_missing';
+    case AwaitingHostSweep = 'task_vm.awaiting_host_sweep';
     case VmNotRunning = 'task_vm.vm_not_running';
     case BootstrapFailed = 'task_vm.bootstrap_failed';
     case BootstrapTimeout = 'task_vm.bootstrap_timeout';

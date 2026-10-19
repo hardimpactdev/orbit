@@ -117,6 +117,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
+The generated task types expose only `baseline` and `handoff` check kinds, and `orbit_push` and `pull_request_review` reviewed-commit sources. [Final review](/reference/tasks#final-review) publishes the reviewed head; CI on the merge ref checks integration.
+
 The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
 
 The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies. A `question_closed` comment is labeled `Question closed`. The generated types also include `provider_retry` comments. These comments show the reserved attempt, delay, and failed turn for [transient provider retries](/reference/tasks#retry-a-transient-provider-error); the task stays in its current phase while it waits.

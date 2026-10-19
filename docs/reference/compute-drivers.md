@@ -426,7 +426,11 @@ When the group has ended, or is `settling` or `waiting_for_review`, each tick th
 
 For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
 
-A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job does not make its own missing verdict. A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and VM failure in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A stopped VM without work to preserve is removed the same way:
+A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job records this wait as `task_vm.awaiting_host_sweep` on the VM and owns its `removal_failure` assistance. Workspace removal waits under that reason before lease admission, so it makes no SSH snapshot or push attempt. Repeated ticks and removal sweeps leave the reason and Activity unchanged.
+
+A later observation that finds the VM clears the wait so removal can retry. The Incus sweep runs only while task VMs are enabled and the host Node is active. If either is off, the reason names the blocker: task VMs are disabled, or the named host is inactive. A recorded wait needs no provider or host read while the sweep is paused. Cleanup waits until the sweep can run again. The destroy job does not make its own missing verdict.
+
+A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and original VM failure once in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A failed deletion keeps that reason on retry; its delete error stays on the VM row. Removal never retries a lost head's push after destruction starts. A stopped VM without work to preserve is removed the same way:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
@@ -581,7 +585,7 @@ The last rule keeps a VM that Orbit started again, for example for a removal ret
 
 The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
-Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, a base merge, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
+Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
 
 1. It starts the VM with `incus start`. A VM that already runs counts as started.
 2. It checks once whether the VM answers over WireGuard, `orbit-agent.service` is active, and Pi answers `GET /capabilities` with the group's Pi token.

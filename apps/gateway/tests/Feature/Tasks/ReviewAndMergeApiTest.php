@@ -13,6 +13,9 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskReviewedCommit;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Tests\Feature\GitHub\GitHubTestSupport;
 
 beforeEach(function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
@@ -31,8 +34,21 @@ function review_merge_api_project(array $attributes = []): Project
     ]);
 }
 
+function review_merge_api_policy(array $rules = [], array $protection = ['required_status_checks' => ['strict' => false]], int $rulesStatus = 200, int $protectionStatus = 200): void
+{
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+    Http::fake([
+        'api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'policy-token']),
+        'api.github.com/repos/acme/shop/rules/branches/main' => Http::response($rules, $rulesStatus),
+        'api.github.com/repos/acme/shop/branches/main/protection' => Http::response($protection, $protectionStatus),
+    ]);
+}
+
 describe('Project review-and-merge settings', function (): void {
     it('switches the flow on with a merge check and reports both fields', function (): void {
+        review_merge_api_policy();
         $project = review_merge_api_project();
 
         $this->patchJson('/api/v1/projects/'.$project->id, ['review_and_merge' => true, 'merge_check' => 'Required checks'])
@@ -118,3 +134,47 @@ describe('review-and-merge state in tasks', function (): void {
             ]]);
     });
 });
+
+it('refuses strict or unreadable branch policies before changing any Project setting', function (array $rules, array $protection, int $rulesStatus, int $protectionStatus, string $code, int $status): void {
+    $project = review_merge_api_project();
+    review_merge_api_policy($rules, $protection, $rulesStatus, $protectionStatus);
+
+    $this->patchJson('/api/v1/projects/'.$project->id, ['review_and_merge' => true, 'merge_check' => 'Required checks', 'name' => 'Changed'])
+        ->assertStatus($status)->assertJsonPath('error.code', $code);
+
+    expect($project->fresh()?->review_and_merge)->toBeFalse()
+        ->and($project->fresh()?->merge_check)->toBeNull()
+        ->and($project->fresh()?->name)->toBe('Shop');
+})->with([
+    'strict ruleset' => [[['type' => 'required_status_checks', 'parameters' => ['strict_required_status_checks_policy' => true]]], [], 200, 404, 'project.strict_base', 422],
+    'strict classic protection' => [[], ['required_status_checks' => ['strict' => true]], 200, 200, 'project.strict_base', 422],
+    'unreadable rules' => [[], [], 403, 404, 'project.branch_policy_unavailable', 503],
+    'rules 404 is unreadable' => [[], [], 404, 404, 'project.branch_policy_unavailable', 503],
+    'unreadable protection' => [[], [], 200, 403, 'project.branch_policy_unavailable', 503],
+    'malformed rule' => [[['type' => 'required_status_checks', 'parameters' => []]], [], 200, 404, 'project.branch_policy_unavailable', 503],
+    'malformed protection' => [[], ['required_status_checks' => ['strict' => 'false']], 200, 200, 'project.branch_policy_unavailable', 503],
+]);
+
+it('accepts an unprotected branch with separate metadata and administration read tokens', function (): void {
+    $project = review_merge_api_project();
+    review_merge_api_policy(protectionStatus: 404);
+
+    $this->patchJson('/api/v1/projects/'.$project->id, ['review_and_merge' => true, 'merge_check' => 'Required checks'])->assertOk();
+
+    foreach (['metadata', 'administration'] as $permission) {
+        Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/access_tokens')
+            && $request->data() === ['repositories' => ['shop'], 'permissions' => [$permission => 'read']]);
+    }
+    Http::assertSentCount(6);
+});
+
+it('does not re-read policy for an already enabled Project or while disabling it', function (bool $enabled): void {
+    $project = review_merge_api_project(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    Http::preventStrayRequests();
+    Http::fake();
+
+    $this->patchJson('/api/v1/projects/'.$project->id, ['review_and_merge' => $enabled])->assertOk();
+
+    Http::assertNothingSent();
+})->with([true, false]);

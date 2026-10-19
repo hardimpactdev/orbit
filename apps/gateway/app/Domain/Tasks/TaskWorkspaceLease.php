@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -217,10 +218,14 @@ final class TaskWorkspaceLease
      */
     public function run(Task $group, string $kind, string $owner, Closure $operation, ?int $taskId = null): mixed
     {
-        if (! $group->taskable instanceof Instance) {
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
             return $operation();
         }
-        $instanceId = $group->taskable->id;
+        if ($kind === 'teardown') {
+            RemoveTaskWorkspaceAction::awaitVmPreservation($group, $instance);
+        }
+        $instanceId = $instance->id;
         if ($this->activeScope($instanceId) instanceof TaskWorkspaceLeaseRecord) {
             return $operation();
         }
@@ -497,7 +502,7 @@ final class TaskWorkspaceLease
 
     /**
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
-     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool, base_merge?: bool}|null  $deliverables
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool}|null  $deliverables
      *
      * @throws TaskCheckException
      */
@@ -518,7 +523,7 @@ final class TaskWorkspaceLease
             $pending = $task->checks()->where('status', TaskCheckStatus::Running)->where('pid', 0)->latest('id')->first();
             if (! $pending instanceof TaskCheck) {
                 $pending = $task->checks()->create([
-                    'kind' => ($deliverables['base_merge'] ?? false) ? TaskCheckKind::BaseMerge : TaskCheckKind::Handoff,
+                    'kind' => TaskCheckKind::Handoff,
                     'task_comment_id' => $commentId, 'status' => TaskCheckStatus::Running,
                     'pid' => 0, 'process_started' => '', 'head_before' => $lease->head_before, 'tree_before' => $lease->tree_before, 'started_at' => now(),
                 ]);

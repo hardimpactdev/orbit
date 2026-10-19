@@ -54,7 +54,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     /**
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
-     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool, base_merge?: bool}|null  $deliverables
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool}|null  $deliverables
      */
     private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched, ?string $runId): TaskCheckProcess
     {

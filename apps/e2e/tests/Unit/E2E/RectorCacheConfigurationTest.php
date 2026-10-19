@@ -48,7 +48,7 @@ it('gives the main Rector process the project cache and each worker a private on
     }
 });
 
-it('reads the shared process setting for PHPStan and Rector', function (): void {
+it('reads the allocated lane share for PHPStan and Rector', function (): void {
     $repository = dirname(__DIR__, 5);
     $original = getenv('ORBIT_CHECK_PROCESSES');
 

@@ -11,7 +11,6 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -625,16 +624,6 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             return str_repeat('c', 40);
         }
 
-        public function mergeDefault(Task $group): TaskBaseMerge
-        {
-            return new TaskBaseMerge(str_repeat('a', 40));
-        }
-
-        public function overlappingPaths(Task $group, string $before, string $after): array
-        {
-            return [];
-        }
-
         public function moveTo(Task $group, string $sha): void {}
 
         public function fetchForTurn(Task $group): void
@@ -680,23 +669,6 @@ function tick_assistance_reasons(): array
     return Activity::query()->where('log_name', 'tasks')->whereIn('description', ['assistance requested', 'assistance changed'])
         ->whereIn('subject_id', Task::topLevel()->select('id'))
         ->orderBy('id')->get()->map(static fn (Activity $activity): mixed => $activity->properties?->get('reason'))->all();
-}
-
-/** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
-function tick_base_tip(string $head, string $tip, string $mergeBase, string $conclusion): void
-{
-    Http::fake([
-        'https://api.github.com/repos/acme/orbit/commits?*' => Http::response([['sha' => $tip, 'parents' => [['sha' => $mergeBase]]]]),
-        'https://api.github.com/repos/acme/orbit/compare/'.$head.'...'.$tip.'*' => Http::response([
-            'status' => $mergeBase === $tip ? 'ahead' : 'diverged',
-            'base_commit' => ['sha' => $head],
-            'merge_base_commit' => ['sha' => $mergeBase],
-        ]),
-        'https://api.github.com/repos/acme/orbit/commits/'.$tip.'/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [[
-            'id' => 7, 'name' => 'Required checks', 'head_sha' => $tip, 'status' => 'completed', 'conclusion' => $conclusion,
-            'html_url' => 'https://github.com/acme/orbit/runs/7', 'app' => ['slug' => 'github-actions'],
-        ]]]),
-    ]);
 }
 
 /** @return array{review_workspace_head: string, review_workspace_tree: string} */

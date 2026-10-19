@@ -41,6 +41,10 @@ Registration takes one confirmation in the browser. The Gateway serves a page th
 
 On the install page, choose the account or organization and all or selected repositories. The Gateway lists the App's installations on GitHub each time it needs them. So a new installation, a changed repository selection, and an uninstall take effect on the next read.
 
+## Read branch protection
+
+The App manifest declares `administration: read`. When a Project enables [review and merge](/reference/projects#review-and-merge), the Gateway mints a token with only that permission to read classic branch protection. Rulesets use a separate `metadata: read` token. Installations must accept the read permission before enabling the flow. The App never requests Administration write, which permits repository deletion. Runner registration for user-owned repositories needs its own decision; GitHub offers no narrower runner permission there.
+
 ## How Orbit reads a repository
 
 The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, and the published-commit check before a development checkout is removed. For a task workspace, the Gateway fetches in its own mirror before each agent turn; see [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).

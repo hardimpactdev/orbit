@@ -17,7 +17,6 @@ use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskReviewedCommit;
 use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -41,10 +40,10 @@ final readonly class TaskSettling
         private RequestEndedPullRequestAssistanceAction $endedPullRequests,
         private TaskTurnFetcher $turnFetcher,
         private RetryTaskBaselineAction $retryBaseline,
+        private TaskPullRequestMerger $merger,
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
-        private TaskPullRequestMerger $merger,
     ) {}
 
     public function tickPullRequest(TaskScheduler $scheduler, Task $group): void
@@ -115,17 +114,6 @@ final readonly class TaskSettling
         } elseif ($status === 'closed') {
             TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
         } elseif ($health instanceof TaskPullRequestHealth) {
-            $pendingMerge = TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
-                ->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Running)->exists();
-            $pendingPush = TaskReviewedCommit::query()->where('task_id', $group->id)
-                ->where('source', TaskReviewedCommitSource::BaseMerge)->whereNull('pushed_at')->exists();
-            if ($group->reviewsBeforePush() && ! $group->assistance_requested && ($pendingMerge || $pendingPush)) {
-                if ($health->baseRef === $group->project->default_branch) {
-                    $scheduler->appendBaseMerge($group, (string) $health->baseRef);
-                }
-
-                return;
-            }
             $this->healOpenPullRequest($scheduler, $group, $health, $reviews);
             if ($group->reviewsBeforePush()) {
                 $scheduler->mergeWhenReady($group, $health, $reviews);
@@ -659,27 +647,9 @@ final readonly class TaskSettling
             return;
         }
 
-        if ($this->appendFixup($group, $this->mergeBaseFirstWhenGreenAhead($group, $health, $plan), $health->headSha) instanceof Task) {
+        if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($scheduler, $group);
         }
-    }
-
-    /**
-     * A failed check may already be fixed on the base. When the base tip passed the merge check, or
-     * `Required checks` without one, and is strictly ahead of the head's merge base, the fixup merges the base first.
-     * The GitHub reads run before appendFixup takes its lock.
-     */
-    private function mergeBaseFirstWhenGreenAhead(Task $group, TaskPullRequestHealth $health, TaskSettlingFixup $plan): TaskSettlingFixup
-    {
-        if (! str_starts_with($plan->identity, 'check:') || ! is_string($health->baseRef) || $health->baseRef === ''
-            || ! is_string($health->headSha) || $health->headSha === '') {
-            return $plan;
-        }
-        $check = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
-
-        return $this->merger->baseTipGreenAhead($group, $health->baseRef, $health->headSha, $check)
-            ? $plan->mergingBaseFirst($health->baseRef)
-            : $plan;
     }
 
     private static function isReviewFeedbackReason(?string $reason): bool
@@ -1127,7 +1097,7 @@ final readonly class TaskSettling
      */
     private function prepareResumedWorkspace(TaskScheduler $scheduler, Task $group, Task $todo): bool
     {
-        return app(TaskWorkspaceLease::class)->run($group, 'main_merge', 'resume:'.$todo->id, fn () => $this->prepareResumedWorkspaceWithLease($scheduler, $group, $todo), taskId: $todo->id);
+        return app(TaskWorkspaceLease::class)->run($group, 'workspace_fast_forward', 'resume:'.$todo->id, fn () => $this->prepareResumedWorkspaceWithLease($scheduler, $group, $todo), taskId: $todo->id);
     }
 
     private function prepareResumedWorkspaceWithLease(TaskScheduler $scheduler, Task $group, Task $todo): bool

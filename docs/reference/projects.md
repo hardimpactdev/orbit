@@ -173,6 +173,8 @@ The migration seeds false for existing Projects with slug `orbit` and true for o
 orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
 ```
 
+Enabling review and merge requires readable branch rules that do not require an up-to-date branch. Orbit reads rulesets with `Metadata: read` and classic branch protection with `Administration: read`. A 404 for classic protection means none is set. A strict rule returns `project.strict_base`; an unreadable policy returns `project.branch_policy_unavailable`. Both refuse the update. Projects already enabled are not read again.
+
 [Tasks: Review and merge](/reference/tasks#review-and-merge) describes what the switch changes.
 
 ### Update lifecycle
