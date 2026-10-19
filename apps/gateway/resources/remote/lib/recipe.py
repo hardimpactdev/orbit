@@ -1061,6 +1061,8 @@ def apply_recipe(payload, snapshots):
                     # Cancel only our fence if its bounded client wait timed out; it may already be collected.
                     try:
                         run(['systemctl', 'stop', '--no-block', fence], required=False)
+                    except RecipeInterrupted:
+                        raise
                     except RecipeFailure:
                         pass
             stage = 'health'

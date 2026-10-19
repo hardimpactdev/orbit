@@ -168,6 +168,18 @@ class ConvergenceTest(unittest.TestCase):
         self.assertEqual(sum(c[0] == 'systemd-run' for c in self.commands), 1)
         self.assertFalse(any(c[:2] == ['systemctl', 'is-active'] for c in self.commands))
 
+    def test_restart_fence_cleanup_preserves_interruption(self):
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv[:3] == ['systemctl', 'stop', '--no-block']:
+                raise recipe.RecipeInterrupted('interrupted')
+            return result
+
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^interrupted$'):
+            self.apply(command)
+
+        self.assertFalse(any(c[:2] == ['systemctl', 'is-active'] for c in self.commands))
+
     def test_health_failure_never_retries_or_rolls_back(self):
         def command(argv, **kwargs):
             result = self.command(argv, **kwargs)
@@ -236,7 +248,7 @@ class ConvergenceTest(unittest.TestCase):
                 self.commands.clear()
                 self.payload['tools'] = {'caddy': {'source': 'artifact', 'version': '1.0', 'artifacts': {
                     'amd64': {'url': 'https://example.test/caddy' + suffix, 'sha256': '0' * 64}}}}
-                def command(argv, state=state, **kwargs):
+                def command(argv, **kwargs):
                     result = self.command(argv, **kwargs)
                     if argv[:2] == ['dpkg-query', '-L'] and argv[-1] == 'caddy':
                         result.stdout = '/usr/lib/systemd/system/caddy.service\n'
