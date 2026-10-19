@@ -43,7 +43,7 @@ function nightlyMergeEvidence(): array
     ];
 }
 
-function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
+function nightlyMergeHttp(array $evidence, array $overrides = []): RecordingReleaseAlertNotifier
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
@@ -54,11 +54,11 @@ function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
     app()->instance(ReleaseAlertNotifier::class, $alerts);
     Http::preventStrayRequests();
     $base = 'https://api.github.com/repos/nckrtl/orbit';
-    Http::fake([
+    Http::fake(array_replace([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_merge']),
         $base.'/pulls?*' => Http::response([$evidence['pr']]),
-        $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final']),
+        $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
         $base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
@@ -66,7 +66,7 @@ function nightlyMergeHttp(array $evidence): RecordingReleaseAlertNotifier
             'content' => base64_encode(str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $evidence['before'] : $evidence['after']),
         ]),
         $base.'/pulls/99/merge' => Http::response(['merged' => $evidence['merge_status'] === 200, 'sha' => str_repeat('c', 40), 'message' => 'Merge verdict'], $evidence['merge_status']),
-    ]);
+    ], $overrides));
 
     return $alerts;
 }
@@ -168,7 +168,7 @@ it('raises the existing alert when GitHub refuses the expected-SHA merge', funct
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === str_repeat('b', 40));
-    expect($alerts->alerts[0]->summary)->toContain('refused the expected-head merge');
+    expect($alerts->alerts[0]->summary)->toContain('retrying in five minutes');
 });
 
 it('ignores task-group PRs and does not mint merge requests for them', function (): void {
@@ -219,20 +219,20 @@ it('merges every refreshed Ubuntu pin but refuses even one stale pin in the snap
 
 it('does not recheck a blocked head even after the alert expires and checks a changed head again', function (): void {
     $evidence = nightlyMergeEvidence();
+    $valid = $evidence['after'];
+    $evidence['after'] .= ' ';
     $alerts = nightlyMergeHttp($evidence);
-    $snapshots = Mockery::mock(SnapshotAvailability::class);
-    $snapshots->shouldReceive('latest')->once()->andThrow(new RuntimeException('snapshot download failed'));
-    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
     $this->travel(2)->days();
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
     expect($alerts->alerts)->toHaveCount(1);
-    expect($alerts->alerts[0]->summary)->toContain('Ubuntu snapshot pins could not be verified: snapshot download failed');
+    expect($alerts->alerts[0]->summary)->toContain('Recipe contents differ from the authenticated snapshot');
     expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
 
+    $evidence['after'] = $valid;
     $head = str_repeat('d', 40);
     $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
     $evidence['commits'][0]['sha'] = $evidence['runs'][0]['head_sha'] = $head;
@@ -245,3 +245,99 @@ it('does not recheck a blocked head even after the alert expires and checks a ch
     expect($retried->alerts)->toBe([]);
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $head);
 });
+
+it('retries temporary failures on the same green head after backoff', function (string $failure): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $overrides = match ($failure) {
+        'PR read' => [$base.'/pulls/99' => Http::sequence()->pushStatus(503)->push($evidence['pr'])->push($evidence['final'])],
+        'check runs' => [$base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::sequence()->pushStatus(503)->push(['total_count' => 1, 'check_runs' => $evidence['runs']])],
+        'merge' => [$base.'/pulls/99/merge' => Http::sequence()->pushStatus(503)->push(['merged' => true, 'sha' => str_repeat('c', 40), 'message' => 'Merged'])],
+        'timeout' => [$base.'/pulls/99' => Http::sequence()->pushResponse(Http::failedConnection())->push($evidence['pr'])->push($evidence['final'])],
+        default => [],
+    };
+    $alerts = nightlyMergeHttp($evidence, $overrides);
+    if ($failure === 'snapshot download') {
+        $snapshots = Mockery::mock(SnapshotAvailability::class);
+        $snapshots->shouldReceive('latest')->once()->andThrow(new RuntimeException('snapshot download failed'));
+        $snapshots->shouldReceive('latest')->once()->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
+        app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
+    }
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $requests = count(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/pulls/99') || str_contains($request->url(), '/check-runs?')));
+    $this->travel(4)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    expect(count(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/pulls/99') || str_contains($request->url(), '/check-runs?'))))->toBe($requests);
+    expect($alerts->alerts)->toHaveCount(1);
+    expect($alerts->alerts[0]->summary)->toContain('retrying in five minutes');
+    if ($failure === 'snapshot download') {
+        expect($alerts->alerts[0]->summary)->toContain('snapshot download failed');
+    }
+
+    $this->travel(2)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $evidence['pr']['head']['sha']);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request->method() === 'PUT')->last()[1]->json('merged'))->toBeTrue();
+})->with(['PR read', 'check runs', 'merge', 'timeout', 'snapshot download']);
+
+it('does not record rejected evidence before Required checks pass', function (): void {
+    $evidence = nightlyMergeEvidence();
+    $evidence['pr']['changed_files'] = 2;
+    $evidence['runs'][0]['status'] = 'in_progress';
+    nightlyMergeHttp($evidence);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    $evidence['pr']['changed_files'] = 1;
+    $evidence['runs'][0]['status'] = 'completed';
+    Http::swap(new Factory);
+    nightlyMergeHttp($evidence);
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+});
+
+it('closes a blocked App PR with its reason only after a newer App date PR opens', function (string $case): void {
+    $evidence = nightlyMergeEvidence();
+    $evidence['after'] .= ' ';
+    nightlyMergeHttp($evidence);
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $replacement = $evidence['pr'];
+    $replacement['number'] = 100;
+    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $date = new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day');
+    $replacement['head']['ref'] = 'nightly/recipe-'.$date->format('Ymd');
+    $replacement['head']['sha'] = str_repeat('d', 40);
+    $current = $evidence['pr'];
+    match ($case) {
+        'human replacement' => $replacement['user']['login'] = 'nick',
+        'fork replacement' => $replacement['head']['repo']['full_name'] = 'other/orbit',
+        'changed old head' => $current['head']['sha'] = str_repeat('e', 40),
+        'changed old author' => $current['user'] = ['id' => 42, 'login' => 'nick', 'type' => 'User'],
+        default => null,
+    };
+    Http::swap(new Factory);
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    nightlyMergeHttp($evidence, [
+        $base.'/pulls?*' => Http::response($case === 'no replacement' ? [$evidence['pr']] : [$evidence['pr'], $replacement]),
+        $base.'/pulls/99' => Http::response($current),
+        $base.'/pulls/100' => Http::response($replacement),
+        $base.'/commits/'.str_repeat('d', 40).'/check-runs?*' => Http::response(['total_count' => 0, 'check_runs' => []]),
+        $base.'/issues/99/comments' => Http::response([], $case === 'comment failure' ? 503 : 201),
+    ]);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    if ($case === 'valid') {
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments')
+            && str_contains($request['body'], 'pull/100') && str_contains($request['body'], 'Recipe contents differ'));
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99') && $request['state'] === 'closed');
+    } else {
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
+    }
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files?'));
+})->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'changed old head', 'changed old author', 'comment failure']);

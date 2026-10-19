@@ -96,11 +96,7 @@ final readonly class NightlyRecipeContents
                 $packages[] = $name;
             }
         }
-        try {
-            $versions = $this->snapshots->latest($snapshot, $data['architectures'], $packages);
-        } catch (RuntimeException $error) {
-            throw new UnexpectedValueException('Ubuntu snapshot pins could not be verified: '.$error->getMessage(), previous: $error);
-        }
+        $versions = $this->snapshots->latest($snapshot, $data['architectures'], $packages);
         $data['ubuntu']['snapshot'] = $snapshot;
         foreach ($versions as $name => $version) {
             if (! in_array($name, $packages, true)) {
