@@ -70,7 +70,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->and($report->issues[0]->resourceType)
             ->toBe('route')
             ->and($report->issues[0]->resourceId)
-            ->toBeNull()
+            ->toBe('node:'.$node->id)
             ->and($report->issues[0]->resourceName)
             ->toBeNull()
             ->and(RouteCustomProxy::query()->whereKey($proxy->route_id)->exists())

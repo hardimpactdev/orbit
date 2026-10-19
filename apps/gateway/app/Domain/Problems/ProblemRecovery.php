@@ -239,18 +239,20 @@ final readonly class ProblemRecovery
         $family = $row->evidence['doctor_family'] ?? null;
         $id = $row->evidence['doctor_resource'] ?? null;
         $node = $row->evidence['doctor_node'] ?? null;
+        $nodeId = is_string($node) && ctype_digit($node) ? (int) $node : null;
 
         return ($row->evidence['doctor_resource_present'] ?? null) === true && is_string($family) && (is_int($id) || is_string($id))
-            && is_string($node) && ctype_digit($node) && $this->resourceExists($family, $id, (int) $node) === false;
+            && $this->resourceExists($family, $id, $nodeId) === false;
     }
 
-    public function resourceExists(string $family, int|string|null $id, int $nodeId): ?bool
+    public function resourceExists(string $family, int|string|null $id, ?int $nodeId): ?bool
     {
         if ($id === null || $id === '') {
             return null;
         }
-        if (DoctorResources::isNodeCheckId($id, $nodeId)) {
-            return Node::query()->whereKey($nodeId)->exists();
+        if (is_string($id) && str_starts_with($id, DoctorResources::NodeCheckPrefix)) {
+            return $nodeId !== null && DoctorResources::isNodeCheckId($id, $nodeId)
+                ? Node::query()->whereKey($nodeId)->exists() : null;
         }
         $model = match ($family) {
             'node' => Node::class, 'role' => NodeRole::class, 'project' => Project::class,

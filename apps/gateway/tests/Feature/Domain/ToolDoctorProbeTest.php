@@ -818,7 +818,7 @@ it('names unregistered packages without a resource id and ignores informational 
         ->and($report->status)->toBe(DoctorFamilyStatus::Healthy)
         ->and(array_map(static fn ($issue): array => [$issue->code, $issue->kind->value, $issue->resourceId, $issue->resourceName, $issue->expected, $issue->observed], $report->issues))
         ->toBe([
-            ['tool.inventory_scan', 'informational', null, 'vp', 'complete', 'absent'],
+            ['tool.inventory_scan', 'informational', 'node:'.$node->id.':inventory', 'vp', 'complete', 'absent'],
             ['tool.package_unregistered', 'informational', null, 'openssl@3', 'brew', 'version=3.4.0;dependency=yes;adoption=unsupported;block=dependency'],
             ['tool.package_unregistered', 'informational', null, 'zebra', 'brew', 'version=2.0.0;dependency=no;adoption=supported;block=none'],
             ['tool.package_unregistered', 'informational', null, 'docker', 'brew-cask', 'version=4.39.0;dependency=no;adoption=supported;block=none'],
@@ -872,8 +872,8 @@ it('sorts registered issues before scan issues and unregistered packages', funct
         ->toBe([
             ['tool.not_installed', 'drift', $missing->id, null],
             ['tool.version_mismatch', 'drift', $mismatch->id, null],
-            ['tool.inventory_scan', 'informational', null, 'brew'],
-            ['tool.inventory_scan', 'unverifiable', null, 'brew-cask'],
+            ['tool.inventory_scan', 'informational', 'node:'.$node->id.':inventory', 'brew'],
+            ['tool.inventory_scan', 'unverifiable', 'node:'.$node->id.':inventory', 'brew-cask'],
             ['tool.package_unregistered', 'informational', null, 'alpha'],
             ['tool.package_unregistered', 'informational', null, 'zeta'],
         ])
@@ -1337,7 +1337,7 @@ it('recovers global Tool inventory faults only after a complete successful scan'
 it('keeps failed Tool jobs separate and recovers only the job observed clean', function (): void {
     $this->freezeTime();
     $node = tool_probe_linux_node();
-    $otherNode = Node::factory()->create();
+    $otherNode = Node::query()->create(['name' => 'other-probe-node', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.42']);
     (new CollectDoctorResource('failed-checks', [$otherNode->id], $otherNode->id, DoctorFamily::Tool, new DoctorResources(DoctorResourceKind::Inventory)))->failed(new RuntimeException('Worker stopped.'));
     foreach ([DoctorResourceKind::Inventory, DoctorResourceKind::Environments] as $kind) {
         (new CollectDoctorResource('failed-checks', [$node->id], $node->id, DoctorFamily::Tool, new DoctorResources($kind)))
@@ -1368,5 +1368,9 @@ it('keeps failed Tool jobs separate and recovers only the job observed clean', f
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments')->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole()->evidence)->not->toHaveKey('resolved_at');
     $otherNode->delete();
-    expect(app(ProblemRecovery::class)->reason(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole()))->toBe('resource_gone');
+    $row = ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole();
+    $row->update(['evidence' => [...$row->evidence, 'doctor_node' => null]]);
+    expect(app(ProblemRecovery::class)->reason($row))->toBeNull();
+    $row->update(['evidence' => [...$row->evidence, 'doctor_node' => (string) $otherNode->id]]);
+    expect(app(ProblemRecovery::class)->reason($row))->toBe('resource_gone');
 });

@@ -394,7 +394,7 @@ it('retains SQLite findings and emits one bounded issue when the node is unreach
         ->and($report->issues[1]->resourceId)
         ->toBe($appDev->id)
         ->and($report->issues[3]->resourceId)
-        ->toBeNull()
+        ->toBe('node:'.$node->id)
         ->and($roleCalls)
         ->toBe(0)
         ->and($vpnCalls)

@@ -288,7 +288,7 @@ it('short-circuits app inspection when the node is unreachable', function (): vo
         ->and($report->issues[0]->code)
         ->toBe('project.node_unreachable')
         ->and($report->issues[0]->resourceId)
-        ->toBeNull()
+        ->toBe('node:'.$node->id)
         ->and($calls)
         ->toBe(0);
 });

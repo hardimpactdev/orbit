@@ -462,7 +462,7 @@ it('queues database attachments by attachment identity and retains their finding
     expect($job->resources->kind)->toBe(DoctorResourceKind::Attachments);
     expect($job->resources->ids)->toBe([$attachment->id]);
     $context = database_connection_doctor_context($node);
-    Cache::put(ProblemCollection::contextKey($job->collection, $node->id), ['inspection' => $context->inspection->toArray(), 'failed' => false]);
+    Cache::put(ProblemCollection::contextKey($job->collection, $node->id), ['inspection' => $context->inspection->toArray(), 'failed' => false, 'observed_at' => now()->toISOString()]);
     $job->handle(app(RunDoctorAction::class), app(ProblemCollector::class), app(CommandDeadline::class));
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|database_connection.env_mismatch|database_connection|'.$attachment->id)->exists())->toBeTrue();
 });

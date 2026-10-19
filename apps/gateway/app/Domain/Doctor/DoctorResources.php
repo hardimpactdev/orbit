@@ -10,6 +10,8 @@ use LogicException;
 /** A typed row selection or Node check owned by one family. */
 final readonly class DoctorResources
 {
+    public const string NodeCheckPrefix = 'node:';
+
     /** @param list<int|string> $ids */
     public function __construct(public DoctorResourceKind $kind, public array $ids = []) {}
 
@@ -32,7 +34,7 @@ final readonly class DoctorResources
             default => throw new LogicException('Row checks use their resource IDs.'),
         };
 
-        return 'node:'.$nodeId.$suffix;
+        return self::NodeCheckPrefix.$nodeId.$suffix;
     }
 
     public static function isNodeCheckId(int|string $id, int $nodeId): bool

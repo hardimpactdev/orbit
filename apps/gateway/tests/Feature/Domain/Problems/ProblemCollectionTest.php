@@ -265,7 +265,7 @@ it('returns after one lookup when the observed Node was deleted', function (): v
 it('does not treat a cached Node observation as newer than an intervening failure', function (): void {
     $this->freezeTime();
     config(['cache.default' => 'array']);
-    $node = Node::factory()->create();
+    $node = Node::query()->create(['name' => 'cached-observation', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.28']);
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'worker', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['php']], 'desired_state' => 'running', 'status' => LifecycleStatus::Active]);
     Cache::put(ProblemCollection::contextKey('cached-observation', $node->id), ['inspection' => (new NodeInspectionData(true, 'linux', 'amd64', true))->toArray(), 'failed' => false, 'observed_at' => now()->toISOString()]);
     $this->travel(1)->minutes();

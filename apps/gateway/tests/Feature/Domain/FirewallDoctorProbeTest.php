@@ -427,7 +427,7 @@ final readonly class FirewallExpectationProviderFake implements MetricsFirewallE
 
 it('recovers a failed Firewall inventory only after its inventory completes', function (bool $hasExpectation, bool $inspectionFails, bool $recovered): void {
     $this->freezeTime();
-    $node = Node::factory()->create();
+    $node = Node::query()->create(['name' => 'inventory-node', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9']);
     (new CollectDoctorResource('failed-firewall', [$node->id], $node->id, DoctorFamily::Firewall, new DoctorResources(DoctorResourceKind::Inventory)))->failed(new RuntimeException('Worker stopped.'));
     $row = ProblemFingerprint::query()->sole();
     $this->travel(1)->minutes();
