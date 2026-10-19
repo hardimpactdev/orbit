@@ -89,3 +89,22 @@ it('uses another current host while one host builds', function (): void {
 
     expect(app(AllocateTaskVmAction::class)->execute(currentRecipeClaimGroup())->host_node_id)->toBe($ready->id);
 });
+
+it('keeps the promoted image until a cold candidate succeeds and promotes', function (string $state, bool $promoted, bool $replacement): void {
+    Queue::fake();
+    $host = currentRecipeClaimHost();
+    $build = TaskVmRecipeImages::ready($host->id);
+    $candidate = $build->replicate();
+    $candidate->fill(['recipe_generation' => 2, 'state' => $state, 'promoted_at' => $promoted ? now() : null,
+        'image_fingerprint' => str_repeat('b', 64)]);
+    $candidate->save();
+
+    $vm = app(AllocateTaskVmAction::class)->execute(currentRecipeClaimGroup());
+
+    expect($vm->image_fingerprint)->toBe(str_repeat($replacement ? 'b' : 'a', 64));
+})->with([
+    'running' => ['running', false, false],
+    'failed after promotion' => ['failed', true, false],
+    'unpromoted' => ['succeeded', false, false],
+    'promoted' => ['succeeded', true, true],
+]);

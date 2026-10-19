@@ -986,7 +986,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
 
     it('handles a serialized refresh job queued before the recipe fence', function (): void {
         $job = new RefreshUpCloudTaskVmBaseImage;
-        unset($job->recipeIdentity, $job->afterAttemptId);
+        unset($job->recipeIdentity, $job->afterAttemptId, $job->generation, $job->rebuild);
         $job = unserialize(serialize($job));
 
         app()->call([$job, 'handle']);
