@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Shared\StoredInteger;
+use App\Domain\TaskVms\TaskVmPublishState;
 use App\Models\Activity;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
+use App\Models\TaskVm;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -114,8 +117,23 @@ final readonly class TaskFinalReview
     /**
      * The latest reviewed head that publication has not pushed. A merge needs no preservation push.
      * Incoming author heads already live on origin. With per-subtask publication, a handled approval is pushed.
+     * Reconciles a matching queued push receipt before checking VM availability: origin already holds that head.
      */
-    public static function removalPushCommit(Task $group): ?string
+    public static function reconcileRemovalPush(Task $group): ?string
+    {
+        $commit = self::unpublishedRemovalCommit($group);
+        if ($commit !== null && TaskVm::query()->where('group_id', $group->id)
+            ->where('publish_state', TaskVmPublishState::Pushed)->where('publish_commit', $commit)
+            ->where('publish_branch', TaskRemoteBranch::for($group))->exists()) {
+            self::recordRemovalPush($group, $commit);
+
+            return null;
+        }
+
+        return $commit;
+    }
+
+    private static function unpublishedRemovalCommit(Task $group): ?string
     {
         if ($group->watched_pr_completion === 'merged' || $group->merged_sha !== null) {
             return null;
@@ -137,6 +155,23 @@ final readonly class TaskFinalReview
         }
 
         return $approval->commit_sha;
+    }
+
+    /** Records a confirmed removal push in the publication state that selects the head. */
+    public static function recordRemovalPush(Task $group, string $sha): void
+    {
+        if ($group->reviewsBeforePush()) {
+            TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $sha)->whereNull('pushed_at')->update(['pushed_at' => now()]);
+        } else {
+            $approval = TaskComment::query()->where('task_group_id', $group->id)->where('type', TaskCommentType::Approved)
+                ->where('commit_sha', $sha)->latest('id')->firstOrFail();
+            Task::query()->whereKey($approval->task_id)
+                ->where(static fn ($query) => $query->whereNull('review_handled_comment_id')->orWhere('review_handled_comment_id', '<', $approval->id))
+                ->update(['review_handled_comment_id' => $approval->id]);
+        }
+        Log::info('Pushed approved work before removing a task workspace.', [
+            'task_group_id' => $group->id, 'commit_sha' => $sha, 'branch' => TaskRemoteBranch::for($group),
+        ]);
     }
 
     public static function isReviewed(Task $group, string $sha): bool

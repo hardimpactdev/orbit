@@ -18,8 +18,8 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
@@ -28,11 +28,9 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -97,14 +95,10 @@ final readonly class RemoveTaskWorkspaceAction
             if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
                 throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
             }
-            $commit = TaskFinalReview::removalPushCommit($group);
+            $commit = TaskFinalReview::reconcileRemovalPush($group);
             if ($commit !== null) {
                 $this->publisher->push($group, $commit);
-                TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $commit)->whereNull('pushed_at')->update(['pushed_at' => now()]);
-                Log::info('Pushed approved work before removing a task workspace.', [
-                    'task_group_id' => $group->id, 'instance_id' => $instance->id,
-                    'commit_sha' => $commit, 'branch' => TaskRemoteBranch::for($group),
-                ]);
+                TaskFinalReview::recordRemovalPush($group, $commit);
             }
             $lease = $leases->remoteStarted($instance);
             try {
@@ -170,7 +164,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null, bool $replaceDirection = false): void
     {
-        if ($exception instanceof TaskWorkspaceWaiting) {
+        if ($exception instanceof TaskWorkspaceWaiting || ($exception instanceof TaskPullRequestException && $exception->pending)) {
             return;
         }
         for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {

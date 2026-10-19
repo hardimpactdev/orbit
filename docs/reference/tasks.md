@@ -1572,7 +1572,9 @@ Each tick sweeps workspaces that still exist:
 
 The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. Before workspace removal, Orbit pushes the latest reviewed head that publication never pushed, and logs its SHA. A task completed by a merge never pushes during cleanup.
 
-Under review and merge, the latest reviewed-commit record selects the head; a later unreviewed approval cannot hide it. A published head and an incoming author head need no push. Without review and merge, the latest subtask approval is eligible only while publication has not handled it. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
+Under review and merge, the latest reviewed-commit record selects the head; a later unreviewed approval cannot hide it. A published head and an incoming author head need no push. Without review and merge, the latest subtask approval is eligible only while publication has not handled it.
+
+Every successful removal push records publication in the same state that selects the head, including per-subtask approvals. The shared rule first reconciles a queued push receipt for that exact SHA and destination branch, even if the VM died before the next removal attempt. A pending push waits without requesting removal assistance. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
 
 An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 

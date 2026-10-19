@@ -702,11 +702,11 @@ describe('final review before every push', function (): void {
         $group = rm_group([['Models', TaskStatus::Completed]], TaskGroupStatus::Settling);
         TaskComment::query()->create(['task_id' => $group->tasks->sole()->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
 
-        expect(TaskFinalReview::removalPushCommit($group))->toBeNull();
+        expect(TaskFinalReview::reconcileRemovalPush($group))->toBeNull();
 
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::OrbitPush]);
 
-        expect(TaskFinalReview::removalPushCommit($group))->toBe(RM_COMMIT);
+        expect(TaskFinalReview::reconcileRemovalPush($group))->toBe(RM_COMMIT);
     });
 
     it('leaves a Project without the flow on the existing publish path', function (): void {

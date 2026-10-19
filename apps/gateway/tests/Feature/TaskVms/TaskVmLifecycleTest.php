@@ -63,6 +63,7 @@ use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
+use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
@@ -72,6 +73,7 @@ use App\Jobs\TaskVms\EnrollTaskVm;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -98,6 +100,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
@@ -1078,19 +1081,158 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['destroy']);
     });
 
-    it('keeps a stopped VM while its reviewed head is unpublished', function (): void {
+    it('starts a stopped VM through the wake path before preserving its reviewed head', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $this->provider->observations = [new VmObservation(false, null)];
+        $sha = str_repeat('c', 40);
+        $reviewed = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $this->provider->observations = [new VmObservation(false, null), new VmObservation(false, null)];
+        Sleep::fake();
+        Queue::fake();
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha && in_array('start', $this->provider->calls, true));
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+        app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+        Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
         $this->assertModelExists($instance);
+        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        app()->call([new ResumeTaskVm($vm->id), 'handle']);
         expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($this->provider->calls)->toBe([]);
+        app(RemoveTaskWorkspaceAction::class)->remove($group);
+        expect($reviewed->fresh()->pushed_at)->not->toBeNull();
+        $this->assertModelMissing($instance);
+        expect($this->provider->calls)->toBe(['observe', 'observe', 'start', 'destroy']);
+    });
+
+    it('destroys a lost VM and records its lost reviewed SHA without clearing the evidence', function (TaskGroupStatus $status): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => $status]);
+        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing']);
+        $nodeId = $vm->node_id;
+        $sha = str_repeat('c', 40);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $this->provider->observation = null;
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldNotReceive('push');
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        $this->assertModelMissing($instance);
+        expect(Node::query()->find($nodeId))->toBeNull();
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
         expect($group->fresh()->assistance_requested)->toBeTrue();
+        expect($group->fresh()->assistance_reason)->toContain('lost', $sha);
+        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->sole()->properties->get('reason'))->toContain('lost', $sha);
+        expect($this->provider->calls)->toBe(['observe', 'destroy']);
+    })->with([TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
+
+    it('records an ordinary removal push before teardown so a later lost VM needs no push', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
+        $sha = str_repeat('c', 40);
+        $approval = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha);
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        $removal = app(RemoveTaskWorkspaceAction::class);
+        $lifecycle = app(ProjectLifecycleRunner::class);
+        app()->instance(ProjectLifecycleRunner::class, Mockery::mock($lifecycle)->shouldReceive('run')->andThrow(new RuntimeException('Teardown failed.'))->getMock());
+        try {
+            $removal->remove($group);
+            throw new LogicException('Expected teardown failure.');
+        } catch (RuntimeException $exception) {
+            expect($exception->getMessage())->toBe('Teardown failed.');
+            $removal->recordFailure($group, $exception);
+        }
+        app()->instance(ProjectLifecycleRunner::class, $lifecycle);
+        $this->assertModelExists($instance);
+        expect($task->fresh()->review_handled_comment_id)->toBe($approval->id);
+        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing', 'publish_state' => 'pushed', 'publish_commit' => $sha, 'publish_branch' => 'task-'.$group->id]);
+        $this->provider->observation = null;
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        $this->assertModelMissing($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect($this->provider->calls)->toBe(['observe', 'destroy']);
+    });
+
+    it('reconciles a queued push that succeeded before VM loss without another removal poll', function (bool $reviewAndMerge): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        $group->project->update(['review_and_merge' => $reviewAndMerge, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
+        $sha = str_repeat('c', 40);
+        $approval = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+        if ($reviewAndMerge) {
+            TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+        }
+        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing', 'publish_state' => 'pushed', 'publish_commit' => $sha, 'publish_branch' => 'task-'.$group->id]);
+        $this->provider->observation = null;
+        Log::spy();
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldNotReceive('push');
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        $this->assertModelMissing($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('properties->reason', 'like', '%Reviewed work lost%')->exists())->toBeFalse();
+        if ($reviewAndMerge) {
+            expect(TaskReviewedCommit::query()->where('task_id', $group->id)->sole()->pushed_at)->not->toBeNull();
+        } else {
+            expect($task->fresh()->review_handled_comment_id)->toBe($approval->id);
+        }
+        expect($this->provider->calls)->toBe(['observe', 'destroy']);
+        Log::shouldHaveReceived('info')->once()->with('Pushed approved work before removing a task workspace.', ['task_group_id' => $group->id, 'commit_sha' => $sha, 'branch' => 'task-'.$group->id]);
+    })->with(['per-subtask publication' => false, 'review and merge' => true]);
+
+    it('removes an ended incoming pull request workspace without pushing the author head', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Failed, 'pr_url' => 'https://github.com/acme/dlf/pull/42', 'pr_branch' => 'authors-change']);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::PullRequestReview]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldNotReceive('push');
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+        Queue::fake();
+
+        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
+
+        $this->assertModelMissing($instance);
+        expect($this->provider->calls)->toBe(['destroy']);
+    });
+
+    it('waits without removal assistance when manual completion has a pending preservation push', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        app(TaskExtensionState::class)->enable();
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
+        $publisher->shouldReceive('push')->once()->andThrow(TaskPullRequestException::pending('Push queued.'));
+        app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+        app(CompleteTaskGroupAction::class)->execute($group);
+
+        $this->assertModelExists($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+        expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect($this->provider->calls)->toBe([]);
     });
 
     it('wakes a parked VM before attempting its preservation push', function (): void {
