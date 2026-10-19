@@ -154,10 +154,10 @@ The Pest fork that Orbit owns gets one documented option, `--tia-base`, with two
 - When no graph fits, the fork records a fresh graph with the full suite, as today.
 - `bin/review-check` no longer writes Pest's graph.
 
-The handoff cache stays: one slot, matched by tree, holding the graph after a passed run.
+The handoff cache keeps one entry per tree, bounded by the retention rule in [The candidate gate](/reference/implementation-loop#the-candidate-gate), holding the graph after a passed run.
 
 - A passed baseline fills it for the start commit's tree, so the first handoff can test from the start commit.
-- A passed handoff fills it for its tree. When subtask N+1 starts at the tree of subtask N's last passed handoff, the cache gives it current edges for the code the group added.
+- A passed handoff adds an entry for its tree without replacing the start entry. When subtask N+1 starts at the tree of subtask N's last passed handoff, the cache gives it current edges for the code the group added.
 - After item 1, only the Gateway's checks write it, because the implementer no longer runs `bin/review-check`.
 
 The data does not show what a tree base saves. The only rework measured after #1335 is one sample, on one process, with an unread selection. So the choice rests on simplicity and a bounded cost:

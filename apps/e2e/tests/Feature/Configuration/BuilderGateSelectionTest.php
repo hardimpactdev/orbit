@@ -866,7 +866,8 @@ function orb1803_clear_reports(string $root): void
 
 function orb1803_clear_handoff_cache(string $root): void
 {
-    $cache = $root.'/.git/orbit-handoff-tia';
+    $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
+        $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
     if (is_dir($cache)) {
         (new Process(['rm', '-rf', $cache]))->mustRun();
     }
@@ -1100,12 +1101,44 @@ describe('native start commit selection', function (): void {
         $run = orb1803_run($fixture, null, 0);
         $log = orb1803_log($run['receipt'], 'apps/gateway', 'test:affected');
         expect($log)->toContain($selected === 0 ? 'No affected tests found' : $selected.' passed');
-        $cache = $root.'/.git/orbit-handoff-tia';
+        $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
+        $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
         $metadata = json_decode((string) file_get_contents($cache.'/receipt.json'), true, flags: JSON_THROW_ON_ERROR);
         expect($metadata['tree'])->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput()))
-            ->and(is_file($cache.'/apps-gateway/graph.json'))->toBeTrue()
+            ->and(is_file($cache.'/apps/gateway/graph.json'))->toBeTrue()
             ->and(orb277_check($run['receipt'], 'apps/gateway', 'test:affected')['command'])->toBe(['composer', 'test:affected', '--', '--tia-base=graph']);
     })->with(['older graph' => ['older', 1], 'current graph' => ['current', 0], 'missing graph' => ['missing', 2]]);
+
+    it('preserves the start graph after a passed handoff so rework stays narrow', function (): void {
+        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $root = $fixture['root'];
+        orb1803_install_native_pest($root);
+        orb1803_widget($root, 1, 1);
+        orb1803_other($root, 1);
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        (new Process(['git', 'commit', '-m', 'Graph origin'], $root))->mustRun();
+        (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
+        orb1803_record_pest($root);
+        orb1803_other($root, 2);
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        (new Process(['git', 'commit', '-m', 'Subtask start'], $root))->mustRun();
+        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+        $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
+        $baseline = orb1803_run($fixture, null, 0);
+        expect(orb1803_log($baseline['receipt'], 'apps/gateway', 'test:affected'))->toContain('1 passed');
+        $graph = $root.'/.git/orbit-handoff-tia/'.$tree.'/apps/gateway/graph.json';
+        (new Process(['git', 'checkout', '-b', 'implementation'], $root))->mustRun();
+        foreach ([2, 3] as $value) {
+            orb1803_widget($root, $value, $value);
+            (new Process(['git', 'add', '.'], $root))->mustRun();
+            (new Process(['git', 'commit', '-m', 'Handoff '.$value], $root))->mustRun();
+            $handoff = orb1803_run($fixture, $start, 0);
+            expect(orb1803_log($handoff['receipt'], 'apps/gateway', 'test:affected'))->toContain('1 passed')
+                ->and(orb277_check($handoff['receipt'], 'apps/gateway', 'test:affected')['command'])
+                ->toBe(['composer', 'test:affected', '--', '--tia-base='.$start]);
+        }
+        expect(is_file($graph))->toBeTrue();
+    });
 
     it('uses a start commit only with its passed graph and keeps lock drift visible after a local warm run', function (string $cacheShape): void {
         $fixture = orb277_gate_fixture('docs/handoff.md');
@@ -1120,13 +1153,14 @@ describe('native start commit selection', function (): void {
         (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
         orb1803_record_pest($root);
         orb1803_run($fixture, null, 0);
-        $cache = $root.'/.git/orbit-handoff-tia';
+        $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
+        $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
         if ($cacheShape === 'mismatched') {
             file_put_contents($cache.'/receipt.json', '{"tree":"wrong"}');
         } elseif ($cacheShape === 'missing') {
             orb1803_clear_handoff_cache($root);
         } elseif ($cacheShape === 'no graph') {
-            unlink($cache.'/apps-gateway/graph.json');
+            unlink($cache.'/apps/gateway/graph.json');
         }
         (new Process(['git', 'checkout', '-b', 'implementation'], $root))->mustRun();
         orb1803_widget($root, 2, 2);

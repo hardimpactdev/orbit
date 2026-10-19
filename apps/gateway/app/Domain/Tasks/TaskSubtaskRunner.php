@@ -326,7 +326,7 @@ final readonly class TaskSubtaskRunner
         $group = $task->parent;
         $start = TaskReviewBase::commit($task);
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
-            $check = [...($check ?? ['start' => TaskReviewBase::commit($task), 'commands' => []]), 'test_base' => $start];
+            $check = [...($check ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
         }
 
         $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];

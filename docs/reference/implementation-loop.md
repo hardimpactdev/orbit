@@ -351,6 +351,8 @@ Every task handoff selects affected tests from the subtask start commit, includi
 
 The gate passes `--tia-base=COMMIT` only with the graph copied from a passed handoff-cache run on that commit's tree. It never pairs COMMIT with a graph warmed by the implementer. Without that matching graph, including in a baseline or a local run, it passes `--tia-base=graph` and tests from the graph's default-branch commit. Both forms include dirty and untracked files, ignore branch baselines and run selected tests without replaying results. The gate copies graphs without changing their contents.
 
+The worktree's Git directory holds `orbit-handoff-tia/<tree>/<project>/graph.json`. Each passed run publishes a fresh entry by renaming a complete temporary directory, with only the graphs that run produced. Existing entries stay unchanged. The cache retains at most eight entries: the active subtask start tree and the newest other trees, including the passed candidate. A passed handoff preserves its start entry for every rework.
+
 A passed baseline fills the handoff cache too. A baseline whose graph is older than its candidate tests those intervening changes; a graph at the candidate selects no tests. A missing graph runs the full suite. A dependency fingerprint change, including a `composer.lock` change after the start commit, still runs the full suite even after the implementer warms its own graph.
 
 CI ignores `ORBIT_TASK_CHECK_BASE` when `CI` or `GITHUB_ACTIONS` is set and uses `--tia-base=graph`. Documentation and topology checks keep their branch scope. The receipt records the supplied test base and the executed commands.
