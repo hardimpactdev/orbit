@@ -524,7 +524,8 @@ SH));
         'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo]);
     $process->start();
     try {
-        expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
+        $isReady = static fn (): bool => str_contains($process->getOutput(), "ready\n");
+        expect($isReady() || $process->waitUntil($isReady))->toBeTrue();
         $targetBinding = $relevant ? $binding : bin2hex(random_bytes(32));
         $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
         $probe = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
