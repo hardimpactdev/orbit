@@ -120,11 +120,11 @@ A successful command exits with `0`. A handled failure returns the command's doc
 
 ## Enable an extension
 
-Some command families are hidden until you enable them at the Gateway. The Gateway state composes the CLI, MCP, API, and web surfaces for every client. `extension:enable` only reveals a family; `proxycli:setup` separately deploys its collector. See [extension](/cli/extension) and [proxycli](/cli/proxycli).
+Some command families are hidden until you enable them at the Gateway. The Gateway state composes the CLI, MCP, API, and web surfaces for every client. `extension:enable` only reveals a family; `ai-router:setup` separately deploys its collector. See [extension](/cli/extension) and [ai-router](/cli/ai-router).
 
 ```bash
 orbit extension:list
-orbit extension:enable proxycli
+orbit extension:enable ai-router
 ```
 
 The [extension family](/cli/extension) lists the available extensions.

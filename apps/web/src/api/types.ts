@@ -138,7 +138,7 @@ export type QuotaProvider = {
     accounts: QuotaAccount[];
 };
 
-export type ProxyCliStatus = {
+export type AiRouterStatus = {
     enabled: boolean;
     hostname: string;
     node_id: number | null;

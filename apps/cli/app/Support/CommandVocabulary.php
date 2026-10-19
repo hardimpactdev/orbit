@@ -48,7 +48,7 @@ final readonly class CommandVocabulary
         'node' => ['converge', 'relocate', 'rename'],
         'operation' => ['cancel'],
         'process' => ['logs', 'restart', 'start', 'stop'],
-        'proxycli' => ['models', 'setup', 'status', 'teardown'],
+        'ai-router' => ['setup', 'status', 'teardown'],
         'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],
         'profile' => ['profile'],
         'realtime' => ['tail'],

@@ -282,7 +282,7 @@ describe('a Valkey Database server in Docker', function (): void {
     it('reports the recorded users as healthy through Doctor, with the exact rules that Valkey lists', function (): void {
         valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*', 'orbit-gateway-horizon:*'],
             ['@connection', '@transaction', '@keyspace', '@string', '@list', '@hash', '@set', '@sortedset', 'eval', 'time']);
-        valkey_docker_user($this->server, 'collector', ['orbit:proxycli:*'], ['@connection', '@string', '@keyspace', 'eval']);
+        valkey_docker_user($this->server, 'collector', ['orbit:ai-router:*'], ['@connection', '@string', '@keyspace', 'eval']);
         $context = new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true));
 
         expect(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []])
@@ -443,12 +443,12 @@ describe('a Valkey Database server in Docker', function (): void {
     });
 
     it('runs the documented collector ACL through the Predis handshake and cache commands', function (): void {
-        $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['orbit:proxycli:*'], ['@connection', '@string', '@keyspace', 'eval']);
+        $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['orbit:ai-router:*'], ['@connection', '@string', '@keyspace', 'eval']);
         $client = valkey_docker_client($this->server, 'orbit-test-queue', 'queue-secret');
 
-        expect((string) $client->executeRaw(['SET', 'orbit:proxycli:test', 'snapshot', 'EX', '60']))->toBe('OK')
-            ->and($client->executeRaw(['GET', 'orbit:proxycli:test']))->toBe('snapshot')
-            ->and($client->executeRaw(['EVAL', "return redis.call('GET', KEYS[1])", '1', 'orbit:proxycli:test']))->toBe('snapshot')
+        expect((string) $client->executeRaw(['SET', 'orbit:ai-router:test', 'snapshot', 'EX', '60']))->toBe('OK')
+            ->and($client->executeRaw(['GET', 'orbit:ai-router:test']))->toBe('snapshot')
+            ->and($client->executeRaw(['EVAL', "return redis.call('GET', KEYS[1])", '1', 'orbit:ai-router:test']))->toBe('snapshot')
             ->and((string) $client->executeRaw(['GET', 'other:test']))->toStartWith('NOPERM');
     });
 

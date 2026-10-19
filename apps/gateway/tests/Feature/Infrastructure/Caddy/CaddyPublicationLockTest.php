@@ -14,11 +14,11 @@ use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCertificatePublisher;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
 
@@ -52,8 +52,8 @@ describe('every Caddy writer', function (): void {
         'websocket certificate' => [fn (): array => caddy_lock_remote_programs([
             new WebSocketCertificatePublisher()->command('certificate', 'key'),
         ])],
-        'proxycli certificate' => [fn (): array => caddy_lock_remote_programs([
-            new ProxyCliCertificatePublisher()->command('certificate', 'key'),
+        'ai-router certificate' => [fn (): array => caddy_lock_remote_programs([
+            new AiRouterCertificatePublisher()->command('certificate', 'key'),
         ])],
         'analytics certificate' => [fn (): array => caddy_lock_remote_programs([
             new AnalyticsCertificatePublisher()->command('certificate', 'key'),
@@ -66,18 +66,18 @@ describe('every Caddy writer', function (): void {
         );
 
         expect($reloaders)->toEqualCanonicalizing([
-            'Analytics/AnalyticsCertificatePublisher.php',
-            'AppDev/RemoteAppDevCertificateManager.php',
-            'Caddy/Build/NodeCaddyPushScript.php',
-            'Gateway/NativeGatewayCertificatePublisher.php',
-            'Metrics/MetricsCertificatePublisher.php',
-            'Metrics/NativeMetricsAccessRevoker.php',
-            'ProxyCli/ProxyCliCertificatePublisher.php',
-            'WebSocket/WebSocketCertificatePublisher.php',
+            'app/Infrastructure/Analytics/AnalyticsCertificatePublisher.php',
+            'app/Infrastructure/AppDev/RemoteAppDevCertificateManager.php',
+            'app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php',
+            'app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php',
+            'app/Infrastructure/Metrics/MetricsCertificatePublisher.php',
+            'app/Infrastructure/Metrics/NativeMetricsAccessRevoker.php',
+            'extensions/ai-router/src/Infrastructure/AiRouterCertificatePublisher.php',
+            'app/Infrastructure/WebSocket/WebSocketCertificatePublisher.php',
         ]);
 
         foreach ($reloaders as $reloader) {
-            expect(str_contains((string) file_get_contents(app_path('Infrastructure/'.$reloader)), 'CaddyPublicationLock'))->toBeTrue($reloader);
+            expect(str_contains((string) file_get_contents(base_path($reloader)), 'CaddyPublicationLock'))->toBeTrue($reloader);
         }
     });
 
@@ -87,7 +87,7 @@ describe('every Caddy writer', function (): void {
                 && preg_match('/mv -fT -- \S+ "\\\\?\$(live|live_caddyfile)"/', $source) === 1,
         );
 
-        expect($swappers)->toBe(['Caddy/Build/NodeCaddyPushScript.php']);
+        expect($swappers)->toBe(['app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php']);
     });
 
     it('names no Caddy lock other than the shared one', function (): void {
@@ -95,7 +95,7 @@ describe('every Caddy writer', function (): void {
             fn (string $source): bool => preg_match('#/run/lock/[^\s\'"]*caddy#i', $source) === 1,
         );
 
-        expect($locks)->toBe(['Caddy/CaddyPublicationLock.php']);
+        expect($locks)->toBe(['app/Infrastructure/Caddy/CaddyPublicationLock.php']);
     });
 });
 
@@ -238,9 +238,9 @@ function caddy_lock_source_files(Closure $matches): array
 {
     $files = [];
 
-    foreach (Finder::create()->files()->in(app_path('Infrastructure'))->name('*.php') as $file) {
+    foreach (Finder::create()->files()->in([app_path('Infrastructure'), base_path('extensions')])->name('*.php') as $file) {
         if ($matches($file->getContents())) {
-            $files[] = $file->getRelativePathname();
+            $files[] = substr($file->getRealPath(), strlen(base_path()) + 1);
         }
     }
 

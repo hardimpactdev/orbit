@@ -18,8 +18,8 @@ import "../../src/styles.css";
 export async function openApp(
     path = "/",
     options: {
-        proxycli?: boolean;
-        proxycliExtension?: boolean;
+        "ai-router"?: boolean;
+        aiRouterExtension?: boolean;
         tasks?: boolean;
         documents?: boolean;
         wrapTransport?: (inner: Transport) => Transport;
@@ -37,10 +37,10 @@ export async function openApp(
 
     const gateway = installDemo();
 
-    if (options.proxycli === true) {
-        gateway.enableProxyCli();
-    } else if (options.proxycliExtension === true) {
-        gateway.enableProxyCliExtension();
+    if (options["ai-router"] === true) {
+        gateway.enableAiRouter();
+    } else if (options.aiRouterExtension === true) {
+        gateway.enableAiRouterExtension();
     }
     if (options.tasks === false) {
         gateway.disableTasks();

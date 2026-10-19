@@ -195,12 +195,12 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
-        name: 'proxycli',
+        name: 'ai-router',
         runtime: ProcessRuntime::Systemd,
-        command: ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        command: ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
         image: null,
-        workingDirectory: '/var/lib/orbit/proxycli',
-        environment: ['ZEBRA' => 'last', 'PROXYCLI_READ_TOKEN' => 'secret', 'ALPHA' => 'first'],
+        workingDirectory: '/var/lib/orbit/ai-router',
+        environment: ['ZEBRA' => 'last', 'AI_ROUTER_READ_TOKEN' => 'secret', 'ALPHA' => 'first'],
         ports: [],
         volumes: [],
         restartPolicy: 'unless-stopped',
@@ -209,12 +209,12 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
     $sameWithDifferentOrder = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
-        name: 'proxycli',
+        name: 'ai-router',
         runtime: ProcessRuntime::Systemd,
-        command: ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        command: ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
         image: null,
-        workingDirectory: '/var/lib/orbit/proxycli',
-        environment: ['ALPHA' => 'first', 'ZEBRA' => 'last', 'PROXYCLI_READ_TOKEN' => 'secret'],
+        workingDirectory: '/var/lib/orbit/ai-router',
+        environment: ['ALPHA' => 'first', 'ZEBRA' => 'last', 'AI_ROUTER_READ_TOKEN' => 'secret'],
         ports: [],
         volumes: [],
         restartPolicy: 'unless-stopped',
@@ -226,11 +226,11 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
 
     expect($created['process']->runtime_config)
         ->toBe([
-            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'],
             'environment_file' => '/home/orbit/apps/docs/.env',
             'environment' => [
+                'AI_ROUTER_READ_TOKEN' => 'secret',
                 'ALPHA' => 'first',
-                'PROXYCLI_READ_TOKEN' => 'secret',
                 'ZEBRA' => 'last',
             ],
         ])

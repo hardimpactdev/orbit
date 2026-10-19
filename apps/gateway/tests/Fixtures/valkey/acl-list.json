@@ -23,7 +23,7 @@
       "name": "collector",
       "password": "collector-secret",
       "patterns": [
-        "orbit:proxycli:*"
+        "orbit:ai-router:*"
       ],
       "allow": [
         "@connection",
@@ -34,7 +34,7 @@
     }
   ],
   "closed": [
-    "user collector on #2e8ca7d4333a0a506307a9052e68f8b54c4d7e853476ea0747e5821b22bc6fa5 ~orbit:proxycli:* resetchannels -@all +@connection +@string +@keyspace +eval -@admin -@dangerous -function -script",
+    "user collector on #2e8ca7d4333a0a506307a9052e68f8b54c4d7e853476ea0747e5821b22bc6fa5 ~orbit:ai-router:* resetchannels -@all +@connection +@string +@keyspace +eval -@admin -@dangerous -function -script",
     "user default on #669dbd7e26135eebcb9633729b374103a78a4ba80861a488c9f9f011d7f83133 ~* &* +@all",
     "user gateway-queue on #573c57101c187f96c964bffc4882e83a0714c7e2fd0aa0354b20c1677c6898cc ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +@write +@slow +eval -@admin -@dangerous -function -script"
   ],

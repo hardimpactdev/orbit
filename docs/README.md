@@ -40,7 +40,7 @@ These pages explain commands and managed services.
 - [`dns`](/cli/dns) describes caller-local macOS TLD and Route name DNS overrides.
 - Application pages describe [Projects](/reference/projects), [cloning](/reference/instance-cloning), [transfer](/reference/instance-transfer), [environment variables](/reference/environment-variables), [process and Schedule definitions](/reference/processes-and-schedules), and [removal](/reference/instance-removal).
 - Runtime reference pages describe the [production release layout](/reference/deployments), [PHP runtime defaults](/reference/php-runtime), [Routes](/reference/routes), [Schedules](/reference/schedules), and [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
-- Infrastructure reference pages describe [Gateway trust](/reference/gateway-trust), [Tasks](/reference/tasks), [proxycli](/reference/proxycli), the [Database role](/reference/database-role), the [Metrics role](/reference/metrics), and [Realtime events](/reference/events).
+- Infrastructure reference pages describe [Gateway trust](/reference/gateway-trust), [Tasks](/reference/tasks), [ai-router](/reference/ai-router), the [Database role](/reference/database-role), the [Metrics role](/reference/metrics), and [Realtime events](/reference/events).
 - More infrastructure reference pages describe [Node provisioning](/reference/node-provisioning), [Node retarget](/reference/node-retarget), [Node settings](/reference/node-settings), [Tools](/reference/tools), and [WireGuard endpoints](/reference/wireguard-endpoints).
 - [Database connections](/reference/database-connections) describes the connection registry and managed MySQL user create.
 

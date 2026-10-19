@@ -12,7 +12,7 @@
     "records": {
         "analytics.orbit": "10.44.0.3",
         "cli-proxy-api.orbit": "10.44.0.3",
-        "collector.cli-proxy-api.orbit": "10.44.0.3",
+        "collector.ai-router.orbit": "10.44.0.3",
         "gateway.orbit": "10.44.0.2",
         "metrics.orbit": "10.44.0.2",
         "reverb.orbit": "10.44.0.3",

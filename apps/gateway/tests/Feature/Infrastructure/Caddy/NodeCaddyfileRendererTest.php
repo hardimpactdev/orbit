@@ -6,7 +6,6 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -32,13 +31,14 @@ use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
-use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\CaddySiteCertificateFixtures;
 
@@ -215,24 +215,24 @@ describe('site sources', function (): void {
             ->and($sites[1]->body)->toContain('tls force_automate');
     });
 
-    it('renders the websocket, analytics, and ProxyCli sites on their Node', function (): void {
+    it('renders the websocket, analytics, and AiRouter sites on their Node', function (): void {
         $node = caddy_build_node('services', '10.44.0.7');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         CaddySiteCertificateFixtures::recordAll($node);
         $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
         CaddySiteCertificateFixtures::recordAll($node);
-        app(ProxyCliState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
+        app(AiRouterState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
 
         $content = caddy_build_renderer()->render($node)->content;
 
         expect($content)
             ->toContain("reverb.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->toContain("analytics.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
-            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
+            ->toContain("collector.ai-router.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->not->toContain('__ORBIT_');
     });
 
-    it('renders the services Node byte for byte as main did before the ProxyCli source became a contribution', function (): void {
+    it('renders the services Node byte for byte as main did before the AiRouter source became a contribution', function (): void {
         config(['orbit.websocket.port' => 8790]);
         $node = caddy_build_services_node();
         caddy_build_task_vms();
@@ -247,25 +247,25 @@ describe('site sources', function (): void {
         $node = caddy_build_node('app-prod', '10.44.0.7');
         caddy_build_private_route($node, 'shop.test');
         CaddySiteCertificateFixtures::recordAll($node);
-        $state = app(ProxyCliState::class);
+        $state = app(AiRouterState::class);
         $state->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
         $extensions = app(ExtensionStore::class);
-        $extensions->set('proxycli', true);
+        $extensions->set('ai-router', true);
         $renderer = app(NodeCaddyfileRenderer::class);
         $before = $renderer->render($node);
         expect($before->buildable())->toBeTrue()
-            ->and($before->content)->toContain('# orbit: proxycli collector.cli-proxy-api.orbit', 'shop.test');
+            ->and($before->content)->toContain('# orbit: ai-router collector.ai-router.orbit', 'shop.test');
 
-        $extensions->set('proxycli', false);
+        $extensions->set('ai-router', false);
         expect($renderer->render($node)->content)->toBe($before->content);
 
         $state->disable();
-        app(CaddySiteCertificates::class)->forget($node->id, ProxyCliCaddySiteSource::CertificateSlug);
+        app(CaddySiteCertificates::class)->forget($node->id, AiRouterCaddySiteSource::CertificateSlug);
         $after = $renderer->render($node);
         expect($after->buildable())->toBeTrue()
-            ->and($after->content)->not->toContain('collector.cli-proxy-api.orbit')
-            ->and(array_values(array_filter($after->blocks, static fn (array $block): bool => $block['source'] !== 'proxycli')))
-            ->toBe(array_values(array_filter($before->blocks, static fn (array $block): bool => $block['source'] !== 'proxycli')));
+            ->and($after->content)->not->toContain('collector.ai-router.orbit')
+            ->and(array_values(array_filter($after->blocks, static fn (array $block): bool => $block['source'] !== 'ai-router')))
+            ->toBe(array_values(array_filter($before->blocks, static fn (array $block): bool => $block['source'] !== 'ai-router')));
     });
 
     it('keeps the certificate slugs that live Nodes store', function (): void {
@@ -273,8 +273,8 @@ describe('site sources', function (): void {
             WebSocketCaddySiteSource::CertificateSlug,
             AnalyticsCaddySiteSource::CertificateSlug,
             MetricsCaddySiteSource::CertificateSlug,
-            ProxyCliCaddySiteSource::CertificateSlug,
-        ])->toBe(['websocket', 'analytics', 'metrics', 'proxycli']);
+            AiRouterCaddySiteSource::CertificateSlug,
+        ])->toBe(['websocket', 'analytics', 'metrics', 'ai-router']);
     });
 
     it('leaves a role site out until its certificate is recorded on the Node, and after it is forgotten', function (): void {
@@ -463,7 +463,7 @@ describe('task VM guard', function (): void {
                 'app-dev app-instance-'.Instance::query()->sole()->id => true,
                 'websocket reverb.orbit' => false,
                 'analytics analytics.orbit' => true,
-                'proxycli collector.cli-proxy-api.orbit' => true,
+                'ai-router collector.ai-router.orbit' => true,
             ])
             ->and($caddyfile->content)->toContain("https://shop.test {\n    bind 10.44.0.3\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
             ->and(preg_replace('/\n[ \t]*@orbit_task_vms remote_ip 10\.44\.0\.128\/25\n[ \t]*abort @orbit_task_vms/', '', $caddyfile->content))->toBe($unconfigured);
@@ -692,7 +692,7 @@ function caddy_build_refuses_task_vms(NodeCaddyfile $caddyfile): array
     return $sites;
 }
 
-/** The live `services` Node: Reverb, analytics, ProxyCli, and an `app-dev` workload site. */
+/** The live `services` Node: Reverb, analytics, AiRouter, and an `app-dev` workload site. */
 function caddy_build_services_node(): Node
 {
     $router = caddy_build_node('router', '10.44.0.7');
@@ -702,7 +702,7 @@ function caddy_build_services_node(): Node
     $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
     $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
     CaddySiteCertificateFixtures::recordAll($node);
-    app(ProxyCliState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
+    app(AiRouterState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
 
     return $node->fresh() ?? $node;
 }

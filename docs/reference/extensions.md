@@ -3,20 +3,20 @@ title: "Extensions"
 description: "How an optional Gateway feature lives in its own directory, contributes to core through plug-in points, and stays behind one switch."
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
-  - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
+  - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
-  - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Unit/Architecture/ProxyCliPlugInPointsTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
+  - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
 ---
 
 # Extensions
 
 An extension is an optional Gateway feature with one switch. [`extension`](/cli/extension) describes the switch, the commands, and what each client does while an extension is off. This page describes how an extension is built: where its code lives, how it adds behavior to core, and the rule that keeps core independent of it.
 
-ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, and Conn have moved. Tasks and ProxyCli have switches and providers, but their code is still in core.
+ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, Conn, and the AI router have moved. Tasks has a switch and provider, but its code is still in core.
 
 ## The extensions
 
@@ -25,8 +25,8 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | Extension | Code | Depends on |
 | --- | --- | --- |
 | `documents` | `apps/gateway/extensions/documents`. See [Project Documents](/reference/project-documents). | nothing |
-| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | `proxycli` |
-| `proxycli` | Core, in the `ProxyCli` namespaces. See [proxycli](/reference/proxycli). | nothing |
+| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | `ai-router` |
+| `ai-router` | `apps/gateway/extensions/ai-router`. See [AI router](/reference/ai-router). | nothing |
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
 
@@ -94,29 +94,29 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
-`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
+`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; the AI router tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
 
-`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion. Contributions must not depend on their order. ProxyCli contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
+`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion. Contributions must not depend on their order. The AI router contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
 
 After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
 
 `ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
-The Node Caddy build renders core's sources first, then each `ContributedCaddySiteSource` in provider order. Every source renders from stored state only. For an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`; the site renders only after its publisher records the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers the source and its dependencies, so template changes reach the Node at the next fleet rollout. ProxyCli contributes the collector site. Switching it off keeps the deployed site; teardown withdraws that site and certificate without changing other site blocks.
+The Node Caddy build renders core's sources first, then each `ContributedCaddySiteSource` in provider order. Every source renders from stored state only. For an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`; the site renders only after its publisher records the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers the source and its dependencies, so template changes reach the Node at the next fleet rollout. The AI router contributes the collector site. Switching it off keeps the deployed site; teardown withdraws that site and certificate without changing other site blocks.
 
 A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
 
-The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact owns its name, because the footprint keys its digests by name. ProxyCli contributes the `proxycli` artifact.
+The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
 
-`ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. ProxyCli publishes the collector Node's stored `wireguard_ip`.
+`ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. AI router publishes the collector Node's stored `wireguard_ip`.
 
 `Ipv4Subnet::containsUsableAddress()` defines usable IPv4 hosts in the configured VPN subnet, excluding network and broadcast addresses. `WireGuardAddressAllocator::forProvisioning()` applies this rule during Node provisioning and macOS enrollment; `GatewayBootstrapIdentityValidator` applies it during Gateway bootstrap, before either path stores the address. The contribution does not validate that address again. Its test checks that the hostname is unique, lowercase, under `.orbit`, and free of commas and whitespace, and that publication follows the Node's stored address.
 
 The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contribution and the classes it uses.
 
-The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. ProxyCli reserves `collector.cli-proxy-api.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
+The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. AI router reserves `collector.ai-router.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 
 `GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
 
@@ -153,9 +153,9 @@ Background work that finishes recorded work keeps running while the switch is of
 
 `extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
 
-Tasks depends on `proxycli`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\ModelKeyIssuer`, and the `proxycli` provider binds it. The Tasks `enable()` hook calls `ModelKeyIssuer::assertReady()`, so `extension:enable tasks` refuses with `proxycli.disabled` until proxycli is set up. `proxycli:teardown` refuses while `tasks` is enabled or a task VM holds a model key. See [Teardown](/reference/proxycli#teardown).
+Tasks depends on `ai-router`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\ModelKeyIssuer`, and the `ai-router` provider binds it. The Tasks `enable()` hook calls `ModelKeyIssuer::assertReady()`, so `extension:enable tasks` refuses with `ai_router.disabled` until ai-router is set up. `ai-router:teardown` refuses while `tasks` is enabled or a task VM holds a model key. See [Teardown](/reference/ai-router#teardown).
 
-`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `proxycli:teardown`.
+`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `ai-router:teardown`.
 
 ### Defaults
 

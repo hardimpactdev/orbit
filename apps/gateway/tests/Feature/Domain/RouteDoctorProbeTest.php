@@ -236,7 +236,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->and($report->issues[0]->observed)->toBe('reserved');
     })->with([
         'a core name' => ['gateway.orbit'],
-        'a name proxycli reserves' => ['collector.cli-proxy-api.orbit'],
+        'a name ai-router reserves' => ['collector.ai-router.orbit'],
     ])->with(['reachable' => [true], 'unreachable' => [false]]);
 
     it('reports Route status on an unreachable Node before the node-unreachable finding', function (): void {

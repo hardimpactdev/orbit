@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\ProxyCli\ProxyCliProcess;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Process;
+use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /** @return array{Node, Process, ProcessesApiFakeRuntimeManager} */
@@ -19,7 +19,7 @@ function guarded_process(): array
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]);
     $process = Process::query()->create([
-        'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => ProxyCliProcess::NAME,
+        'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => AiRouterProcess::NAME,
         'runtime' => 'systemd', 'runtime_config' => [], 'restart_policy' => 'on-failure',
         'desired_state' => 'running', 'status' => 'active',
     ]);
@@ -31,18 +31,18 @@ function guarded_process(): array
 
 it('refuses collector removal before changing stored state or calling the runtime', function (): void {
     [$node, $process, $runtime] = guarded_process();
-    app(ProxyCliState::class)->enable($node->id, 'cache', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+    app(AiRouterState::class)->enable($node->id, 'cache', 'http://10.44.0.3:8317', 'management', 'read', 'control');
     $before = $process->refresh()->getAttributes();
 
     expect(fn () => app(DestroyProcessAction::class)->execute($process))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('process.required_by_proxycli')->and($error->status)->toBe(409));
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('process.required_by_ai_router')->and($error->status)->toBe(409));
     expect($process->fresh()?->getAttributes())->toBe($before);
     expect($runtime->removed)->toBeEmpty();
 });
 
 it('keeps the owning feature removal path and permits removal after setup releases ownership', function (bool $owningFeature): void {
     [$node, $process, $runtime] = guarded_process();
-    $state = app(ProxyCliState::class);
+    $state = app(AiRouterState::class);
     $state->enable($node->id, 'cache', 'http://10.44.0.3:8317', 'management', 'read', 'control');
     if (! $owningFeature) {
         $state->disable();

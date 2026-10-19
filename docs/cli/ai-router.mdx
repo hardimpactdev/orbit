@@ -1,0 +1,155 @@
+---
+title: "ai-router"
+description: "Set up the fleet CLIProxyAPI quota collector, read provider pools and the model list, and toggle accounts."
+covers:
+  - apps/cli/app/Commands/AiRouter/**
+  - packages/php-sdk/src/{Requests,Responses}/AiRouter/**
+---
+
+The family belongs to the `ai-router` extension. It is visible and usable only while the extension is enabled at the Gateway:
+
+```bash
+orbit extension:enable ai-router
+```
+
+Enabling the extension deploys nothing, and disabling it removes nothing. `ai-router:setup` and `ai-router:teardown` own the collector. See [ai-router](/reference/ai-router).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`ai-router:setup`](#orbit-ai-routersetup) | Deploy the collector and publish `collector.ai-router.orbit`. |
+| [`ai-router:teardown`](#orbit-ai-routerteardown) | Stop the collector and withdraw `collector.ai-router.orbit`. |
+| [`ai-router:status`](#orbit-ai-routerstatus) | Show whether the collector is set up. |
+| [`ai-router:provider:list`](#orbit-ai-routerproviderlist) | List provider pools from the Valkey snapshot. |
+| [`ai-router:provider:show`](#orbit-ai-routerprovidershow) | Show one provider and its accounts. |
+| `ai-router:account:enable ACCOUNT` | Enable one CLIProxyAPI account. |
+| `ai-router:account:disable ACCOUNT` | Disable one CLIProxyAPI account. |
+| [`ai-router:model:list`](#orbit-ai-routermodellist) | List models from the collector snapshot. |
+
+Every command accepts `--json`.
+
+## orbit ai-router:setup
+
+Deploy the collector Process on one Node and publish `https://collector.ai-router.orbit`.
+
+```bash
+orbit ai-router:setup --node=<node> --cache-connection=<slug> --cliproxy-url=<url> --cliproxy-management-key-file=<path> [--json]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--node` | yes | Node ID or name that runs CLIProxyAPI. |
+| `--cache-connection` | yes | Redis Database connection slug for shared Valkey. |
+| `--cliproxy-url` | yes | CLIProxyAPI Management API origin. When task VMs are enabled, it must equal `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`; otherwise a collector-local origin such as `http://127.0.0.1:8317` is allowed. |
+| `--cliproxy-management-key-file` | yes | File that contains only the management key. The CLI never accepts the key as an argument. |
+
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options. That run rewrites the collector script when needed and reconverges the same Process in place, keeping its ID. An unchanged, completed collector stays running without a restart. When task VMs are enabled, the Gateway refuses a URL that differs from their configured model proxy origin before saving settings or changing the collector. See [Set up](/reference/ai-router#set-up) for the shared-origin constraint. The management key is the only CLIProxyAPI credential. The script uses it for `/v0/management`, including auth-file models. A collector set up before that read stores no models until setup runs again and the next poll finishes.
+
+## orbit ai-router:teardown
+
+Stop the collector for the whole fleet, remove its Process, and withdraw `collector.ai-router.orbit` and its certificate. The Gateway also deletes the stored management key and the read and control tokens.
+
+```bash
+orbit ai-router:teardown [--yes] [--json]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--yes` | in noninteractive and JSON modes | Confirm the teardown without a prompt. |
+
+In a terminal the command asks a default-No question that names the fleet effect. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing. To collect again, run `ai-router:setup` with the key file.
+
+The Gateway refuses the teardown and changes nothing while the `tasks` extension is enabled (`extension.required`) or a task VM holds a model key (`ai_router.keys_outstanding`). It waits up to 60 seconds for a running model key operation, then refuses with `ai_router.keys_busy`. See [Teardown](/reference/ai-router#teardown).
+
+## orbit ai-router:status
+
+Show the collector state.
+
+```bash
+orbit ai-router:status [--json]
+```
+
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. `collected_at` is null until the collector writes a snapshot.
+
+## orbit ai-router:provider:list
+
+List provider pools from the snapshot.
+
+```bash
+orbit ai-router:provider:list [--json]
+```
+
+The command reads Valkey and never calls CLIProxyAPI.
+
+## orbit ai-router:provider:show
+
+Show one provider's pool and accounts.
+
+```bash
+orbit ai-router:provider:show <provider> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | Provider slug, such as `codex` or `claude`. |
+
+A provider that is not in the snapshot fails with `resource.not_found`.
+
+## orbit ai-router:account:enable
+
+Enables one account. Supply the account identity as `<account>` and use `--json` for machine output.
+
+```bash
+orbit ai-router:account:enable <account> [--json]
+```
+
+## orbit ai-router:account:disable
+
+Disable one CLIProxyAPI account.
+
+```bash
+orbit ai-router:account:disable <account> [--json]
+```
+
+| Argument or option | Required | Meaning |
+| --- | --- | --- |
+| `account` | yes | Account ID from `ai-router:provider:show`: the auth file's `auth_index`, or its name when it has none. Only letters, digits, `.`, `_`, and `-` are accepted. |
+
+The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.
+
+## orbit ai-router:model:list
+
+List the models CLIProxyAPI offers, from the collector snapshot.
+
+```bash
+orbit ai-router:model:list [--json]
+```
+
+Each item is `{id, provider}`. The command does not call CLIProxyAPI. `provider` follows the [owned_by mapping](/reference/ai-router#models), including `anthropic` to `claude`. `google` and `meta` keep those names, and no AI router provider serves them. While the collector is not set up, the command fails with `ai_router.disabled`. A snapshot with no models returns an empty list. Run `ai-router:setup` again, then wait for the next poll, before expecting models from a collector that was deployed earlier. When a later poll cannot read one auth file, the snapshot keeps that file's models from the previous poll.
+
+When a model has no `owned_by`, `provider` comes from that model's auth file, using the same mapping. A model with neither is absent from the list.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The `ai-router` extension is disabled at the Gateway. |
+| `extension.state_unknown` | The CLI could not read the extension state from the Gateway. |
+| `input.confirmation_required` | `ai-router:teardown` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `ai-router:teardown` question. |
+| `extension.required` | `ai-router:teardown` ran while the `tasks` extension is enabled. |
+| `ai_router.keys_outstanding` | `ai-router:teardown` ran while a task VM holds a model key. |
+| `ai_router.keys_busy` | `ai-router:teardown` waited 60 seconds for a running model key operation. Run it again. |
+| `ai_router.key_required` | `ai-router:setup` has no `--cliproxy-management-key-file`. |
+| `ai_router.key_invalid` | The key file is unreadable or empty. |
+| `ai_router.url_invalid` | `--cliproxy-url` is not a URL. |
+| `validation.failed` | The Gateway refuses setup input, including a `cliproxy_url` that differs from the configured task VM model proxy origin while task VMs are enabled. |
+| `ai_router.disabled` | The collector is not set up. |
+
+[ai-router errors](/reference/ai-router#errors) lists the Gateway errors of setup and toggles.
+
+## Related
+
+- [ai-router](/reference/ai-router) describes placement, publication, the cache, and the model list.
+- [`extension`](/cli/extension) controls the Gateway switch.

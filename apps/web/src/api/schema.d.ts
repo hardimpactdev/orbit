@@ -124,6 +124,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai-router": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show ai-router status
+         * @description Returns whether the fleet feature is enabled, which Node and cache connection it uses, when the snapshot was last written, and whether an automatic cutover is pending.
+         */
+        get: operations["ai-router-status"];
+        put?: never;
+        /**
+         * Set up ai-router
+         * @description Deploys one collector Process and publishes https://collector.ai-router.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with ai_router.hostname_taken. The response never includes tokens or the management key. Setup refuses with ai_router.cutover_pending while the release cutover is pending.
+         */
+        post: operations["ai-router-setup"];
+        /**
+         * Tear down ai-router
+         * @description Stops the collector Process for the whole fleet, withdraws collector.ai-router.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with ai_router.keys_outstanding (409) while a task VM holds a model key, and with ai_router.keys_busy (409) while a model key operation holds the lock for more than 60 seconds. Teardown refuses with ai_router.cutover_pending while the release cutover is pending.
+         */
+        delete: operations["ai-router-teardown"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-router/accounts/{account}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable an AI router account
+         * @description Disables one CLIProxyAPI account and recompiles cached pools without fetching quota.
+         */
+        post: operations["ai-router-account-disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-router/accounts/{account}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable an AI router account
+         * @description Enables one CLIProxyAPI account and recompiles cached pools without fetching quota.
+         */
+        post: operations["ai-router-account-enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-router/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List ai-router models
+         * @description Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `ai_router.disabled` while the collector is not set up.
+         */
+        get: operations["ai-router-model-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-router/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List ai-router providers
+         * @description Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.
+         */
+        get: operations["ai-router-provider-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-router/providers/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show an AI router provider
+         * @description Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.
+         */
+        get: operations["ai-router-provider-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/credentials": {
         parameters: {
             query?: never;
@@ -3072,114 +3200,6 @@ export interface paths {
         patch: operations["instance-teardown-step-update"];
         trace?: never;
     };
-    "/api/v1/proxycli": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show proxycli status
-         * @description Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.
-         */
-        get: operations["proxycli-status"];
-        put?: never;
-        /**
-         * Set up proxycli
-         * @description Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.
-         */
-        post: operations["proxycli-setup"];
-        /**
-         * Tear down proxycli
-         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with proxycli.keys_outstanding (409) while a task VM holds a model key, and with proxycli.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.
-         */
-        delete: operations["proxycli-teardown"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/proxycli/accounts/{account}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update a proxycli account
-         * @description Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.
-         */
-        patch: operations["proxycli-update"];
-        trace?: never;
-    };
-    "/api/v1/proxycli/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List proxycli models
-         * @description Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.
-         */
-        get: operations["proxycli-models"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/proxycli/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List proxycli providers
-         * @description Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.
-         */
-        get: operations["proxycli-list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/proxycli/providers/{provider}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show a proxycli provider
-         * @description Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.
-         */
-        get: operations["proxycli-show"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/realtime": {
         parameters: {
             query?: never;
@@ -4001,6 +4021,10 @@ export interface components {
             };
             occurred_at?: string;
         };
+        AiRouterModel: {
+            id?: string;
+            provider?: string;
+        };
         Cluster: {
             id?: number;
             name?: string;
@@ -4677,10 +4701,6 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        ProxyCliModel: {
-            id?: string;
-            provider?: string;
-        };
         RemovedRoute: {
             id?: number;
             kind?: string;
@@ -5302,6 +5322,402 @@ export interface operations {
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    node_id: string;
+                    /** @description Redis Database connection slug for shared Valkey */
+                    cache_connection: string;
+                    /**
+                     * Format: uri
+                     * @description CLIProxyAPI Management API origin
+                     */
+                    cliproxy_url: string;
+                    cliproxy_management_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-teardown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-account-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-account-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-model-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiRouterModel"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The collector is not set up (`ai_router.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-provider-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "ai-router-provider-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7992,9 +8408,9 @@ export interface operations {
                     "application/json": {
                         /** @description Enabled state keyed by extension slug. */
                         data: {
+                            "ai-router": boolean;
                             conn: boolean;
                             documents: boolean;
-                            proxycli: boolean;
                             tasks: boolean;
                             vault: boolean;
                         };
@@ -8018,8 +8434,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
-                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
+                /** @description Extension slug: `ai-router`, `conn`, `documents`, `tasks`, or `vault`. */
+                extension: "ai-router" | "conn" | "documents" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -8034,7 +8450,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
+                            name: "ai-router" | "conn" | "documents" | "tasks" | "vault";
                             /** @constant */
                             enabled: false;
                         };
@@ -8076,8 +8492,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `conn`, `documents`, `proxycli`, `tasks`, or `vault`. */
-                extension: "conn" | "documents" | "proxycli" | "tasks" | "vault";
+                /** @description Extension slug: `ai-router`, `conn`, `documents`, `tasks`, or `vault`. */
+                extension: "ai-router" | "conn" | "documents" | "tasks" | "vault";
             };
             cookie?: never;
         };
@@ -8092,7 +8508,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             /** @enum {string} */
-                            name: "conn" | "documents" | "proxycli" | "tasks" | "vault";
+                            name: "ai-router" | "conn" | "documents" | "tasks" | "vault";
                             /** @constant */
                             enabled: true;
                         };
@@ -17378,366 +17794,6 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    node_id: string;
-                    /** @description Redis Database connection slug for shared Valkey */
-                    cache_connection: string;
-                    /**
-                     * Format: uri
-                     * @description CLIProxyAPI Management API origin
-                     */
-                    cliproxy_url: string;
-                    cliproxy_management_key: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-teardown": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                account: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Disable the account */
-                    disabled: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["ProxyCliModel"][];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>[];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "proxycli-show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };

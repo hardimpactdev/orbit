@@ -169,7 +169,7 @@ After setup, the queue and Horizon log in to the [Valkey Database server](/refer
 
 | User | Keys | Commands | Used by |
 | --- | --- | --- | --- |
-| `default` | All | All | The admin user. The [ProxyCli collector](/reference/proxycli#collection) and the Gateway's [snapshot reads](/reference/proxycli#clients) also use it, through the Database connection `services-valkey`, until the collector [gets its own user](#not-built) |
+| `default` | All | All | The admin user. The [AI router collector](/reference/ai-router#collection) and the Gateway's [snapshot reads](/reference/ai-router#clients) also use it, through the Database connection `services-valkey`, until the collector [gets its own user](#not-built) |
 | `gateway-queue` | `orbit-gateway:*` and `orbit-gateway-horizon:*` | The rules in the table below | The queue and Horizon, through the Database connection `gateway-queue` |
 
 [`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server) creates the user from key patterns and allowed commands. Orbit adds `resetchannels`, `-@all`, and the final `-@admin -@dangerous -function -script`, so the user has no pub/sub channel, no admin or dangerous command, and no `FUNCTION` or `SCRIPT` command:
@@ -247,7 +247,7 @@ Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit t
 
 A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Horizon observation callback runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
-The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. Nick creates their connection on `services-valkey` with the pattern `orbit:ai-router:*` after step 3 and before step 4. Step 4 binds it ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users#the-collector-gets-its-own-user-later)).
+The collector rebuilds its quota snapshot in Valkey; quota reads never poll the upstream provider.
 
 ## Why it works this way
 

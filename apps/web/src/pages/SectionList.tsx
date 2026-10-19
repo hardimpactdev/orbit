@@ -30,7 +30,7 @@ import { type Column, Pane } from "../ui/Pane";
 import { Status } from "../ui/Status";
 import { processListColumns, scheduleListColumns } from "./columns";
 import { NodesList } from "./NodesList";
-import { QuotaList } from "./Quota";
+import { AiRouterList } from "../extensions/ai-router/AiRouter";
 
 type ListKind = Exclude<Kind, "deployments">;
 
@@ -114,8 +114,8 @@ export function SectionList() {
         return <NodesList />;
     }
 
-    if (section === "quota") {
-        return <QuotaList />;
+    if (section === "ai-router") {
+        return <AiRouterList />;
     }
 
     return <RecordList />;

@@ -590,7 +590,7 @@ it("hides the Instance Tasks tab and skips task queries when the extension start
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
@@ -638,7 +638,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
@@ -660,7 +660,7 @@ it("does not load cached Tasks data on a direct route when the extension is disa
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,

@@ -20,7 +20,7 @@ final class GatewayExtensionState
     private const int DISCOVERY_TIMEOUT_SECONDS = 2;
 
     /** @var list<string> Names to display as UNKNOWN when the Gateway cannot answer. */
-    public const array OFFLINE_EXTENSIONS = ['tasks', 'proxycli', 'documents', 'vault', 'conn'];
+    public const array OFFLINE_EXTENSIONS = ['tasks', 'ai-router', 'documents', 'vault', 'conn'];
 
     private static ?ExtensionDiscoveryResult $result = null;
 

@@ -131,8 +131,8 @@
     },
     {
         "path": "/$section",
-        "purpose": "A section list for Nodes, Projects, Instances, Processes, Schedules, Databases, Firewall, or Quota.",
-        "reach": "Open Nodes, Projects, Databases, or Quota in the main nav, or open Instances, Processes, Schedules, or Firewall from Other Sections in the phone menu.",
+        "purpose": "A section list for Nodes, Projects, Instances, Processes, Schedules, Databases, Firewall, or AI router.",
+        "reach": "Open Nodes, Projects, Databases, or AI router in the main nav, or open Instances, Processes, Schedules, or Firewall from Other Sections in the phone menu.",
         "controls": [
             {
                 "testid": "nav-nodes",
@@ -147,8 +147,8 @@
                 "purpose": "Databases in the main nav, after the phone menu is opened when the nav is collapsed."
             },
             {
-                "testid": "nav-quota",
-                "purpose": "Quota in the main nav when quota is enabled, or under Other Sections on a phone when it is not."
+                "testid": "nav-ai-router",
+                "purpose": "AI router in the main nav when its extension is enabled, or under Other Sections on a phone when it is not."
             },
             {
                 "testid": "nav-instances",
@@ -181,7 +181,7 @@
             },
             {
                 "testid": "quota-unavailable",
-                "purpose": "Shown on Quota when the proxycli extension is disabled or the collector is not configured."
+                "purpose": "Shown on AI router when the ai-router extension is disabled or the collector is not configured."
             }
         ]
     },
@@ -345,7 +345,7 @@
             },
             {
                 "testid": "quota-unavailable",
-                "purpose": "Shown when the proxycli extension is disabled or the collector is not configured."
+                "purpose": "Shown when the ai-router extension is disabled or the collector is not configured."
             }
         ]
     },

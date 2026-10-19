@@ -90,8 +90,8 @@ final readonly class TaskVmRuntime
         $node = $vm->node ?? throw new TaskVmException(TaskVmError::NotEnrolled, "Task VM [{$vm->name}] has no Node yet.");
         $token = $vm->pi_token ?? throw new TaskVmException(TaskVmError::RuntimeFailed, "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
         $origin = $this->keys->origin();
-        if ($vm->model_proxy_origin !== null && $vm->model_proxy_origin !== $origin) {
-            throw TaskVmConfig::invalid("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->model_proxy_origin}].");
+        if ($vm->ai_router_origin !== null && $vm->ai_router_origin !== $origin) {
+            throw TaskVmConfig::invalid("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->ai_router_origin}].");
         }
         $artifact = $this->settings->piArtifactPath;
         $digest = $this->settings->piArtifactSha256;
@@ -167,7 +167,7 @@ final readonly class TaskVmRuntime
         if ($vm->model_key === null) {
             return;
         }
-        $origin = $vm->model_proxy_origin ?? $this->keys->origin();
+        $origin = $vm->ai_router_origin ?? $this->keys->origin();
         $this->withModelKeyLock(60, function () use ($vm, $origin): void {
             $vm->refresh();
             if ($vm->model_key !== null) {
@@ -191,7 +191,7 @@ final readonly class TaskVmRuntime
                 throw new TaskVmException(TaskVmError::ModelKeyFailed, $exception->getMessage(), 409, $exception);
             }
             if ($vm->model_key === null) {
-                $vm->update(['model_key' => bin2hex(random_bytes(32)), 'model_proxy_origin' => $origin]);
+                $vm->update(['model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $origin]);
             }
             $key = (string) $vm->model_key;
             $this->keys->issue($origin, $key);

@@ -24,7 +24,7 @@ it("uses the Gateway-filtered section list for digit shortcuts", async () => {
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
@@ -41,7 +41,7 @@ it("skips disabled extension sections when moving through the nav with arrows", 
         .poll(() => queryClient.getQueryData(["extensions"]))
         .toEqual({
             tasks: false,
-            proxycli: false,
+            "ai-router": false,
             documents: true,
             vault: false,
             conn: false,
