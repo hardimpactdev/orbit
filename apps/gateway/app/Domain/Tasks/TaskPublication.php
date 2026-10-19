@@ -382,7 +382,8 @@ final readonly class TaskPublication
             return $this->orphanedCommit($group);
         }
 
-        $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $health->headSha)->first();
+        $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $health->headSha)
+            ->where('source', TaskReviewedCommitSource::OrbitPush)->where('inherited_approval_sha', $commit)->first();
         if ($reviewed instanceof TaskReviewedCommit && $reviewed->review_task_id !== null
             && TaskFinalReview::isReviewed($group, $commit)
             && TaskComment::query()->where('task_id', $reviewed->review_task_id)->where('type', TaskCommentType::Approved)->where('commit_sha', $commit)->exists()) {

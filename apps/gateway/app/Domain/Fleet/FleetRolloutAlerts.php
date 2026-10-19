@@ -9,6 +9,7 @@ use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertSubject;
+use App\Domain\Releases\ReleaseIncident;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use Illuminate\Support\Facades\Config;
@@ -38,7 +39,7 @@ final readonly class FleetRolloutAlerts
             $node->step ?? 'unknown',
             $node->message ?? (string) $node->error_code,
         );
-        $stored = $this->raise(ReleaseAlertKind::RolloutHalted, $rollout, $summary);
+        $stored = $this->raise(ReleaseAlertKind::RolloutHalted, $rollout, $summary, $node);
 
         try {
             $rollout->forceFill(['alert' => $stored])->save();
@@ -61,7 +62,7 @@ final readonly class FleetRolloutAlerts
             $node->node_name,
             $visits,
             $node->message ?? (string) $node->error_code,
-        ));
+        ), $node);
     }
 
     /** Raises `rollout_stalled` once for a rollout that waited too long for its CLI release, and stores it. */
@@ -118,17 +119,18 @@ final readonly class FleetRolloutAlerts
             $rollout->id,
             $node->node_name,
             is_string($skipped['message'] ?? null) ? $skipped['message'] : 'the Caddyfile was refused',
-        ));
+        ), $node);
     }
 
     /** @return array<string, mixed> */
-    private function raise(ReleaseAlertKind $kind, FleetRollout $rollout, string $summary): array
+    private function raise(ReleaseAlertKind $kind, FleetRollout $rollout, string $summary, ?FleetRolloutNode $node = null): array
     {
         try {
             $alert = new ReleaseAlert(
                 $kind,
                 new ReleaseAlertSubject(self::Target, self::repository(), $rollout->commit, 'fleet-rollout-'.$rollout->id),
                 $summary,
+                new ReleaseIncident($node === null ? 'fleet' : 'fleet-node:'.$node->node_id, (string) $rollout->id, $node->error_code ?? $rollout->error_code ?? $kind->value),
             );
 
             return ['kind' => $kind->value, ...$this->notifier->alert($alert)->toArray()];

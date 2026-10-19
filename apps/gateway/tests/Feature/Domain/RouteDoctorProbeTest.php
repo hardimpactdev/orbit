@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
@@ -13,6 +15,8 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -21,6 +25,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
@@ -65,7 +70,7 @@ describe(RouteDoctorProbe::class, function (): void {
             ->and($report->issues[0]->resourceType)
             ->toBe('route')
             ->and($report->issues[0]->resourceId)
-            ->toBeNull()
+            ->toBe('node:'.$node->id)
             ->and($report->issues[0]->resourceName)
             ->toBeNull()
             ->and(RouteCustomProxy::query()->whereKey($proxy->route_id)->exists())
@@ -390,3 +395,21 @@ function route_doctor_app_route(Node $node, ?string $domain = null): Route
 
     return $route->refresh();
 }
+
+it('recovers a stored Route fault without claiming unobserved proxy health', function (): void {
+    $node = route_doctor_node();
+    $route = route_doctor_app_route($node);
+    $rows = [];
+    foreach (['route.lifecycle_not_active', 'route.caddy_mismatch'] as $code) {
+        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|route|'.$route->id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'route', 'doctor_code' => $code, 'doctor_resource' => (string) $route->id, 'doctor_observed_at' => now()->toISOString()]]);
+    }
+    $this->travel(1)->minutes();
+    $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+    $inspector->shouldNotReceive('inspect');
+    $family = app(RouteDoctorProbe::class, ['inspector' => $inspector])->inspect(route_doctor_context($node));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
+    ]), now());
+    expect($rows['route.lifecycle_not_active']->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success')
+        ->and($rows['route.caddy_mismatch']->refresh()->evidence)->not->toHaveKey('resolved_at');
+});

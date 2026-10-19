@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RoleDoctorProbe;
 use App\Data\Doctor\DoctorIssueData;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CaddyBuildObservation;
 use App\Domain\Doctor\DoctorFamilyStatus;
@@ -20,11 +22,14 @@ use App\Domain\Doctor\PhpPoolDirectoryObservation;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\ProblemFingerprint;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
@@ -389,7 +394,7 @@ it('retains SQLite findings and emits one bounded issue when the node is unreach
         ->and($report->issues[1]->resourceId)
         ->toBe($appDev->id)
         ->and($report->issues[3]->resourceId)
-        ->toBeNull()
+        ->toBe('node:'.$node->id)
         ->and($roleCalls)
         ->toBe(0)
         ->and($vpnCalls)
@@ -930,4 +935,26 @@ it('keeps shared Caddy and PHP observations out of another roles resource job', 
     $report = $probe->inspect(new DoctorNodeContext($node, role_probe_context($node)->inspection, resources: new DoctorResources(DoctorResourceKind::Rows, [$metrics->id])));
 
     expect($roleCalls)->toBe(1)->and($builds->nodes)->toBeEmpty()->and($pools->nodes)->toBeEmpty()->and($report->issues)->toBeEmpty();
+});
+
+it('does not recover role incidents outside the selected collection group', function (): void {
+    $this->freezeTime();
+    $node = role_probe_node('group-recovery');
+    $selected = role_probe_assignment($node, RoleName::Metrics);
+    $unselected = role_probe_assignment($node, RoleName::AppDev);
+    $row = ProblemFingerprint::query()->create([
+        'fingerprint' => 'doctor|role.inspection_failed|role|'.$unselected->id,
+        'source' => ProblemSource::Doctor, 'occurrences' => 1,
+        'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'role', 'doctor_code' => 'role.inspection_failed', 'doctor_resource' => (string) $unselected->id, 'doctor_observed_at' => now()->toISOString()],
+    ]);
+    $this->travel(1)->minutes();
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $probe = new RoleDoctorProbe(role_probe_state_inspector($roleCalls), role_probe_vpn_inspector($vpnCalls));
+    $context = new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Rows, [$selected->id]));
+    $report = $probe->inspect($context);
+
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect($row->refresh()->evidence)->not->toHaveKey('resolved_at');
 });

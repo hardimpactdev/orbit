@@ -76,7 +76,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 InstanceDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'instance',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Instance state cannot be inspected because the node is unreachable.',
                 'reachable',
@@ -84,6 +84,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             )]);
         }
         $issues = $leaseIssues;
+        $observed = [];
         foreach ($rows as $instance) {
             $instanceIssueOffset = count($issues);
 
@@ -206,6 +207,8 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 ...$this->publicRouteIssues($instance, $context),
             ];
 
+            $observed[] = $instance->id;
+
             if (count($issues) > $instanceIssueOffset) {
                 $current = Instance::query()->find($instance->id);
 
@@ -231,7 +234,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues, $observed, [DoctorResources::nodeCheckId($context->node->id) => [InstanceDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /** @param Collection<int, Instance> $instances

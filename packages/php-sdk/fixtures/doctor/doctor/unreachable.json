@@ -21,7 +21,7 @@
                                     "code": "tool.node_unreachable",
                                     "kind": "unverifiable",
                                     "resource_type": "tool",
-                                    "resource_id": null,
+                                    "resource_id": "node:2",
                                     "resource_name": null,
                                     "summary": "Tool node is unreachable.",
                                     "expected": null,

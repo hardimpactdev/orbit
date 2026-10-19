@@ -523,3 +523,12 @@ function apt_tool_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
+
+it('isolates unmanageable APT names from supported installed packages', function (): void {
+    [$manager] = apt_tool_manager([apt_result("Bad_Name\tinstall ok installed\t1.0\nunreadable\tinstall ok installed\tbad\x01version\njq\tinstall ok installed\t1.7.1\n")]);
+
+    $inventory = $manager->installedInventory(apt_tool_node());
+
+    expect($inventory->versionFor('jq'))->toBe('1.7.1');
+    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+});

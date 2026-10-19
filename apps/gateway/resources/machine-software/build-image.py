@@ -27,8 +27,9 @@ def image_apt_setup(payload, directory):
 
 
 def image_apt_configuration(directory):
-    return ('Dir::Etc::parts "-";\nDir::Etc::main "-";\n'
-            f'Dir::Etc::sourcelist "{directory}/ubuntu.sources";\nDir::Etc::sourceparts "-";\n'
+    # Empty values disable stock config directories; APT resolves "-" to /etc/apt/-/ and warns.
+    return ('Dir::Etc::parts "";\nDir::Etc::main "";\n'
+            f'Dir::Etc::sourcelist "{directory}/ubuntu.sources";\nDir::Etc::sourceparts "";\n'
             'APT::Get::List-Cleanup "false";\n'
             'APT::Update::Error-Mode "any";\nDPkg::Lock::Timeout "300";\n')
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
@@ -13,6 +14,7 @@ use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
@@ -658,11 +660,11 @@ describe('final review before every push', function (): void {
         $group = rm_group([['Models', TaskStatus::Completed]], TaskGroupStatus::Settling);
         TaskComment::query()->create(['task_id' => $group->tasks->sole()->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
 
-        expect(TaskFinalReview::cancelPushCommit($group))->toBeNull();
+        expect(TaskFinalReview::reconcileRemovalPush($group))->toBeNull();
 
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::OrbitPush]);
 
-        expect(TaskFinalReview::cancelPushCommit($group))->toBe(RM_COMMIT);
+        expect(TaskFinalReview::reconcileRemovalPush($group))->toBe(RM_COMMIT);
     });
 
     it('leaves a Project without the flow on the existing publish path', function (): void {
@@ -1150,6 +1152,92 @@ it('pushes exactly the reviewed head without a pre-push integration check', func
         ->and(TaskReviewedCommit::query()->sole()->source)->toBe(TaskReviewedCommitSource::OrbitPush);
 });
 
+it('recognizes an exact merged approval but still holds newer missed work', function (bool $newer): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $final = $group->tasks->sole();
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    if ($newer) {
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'New work.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_PR_HEAD]);
+    }
+    rm_runtime();
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_COMMIT));
+
+    app(TaskScheduler::class)->settle($group);
+
+    expect($group->fresh()?->assistance_requested)->toBe($newer);
+})->with(['exact approval' => false, 'newer missed approval' => true]);
+
+it('completes a merged reviewed head after main moved without repushing an older reviewed head', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    test_vm_group($group);
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
+    Queue::fake();
+    $final = $group->tasks->sole();
+    $instance = $group->taskable;
+    $instance->update(['root' => 'public']);
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    $runtime = rm_runtime();
+    $runtime->pushFailures = 1;
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_COMMIT));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->assistance_reason)->toBeNull();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect($runtime->pushes)->toBe([]);
+    expect($runtime->pushFailures)->toBe(1);
+    $this->assertModelMissing($instance);
+});
+
+it('completes a merged incoming pull request without pushing the author branch', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL, prBranch: 'author/feature');
+    test_vm_group($group);
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
+    Queue::fake();
+    $final = $group->tasks->sole();
+    $instance = $group->taskable;
+    $instance->update(['root' => 'public']);
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_PR_HEAD]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_PR_HEAD, 'source' => TaskReviewedCommitSource::PullRequestReview, 'review_task_id' => $final->id]);
+    $runtime = rm_runtime();
+    $runtime->pushFailures = 1;
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_PR_HEAD));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->assistance_reason)->toBeNull();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect($runtime->pushes)->toBe([]);
+    expect($runtime->pushFailures)->toBe(1);
+    $this->assertModelMissing($instance);
+});
+
+it('keeps appended work when retrying merged cleanup', function (): void {
+    $group = rm_group([['Appended work', TaskStatus::Todo]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $instance = $group->taskable;
+    $group->update(['watched_pr_completion' => 'merged', 'settled_at' => now()]);
+    TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'unavailable');
+    rm_runtime();
+
+    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->tasks()->sole()->status)->toBe(TaskStatus::Todo)
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toContain('open subtasks');
+    $this->assertModelExists($instance);
+});
+
 it('asks once for assistance after GitHub refuses a behind branch without merging main', function (): void {
     $group = rm_settled();
     $runtime = rm_runtime();
@@ -1188,4 +1276,35 @@ it('keeps a converted reviewed head mergeable and recognizes its original final 
         ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Merged)
         ->and(app(TaskPublication::class)->checkReturningPullRequest($group->fresh(), new TaskPullRequestHealth('merged', headSha: RM_HEAD)))->toBeFalse()
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('does not hide a real orphan when a native reviewed head and a later approval share one review task', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $final = $group->tasks->sole();
+    foreach ([RM_HEAD, RM_COMMIT] as $sha) {
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha,
+            'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id,
+            'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+    }
+
+    expect(app(TaskPublication::class)->checkReturningPullRequest($group, new TaskPullRequestHealth('merged', headSha: RM_HEAD)))->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix);
+});
+
+
+it('does not infer an inherited approval from ambiguous converted history', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $final = $group->tasks->sole();
+    foreach ([RM_HEAD, RM_COMMIT] as $sha) {
+        DB::table('task_reviewed_commits')->insert(['task_id' => $group->id, 'sha' => $sha,
+            'source' => $sha === RM_HEAD ? 'base_merge' : 'orbit_push', 'review_task_id' => $final->id, 'pushed_at' => now()]);
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id,
+            'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+    }
+    $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
+    $migration->up();
+
+    expect(app(TaskPublication::class)->checkReturningPullRequest($group, new TaskPullRequestHealth('merged', headSha: RM_HEAD)))->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix);
 });

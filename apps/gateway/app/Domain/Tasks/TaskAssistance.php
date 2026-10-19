@@ -51,7 +51,7 @@ final class TaskAssistance
         return DB::transaction(function () use ($record, $kind, $question, $reason, $replaceFailure, $replaceDirection, $source, $reconcileStatus): bool {
             $current = Task::withoutGlobalScopes()->whereKey($record->id)->lockForUpdate()->firstOrFail();
             $requested = $current->assistance_requested;
-            $ended = in_array($current->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskStatus::Completed, TaskStatus::Cancelled], true);
+            $ended = in_array($current->status, [...TaskGroupStatus::endedStatuses(), TaskStatus::Completed, TaskStatus::Cancelled], true);
             if ($reconcileStatus) {
                 if (! $ended) {
                     self::sync($record, $current);

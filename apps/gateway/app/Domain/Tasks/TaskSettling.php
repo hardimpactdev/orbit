@@ -18,7 +18,6 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Closure;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +33,6 @@ final readonly class TaskSettling
         private TaskPullRequestUpdater $pullRequestUpdater,
         private CompleteTaskGroupAction $completeGroup,
         private BriefCoverageLabeler $coverageLabeler,
-        private TaskPullRequestPublisher $publisher,
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
@@ -42,6 +40,7 @@ final readonly class TaskSettling
         private RequestEndedPullRequestAssistanceAction $endedPullRequests,
         private TaskTurnFetcher $turnFetcher,
         private RetryTaskBaselineAction $retryBaseline,
+        private TaskPullRequestMerger $merger,
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
@@ -57,6 +56,16 @@ final readonly class TaskSettling
             } catch (Throwable $exception) {
                 report($exception);
             }
+
+            return;
+        }
+        if ($group->watched_pr_completion === 'merged' && in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            if ($group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
+                TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The pull request merged, but open subtasks still need an operator decision before completion.', replaceFailure: true);
+
+                return;
+            }
+            $this->completeMergedGroup($group);
 
             return;
         }
@@ -125,14 +134,14 @@ final readonly class TaskSettling
     }
 
     /**
-     * Removes the workspace that a cancelled or completed group owns, attached or not, and that of a settling group
+     * Removes the workspace that an ended group owns, attached or not, and that of a settling group
      * whose merged pull request cleanup failed. An unattached workspace waits while a live claim can still use it.
      * The tick does not remove the workspace of a group that is still active.
      *
      * One query selects the candidates through the workspace owner. A failed removal is reported, asks for
      * assistance, and backs off per Instance, so a workspace that keeps failing never blocks the others. The sweep
      * stops starting removals once it has spent its time budget; the rest wait for the next tick. Success clears
-     * removal assistance only. A cancelled group pushes its stored approval before the checkout is deleted. An
+     * removal assistance only. Every removal pushes its eligible stored approval before the checkout is deleted. An
      * Instance that no group owns is never a candidate, whatever its name or branch.
      */
     public function removeAbandonedWorkspaces(): int
@@ -153,7 +162,7 @@ final readonly class TaskSettling
 
             $instance = Instance::query()->find($workspace->id);
             $group = Task::topLevel()->find($workspace->task_workspace_owner_id);
-            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
+            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group)) {
                 continue;
             }
             // A parked task VM starts first. The removal waits for it without a failure or a backoff.
@@ -164,14 +173,13 @@ final readonly class TaskSettling
             try {
                 $didRemove = app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $instance, $backoffKey): bool {
                     $group->refresh();
-                    if (! $this->shouldRemoveWorkspace($group, $instance)) {
+                    if (! $this->shouldRemoveWorkspace($group)) {
                         return false;
                     }
                     $group->setRelation('taskable', $instance);
                     $leases = app(TaskWorkspaceLease::class);
                     $leases->cancelQueued($group, 'cancel-push:'.$group->id);
-                    $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance): void {
-                        $this->pushCancelledApproval($group, $instance);
+                    $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group): void {
                         $this->workspaces->remove($group);
                     });
                     $this->rememberBackoff($backoffKey, null, 'workspace removal');
@@ -186,7 +194,7 @@ final readonly class TaskSettling
             } catch (TaskWorkspaceWaiting) {
                 continue;
             } catch (Throwable $exception) {
-                // The push of a cancelled approval from a task VM runs in a queued job. A later sweep removes the workspace.
+                // The push of an approval from a task VM runs in a queued job. A later sweep removes the workspace.
                 if ($exception instanceof TaskPullRequestException && $exception->pending) {
                     continue;
                 }
@@ -221,6 +229,7 @@ final readonly class TaskSettling
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
                 TaskAssistance::apply($group);
             }
+            $group->update(['watched_pr_completion' => 'merged']);
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
@@ -235,32 +244,9 @@ final readonly class TaskSettling
         }
     }
 
-    /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
-    private function pushCancelledApproval(Task $group, Instance $instance): void
+    private function shouldRemoveWorkspace(Task $group): bool
     {
-        if ($group->status !== TaskGroupStatus::Cancelled) {
-            return;
-        }
-        $commit = TaskFinalReview::cancelPushCommit($group);
-        if ($commit === null) {
-            return;
-        }
-        $group->setRelation('taskable', $instance);
-        $group->loadMissing('project');
-        $this->publisher->push($group, $commit);
-    }
-
-    private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
-    {
-        if (in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)) {
-            return $group->taskable_id === $instance->id
-                || ! $group->reserved_at instanceof Carbon
-                || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
-        }
-
-        return in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
-            && is_string($group->pr_url) && $group->pr_url !== ''
-            && Task::topLevel()->whereKey($group->id)->removalFailure()->exists();
+        return Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->exists();
     }
 
     private function releaseRemovedWorkspace(Task $group, int $instanceId): void
@@ -348,25 +334,10 @@ final readonly class TaskSettling
     /** @return Collection<int, Instance> */
     private function abandonedWorkspaces(): Collection
     {
-        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-
         return Instance::query()
             ->select('instances.*')
             ->join('tasks', 'tasks.id', '=', 'instances.task_workspace_owner_id')
-            ->where(function ($ended) use ($cutoff): void {
-                $ended->where(function ($finished) use ($cutoff): void {
-                    $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
-                        ->where(function ($reservation) use ($cutoff): void {
-                            $reservation->whereColumn('tasks.taskable_id', 'instances.id')
-                                ->orWhereNull('tasks.reserved_at')
-                                ->orWhere('tasks.reserved_at', '<=', $cutoff);
-                        });
-                })->orWhere(function ($settling): void {
-                    $settling->whereIn('tasks.status', TaskGroupStatus::awaitingCompletion())
-                        ->whereNotNull('tasks.pr_url')->where('tasks.pr_url', '!=', '')
-                        ->whereIn('tasks.id', Task::topLevel()->removalFailure()->select('tasks.id'));
-                });
-            })
+            ->whereIn('tasks.id', Task::topLevel()->workspaceRemovalRetry()->select('tasks.id'))
             ->orderBy('instances.id')
             ->get();
     }

@@ -9,6 +9,7 @@ use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertSubject;
+use App\Domain\Releases\ReleaseIncident;
 use App\Models\GatewayRelease;
 use InvalidArgumentException;
 use Throwable;
@@ -65,7 +66,7 @@ final readonly class GatewayReleaseAlerts
             );
         $receipt = $record->commit() === null
             ? null
-            : $this->send($kind, (string) $record->commit(), (string) $record->id, $summary);
+            : $this->send($kind, (string) $record->commit(), (string) $record->id, $summary, new ReleaseIncident(self::Target, (string) $record->id, $record->error_code ?? $kind->value));
 
         $this->store($record, $kind, $receipt);
     }
@@ -86,7 +87,7 @@ final readonly class GatewayReleaseAlerts
             $reason,
             $record->release_id ?? (string) $record->requested,
         );
-        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleasePaused, (string) $record->commit(), (string) $record->id, $summary);
+        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleasePaused, (string) $record->commit(), (string) $record->id, $summary, new ReleaseIncident(self::Target, (string) $record->id, $reason));
 
         $this->store($record, ReleaseAlertKind::ReleasePaused, $receipt);
     }
@@ -100,7 +101,7 @@ final readonly class GatewayReleaseAlerts
      */
     public function schedulerSilent(GatewayRelease $record, string $summary): array
     {
-        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseSchedulerSilent, (string) $record->commit(), (string) $record->id, $summary);
+        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseSchedulerSilent, (string) $record->commit(), (string) $record->id, $summary, new ReleaseIncident(self::Target, (string) $record->id, 'scheduler_silent'));
 
         return $this->stored($record, ReleaseAlertKind::ReleaseSchedulerSilent, $receipt);
     }
@@ -127,7 +128,7 @@ final readonly class GatewayReleaseAlerts
             is_string($agent['error_code'] ?? null) ? $agent['error_code'] : 'no error code',
             is_string($agent['message'] ?? null) ? $agent['message'] : 'no message',
         );
-        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseGatewayAgentFailed, (string) $record->commit(), (string) $record->id, $summary);
+        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseGatewayAgentFailed, (string) $record->commit(), (string) $record->id, $summary, new ReleaseIncident(self::Target, (string) $record->id, is_string($agent['error_code'] ?? null) ? $agent['error_code'] : 'agent_update_failed'));
         $stored = $this->stored($record, ReleaseAlertKind::ReleaseGatewayAgentFailed, $receipt);
 
         try {
@@ -143,12 +144,12 @@ final readonly class GatewayReleaseAlerts
      * Raises a stalled alert for the deployed commit when automatic releases cannot make progress.
      * The caller decides when a stall is long enough and that it alerts once.
      */
-    public function stalled(string $deployedSha, string $summary): ?ReleaseAlertReceipt
+    public function stalled(string $deployedSha, string $summary, string $attempt, string $fault): ?ReleaseAlertReceipt
     {
-        return $this->send(ReleaseAlertKind::ReleaseStalled, $deployedSha, null, $summary);
+        return $this->send(ReleaseAlertKind::ReleaseStalled, $deployedSha, null, $summary, new ReleaseIncident(self::Target, $attempt, $fault));
     }
 
-    private function send(ReleaseAlertKind $kind, string $sha, ?string $recordId, string $summary): ?ReleaseAlertReceipt
+    private function send(ReleaseAlertKind $kind, string $sha, ?string $recordId, string $summary, ReleaseIncident $incident): ?ReleaseAlertReceipt
     {
         $repository = $this->source->repositoryName();
 
@@ -157,7 +158,7 @@ final readonly class GatewayReleaseAlerts
         }
 
         try {
-            $alert = new ReleaseAlert($kind, new ReleaseAlertSubject(self::Target, $repository, $sha, $recordId), $summary);
+            $alert = new ReleaseAlert($kind, new ReleaseAlertSubject(self::Target, $repository, $sha, $recordId), $summary, $incident);
         } catch (InvalidArgumentException $exception) {
             report($exception);
 

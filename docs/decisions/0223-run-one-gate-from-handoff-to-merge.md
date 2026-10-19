@@ -232,9 +232,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
 - The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, selected test count, `budget_seconds`, and a free `detail` text. Each Project setup step records its name, seconds and exit code in that same receipt.
-- Budgets report overruns; they never stop work. Use baseline 600 seconds, handoff 1200 seconds, Gateway `test:affected` 600 seconds, other commands 300 seconds, and reviews 900 seconds. `tools/checks.json` owns command budgets. Each overrun writes one Activity row `tasks.<stage>_over_budget`; `ProblemCollector` treats `_over_budget` codes as server-class so existing fingerprints and filing apply. Add no separate mechanism.
-- After setup timings are stored, propose each Project 46 setup timeout at about three times its p90. List exact values in the receipt PR; Nick applies the Project settings.
+- A Project check may write a JSON list to that file: for each command, its name, its seconds, its exit code, and a free `detail` text.
 - Orbit stores the list in a new JSON column of the check row.
 - Orbit's `bin/review-check` writes the list from `result.json`, with the selected test count as `detail`.
 - The 16 KiB output tail stays.
@@ -252,9 +250,9 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the PHP copy of the rule.
    - Delete `ORBIT_TEST_PROCESSES` from `bin/test`, `implementation-loop.md`, and `environment-variables.md`, and the operator text for `ORBIT_CHECK_PROCESSES` in `implementation-loop.md` and `environment-variables.md`.
 3. **No local main-merge gate.** The enum casts on `TaskCheck::kind` and `TaskReviewedCommit::source` refuse an old value, so a migration removes every `base_merge` value:
-   - It deletes every `base_merge` check row, of open and ended groups.
-   - It converts every `base_merge` reviewed commit to `orbit_push`. The head of an open group may be such a commit, and it inherited its review, so `mergeWhenReady` keeps accepting it.
-   - Deploy it when no `base_merge` check is running.
+   - It refuses to run while any `base_merge` check is running. It cancels queued and held `main_merge` leases and leases for the checks it deletes, then deletes every `base_merge` check row, of open and ended groups.
+   - It converts every `base_merge` reviewed commit to `orbit_push`. It records `inherited_approval_sha` only for converted rows whose review task has exactly one distinct approved commit in the group’s reviewed ledger. Only that stored approval can account for a converted head when the merged pull request returns. Native heads and ambiguous approval history still require exact approval.
+   - It clears `base-merge-review` fixup identities so retired delta reviews no longer count against the group fixup limit. Deploy it when no `base_merge` check is running.
    - Add the strict-base refusal to `project:update`, with both rule reads. Add only `administration: read` to `GitHubAppManifestPage`, and document the protection read on the [GitHub App](/reference/github-app) page. Runner registration needs its own decision.
    - Add the assistance on a behind refusal to `mergeWhenReady`.
    - Delete `TaskCheckKind::BaseMerge` and `TaskReviewedCommitSource::BaseMerge`.
@@ -276,7 +274,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Fill the handoff cache after a passed baseline too.
    - Delete the passed-handoff-tree rule of `TaskReviewBase::testBase` and the `slug === 'orbit'` case.
    - Delete the "A handoff tree is not a Pest commit" and "The gate selects against main" sections of [Feature delivery](/reference/implementation-loop#why-it-works-this-way).
-5. **One check definition.** Add `tools/checks.json`, including report-only `budget_seconds` per command, and the `run` and `architecture` commands.
+5. **One check definition.** Add `tools/checks.json` and the `run` and `architecture` commands.
    - Delete `ARCHITECTURE_TESTS`, `ARCHITECTURE_TRIGGERS`, `WEB_CHECK_COMMANDS`, `PI_SERVER_COMMANDS`, and the other check and trigger constants in `bin/review-check`.
    - Delete the `case` list in the architecture-test step and the copied commands and path conditions of the check jobs in `ci.yml`.
    - Delete the copied list in `tia-cache-tests.py`.
@@ -288,7 +286,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Change the tests that call `bin/tia-cache`: `WorktreeLifecycleTest.php:30`, `TestDatabaseGateTest.php:36`, `BuilderGateSelectionTest.php:105`, `ComposerConfigurationTest.php:371`, and the Gateway tests `CiCacheSetupTest.php` and `TiaBaselineSetupTest.php`.
    - Delete the `bin/tia-cache` comment in `bin/tooling-baseline:18`.
    - Delete [Refresh from CI](/reference/implementation-loop#refresh-from-ci), "Only main CI publishes", "Maintenance runs in the background", "Clones find the store through a registration", and the worker text of [Failures on main](/reference/implementation-loop#failures-on-main), with the text on legacy failure records. Failures on main keeps one line: GitHub's CI status is the record.
-7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list with per-command seconds, selected test counts and budgets, plus each Project setup step's seconds. Report overruns through one Activity row and the existing problem filing rule above. Propose the exact Project 46 setup timeouts from recorded p90 values; Nick applies them.
+7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list.
    - Delete the terminal-result synthesis and the after-result tree check in `status()`.
    - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
    - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.

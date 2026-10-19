@@ -104,3 +104,31 @@ describe('authenticated Ubuntu snapshot availability', function (): void {
             ->toThrow(RuntimeException::class, 'wrong release, pocket, or architecture');
     });
 });
+
+it('resolves the newest signed versions for a snapshot bump independently of stale pins', function (): void {
+    fake_signed_snapshot();
+    expect(snapshot_fixture_probe()->latest('20261014T000000Z', ['amd64', 'arm64'], ['curl']))
+        ->toBe(['curl' => '1.2.3-1ubuntu1']);
+});
+
+it('refuses stale Ubuntu pins even when that version has a valid syntax', function (): void {
+    fake_signed_snapshot();
+    expect(fn () => snapshot_fixture_probe()->verify(snapshot_fixture_recipe('1.2.2-1ubuntu1')))
+        ->toThrow(RuntimeException::class, 'Bump the snapshot and all Ubuntu pins together.');
+});
+
+it('selects Debian version maxima across signed release updates and security indexes', function (): void {
+    $fixtures = base_path('tests/Fixtures/machine-software/snapshot-versions');
+    Http::preventStrayRequests();
+    Http::fake(function ($request) use ($fixtures) {
+        preg_match('~/dists/(resolute(?:-updates|-security)?)/(.+)$~', $request->url(), $match);
+
+        return Http::response(file_get_contents($fixtures.'/'.$match[1].($match[2] === 'InRelease' ? '.InRelease' : '.gz')));
+    });
+    $resolver = new AuthenticatedUbuntuSnapshot(signatures: new UbuntuReleaseSignature($fixtures.'/keyring.gpg'));
+
+    expect($resolver->latest('20261014T000000Z', ['amd64', 'arm64'], ['curl']))
+        ->toBe(['curl' => '1.2.10-1ubuntu1']);
+    expect(fn () => $resolver->verify(snapshot_fixture_recipe('1.2.9-1ubuntu1')))
+        ->toThrow(RuntimeException::class, 'Bump the snapshot and all Ubuntu pins together.');
+});

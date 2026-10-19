@@ -28,7 +28,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, `merges`, and `workspace_leases`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -58,7 +58,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
-| `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end. Null until then. Resume does not call GitHub |
+| `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
@@ -87,10 +87,14 @@ A task moves through these statuses from preparation to its end.
 | `settling` | Every subtask has ended. The task waits here until publication is recorded. |
 | `waiting_for_review` | The task has published its pull request and waits for human review and CI. VM power is separate from this status. |
 | `completed` | The pull request merged, or an operator completed the task. The workspace is removed. |
-| `failed` | An agent could not start. |
+| `failed` | An agent could not start. The workspace and VM are removed by the next cleanup sweep. |
 | `cancelled` | An operator cancelled the task. |
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
+
+An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, server-restart resume, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves the latest reviewed, unpublished head on origin; a failed push keeps the VM and requests removal assistance. A stopped VM also stays while that push is unconfirmed.
+
+The Gateway keeps task checks and their stored output, consumed turn receipts as comments, other comments, approval records, and Activity after workspace removal. [Readable agent transcripts](#archive-finished-threads) are copied before a ready VM is deleted. Unconsumed receipt files, raw VM logs, approved commits that no final review approved in review-and-merge groups, other unpublished Git objects, uncommitted edits, and unreadable transcripts are not durable Gateway evidence and go with the VM.
 
 ## Tasks and subtasks
 
@@ -126,7 +130,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 ### Change subtasks
 
-Subtask create appends a `todo` subtask at the next position. It works in every task status except `completed` and `cancelled`. Outside `backlog`, the new subtask needs at least one deliverable.
+Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
 
 Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
 
@@ -134,8 +138,8 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | --- | --- |
 | `backlog` | Every field of every subtask. Subtask destroy deletes a subtask and closes the gap. |
 | `todo`, `running`, `reviewing`, `settling` | Every field of a `todo` subtask. Its deliverables cannot become empty. Its position moves only among the `todo` subtasks after the last started or ended subtask. |
-| `reserved`, `failed` | Nothing. Subtask create still appends |
-| `completed`, `cancelled` | Nothing |
+| `reserved` | Nothing. Subtask create still appends |
+| `completed`, `failed`, `cancelled` | Nothing |
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
@@ -164,7 +168,7 @@ The task and subtask operations return these errors.
 | --- | --- | --- |
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
-| `tasks.group_closed` | 409 | Subtask create in a `completed` or `cancelled` task |
+| `tasks.group_closed` | 409 | Subtask create in an ended task |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
 | `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
@@ -310,6 +314,8 @@ The Gateway files a Backlog task when the same production problem keeps returnin
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
+Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
+
 ### Fingerprints
 
 Each signal updates one row in `problem_fingerprints`. The fingerprint is unique.
@@ -337,9 +343,9 @@ Each occurrence stores the UTC time of the first signal in its 5-minute window a
 | Activity | `activity\|command\|error_code` |
 | Log | `log\|exception class\|first app frame` |
 | Assistance | `assist\|normalized reason` |
-| Release alert | `release\|kind\|target\|sha` |
+| Release alert | `release\|kind\|resource\|attempt\|fault` |
 
-A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
+Node reachability checks use `node:{id}`. Node-wide inventory and environment checks use `node:{id}:inventory` and `node:{id}:environments` as their resource ids. Queued reports retain the time when their Node observation started. A delayed job cannot turn that cached observation into fresh recovery evidence. Each check recovers only after its own successful observation; a different job or Node cannot close it. Other null Doctor resource ids use `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
 
 An Activity row counts only when it is server-class. A row is server-class in any of these cases:
 
@@ -446,7 +452,7 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 | Activity | `{command} failed with {error_code}` | The command name |
 | Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
-| Release alert | `Release failed`, `Release paused`, or `Rollout halted`, then `for {target} at {first 12 characters of the sha}` | `{repository}@{sha}`, and the release id when there is one |
+| Release alert | Alert kind, then `for {resource}, attempt {attempt}` | Repository, resource, attempt, and fault |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
 
@@ -647,7 +653,7 @@ An **agent thread** is one persistent conversation with a coding agent. It recor
 
 Each subtask gets a fresh implementer thread. Each subtask's first review starts a fresh reviewer thread. Thread titles are `Orbit task #{task} / subtask #{subtask} · Implementer: {title}` and `Orbit task #{task} · Review: {title}`.
 
-Orbit reserves the thread row before it starts the conversation, so the opening prompt can name the Orbit thread id. The row's external id starts with `pending:` until the conversation starts. A reserved row is not listed, measured, or broadcast. When the start fails, Orbit deletes the row. A tick deletes a leftover reserved row once its subtask or task is completed or cancelled. While the owner is active, a later start reuses it.
+Orbit reserves the thread row before it starts the conversation, so the opening prompt can name the Orbit thread id. The row's external id starts with `pending:` until the conversation starts. A reserved row is not listed, measured, or broadcast. When the start fails, Orbit deletes the row. A tick deletes a leftover reserved row once its task group has ended or its subtask is completed or cancelled. While the owner is active, a later start reuses it.
 
 | State | Meaning |
 | --- | --- |
@@ -836,7 +842,7 @@ The consult limit counts consult records for the current `completion_attempt`. A
 
 A resolution answers a question only through the reviewer's next receipt. When the subtask stops asking first, the record can stay `open` or `escalated`. Orbit closes those records in two ways, so `tasks:question:list --status=escalated` shows only questions someone still has to answer.
 
-When a subtask becomes `completed` or `cancelled`, Orbit marks its `open` and `escalated` questions `superseded` in the same write. The answer is `Subtask completed.` or `Subtask cancelled.`, `answered_at` is the time, and `answered_by` stays empty. When a task becomes `completed` or `cancelled`, Orbit does the same for every question of the task, with `Task completed.` or `Task cancelled.` This covers subtask cancel, task cancel, task complete, and every subtask that completes. A record that is already `answered` keeps its answer.
+When a subtask becomes `completed` or `cancelled`, Orbit marks its `open` and `escalated` questions `superseded` in the same write. The answer is `Subtask completed.` or `Subtask cancelled.`, `answered_at` is the time, and `answered_by` stays empty. When a task group ends, Orbit does the same for every question of the task, with `Task completed.`, `Task failed.`, or `Task cancelled.` This covers task failure, task cancel, task complete, subtask cancel, and every subtask that completes. A record that is already `answered` keeps its answer.
 
 [`tasks:question:close`](/cli/tasks#orbit-tasksquestionclose) is `POST /api/v1/task-questions/{question}/close`. It needs Gateway access. The body holds `status`, `answered` or `superseded`, and `reason`, 1 to 2,000 characters after trimming. The question must be `open` or `escalated`. In one transaction, Orbit posts a `question_closed` comment on the question's subtask, sets the status, stores the reason as the answer with `answered_by` `operator`, links the comment as `answered_comment_id`, and logs a `question closed` activity. It returns the question. Closing an `answered` or `superseded` question returns HTTP 409 `tasks.question_closed`. The same status and reason again return the question unchanged. Another status or an empty reason returns 422.
 
@@ -850,7 +856,7 @@ Every change to assistance goes through `TaskAssistance::apply`; direct model wr
 
 Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity.
 
-Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on a completed or cancelled task; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
+Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on an ended group; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
 
 #### Direction requests
 
@@ -1387,6 +1393,8 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review.
 
+The migration that removes the retired integration gate refuses to run while one of its checks is running. It cancels the retired gate’s queued and held workspace leases before deleting its checks, and clears retired delta-review fixup identities. It converts the retired reviewed heads to `orbit_push`, preserving their evidence. For a converted head only, `inherited_approval_sha` records the review task’s single distinct approved commit in the group’s reviewed ledger. This lets a returning merged pull request recognize that approval. Ambiguous history receives no inherited approval. New reviewed heads still need exact approval.
+
 Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
@@ -1516,7 +1524,9 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 A merged pull request completes its `settling` task on the next tick when every subtask has ended. `tasks:complete` completes a `settling` task by hand, without reading the pull request again.
 
-It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. The branch watch does not set this column. The receipt is a durable execution hold, even when the task has no ended-PR assistance reason. Fresh locked transitions and agent or check start/send boundaries honor it. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
+It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. Automatic merge cleanup also stores `merged` here before it removes the workspace. If an operator appends an open subtask before cleanup finishes, automatic cleanup keeps the workspace and asks for an operator decision. The branch watch does not set this column.
+
+The receipt is a durable execution hold, even when the task has no ended-PR assistance reason. Fresh locked transitions and agent or check start/send boundaries honor it. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
 
 Resume stops a running implementer or reviewer and any running check before the database transaction, using the same stop as subtask cancel. A failed stop returns HTTP 502 `tasks.subtask_interrupt_failed`, leaves the task and open subtasks in their statuses, and keeps `watched_pr_completion` for retry. Resume marks each `todo`, `running`, and `reviewing` subtask `cancelled` and marks the task `completed` in one database transaction. Subtasks already `completed`, `failed`, or `cancelled` stay as they are. A failed transaction rolls back, so the parent stays `running` or `reviewing` and its open subtasks stay open. The stored `watched_pr_completion` remains.
 
@@ -1537,20 +1547,26 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on completed or cancelled tasks.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. It requests `removal_failure` assistance through the normal cleanup path, including on ended groups.
 
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It requests `removal_failure` assistance with the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
+- of an ended group, attached or not. A workspace that a [claim in flight](#claim-and-provision) still uses waits.
 - of a `settling` or `waiting_for_review` task with a published pull request whose cleanup failed. A refused cancellation of an unpublished task stays outside the sweep until cancel is retried.
 
-The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. Before workspace removal, Orbit pushes the latest reviewed head that publication never pushed, and logs its SHA. A task completed by a merge never pushes during cleanup.
+
+Under review and merge, the latest reviewed-commit record selects the head; a later unreviewed approval cannot hide it. A published head and an incoming author head need no push. Without review and merge, the latest subtask approval is eligible only while publication has not handled it.
+
+Every successful removal push records publication in the same state that selects the head, including per-subtask approvals. The shared rule first reconciles a queued push receipt for that exact SHA and destination branch, even if the VM died before the next removal attempt. A pending push waits without requesting removal assistance. A failed push stops that removal. The cleanup request stays open, and the reason names the push error.
+
+A stopped `ready` VM uses the shared wake path once before removal retries. A failed wake stays final. When the VM is `failed`, cleanup records the lost reviewed SHA and VM failure in Activity and removal assistance, then destroys it. A missing `ready` VM waits for the host sweep to confirm failure after two consecutive misses.
 
 An ownership refusal keeps the workspace and requests `removal_failure` assistance with `Workspace ownership refused: `. It follows the same [VM observation rule](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) as other removal failures.
 
-A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The task keeps its `removal_failure` request open, including after completion or cancellation. A tick starts no removal after 60 seconds of removals. A success clears only an open `removal_failure` request. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
+A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The task keeps its `removal_failure` request open after it ends. A tick starts no removal after 60 seconds of removals. A success clears only an open `removal_failure` request. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
 ## Configuration
 
@@ -1651,13 +1667,15 @@ The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waitin
 
 A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
 
-Collecting it from the release's Activity row is rejected: the Activity key has no commit, so two different bad commits would share one task, and a single row would never be ready. The key holds the commit, because each failed commit is its own problem and is not released again. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
+The release producer supplies the failing resource, attempt, and fault. The Gateway SHA stays in evidence, so a Gateway update does not create another incident for an unchanged failure. The Activity key lacks that incident identity, and a single Activity row would never be ready. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
 
 ### One fingerprint per problem
 
 The Activity key is the command and the error code. Putting the resource id in that key is rejected, because the id lives only in `properties.path` and the same failure would split into one task per resource. Merging a log error with its Activity row is also rejected. The keys differ, and a log error with no Activity row would disappear.
 
 ### A small sample, and no past rows on the first run
+
+Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. The incident identity migration retires old unscoped and hashed Doctor incidents; the next filing pass closes their untouched generated groups before filing scoped replacements. The incident identity migration accepts generated groups with symptom briefs or fixed subtask instructions. New groups and refreshed groups use the same fixed instructions. The operator keeps control of groups they edited.
 
 The sample keeps bounded Doctor values and a short redacted log excerpt. Storing raw Doctor reports or full traces is rejected, because that output exposes paths and credentials. [Doctor](/cli/doctor#no-stored-reports) keeps no raw report for the caller. Counting past Activity and log rows on the first run is rejected, because those rows would take the daily cap on the day the loop starts. The first run records its cursors at the end of the current data.
 
@@ -1805,7 +1823,9 @@ On 2026-10-08 the maintainer decided that Orbit does not use or rely on cloud ag
 
 Pushing each subtask and reviewing only before the merge was rejected. A pushed commit is unreviewed, and a person or a fleet reviewer acts on what GitHub shows. A separate final-review state machine on the task was rejected. It would repeat the reviewer thread, receipt, reminder, restart, topology, and direction handling that a subtask already has. So a final review is a subtask without an implementer.
 
-The cost is that approved work waits in the workspace. A lost workspace loses it, and cancel does not push it. The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
+The cost is that approved work waits in the workspace until final review. A lost workspace loses it. Removal after failure or cancellation pushes the latest final-reviewed head only when publication never pushed it. A later unreviewed approval does not hide that reviewed head. A published head, an incoming author head, and a task completed by a merge need no preservation push. Approved work that no final review saw is discarded.
+
+The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
 
 ### Incoming pull requests become tasks
 

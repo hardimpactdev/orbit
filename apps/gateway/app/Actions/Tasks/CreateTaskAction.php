@@ -21,7 +21,7 @@ final readonly class CreateTaskAction
         $this->requireExtension->execute();
 
         $status = $group->refresh()->status;
-        if (in_array($status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+        if (in_array($status, TaskGroupStatus::endedStatuses(), true)) {
             throw TaskGroupGuard::groupClosed();
         }
 

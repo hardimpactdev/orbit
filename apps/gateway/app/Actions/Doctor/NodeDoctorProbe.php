@@ -296,7 +296,7 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         }
         array_push($issues, ...$this->taskVmIssues($node));
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues, [$node->id]);
     }
 
     /**

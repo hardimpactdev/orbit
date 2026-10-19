@@ -110,7 +110,7 @@ final class TaskGroupGuard
     {
         return new ResourceOperationException(
             errorCode: 'tasks.group_closed',
-            message: __('A completed or cancelled task group cannot accept new subtasks.'),
+            message: __('An ended task group cannot accept new subtasks.'),
             status: 409,
         );
     }

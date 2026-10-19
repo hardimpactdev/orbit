@@ -62,7 +62,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
                 ProjectDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'project',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Project state cannot be inspected because the node is unreachable.',
                 'reachable',
@@ -70,9 +70,11 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
             )]);
         }
         $issues = [];
+        $observedResources = [];
         foreach ($rows as $project) {
             try {
                 $observation = $this->inspector->inspect($project, $context->node);
+                $observedResources[] = $project->id;
                 if (! $observation->repositoryOriginsMatch || $observation->failedInstanceIds !== []) {
                     $currentInstanceIds = $this->currentInstanceIds($project, $context->node->id);
                     $mismatchingInstanceIds = $observation->mismatchingInstanceIds === []
@@ -124,7 +126,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), $issues, $observedResources, [DoctorResources::nodeCheckId($context->node->id) => [ProjectDoctorIssueCode::NodeUnreachable->value]]);
     }
 
     /** @return list<int> */

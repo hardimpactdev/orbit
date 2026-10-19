@@ -57,7 +57,7 @@ final readonly class FailTaskVmAction
             }
             $wasAsking = $group->assistance_requested;
             $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            if (! $wasAsking && $applied && ! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+            if (! $wasAsking && $applied && ! in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
                 Log::warning('A task group asks for assistance: a task VM operation failed.', ['group_id' => $group->id, 'reason' => $reason]);
             }
         });

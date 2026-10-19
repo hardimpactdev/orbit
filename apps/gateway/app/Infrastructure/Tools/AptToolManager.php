@@ -183,10 +183,13 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
                 continue;
             }
             $fields = explode("\t", $line);
-            if (count($fields) !== 3 || ! $this->validatePackage($fields[0])) {
+            if (count($fields) !== 3) {
                 throw new ToolManagerException('installed-version', 'The APT installed inventory was malformed.', $result);
             }
             [$package, $status, $version] = $fields;
+            if (! $this->validatePackage($package)) {
+                continue;
+            }
             if (in_array($status, [...self::REMOVED_STATUSES, 'unknown ok not-installed'], true)) {
                 continue;
             }

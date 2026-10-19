@@ -67,7 +67,7 @@ final readonly class TaskGitHubReviewFeedback
                 return false;
             }
             $reason = $causes === [] ? null : self::Prefix.implode(' ', $causes);
-            if ($reason === $locked->assistance_reason || in_array($locked->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)) {
+            if ($reason === $locked->assistance_reason || in_array($locked->status, TaskGroupStatus::endedStatuses(), true)) {
                 return false;
             }
 

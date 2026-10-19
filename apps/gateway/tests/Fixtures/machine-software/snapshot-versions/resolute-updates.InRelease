@@ -1,0 +1,18 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Suite: resolute-updates
+Codename: resolute
+Architectures: amd64 arm64
+SHA256:
+ 9ff82da065ad4f0ad585f2b45527c78fd461d85fd2bd16b9979a023c62cf3011 81 main/binary-amd64/Packages.gz
+ 9ff82da065ad4f0ad585f2b45527c78fd461d85fd2bd16b9979a023c62cf3011 81 main/binary-arm64/Packages.gz
+ 9ff82da065ad4f0ad585f2b45527c78fd461d85fd2bd16b9979a023c62cf3011 81 universe/binary-amd64/Packages.gz
+ 9ff82da065ad4f0ad585f2b45527c78fd461d85fd2bd16b9979a023c62cf3011 81 universe/binary-arm64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQSBE2YBD6HJ3RVFsTg0UzHXYv/y3gUCatW2VwAKCRA0UzHXYv/y
+3qyWAQCuwB4VZ1TODPWLhnT4/bwfTUg8UphQ8/Wz1duxQaMoFAD+IGdX6wCXOk/4
+2+tll28dAoAKmVAoZJZWATvq3VjkLQs=
+=1EMj
+-----END PGP SIGNATURE-----

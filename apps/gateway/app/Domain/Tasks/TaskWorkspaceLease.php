@@ -747,7 +747,7 @@ final class TaskWorkspaceLease
             if ($holder->thread_id !== null) {
                 $thread = AgentThread::query()->find($holder->thread_id);
                 if ($holder->getAttribute('dispatch_started_at') === null) {
-                    if (! $thread instanceof AgentThread || in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+                    if (! $thread instanceof AgentThread || in_array($group->status, TaskGroupStatus::endedStatuses(), true)
                         || ($holder->getAttribute('journaled') && $this->localOwnerDead($holder))) {
                         $this->release($holder, $this->snapshot($group));
                     }
@@ -877,7 +877,7 @@ final class TaskWorkspaceLease
                 || ($waiter->getAttribute('task_id') !== null && (! $task instanceof Task || $task->status === TaskStatus::Cancelled))
                 || ($waiter->getAttribute('task_context') !== null && $waiter->getAttribute('task_context') !== $this->taskContext($group, $task))
                 || ($waiter->thread_id !== null && ! $thread instanceof AgentThread)
-                || (in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+                || (in_array($group->status, TaskGroupStatus::endedStatuses(), true)
                     && ! in_array($waiter->kind, ['publication', 'teardown'], true));
             if ($obsolete) {
                 $waiter->update(['status' => 'cancelled', 'released_at' => now()]);

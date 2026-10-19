@@ -44,6 +44,7 @@ final readonly class ComposerInstalledInventoryParser
         }
 
         $versionsByPackage = [];
+        $unverifiable = [];
 
         foreach ($decoded->installed as $entry) {
             if (! $entry instanceof stdClass) {
@@ -53,19 +54,19 @@ final readonly class ComposerInstalledInventoryParser
             $name = $entry->name ?? null;
             $version = $entry->version ?? null;
 
-            if (
-                ! is_string($name)
-                || ! is_string($version)
-                || ! $validatePackage($name)
-                || ! $this->isSafePackageVersion($version)
-            ) {
-                throw $this->malformed($result);
+            if (! is_string($name) || ! $validatePackage($name)) {
+                continue;
+            }
+            if (! is_string($version) || ! $this->isSafePackageVersion($version)) {
+                $unverifiable[] = $name;
+
+                continue;
             }
 
             $versionsByPackage[$name][] = $version;
         }
 
-        return new InstalledToolInventory($versionsByPackage, $result);
+        return new InstalledToolInventory($versionsByPackage, $result, $unverifiable);
     }
 
     private function isSafePackageVersion(string $version): bool

@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -375,7 +376,7 @@ it('retains uncertain teardown ownership but releases a confirmed remote refusal
             throw new RuntimeConvergenceException('remove', 'instance.remove_failed', 'Remote removal failed.', result: new CommandResult($this->exitCode, '', '', 1, false));
         }
     };
-    $action = new RemoveTaskWorkspaceAction($remover);
+    $action = new RemoveTaskWorkspaceAction($remover, app(TaskPullRequestPublisher::class));
     expect(fn () => $action->remove($group))->toThrow(RuntimeConvergenceException::class);
     $lease = TaskWorkspaceLeaseRecord::query()->where('kind', 'teardown')->sole();
     expect($lease->status)->toBe($exitCode === 255 ? 'held' : 'released');

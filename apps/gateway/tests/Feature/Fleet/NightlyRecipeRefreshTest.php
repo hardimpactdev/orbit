@@ -7,10 +7,12 @@ use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\Fleet\FakeUbuntuSnapshot;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 
@@ -45,6 +47,7 @@ function nightlyRefreshEvidence(): array
 
 function nightlyRefreshHttp(array $evidence): void
 {
+    app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     GitHubTestSupport::storeApp();
@@ -204,6 +207,10 @@ it('does not report success or comment when an expected-head branch update loses
     app()->instance(ReleaseAlertNotifier::class, $alerts);
     expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe($evidence['pr']['html_url']);
     expect($alerts->alerts)->toHaveCount(1);
+
+    expect($alerts->alerts[0]->incident->resource)->toBe('recipe-pr:99')
+        ->and($alerts->alerts[0]->incident->attempt)->toBe(str_repeat('b', 40))
+        ->and($alerts->alerts[0]->incident->fault)->toBe('refresh_failed');
 
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments'));
 });

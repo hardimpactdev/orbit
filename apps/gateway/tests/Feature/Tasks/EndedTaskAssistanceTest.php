@@ -15,7 +15,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 
-it('stops asking for assistance when a flagged task is saved as completed or cancelled', function (string $level, string $status): void {
+it('stops asking for assistance when a flagged task is saved as ended', function (string $level, string $status): void {
     $gateway = Node::query()->create([
         'name' => 'ended-assistance-gateway',
         'status' => LifecycleStatus::Active,
@@ -79,6 +79,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
 })->with([
     'completed group' => ['group', 'completed'],
     'cancelled group' => ['group', 'cancelled'],
+    'failed group' => ['group', 'failed'],
     'completed subtask' => ['subtask', 'completed'],
     'cancelled subtask' => ['subtask', 'cancelled'],
 ]);
@@ -178,7 +179,7 @@ it('does not reopen an ended group for a direction comment', function (string $s
 
     $response = $this->getJson('/api/v1/tasks/status')->assertOk();
     expect(array_column($response->json('data.assistance'), 'id'))->toBe([$open->id]);
-})->with(['completed', 'cancelled']);
+})->with(['completed', 'cancelled', 'failed']);
 
 it('keeps a stale save from leaving an ended task asking for assistance', function (string $level, string $status, string $interleaving): void {
     $project = Project::query()->create([

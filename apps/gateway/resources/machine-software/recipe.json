@@ -22,7 +22,7 @@
         "bind9-dnsutils": {
             "source": "ubuntu",
             "package": "bind9-dnsutils",
-            "version": "1:9.20.24-1ubuntu0.3"
+            "version": "1:9.20.24-1ubuntu0.4"
         },
         "btrfs-progs": {
             "source": "ubuntu",
@@ -103,7 +103,7 @@
         "curl": {
             "source": "ubuntu",
             "package": "curl",
-            "version": "8.18.0-1ubuntu2.7"
+            "version": "8.18.0-1ubuntu2.8"
         },
         "dnsmasq": {
             "source": "ubuntu",
@@ -319,12 +319,12 @@
         "openssh-client": {
             "source": "ubuntu",
             "package": "openssh-client",
-            "version": "1:10.2p1-2ubuntu3.7"
+            "version": "1:10.2p1-2ubuntu3.8"
         },
         "openssh-server": {
             "source": "ubuntu",
             "package": "openssh-server",
-            "version": "1:10.2p1-2ubuntu3.7"
+            "version": "1:10.2p1-2ubuntu3.8"
         },
         "openssl": {
             "source": "ubuntu",

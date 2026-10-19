@@ -110,7 +110,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 RoleDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'role',
-                null,
+                DoctorResources::nodeCheckId($context->node->id),
                 null,
                 'Role state cannot be inspected because the node is unreachable.',
                 'reachable',
@@ -152,6 +152,8 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             DoctorFamily::Role,
             $selected->count(),
             $this->ordered($issues),
+            array_values($selected->where('status', LifecycleStatus::Active)->modelKeys()),
+            $context->inspection->reachable && ! $context->inspectionFailed ? [DoctorResources::nodeCheckId($context->node->id) => [RoleDoctorIssueCode::NodeUnreachable->value]] : [],
         );
     }
 

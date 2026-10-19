@@ -28,7 +28,7 @@ final readonly class DatabaseConnectionDoctorInspection
             return [$this->issue(
                 DatabaseConnectionDoctorIssueCode::Missing,
                 DoctorIssueKind::Drift,
-                $attachment->id,
+                DoctorResources::rowId(DoctorResourceKind::Attachments, $attachment->id),
                 $this->resourceName($attachment, null),
                 'The attachment names a registry connection that is not present.',
                 'present',
@@ -49,7 +49,7 @@ final readonly class DatabaseConnectionDoctorInspection
             return [$this->issue(
                 DatabaseConnectionDoctorIssueCode::InspectionFailed,
                 DoctorIssueKind::Unverifiable,
-                $attachment->id,
+                DoctorResources::rowId(DoctorResourceKind::Attachments, $attachment->id),
                 $this->resourceName($attachment, $connection),
                 'Database connection stored environment could not be verified.',
                 'verifiable',
@@ -64,7 +64,7 @@ final readonly class DatabaseConnectionDoctorInspection
         return [$this->issue(
             DatabaseConnectionDoctorIssueCode::EnvMismatch,
             DoctorIssueKind::Drift,
-            $attachment->id,
+            DoctorResources::rowId(DoctorResourceKind::Attachments, $attachment->id),
             $this->resourceName($attachment, $connection),
             'Attached stored environment keys do not match the registry projection.',
             'matching',
@@ -158,18 +158,16 @@ final readonly class DatabaseConnectionDoctorInspection
     private function resourceId(
         DatabaseConnection $connection,
         ?DatabaseConnectionTarget $attachment,
-    ): int {
-        if ($attachment instanceof DatabaseConnectionTarget) {
-            return $attachment->id;
-        }
-
-        return $connection->id;
+    ): int|string {
+        return $attachment instanceof DatabaseConnectionTarget
+            ? DoctorResources::rowId(DoctorResourceKind::Attachments, $attachment->id)
+            : DoctorResources::rowId(DoctorResourceKind::Connections, $connection->id);
     }
 
     private function issue(
         DatabaseConnectionDoctorIssueCode $code,
         DoctorIssueKind $kind,
-        int $resourceId,
+        int|string $resourceId,
         string $resourceName,
         string $summary,
         string $expected,

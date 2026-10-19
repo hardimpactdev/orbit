@@ -88,15 +88,14 @@ final readonly class MergeNightlyRecipePullRequestsAction
             'The open PR target or head changed.');
         $this->require(data_get($pr, 'user.login') === $author && data_get($pr, 'user.type') === 'Bot', 'The PR author is not the Gateway App.');
         $this->require(data_get($pr, 'commits') === 1, 'Extra commits block automatic merge.');
-        $this->require(data_get($pr, 'changed_files') === 1 && data_get($pr, 'additions') === 1 && data_get($pr, 'deletions') === 1,
-            'Only one snapshot line may change.');
+        $this->require(data_get($pr, 'changed_files') === 1,
+            'Only the recipe snapshot and Ubuntu pins may change.');
     }
 
     private function patch(PendingRequest $http, mixed $files, string $parent, string $head, string $snapshot): void
     {
         $this->require(is_array($files) && array_is_list($files) && count($files) === 1
-            && data_get($files, '0.filename') === OpenNightlyRecipePullRequestAction::Path && data_get($files, '0.status') === 'modified'
-            && data_get($files, '0.additions') === 1 && data_get($files, '0.deletions') === 1 && data_get($files, '0.changes') === 2,
+            && data_get($files, '0.filename') === OpenNightlyRecipePullRequestAction::Path && data_get($files, '0.status') === 'modified',
             'The PR files are not exactly the recipe snapshot change.');
         $patch = data_get($files, '0.patch');
         if (! is_string($patch)) {
@@ -110,17 +109,25 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 $added[] = substr($line, 1);
             }
         }
-        if (count($removed) !== 1 || count($added) !== 1) {
-            throw new UnexpectedValueException('The recipe patch changes more than one line.');
-        }
         $before = $this->contents->read($http, $parent);
         $after = $this->contents->read($http, $head);
         $old = $this->contents->snapshot($before);
-        $this->require($snapshot > $old && $this->contents->snapshot($after) === $snapshot
-            && preg_match('/\A\s*"snapshot"\s*:\s*"'.preg_quote($old, '/').'"\s*,?\z/', $removed[0]) === 1
-            && $added[0] === str_replace($old, $snapshot, $removed[0]), 'The patch does not advance only ubuntu.snapshot to its branch date.');
-        $expected = str_replace($removed[0], $added[0], $before, $count);
-        $this->require($count === 1 && $after === $expected, 'Recipe contents include changes outside the snapshot line.');
+        $this->require($snapshot > $old && $this->contents->snapshot($after) === $snapshot,
+            'The patch must advance ubuntu.snapshot to its branch date.');
+        $expected = $this->contents->replace($before, $old, $snapshot);
+        $this->require($after === $expected, 'Recipe contents differ from the authenticated snapshot and Ubuntu pin bump.');
+        $oldLines = explode("\n", $before);
+        $newLines = explode("\n", $expected);
+        $expectedRemoved = $expectedAdded = [];
+        foreach ($oldLines as $index => $line) {
+            if ($line !== ($newLines[$index] ?? null)) {
+                $expectedRemoved[] = $line;
+                $expectedAdded[] = $newLines[$index] ?? '';
+            }
+        }
+        $this->require($removed === $expectedRemoved && $added === $expectedAdded
+            && data_get($files, '0.additions') === count($added) && data_get($files, '0.deletions') === count($removed)
+            && data_get($files, '0.changes') === count($added) + count($removed), 'The recipe patch does not match the authenticated bump.');
     }
 
     private function require(bool $condition, string $reason): void
@@ -133,7 +140,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
     private function blocked(string $key, string $summary): void
     {
         if (Cache::add('machine-recipe:blocked-pr:'.$key, true, 86400)) {
-            $this->alerts->halted($summary);
+            $this->alerts->halted($summary, incident: RecipeMaintenanceAlerts::mergeIncident($key));
         }
     }
 }
