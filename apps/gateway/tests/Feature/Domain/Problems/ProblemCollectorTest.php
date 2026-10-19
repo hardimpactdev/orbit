@@ -678,7 +678,7 @@ it('resolves only the successfully observed Doctor resource within a mixed famil
     foreach ([101, 102, 103] as $id) {
         $rows[$id] = ProblemFingerprint::query()->create([
             'fingerprint' => 'doctor|instance.checkout_missing|instance|'.$id, 'source' => ProblemSource::Doctor, 'occurrences' => 0,
-            'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'instance', 'doctor_resource' => $id, 'doctor_observed_at' => now()->toISOString()],
+            'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'instance', 'doctor_code' => 'instance.checkout_missing', 'doctor_resource' => $id, 'doctor_observed_at' => now()->toISOString()],
         ]);
     }
     $this->travel(1)->minutes();
@@ -696,7 +696,7 @@ it('resolves only the successfully observed Doctor resource within a mixed famil
 it('ignores informational inventory while confirming a fresh resource observation', function (): void {
     problem_collector_sandbox();
     $node = problem_collector_node('tools');
-    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|tool.not_installed|tool|101', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => '101', 'doctor_observed_at' => now()->toISOString()]]);
+    $row = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|tool.not_installed|tool|101', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_code' => 'tool.not_installed', 'doctor_resource' => '101', 'doctor_observed_at' => now()->toISOString()]]);
     $this->travel(1)->minutes();
     $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, 1, [
         DoctorIssueData::fromInternal(DoctorFamily::Tool, 'tool.inventory_scan', DoctorIssueKind::Informational, null, null, 'Unused manager absent', null, null),
@@ -772,4 +772,28 @@ it('recovers reachability for one Node without closing another Node incident', f
 
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|process.node_unreachable|process|node:'.$nodes[0]->id)->sole()->evidence)->not->toHaveKey('resolved_at');
     expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|process.node_unreachable|process|node:'.$nodes[1]->id)->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});
+
+it('recovers a partial check whose fingerprint is hashed using the stored issue code', function (): void {
+    problem_collector_sandbox();
+    $node = problem_collector_node('hashed-check');
+    $resource = str_repeat('long-resource-', 25);
+    $code = 'schedule.orphan_artifact';
+    $report = DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [
+        DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, 0, [
+            DoctorIssueData::fromInternal(DoctorFamily::Schedule, $code, DoctorIssueKind::Drift, $resource, null, 'Orphan present', 'absent', 'present'),
+        ]),
+    ])]);
+    app(ProblemCollector::class)->recordDoctor($report, now());
+    $row = ProblemFingerprint::query()->sole();
+    expect($row->fingerprint)->toStartWith('doctor#');
+    expect($row->evidence['doctor_code'] ?? null)->toBe($code);
+    $this->travel(1)->minutes();
+    $clean = DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, 0, [], observedInventories: [$code => []]);
+
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$clean]),
+    ]), now());
+
+    expect($row->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
 });

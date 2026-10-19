@@ -800,3 +800,18 @@ function composer_tool_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
+
+it('isolates invalid Composer entries from supported installed packages', function (): void {
+    [$manager] = composer_tool_manager([composer_result(composer_show_entries([
+        ['name' => 'invalid;name', 'version' => '1.0.0'],
+        ['name' => 'vendor/unreadable', 'version' => "bad\x01version"],
+        ['name' => 'vendor/missing-version'],
+        ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+    ]))]);
+
+    $inventory = $manager->installedInventory(composer_tool_node());
+
+    expect($inventory->versionFor('laravel/installer'))->toBe('v5.16.0');
+    expect(fn () => $inventory->versionFor('vendor/unreadable'))->toThrow(ToolManagerException::class);
+    expect(fn () => $inventory->versionFor('vendor/missing-version'))->toThrow(ToolManagerException::class);
+});

@@ -37,6 +37,24 @@ final readonly class DoctorResources
         return self::NodeCheckPrefix.$nodeId.$suffix;
     }
 
+    public static function rowId(DoctorResourceKind $kind, int|string $id): int|string
+    {
+        return match ($kind) {
+            DoctorResourceKind::Attachments => 'attachment:'.$id,
+            DoctorResourceKind::Connections => 'connection:'.$id,
+            DoctorResourceKind::Rows => $id,
+            default => throw new LogicException('Node checks use their Node check ID.'),
+        };
+    }
+
+    public static function rowModelId(DoctorResourceKind $kind, int|string $id): ?int
+    {
+        $prefix = (string) self::rowId($kind, '');
+        $value = str_starts_with((string) $id, $prefix) ? substr((string) $id, strlen($prefix)) : '';
+
+        return ctype_digit($value) ? (int) $value : null;
+    }
+
     public static function isNodeCheckId(int|string $id, int $nodeId): bool
     {
         return in_array($id, [self::nodeCheckId($nodeId), self::nodeCheckId($nodeId, DoctorResourceKind::Inventory), self::nodeCheckId($nodeId, DoctorResourceKind::Environments)], true);
@@ -45,7 +63,7 @@ final readonly class DoctorResources
     /** @return list<DoctorIssueData> */
     public function failures(DoctorFamily $family, int $nodeId): array
     {
-        $ids = in_array($this->kind, [DoctorResourceKind::Inventory, DoctorResourceKind::Environments], true) ? [self::nodeCheckId($nodeId, $this->kind)] : $this->ids;
+        $ids = in_array($this->kind, [DoctorResourceKind::Inventory, DoctorResourceKind::Environments], true) ? [self::nodeCheckId($nodeId, $this->kind)] : array_map(fn (int|string $id): int|string => self::rowId($this->kind, $id), $this->ids);
 
         return array_map(static fn (int|string|null $id): DoctorIssueData => DoctorIssueData::fromInternal(
             $family, $family->value.'.inspection_failed', DoctorIssueKind::Unverifiable, $id, null,

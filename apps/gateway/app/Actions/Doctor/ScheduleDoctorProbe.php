@@ -88,10 +88,10 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        $knownIds = $context->resources?->kind === DoctorResourceKind::Inventory
+        $knownIds = $context->covers(DoctorResourceKind::Inventory)
             ? Schedule::query()->where('host_node_id', $context->node->id)->pluck('id')->all()
             : $schedules->pluck('id')->all();
-        if (! $context->inspection->reachable || ($context->resources !== null && $context->resources->kind !== DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
+        if (! $context->inspection->reachable || ! $context->covers(DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues, array_values($schedules->modelKeys()), $context->inspection->reachable ? [DoctorResources::nodeCheckId($context->node->id) => [ScheduleDoctorIssueCode::NodeUnreachable->value]] : []);
         }
 

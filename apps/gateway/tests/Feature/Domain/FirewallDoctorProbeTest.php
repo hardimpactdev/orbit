@@ -360,7 +360,7 @@ it('checks a Metrics expectation with zero persisted rows and short-circuits whe
 
     $rows = [];
     foreach (['firewall.rule_missing' => $target->resourceId, 'firewall.node_unreachable' => 'node:'.$node->id] as $code => $resource) {
-        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|firewall|'.($resource ?? 'none'), 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'firewall', 'doctor_resource' => $resource, 'doctor_observed_at' => now()->toISOString()]]);
+        $rows[$code] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|firewall|'.($resource ?? 'none'), 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'firewall', 'doctor_code' => $code, 'doctor_resource' => $resource, 'doctor_observed_at' => now()->toISOString()]]);
     }
     $this->travel(1)->minutes();
     $healthy = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', null, true)));

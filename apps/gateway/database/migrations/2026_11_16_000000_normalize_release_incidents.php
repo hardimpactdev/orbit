@@ -9,6 +9,7 @@ use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\RoleDoctorIssueCode;
 use App\Domain\Problems\ProblemEvidence;
 use App\Domain\Problems\ProblemGroupSnapshot;
+use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Problems\ProblemSuppression;
 use App\Domain\Releases\ReleaseAlertKind;
@@ -50,6 +51,12 @@ return new class extends Migration
                 }
                 if ($row->source === ProblemSource::Doctor) {
                     $parts = explode('|', $row->fingerprint);
+                    if (count($parts) === 4) {
+                        $row->evidence = [...$row->evidence, 'doctor_code' => $parts[1]];
+                        if ($parts[3] === 'none' || ($parts[2] === 'database_connection' && ctype_digit($parts[3]))) {
+                            app(ProblemRecovery::class)->resolve($row, 'doctor_identity_replaced');
+                        }
+                    }
                     if (count($parts) === 4 && $parts[3] !== 'none') {
                         $row->evidence = [...$row->evidence, 'doctor_family' => $parts[2], 'doctor_resource' => $parts[3], 'doctor_resource_present' => $this->persistedDoctorResource($parts[2], $parts[1], $parts[3])];
                     }

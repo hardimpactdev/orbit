@@ -1006,3 +1006,25 @@ it('closes completed fleet incidents only after a verified later rollout', funct
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
+
+it('retires unscoped historical Doctor incidents before filing their scoped replacement', function (): void {
+    $this->freezeTime();
+    problem_filer_project();
+    $legacy = problem_filer_fingerprint('doctor|tool.inspection_failed|tool|none', 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
+    expect(Artisan::call('problems:file'))->toBe(0);
+    $group = Task::topLevel()->sole();
+    $evidence = $legacy->refresh()->evidence;
+    unset($evidence['generated_group_hash']);
+    $legacy->update(['evidence' => $evidence]);
+    $migration = require database_path('migrations/2026_11_16_000000_normalize_release_incidents.php');
+
+    $migration->up();
+    $migration->up();
+
+    expect($legacy->refresh()->evidence['resolution'] ?? null)->toBe('doctor_identity_replaced');
+    expect($legacy->evidence['doctor_code'] ?? null)->toBe('tool.inspection_failed');
+    problem_filer_fingerprint('doctor|tool.inspection_failed|tool|node:1:inventory', 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
+    expect(Artisan::call('problems:file'))->toBe(0);
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+    expect(Task::topLevel()->where('status', TaskGroupStatus::Backlog)->count())->toBe(1);
+});

@@ -128,6 +128,7 @@ final readonly class ProblemCollector
                     'summary' => $issue['summary'],
                     'doctor_node' => $issue['doctor_node'],
                     'doctor_family' => $issue['doctor_family'],
+                    'doctor_code' => $issue['doctor_code'],
                     'doctor_resource' => $issue['doctor_resource'],
                     'doctor_resource_present' => $this->recovery->resourceExists($issue['doctor_family'], $issue['doctor_resource'], (int) $issue['doctor_node']),
                     'doctor_observed_at' => $startedAt->toISOString(),
@@ -319,7 +320,7 @@ final readonly class ProblemCollector
         });
     }
 
-    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_resource: string|null}> */
+    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null}> */
     private function doctorIssues(DoctorReportData $report): array
     {
         $issues = [];
@@ -339,6 +340,7 @@ final readonly class ProblemCollector
                         'summary' => $issue->summary,
                         'doctor_node' => (string) $node->nodeId,
                         'doctor_family' => $family->family->value,
+                        'doctor_code' => $issue->code,
                         'doctor_resource' => $issue->resourceId === null ? null : (string) $issue->resourceId,
                     ];
                 }

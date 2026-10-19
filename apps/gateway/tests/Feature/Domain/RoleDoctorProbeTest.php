@@ -945,7 +945,7 @@ it('does not recover role incidents outside the selected collection group', func
     $row = ProblemFingerprint::query()->create([
         'fingerprint' => 'doctor|role.inspection_failed|role|'.$unselected->id,
         'source' => ProblemSource::Doctor, 'occurrences' => 1,
-        'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'role', 'doctor_resource' => (string) $unselected->id, 'doctor_observed_at' => now()->toISOString()],
+        'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'role', 'doctor_code' => 'role.inspection_failed', 'doctor_resource' => (string) $unselected->id, 'doctor_observed_at' => now()->toISOString()],
     ]);
     $this->travel(1)->minutes();
     $roleCalls = 0;

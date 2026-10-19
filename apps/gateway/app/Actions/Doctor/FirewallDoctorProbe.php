@@ -54,9 +54,9 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
     {
         $rules = $this->rows($context->node);
         $rules = $context->select($rules);
-        $expectations = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory ? $this->expectations->for($context->node) : [];
+        $expectations = $context->covers(DoctorResourceKind::Inventory) ? $this->expectations->for($context->node) : [];
 
-        $inventoryCheck = $context->resources === null || $context->resources->kind === DoctorResourceKind::Inventory;
+        $inventoryCheck = $context->covers(DoctorResourceKind::Inventory);
         $inventoryChecks = $inventoryCheck ? [DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Inventory) => [FirewallDoctorIssueCode::InspectionFailed->value]] : [];
         if ($rules->isEmpty() && $expectations === []) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, [], observedChecks: $inventoryChecks);

@@ -1313,7 +1313,7 @@ it('recovers global Tool inventory faults only after a complete successful scan'
     $node->update(['platform' => $platform]);
     $rows = [];
     foreach (['tool.inventory_scan', 'tool.inspection_failed'] as $code) {
-        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|node:'.$node->id.':inventory', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_resource' => 'node:'.$node->id.':inventory', 'doctor_observed_at' => now()->toISOString()]]);
+        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|node:'.$node->id.':inventory', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_code' => $code, 'doctor_resource' => 'node:'.$node->id.':inventory', 'doctor_observed_at' => now()->toISOString()]]);
     }
     $this->travel(1)->minutes();
     $inspector = new class implements ToolInspector
@@ -1332,7 +1332,7 @@ it('recovers global Tool inventory faults only after a complete successful scan'
     foreach ($rows as $row) {
         expect($row->refresh()->evidence['resolution'] ?? null)->toBe($recovered ? 'fresh_doctor_success' : null);
     }
-})->with([['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
+})->with([['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'absent', true], ['macos', 'absent', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
 
 it('keeps failed Tool jobs separate and recovers only the job observed clean', function (): void {
     $this->freezeTime();

@@ -83,7 +83,7 @@ final readonly class ProblemEvidence
             }
         }
 
-        foreach (['release_repository' => 255, 'release_id' => 64, 'incident_resource' => 100, 'incident_attempt' => 100, 'incident_fault' => 100, 'doctor_family' => 64, 'doctor_node' => 64, 'doctor_observed_at' => 64, 'release_kind' => 64, 'release_target' => 100, 'resolved_at' => 64, 'resolution' => 100] as $key => $limit) {
+        foreach (['release_repository' => 255, 'release_id' => 64, 'incident_resource' => 100, 'incident_attempt' => 100, 'incident_fault' => 100, 'doctor_family' => 64, 'doctor_code' => 255, 'doctor_node' => 64, 'doctor_observed_at' => 64, 'release_kind' => 64, 'release_target' => 100, 'resolved_at' => 64, 'resolution' => 100] as $key => $limit) {
             $value = $observation[$key] ?? null;
 
             if (is_string($value) && $value !== '') {

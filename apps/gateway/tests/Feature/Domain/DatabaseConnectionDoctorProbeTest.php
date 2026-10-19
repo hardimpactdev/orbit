@@ -14,13 +14,13 @@ use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\DoctorResourceKind;
+use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemCollection;
 use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemRecovery;
-use App\Domain\Problems\ProblemSource;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteProvenance;
@@ -164,7 +164,7 @@ it('drops attachment issues when removal starts during inspection but keeps stan
     expect($report->issues)
         ->toHaveCount(1)
         ->and($report->issues[0]->resourceId)
-        ->toBe($standalone->id)
+        ->toBe('connection:'.$standalone->id)
         ->and($report->issues[0]->code)
         ->toBe(DatabaseConnectionDoctorIssueCode::Unhealthy->value);
 });
@@ -464,7 +464,7 @@ it('queues database attachments by attachment identity and retains their finding
     $context = database_connection_doctor_context($node);
     Cache::put(ProblemCollection::contextKey($job->collection, $node->id), ['inspection' => $context->inspection->toArray(), 'failed' => false, 'observed_at' => now()->toISOString()]);
     $job->handle(app(RunDoctorAction::class), app(ProblemCollector::class), app(CommandDeadline::class));
-    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|database_connection.env_mismatch|database_connection|'.$attachment->id)->exists())->toBeTrue();
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|database_connection.env_mismatch|database_connection|attachment:'.$attachment->id)->exists())->toBeTrue();
 });
 
 it('still queues a Node connection when its only attachment is on a removing Instance', function (): void {
@@ -490,28 +490,55 @@ it('still queues a Node connection when its only attachment is on a removing Ins
     ]);
 });
 
-it('recovers attachment checks despite colliding registry ids and requires both domains for shared faults', function (): void {
+it('recovers a healthy attachment independently of an unhealthy connection with the same id', function (): void {
     $node = database_connection_doctor_node();
     $instance = database_connection_doctor_instance($node);
     $collision = DatabaseConnection::query()->create(['slug' => 'unhealthy-collision', 'driver' => DatabaseDriver::Mysql, 'node_id' => $node->id]);
     $healthy = database_connection_doctor_mysql($node, 'healthy-attachment');
     $attachment = DatabaseConnectionTarget::query()->create(['database_connection_id' => $healthy->id, 'instance_id' => $instance->id, 'prefix' => 'DB']);
     expect($attachment->id)->toBe($collision->id);
+    $family = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    $attachmentRow = ProblemFingerprint::query()->where('evidence->doctor_resource', 'attachment:'.$attachment->id)->sole();
+    $connectionRow = ProblemFingerprint::query()->where('evidence->doctor_resource', 'connection:'.$collision->id)->sole();
     foreach ((new DatabaseConnectionEnvProjection)->project($healthy, 'DB')['values'] as $key => $value) {
         $instance->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
     }
-    $rows = [];
-    foreach (['env_mismatch', 'unhealthy'] as $fault) {
-        $rows[$fault] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|database_connection.'.$fault.'|database_connection|'.$attachment->id, 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'database_connection', 'doctor_resource' => (string) $attachment->id, 'doctor_observed_at' => now()->toISOString()]]);
-    }
     $this->travel(1)->minutes();
-    $family = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
-    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
-    expect($rows['env_mismatch']->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success')
-        ->and($rows['unhealthy']->refresh()->evidence)->not->toHaveKey('resolved_at');
+    $family = database_connection_doctor_probe()->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Attachments, [$attachment->id])));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    expect($attachmentRow->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect($connectionRow->refresh()->evidence)->not->toHaveKey('resolved_at');
     $collision->update(['host' => '10.44.0.201', 'port' => 3306, 'database' => 'app', 'username' => 'app', 'password' => DATABASE_CONNECTION_DOCTOR_SECRET]);
     $this->travel(1)->minutes();
-    $family = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
-    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
-    expect($rows['unhealthy']->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    $family = database_connection_doctor_probe()->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Connections, [$collision->id])));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    expect($connectionRow->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});
+
+it('separates failed attachment and connection jobs and recovers only the selected domain', function (): void {
+    $node = database_connection_doctor_node();
+    $instance = database_connection_doctor_instance($node);
+    $connection = database_connection_doctor_mysql($node, 'independent-connection');
+    $attached = database_connection_doctor_mysql($node, 'attached');
+    $attachment = DatabaseConnectionTarget::query()->create(['database_connection_id' => $attached->id, 'instance_id' => $instance->id, 'prefix' => 'DB']);
+    expect($attachment->id)->toBe($connection->id);
+    foreach ((new DatabaseConnectionEnvProjection)->project($attached, 'DB')['values'] as $key => $value) {
+        $instance->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+    foreach ([DoctorResourceKind::Attachments, DoctorResourceKind::Connections] as $kind) {
+        (new CollectDoctorResource('database-identities', [$node->id], $node->id, DoctorFamily::DatabaseConnection, new DoctorResources($kind, [$connection->id])))
+            ->failed(new RuntimeException('Worker stopped.'));
+    }
+    expect(ProblemFingerprint::query()->count())->toBe(2);
+    $attachmentRow = ProblemFingerprint::query()->where('evidence->doctor_resource', 'attachment:'.$attachment->id)->sole();
+    $connectionRow = ProblemFingerprint::query()->where('evidence->doctor_resource', 'connection:'.$connection->id)->sole();
+    $this->travel(1)->minutes();
+    $family = database_connection_doctor_probe()->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Attachments, [$attachment->id])));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family])]), now());
+    expect($attachmentRow->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect($connectionRow->refresh()->evidence)->not->toHaveKey('resolved_at');
+    $attachment->delete();
+    expect(app(ProblemRecovery::class)->reason($attachmentRow))->toBe('resource_gone');
+    expect(app(ProblemRecovery::class)->reason($connectionRow))->toBeNull();
 });

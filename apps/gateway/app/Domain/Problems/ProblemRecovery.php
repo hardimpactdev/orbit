@@ -6,6 +6,7 @@ namespace App\Domain\Problems;
 
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
@@ -52,7 +53,10 @@ final readonly class ProblemRecovery
                     if ($resource !== null && ! is_int($resource) && ! is_string($resource)) {
                         continue;
                     }
-                    $code = explode('|', $row->fingerprint)[1] ?? '';
+                    $code = $row->evidence['doctor_code'] ?? null;
+                    if (! is_string($code)) {
+                        continue;
+                    }
                     $partial = in_array($code, $family->observedChecks[(string) $resource] ?? [], true)
                         || (isset($family->observedInventories[$code]) && ! in_array((string) $resource, array_map(strval(...), $family->observedInventories[$code]), true));
                     $checked = $partial || in_array((string) $resource, array_map(strval(...), $family->observedResources), true);
@@ -261,7 +265,14 @@ final readonly class ProblemRecovery
             default => null,
         };
         if ($family === 'database_connection') {
-            return DatabaseConnection::query()->whereKey($id)->exists() || DatabaseConnectionTarget::query()->whereKey($id)->exists();
+            $connectionId = DoctorResources::rowModelId(DoctorResourceKind::Connections, $id);
+            $attachmentId = DoctorResources::rowModelId(DoctorResourceKind::Attachments, $id);
+
+            return match (true) {
+                $connectionId !== null => DatabaseConnection::query()->whereKey($connectionId)->exists(),
+                $attachmentId !== null => DatabaseConnectionTarget::query()->whereKey($attachmentId)->exists(),
+                default => null,
+            };
         }
 
         return $model === null ? null : $model::query()->whereKey($id)->exists();
