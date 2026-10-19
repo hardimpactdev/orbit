@@ -16,7 +16,10 @@ use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
@@ -53,6 +56,7 @@ final readonly class RemoveTaskWorkspaceAction
 
     public function __construct(
         private InstanceRemover $remover,
+        private TaskPullRequestPublisher $publisher,
     ) {}
 
     /**
@@ -63,8 +67,7 @@ final readonly class RemoveTaskWorkspaceAction
     public function claimInFlight(Task $group): bool
     {
         return $group->status === TaskGroupStatus::Reserved
-            && $group->reserved_at instanceof CarbonInterface
-            && $group->reserved_at->greaterThan(self::reservationCutoff());
+            && ! Task::topLevel()->whereKey($group->id)->workspaceClaimReleased()->exists();
     }
 
     public static function reservationCutoff(): CarbonInterface
@@ -88,7 +91,15 @@ final readonly class RemoveTaskWorkspaceAction
         }
         $group->setRelation('taskable', $instance);
         $leases = app(TaskWorkspaceLease::class);
-        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($instance, $leases): void {
+        $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance, $leases): void {
+            if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
+                throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
+            }
+            $commit = TaskFinalReview::reconcileRemovalPush($group);
+            if ($commit !== null) {
+                $this->publisher->push($group, $commit);
+                TaskFinalReview::recordRemovalPush($group, $commit);
+            }
             $lease = $leases->remoteStarted($instance);
             try {
                 $this->removeWithLease($instance);
@@ -121,9 +132,6 @@ final readonly class RemoveTaskWorkspaceAction
 
     private function removeWithLease(Instance $instance): void
     {
-        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-        }
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);
@@ -156,7 +164,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null, bool $replaceDirection = false): void
     {
-        if ($exception instanceof TaskWorkspaceWaiting) {
+        if ($exception instanceof TaskWorkspaceWaiting || ($exception instanceof TaskPullRequestException && $exception->pending)) {
             return;
         }
         for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {

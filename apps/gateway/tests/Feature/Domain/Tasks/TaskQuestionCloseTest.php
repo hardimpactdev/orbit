@@ -180,6 +180,20 @@ describe('closing a question', function (): void {
 });
 
 describe('ending a subtask or a task', function (): void {
+    it('supersedes open and escalated questions when a group fails', function (): void {
+        $group = question_close_group(TaskGroupStatus::Running, TaskStatus::Running);
+        $subtask = question_close_subtask($group);
+        $open = question_close_question($subtask, QuestionStatus::Open);
+        $escalated = question_close_question($subtask, QuestionStatus::Escalated);
+
+        $group->update(['status' => TaskGroupStatus::Failed]);
+
+        foreach ([$open, $escalated] as $question) {
+            expect($question->fresh()->status)->toBe(QuestionStatus::Superseded);
+            expect($question->fresh()->answer)->toBe('Task failed.');
+        }
+    });
+
     it('supersedes the questions of a cancelled subtask', function (): void {
         $group = question_close_group(TaskGroupStatus::Running, TaskStatus::Todo, TaskStatus::Todo);
         $subtask = question_close_subtask($group);

@@ -7,9 +7,12 @@ namespace App\Jobs\TaskVms;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
@@ -30,7 +33,9 @@ use Throwable;
  *
  * A VM that died before its workspace could be removed leaves the workspace behind: removal needs SSH to
  * the VM. Once that removal has failed for an ended group and the VM is absent or stays stopped, the job
- * deletes the VM and then forgets the workspace records offline.
+ * starts a stopped ready VM to preserve unpublished reviewed work. Only a recorded failed row gives up that work:
+ * the host sweep confirms missing VMs, and resume fails a VM that cannot start. The lost SHA and failure stay in the
+ * group's evidence and assistance. Failed is final; destruction never retries its wake.
  *
  * The unique lock has no expiry, so the tick never queues a second copy while one waits or runs.
  */
@@ -55,19 +60,40 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         // with it.
         $group = $vm->group;
         $workspace = $vm->node_id !== null && $group instanceof Task && $group->workspace()->where('node_id', $vm->node_id)->exists();
-        // A parked VM is stopped on purpose, not dead: its workspace removal starts it, and destroy waits for that.
-        if ($workspace && $vm->state === TaskVmState::Parked) {
-            ResumeTaskVm::dispatch($vm->id);
+        $lostCommit = null;
+        if ($workspace) {
+            if (! app(WakeTaskVmAction::class)->forVm($vm)) {
+                return;
+            }
+            $commit = TaskFinalReview::reconcileRemovalPush($group);
+            // Only an eligible group whose normal removal failed may lose its workspace offline.
+            if ($vm->state !== TaskVmState::Destroying) {
+                if (! Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->removalFailure()->exists()) {
+                    return;
+                }
+                if ($vm->state !== TaskVmState::Failed) {
+                    $observed = $guest->observeSettled($vm);
+                    if ($commit !== null) {
+                        if ($observed !== null && ! $observed->running) {
+                            app(WakeTaskVmAction::class)->forVm($vm, stopped: true);
+                        }
 
-            return;
-        }
-        // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! Task::topLevel()->whereKey($group->id)->whereIn('status', TaskGroupStatus::endedStatuses())->removalFailure()->exists() || $guest->observeSettled($vm)?->running === true)) {
-            return;
+                        // A missing ready VM waits for the host sweep's confirmed failure, not a single read.
+                        return;
+                    }
+                    if ($observed?->running) {
+                        return;
+                    }
+                }
+            }
+            $lostCommit = $commit;
+            if ($lostCommit !== null) {
+                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
+            }
         }
 
         $delete->execute($vm);
-        if ($workspace) {
+        if ($workspace && $lostCommit === null) {
             $removal->clearFailure($group);
         }
 

@@ -32,7 +32,7 @@ final readonly class ShowTasksStatusAction
 
         $merges = array_values(Task::topLevel()
             ->with('project')
-            ->whereNotIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed])
+            ->whereNotIn('status', TaskGroupStatus::endedStatuses())
             ->where(static fn ($query) => $query->whereHas('project', static fn ($project) => $project->where('review_and_merge', true))->orWhereNotNull('pr_branch'))
             ->orderBy('id')
             ->get()

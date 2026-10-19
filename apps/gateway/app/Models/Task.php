@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
@@ -358,6 +359,29 @@ final class Task extends Model
     {
         $query->where($query->qualifyColumn('assistance_requested'), true)
             ->where($query->qualifyColumn('assistance_kind'), AssistanceKind::RemovalFailure);
+    }
+
+    /** A claim no longer owns provisioning once its workspace is attached or its reservation expires.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeWorkspaceClaimReleased(Builder $query): void
+    {
+        $query->where(static fn (Builder $claim) => $claim
+            ->whereNull($query->qualifyColumn('reserved_at'))
+            ->orWhere($query->qualifyColumn('reserved_at'), '<=', RemoveTaskWorkspaceAction::reservationCutoff())
+            ->orWhereHas('workspace', static fn (Builder $workspace) => $workspace->whereColumn('instances.id', 'tasks.taskable_id')));
+    }
+
+    /** @param  Builder<Task>  $query */
+    public function scopeWorkspaceRemovalRetry(Builder $query): void
+    {
+        $query->workspaceClaimReleased()->whereIn('status', TaskGroupStatus::workspaceRemovalStatuses())
+            ->where(static fn (Builder $eligible) => $eligible
+                ->whereIn('status', TaskGroupStatus::endedStatuses())
+                ->orWhere(static fn (Builder $published) => $published
+                    ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()
+                    ->whereDoesntHave('tasks', static fn (Builder $subtasks) => $subtasks->whereIn('status', [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing]))));
     }
 
     /** @return BelongsTo<Task, $this> */
@@ -733,7 +757,7 @@ final class Task extends Model
     }
 
     /**
-     * A task that completes or is cancelled leaves no question open or escalated. They become `superseded`.
+     * An ended group or a completed or cancelled subtask leaves no question open or escalated. They become `superseded`.
      * A query-builder update of subtask statuses skips this hook, so it relies on the task's own update.
      */
     private function settleQuestionsWhenEnded(): void
@@ -742,13 +766,14 @@ final class Task extends Model
             return;
         }
 
-        $reason = match ($this->status) {
-            TaskStatus::Completed => 'Subtask completed.',
-            TaskStatus::Cancelled => 'Subtask cancelled.',
-            TaskGroupStatus::Completed => 'Task completed.',
-            TaskGroupStatus::Cancelled => 'Task cancelled.',
-            default => null,
-        };
+        $status = $this->status;
+        $reason = $status instanceof TaskGroupStatus && in_array($status, TaskGroupStatus::endedStatuses(), true)
+            ? 'Task '.$status->value.'.'
+            : match ($status) {
+                TaskStatus::Completed => 'Subtask completed.',
+                TaskStatus::Cancelled => 'Subtask cancelled.',
+                default => null,
+            };
 
         if ($reason !== null) {
             TaskQuestions::settle($this, $reason);

@@ -136,14 +136,14 @@ it('keeps the source and record when teardown fails and a retry removes only the
     ]);
 });
 
-it('keeps a swept workspace when teardown fails and retries only that workspace after the backoff', function (): void {
+it('keeps a swept workspace when teardown fails and retries only that workspace after the backoff', function (TaskGroupStatus $status): void {
     $this->freezeTime();
     app(TaskExtensionState::class)->enable();
-    $world = task_teardown_world('sweep-retry', TaskGroupStatus::Cancelled);
+    $world = task_teardown_world('sweep-retry', $status);
     $world['harness']->exit = 1;
 
     expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
-        ->and($world['group']->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($world['group']->fresh()?->status)->toBe($status)
         ->and($world['group']->fresh()?->assistance_requested)->toBeTrue()
         ->and($world['group']->fresh()?->assistance_reason)->toBe('Workspace removal failed: Teardown step failed.')
         ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
@@ -161,13 +161,13 @@ it('keeps a swept workspace when teardown fails and retries only that workspace 
     $world['harness']->exit = 0;
 
     expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-        ->and($world['group']->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($world['group']->fresh()?->status)->toBe($status)
         ->and($world['group']->fresh()?->assistance_requested)->toBeFalse()
         ->and($world['group']->fresh()?->assistance_reason)->toBeNull()
         ->and(Instance::query()->find($world['workspace']->id))->toBeNull()
         ->and(Instance::query()->find($world['neighbor']->id))->not->toBeNull()
         ->and($world['harness']->source->finalized)->toBe([$world['workspace']->id]);
-});
+})->with([TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
 it('retains the workspace when the teardown outcome is unconfirmed', function (): void {
     app(TaskExtensionState::class)->enable();
