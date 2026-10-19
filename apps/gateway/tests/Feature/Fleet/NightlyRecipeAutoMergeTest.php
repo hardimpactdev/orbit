@@ -238,9 +238,10 @@ it('does not recheck a blocked head even after the alert expires and checks a ch
     $evidence['commits'][0]['sha'] = $evidence['runs'][0]['head_sha'] = $head;
     Http::swap(new Factory);
     $retried = nightlyMergeHttp($evidence);
+    app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents(new FakeUbuntuSnapshot));
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
-    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $head);
     expect($retried->alerts)->toBe([]);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $head);
 });
