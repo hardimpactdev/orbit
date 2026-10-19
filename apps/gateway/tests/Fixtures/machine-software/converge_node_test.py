@@ -236,7 +236,7 @@ class ConvergenceTest(unittest.TestCase):
                 self.commands.clear()
                 self.payload['tools'] = {'caddy': {'source': 'artifact', 'version': '1.0', 'artifacts': {
                     'amd64': {'url': 'https://example.test/caddy' + suffix, 'sha256': '0' * 64}}}}
-                def command(argv, **kwargs):
+                def command(argv, state=state, **kwargs):
                     result = self.command(argv, **kwargs)
                     if argv[:2] == ['dpkg-query', '-L'] and argv[-1] == 'caddy':
                         result.stdout = '/usr/lib/systemd/system/caddy.service\n'
@@ -256,7 +256,7 @@ class ConvergenceTest(unittest.TestCase):
                 self.commands.clear()
                 self.unit_states['curl.service'] = 'LoadState=loaded\nRequiredBy=consumer.service\nBoundBy=\nConsistsOf=\n'
                 self.unit_states['consumer.service'] = state
-                def command(argv, **kwargs):
+                def command(argv, state=state, **kwargs):
                     if argv[:2] == ['systemctl', 'show'] and argv[-1] == 'consumer.service' and state is None:
                         return subprocess.CompletedProcess(argv, 1, '', 'unreadable')
                     return self.command(argv, **kwargs)
@@ -296,7 +296,7 @@ class ConvergenceTest(unittest.TestCase):
             with self.subTest(state=state):
                 self.commands.clear()
                 self.unit_states['curl.service'] = 'LoadState=loaded\nRequiredBy=consumer.service\nBoundBy=\nConsistsOf=\n'
-                def command(argv, **kwargs):
+                def command(argv, state=state, **kwargs):
                     result = self.command(argv, **kwargs)
                     if argv[:2] == ['systemctl', 'is-active'] and argv[-1] == 'consumer.service':
                         return subprocess.CompletedProcess(argv, 3, '', '')
