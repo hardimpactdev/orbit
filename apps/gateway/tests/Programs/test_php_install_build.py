@@ -1,6 +1,7 @@
 """php.install-build against a fake Node: dpkg, apt, systemctl, and PHP are shell fakes over a temporary root."""
 import hashlib
 import os
+import shutil
 import socket
 import struct
 import subprocess
@@ -156,6 +157,30 @@ class InstallBuildTest(unittest.TestCase):
         # The mirror is tried before the pin's URL.
         curls = [call for call in self.calls() if call.startswith('curl')]
         self.assertTrue(curls[0].startswith('curl https://mirror.example/php/'))
+
+    def test_cleans_root_owned_repack_trees_before_installing_as_an_unprivileged_user(self):
+        sudo = shutil.which('sudo', path='/usr/bin:/bin')
+        if os.geteuid() == 0 or sudo is None or subprocess.run(
+                [sudo, '-n', 'true'], capture_output=True, check=False).returncode != 0:
+            self.skipTest('requires an unprivileged user with passwordless sudo')
+        # Keep the package tools fake, but exercise the real ownership boundary of the enrolled SSH user.
+        wrapper = Path(self.environment['PATH'].split(':')[0]) / 'sudo'
+        wrapper.write_text('#!/bin/bash\n[ "$1" = -n ] && shift\n'
+                           'exec /usr/bin/sudo -n env PATH="$PATH" STATE="$STATE" ROOT="$ROOT" "$@"\n')
+        self.addCleanup(subprocess.run, [sudo, '-n', 'rm', '-rf', '--', self.directory.name], check=True)
+        work = self.state / 'work'
+        work.mkdir()
+        self.environment['TMPDIR'] = str(work)
+        for name in self.pins:
+            self.install(name, '8.5.10-1')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual(outcome, 'applied')
+        self.assertEqual(len(data['changed']), 3)
+        self.assertTrue(any(call.startswith('repack ') for call in self.calls()))
+        self.assertTrue(any(call.startswith('apt-get ') and '.deb' in call for call in self.calls()))
+        self.assertEqual(list(work.iterdir()), [])
 
     def test_downloads_nothing_when_every_package_is_at_its_version(self):
         for name in self.pins:

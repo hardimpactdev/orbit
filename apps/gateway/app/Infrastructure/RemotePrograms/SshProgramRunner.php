@@ -195,11 +195,11 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
             || ! is_array($data)
             || ($data !== [] && array_is_list($data))
         ) {
-            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::InvalidResult, $result->stderr);
+            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::InvalidResult, $result->stderr, exitCode: $result->exitCode);
         }
 
         if (! $program->declares($outcome)) {
-            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::UndeclaredOutcome, $result->stderr);
+            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::UndeclaredOutcome, $result->stderr, exitCode: $result->exitCode);
         }
 
         return new ProgramResult($outcome, $data, $result->stderr);
