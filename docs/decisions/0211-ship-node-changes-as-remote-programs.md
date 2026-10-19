@@ -1,16 +1,20 @@
 ---
 title: "ADR 0211: Ship Node changes as remote programs"
 sidebarTitle: "0211 Remote programs"
-description: "In progress. Each script that the Gateway runs on a Node becomes a named program file with a JSON contract and named outcomes. One runner interface sends it, CI lints it, and tests run it directly."
+description: "Superseded by ADR 0225 on 2026-10-19. Each script that the Gateway runs on a Node becomes a named program file with a JSON contract and named outcomes. One runner interface sends it, CI lints it, and tests run it directly."
 ---
 
 # ADR 0211: Ship Node changes as remote programs
+
+This record is superseded by [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands). The text below records the earlier decision.
 
 Every script that the Gateway runs on a Node moves out of PHP strings into a program file with a documented contract. One runner interface sends a program and returns its named outcome. CI lints every program, and tests run programs on their own. A ratchet keeps inline scripts from growing back.
 
 ## Status
 
-In progress.
+Superseded on 2026-10-19 by ADR 0225.
+
+Superseded by [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands). New work uses named Rust agent commands; the remaining programs migrate after ADR 0224.
 
 Principle: [Deterministic first](/mission#principles). Lint and direct tests decide what code can decide about Node-side code, and named outcomes replace exit codes that a reader must decode. It also serves [One way, one name](/mission#principles): one runner, one contract, and one stable name for each program. No principle exception is proposed.
 

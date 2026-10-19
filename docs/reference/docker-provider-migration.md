@@ -95,7 +95,9 @@ The trailing `-` requests removal of each Ubuntu plugin. CE's package conflicts 
 
 When `inventory.json` records `swapped: true`, restore the offline metadata copy before starting CE. First preserve the current metadata directories in protected backup storage. Then overlay the selected files under `metadata/docker` and `metadata/containerd` onto their destinations in the journal's `metadata_roots`, keeping the relative paths. The copy contains selected files only: do not replace or delete the destination directories or volume data. Keep both daemons stopped throughout this step.
 
-If fallback was used, check the migration-owned drop-in contents, confirm that the journal records fallback and `/etc/systemd/system/containerd.service` is the mask symlink to `/dev/null`, then remove only that drop-in and run `systemctl unmask containerd.service` together. Run `systemctl daemon-reload`, restore the previous startup policy (or remove only the temporary script if none existed), then start CE.
+If fallback was used, check the migration-owned drop-in contents, confirm that the journal records fallback and `/etc/systemd/system/containerd.service` is the mask symlink to `/dev/null`, then remove only that drop-in and run `systemctl unmask containerd.service` together.
+
+For every manual restore, run `systemctl daemon-reload`, restore the previous `/usr/sbin/policy-rc.d` (or remove only the temporary script if none existed), then start CE.
 
 Every manual CE restore must end with policy recovery, whether or not it used the metadata copy: migration disabled policies in the live root before that copy. After CE starts on the original root, run `php artisan node:migrate-docker Beast --yes --restore-policies` from the same Gateway checkout (or name the restored Node). This recovery step requires CE, the original root and unchanged daemon configuration, no fallback drop-in, and every original container.
 

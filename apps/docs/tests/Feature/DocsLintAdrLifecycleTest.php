@@ -116,7 +116,7 @@ it('adr lifecycle rejects new ADRs missing status or principle', function (): vo
     $root = adrLifecycleFixture();
     $path = $root.'/docs/decisions/0181-new-decision.md';
     file_put_contents($path, "# Decision\n\n## Status\n\nProposed.\n");
-    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must say In progress. or Withdrawn on YYYY-MM-DD. in its Status section.');
+    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must say In progress., Withdrawn on YYYY-MM-DD., or Superseded on YYYY-MM-DD by ADR NNNN. in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n");
     expectAdrLifecycleLintFailure($root, 'ADR 0180+ must include a Principle: line in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
@@ -146,13 +146,13 @@ it('adr lifecycle needs a Records row for a withdrawn ADR', function (): void {
     expectAdrLifecycleLintFailure($root, 'Live decision 0181-withdrawn has no row in the Records table. Add a row that links /decisions/0181-withdrawn.');
 });
 
-it('adr lifecycle keeps a withdrawn ADR without a redirect', function (): void {
+it('adr lifecycle keeps a withdrawn or superseded ADR without a redirect', function (string $status): void {
     $root = adrLifecycleFixture();
-    file_put_contents($root.'/docs/decisions/0181-withdrawn.md', "# Decision\n\n## Status\n\nWithdrawn on 2026-10-15.\n\nPrinciple: lean.\n");
+    file_put_contents($root.'/docs/decisions/0181-withdrawn.md', "# Decision\n\n## Status\n\n{$status}\n\nPrinciple: lean.\n");
     recordAdrRow($root, '0181-withdrawn');
 
     expect(new AdrLifecycle($root)->findings())->toBe([]);
-});
+})->with(['Withdrawn on 2026-10-15.', 'Superseded on 2026-10-19 by ADR 0225.']);
 
 it('adr lifecycle rejects an older unlisted ADR and an addition to the committed allowlist', function (): void {
     $root = adrLifecycleFixture();
@@ -166,7 +166,7 @@ it('adr lifecycle accepts a gap number that follows the in-progress rules', func
     $root = adrLifecycleFixture();
     $path = $root.'/docs/decisions/0176-outer-loop.md';
     file_put_contents($path, "# Decision\n\n## Status\n\nProposed.\n");
-    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must say In progress. or Withdrawn on YYYY-MM-DD. in its Status section.');
+    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must say In progress., Withdrawn on YYYY-MM-DD., or Superseded on YYYY-MM-DD by ADR NNNN. in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n");
     expectAdrLifecycleLintFailure($root, 'ADR 0180+ must include a Principle: line in its Status section.');
     file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
