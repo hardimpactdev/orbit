@@ -142,6 +142,7 @@ class ConvergenceTest(unittest.TestCase):
         self.assertIn('--wait', fences[0])
         self.assertIn('--collect', fences[0])
         self.assertIn('--property=After=consumer.service dependency.service', fences[0])
+        self.assertIn('--property=DefaultDependencies=no', fences[0])
         self.assertIn('--property=JobTimeoutSec=600', fences[0])
         self.assertTrue(any(c.startswith('--unit=orbit-recipe-health-') and c.endswith('.service') for c in fences[0]))
         self.assertLess(self.commands.index(fences[0]), self.commands.index(['systemctl', 'is-active', '--quiet', 'consumer.service']))
