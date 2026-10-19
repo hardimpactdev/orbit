@@ -328,7 +328,7 @@ Root `bin/test` queues the five project suites through the same weighted lane al
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1.25 GiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker.
+Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1664 MiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker.
 
 On Linux it reads CPU affinity and cgroup v2 CPU quotas. Available memory is the smaller of `/proc/meminfo`'s `MemAvailable` and each bounded cgroup's limit minus its working set, including ancestor bounds. The working set is `memory.current` minus `memory.stat`'s reclaimable `inactive_file` pages. On macOS it reads the CPU count and the free, inactive, and speculative pages from `vm_stat`. Unreadable resources fail the check.
 
@@ -741,7 +741,7 @@ All four tools run in parallel processes. The old limits of two PHPStan and Pest
 
 Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
 
-The 1.25 GiB allocation comes from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these worker peaks. The allocation is 1280 MiB. A later cold TIA run with two workers reached 1197.5 MiB per Pest worker, leaving 6.9% headroom; the whole-gate measurements below also account for the controllers.
+The initial worker samples came from the Gateway's full suite and `composer check` on Beast at `353ef196c` on 2026-10-18, with four workers and PCOV. Sampling each PHP process's `/proc/<pid>/status` `VmHWM` every 50 ms gave these peaks. A later cold TIA run with two workers reached 1197.5 MiB per Pest worker. The single-worker Gateway measurement below sets the larger final allocation; the whole-gate measurements also account for the controllers.
 
 | Worker | Peak resident memory |
 | --- | --- |
@@ -763,9 +763,17 @@ All three gates passed on 2026-10-18 UTC, with no OOM events. These are samples 
 
 The sampler ran in a separate systemd service and summed every process in the gate's cgroup at a nominal 200 ms interval. Its longest intervals were 0.387, 3.882, and 3.784 seconds on normal, medium, and large. Sampling can be delayed under load, so RSS is a sampled peak. Summed RSS counts shared pages more than once. The continuous kernel cgroup peak accounts for the gate's charged memory, including its descendants. Controller PSS divides shared pages between processes and excludes tool workers and their descendants. It measures the fixed overhead that the reserve covers.
 
-The initial 512 MiB reserve covered the normal and medium controllers, but a four-worker large run reached 513.4 MiB. Rounding up to the next 128 MiB gives the final 640 MiB reserve, about 25% above that peak. The normal and medium rows used the initial reserve; applying the final rule to their recorded starting resources still gives 2 and 1 workers. The reserve only changes that initial count, so their lane allocations remain the same. The large row uses the final reserve.
+The initial 512 MiB reserve covered the normal and medium controllers, but a four-worker large run reached 513.4 MiB. The later Gateway selection below reached 538.0 MiB. The final 640 MiB reserve gives about 19% headroom above that larger peak. These three rows used the initial 1280 MiB worker allocation. The normal and medium rows used the initial reserve; the large row uses 640 MiB. They are historical gate measurements, not fixed counts under the final rule.
 
 These warm selections do not prove every possible test selection. A supplementary cold normal run finished the Gateway suite with 13,856 passes, 21 skips, and one failure at an existing five-second child-start wait, then stopped before the remaining projects. Its RSS sampling had a 186.887-second gap; the kernel memory peak and OOM counters remained continuous. Its worker high-water mark supplies the larger per-worker sample above. The failed file passed unchanged afterward. A first large run also hit an unchanged three-second, 22-child barrier fixture; that fixture passed unchanged on the same topology before the complete repeat.
+
+A complete normal-VM gate on 2026-10-19 UTC then exercised the Gateway workers. Pi 0.87.1 stayed resident in idle RPC mode, with no model calls. The real diff against `353ef196c` selected all 847 Gateway test files from 104 changed files. Gateway `test:affected` passed 13,954 tests with 21 skips and 108,537 assertions in 2614.290 seconds. Its heaviest worker reached 1506.1 MiB `VmHWM`. The final allocation is 1664 MiB, about 10.5% above that measured peak.
+
+| VM and selection | Workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS | Gate seconds |
+| --- | --- | --- | --- | --- | --- | --- |
+| Normal: 2 CPUs, 4 GiB, resident Pi, Gateway and E2E tests | 1 | 3.864 GiB | 2.094 GiB | 1.185 GiB | 538.0 MiB | 3160.337 |
+
+That root `composer check` passed with zero OOM events. The nominal 200 ms sampler's longest interval was 1.214 seconds. Forked test children share pages, so summed RSS counts those mappings repeatedly; the continuous kernel peak records the gate's charged memory. The source was `0e6511df1` plus documentation changes, with receipt tree `0e342edbc5641a76fa917945cb49da8bd58a2364`. It used the initial 1280 MiB allocation and 640 MiB reserve. Both that rule and the final 1664 MiB allocation select one worker from its recorded 3.054 GiB available at start, so its lane shares are unchanged. Later CI-count and documentation changes do not alter those lane shares. Replaying the earlier warm starts through the final rule gives one, one and three workers for normal, medium with topology and large with topology.
 
 ### Findings are fixed, not silenced
 

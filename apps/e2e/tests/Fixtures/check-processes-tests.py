@@ -17,7 +17,7 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 budget = importlib.util.module_from_spec(spec)
 loader.exec_module(budget)
 GIB = 1024 ** 3
-WORKER = 1280 * 1024 ** 2
+WORKER = 1664 * 1024 ** 2
 RESERVE = 640 * 1024 ** 2
 
 
@@ -127,9 +127,9 @@ class CheckProcessesTest(unittest.TestCase):
             budget.processes({})
 
     def test_macos_uses_available_pages_and_reported_page_size(self):
-        pages = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 81920.\nPages inactive: 81920.\nPages speculative: 81920.\nPages wired down: 900000.\n'
+        pages = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 131072.\nPages inactive: 131072.\nPages speculative: 131072.\nPages wired down: 900000.\n'
         with patch.object(budget.sys, 'platform', 'darwin'), patch.object(budget.os, 'cpu_count', return_value=12), patch('subprocess.check_output', return_value=pages):
-            self.assertEqual(budget.processes({}), 2)
+            self.assertEqual(budget.processes({}), 3)
 
     def test_root_suites_share_one_total_budget(self):
         for total in (1, 2, 4, 10):
