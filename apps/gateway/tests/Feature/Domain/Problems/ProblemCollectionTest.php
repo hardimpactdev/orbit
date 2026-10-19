@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RunDoctorAction;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstalledPackageInventory;
@@ -161,7 +164,7 @@ it('lets the measured 6.8 second inventory complete without a worker failure', f
     $clock = (object) ['now' => 0.0];
     $deadline = new CommandDeadline(static fn (): float => $clock->now);
     app()->instance(CommandDeadline::class, $deadline);
-    Cache::put(ProblemCollection::contextKey('inventory', $node->id), ['inspection' => (new NodeInspectionData(true, 'macos', 'arm64', true))->toArray(), 'failed' => false]);
+    Cache::put(ProblemCollection::contextKey('inventory', $node->id), ['inspection' => (new NodeInspectionData(true, 'macos', 'arm64', true))->toArray(), 'failed' => false, 'observed_at' => now()->toISOString()]);
     app()->instance(InstalledPackageInventory::class, new class($clock, $deadline) implements InstalledPackageInventory
     {
         public function __construct(private stdClass $clock, private CommandDeadline $deadline) {}
@@ -257,4 +260,29 @@ it('returns after one lookup when the observed Node was deleted', function (): v
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
     expect(collect($queries)->filter(static fn (array $query): bool => str_contains($query['query'], '"nodes"'))->count())->toBe(1);
+});
+
+it('does not treat a cached Node observation as newer than an intervening failure', function (): void {
+    $this->freezeTime();
+    config(['cache.default' => 'array']);
+    $node = Node::query()->create(['name' => 'cached-observation', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.28']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'worker', 'runtime' => 'systemd', 'runtime_config' => ['command' => ['php']], 'desired_state' => 'running', 'status' => LifecycleStatus::Active]);
+    Cache::put(ProblemCollection::contextKey('cached-observation', $node->id), ['inspection' => (new NodeInspectionData(true, 'linux', 'amd64', true))->toArray(), 'failed' => false, 'observed_at' => now()->toISOString()]);
+    $this->travel(1)->minutes();
+    $failedReport = app(RunDoctorAction::class)->inspectFamily(new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)), DoctorFamily::Process);
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$failedReport])]), now());
+    $row = ProblemFingerprint::query()->sole();
+    $this->travel(1)->minutes();
+    app()->instance(ProcessStateInspector::class, new class implements ProcessStateInspector
+    {
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            return new ProcessInspectionData(true, ProcessInspectionStatus::Active);
+        }
+    });
+
+    (new CollectDoctorResource('cached-observation', [$node->id], $node->id, DoctorFamily::Process, new DoctorResources(DoctorResourceKind::Rows, [$process->id])))
+        ->handle(app(RunDoctorAction::class), app(ProblemCollector::class), app(CommandDeadline::class));
+
+    expect($row->refresh()->evidence)->not->toHaveKey('resolved_at');
 });

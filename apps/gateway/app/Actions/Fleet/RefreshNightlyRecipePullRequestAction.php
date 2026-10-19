@@ -44,11 +44,11 @@ final readonly class RefreshNightlyRecipePullRequestAction
                 try {
                     $this->refresh($http, $repository, $pull->number, $pull->headRef, $main, $content);
                 } catch (Throwable) {
-                    $this->alerts->halted('Nightly recipe PR '.$pull->url.' could not be recovered. Inspect GitHub before retrying.');
+                    $this->alerts->halted('Nightly recipe PR '.$pull->url.' could not be recovered. Inspect GitHub before retrying.', incident: RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'refresh_failed'));
                 }
             }
         } catch (Throwable) {
-            $this->alerts->halted('Nightly recipe recovery could not read GitHub. No further recovery was attempted.');
+            $this->alerts->halted('Nightly recipe recovery could not read GitHub. No further recovery was attempted.', incident: RecipeMaintenanceAlerts::repositoryIncident('github_refresh_failed'));
         }
     }
 

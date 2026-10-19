@@ -91,6 +91,12 @@ final readonly class GatewayReleaseAlertNotifier implements ReleaseAlertNotifier
             $observation = [
                 'summary' => $summary,
                 'release_repository' => $subject->repository,
+                'release_kind' => $alert->kind->value,
+                'release_target' => $subject->target,
+                'release_shas' => [$subject->sha],
+                'incident_resource' => $alert->incident->resource,
+                'incident_attempt' => $alert->incident->attempt,
+                'incident_fault' => $alert->incident->fault,
                 'evidence_urls' => $evidenceUrl === null ? [] : [$evidenceUrl],
                 'activity_ids' => $activity instanceof Activity ? [$activity->id] : [],
             ];
@@ -99,7 +105,7 @@ final readonly class GatewayReleaseAlertNotifier implements ReleaseAlertNotifier
                 $observation['release_id'] = $subject->releaseId;
             }
 
-            $key = $alert->kind->value.'|'.$subject->target.'|'.$subject->sha;
+            $key = $alert->incident->key($alert->kind);
             $recorded = $this->problems->recordRelease($key, $observation);
 
             return $recorded['stored']

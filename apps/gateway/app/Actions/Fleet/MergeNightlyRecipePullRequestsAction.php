@@ -140,7 +140,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
     private function blocked(string $key, string $summary): void
     {
         if (Cache::add('machine-recipe:blocked-pr:'.$key, true, 86400)) {
-            $this->alerts->halted($summary);
+            $this->alerts->halted($summary, incident: RecipeMaintenanceAlerts::mergeIncident($key));
         }
     }
 }

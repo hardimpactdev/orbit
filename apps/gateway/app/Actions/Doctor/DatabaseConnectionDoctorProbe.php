@@ -56,9 +56,13 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
 
         $issues = [];
         $attachmentIssues = [];
+        $observedResources = [];
 
         foreach ($attachments as $attachment) {
             $found = $this->inspection->attachment($attachment);
+            if ($found === []) {
+                $observedResources[] = DoctorResources::rowId(DoctorResourceKind::Attachments, $attachment->id);
+            }
             if ($found !== []) {
                 $attachmentIssues[$attachment->instance_id] = [
                     ...($attachmentIssues[$attachment->instance_id] ?? []),
@@ -85,13 +89,16 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
 
         foreach ($unattached as $connection) {
             $issue = $this->inspection->connection($connection);
+            if ($issue === null) {
+                $observedResources[] = DoctorResources::rowId(DoctorResourceKind::Connections, $connection->id);
+            }
 
             if ($issue instanceof DoctorIssueData) {
                 $issues[] = $issue;
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::DatabaseConnection, $checked, $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::DatabaseConnection, $checked, $issues, $observedResources);
     }
 
     /** @return Collection<int, DatabaseConnectionTarget> */

@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\ToolDoctorProbe;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -10,6 +13,9 @@ use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Problems\ProblemCollector;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolInspectionData;
@@ -38,7 +44,9 @@ use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
+use App\Jobs\Problems\CollectDoctorResource;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +64,7 @@ function tool_doctor_probe(ToolInspector $inspector, ?InstalledPackageInventory 
         $inventory ?? new UnsupportedPackageInventory,
         app(VpToolManager::class),
         app(ToolCommandBudget::class),
+        app(ToolManagerRegistry::class),
     );
 }
 
@@ -809,7 +818,7 @@ it('names unregistered packages without a resource id and ignores informational 
         ->and($report->status)->toBe(DoctorFamilyStatus::Healthy)
         ->and(array_map(static fn ($issue): array => [$issue->code, $issue->kind->value, $issue->resourceId, $issue->resourceName, $issue->expected, $issue->observed], $report->issues))
         ->toBe([
-            ['tool.inventory_scan', 'informational', null, 'vp', 'complete', 'absent'],
+            ['tool.inventory_scan', 'informational', 'node:'.$node->id.':inventory', 'vp', 'complete', 'absent'],
             ['tool.package_unregistered', 'informational', null, 'openssl@3', 'brew', 'version=3.4.0;dependency=yes;adoption=unsupported;block=dependency'],
             ['tool.package_unregistered', 'informational', null, 'zebra', 'brew', 'version=2.0.0;dependency=no;adoption=supported;block=none'],
             ['tool.package_unregistered', 'informational', null, 'docker', 'brew-cask', 'version=4.39.0;dependency=no;adoption=supported;block=none'],
@@ -863,8 +872,8 @@ it('sorts registered issues before scan issues and unregistered packages', funct
         ->toBe([
             ['tool.not_installed', 'drift', $missing->id, null],
             ['tool.version_mismatch', 'drift', $mismatch->id, null],
-            ['tool.inventory_scan', 'informational', null, 'brew'],
-            ['tool.inventory_scan', 'unverifiable', null, 'brew-cask'],
+            ['tool.inventory_scan', 'informational', 'node:'.$node->id.':inventory', 'brew'],
+            ['tool.inventory_scan', 'unverifiable', 'node:'.$node->id.':inventory', 'brew-cask'],
             ['tool.package_unregistered', 'informational', null, 'alpha'],
             ['tool.package_unregistered', 'informational', null, 'zeta'],
         ])
@@ -1092,7 +1101,7 @@ it('reports a timed out inventory command as unverifiable without writing tools'
         ->and($report->issues)->toHaveCount(1)
         ->and($report->issues[0]->code)->toBe('tool.inspection_failed')
         ->and($report->issues[0]->kind)->toBe(DoctorIssueKind::Unverifiable)
-        ->and($report->issues[0]->resourceId)->toBeNull()
+        ->and($report->issues[0]->resourceId)->toBe('node:'.$node->id.':inventory')
         ->and($report->issues[0]->resourceName)->toBeNull()
         ->and($ssh->calls)->toBe(1)
         ->and($ssh->commandTimeout)->toBe(30.0)
@@ -1298,4 +1307,70 @@ it('groups registered Tools by manager regardless of row count', function (): vo
         ->and($resources[0]->ids)->toBe($ids)
         ->and($resources[1]->ids)->toBe([$other->id])
         ->and($resources[2]->kind)->toBe(DoctorResourceKind::Inventory);
+});
+it('recovers global Tool inventory faults only after a complete successful scan', function (string $platform, string $state, bool $recovered, ?string $vpState = null): void {
+    $node = tool_probe_node();
+    $node->update(['platform' => $platform]);
+    $rows = [];
+    foreach (['tool.inventory_scan', 'tool.inspection_failed'] as $code) {
+        $rows[] = ProblemFingerprint::query()->create(['fingerprint' => 'doctor|'.$code.'|tool|node:'.$node->id.':inventory', 'source' => ProblemSource::Doctor, 'occurrences' => 0, 'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'tool', 'doctor_code' => $code, 'doctor_resource' => 'node:'.$node->id.':inventory', 'doctor_observed_at' => now()->toISOString()]]);
+    }
+    $this->travel(1)->minutes();
+    $inspector = new class implements ToolInspector
+    {
+        use InspectsToolsIndividually;
+
+        public function inspect(Tool $tool): ToolInspectionData
+        {
+            return new ToolInspectionData(true, '1.0.0');
+        }
+    };
+    $scanState = ToolInventoryScanState::from($state);
+    $inventory = tool_doctor_scans(array_map(static fn (ToolManagerName $manager): ToolInventoryScan => tool_doctor_scan($manager, $platform === 'linux' && $manager === ToolManagerName::BrewCask ? ToolInventoryScanState::Unsupported : ($manager === ToolManagerName::Vp && $vpState !== null ? ToolInventoryScanState::from($vpState) : $scanState)), [ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp]));
+    $report = tool_doctor_probe($inspector, $inventory)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, $platform, 'amd64', true)));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+    foreach ($rows as $row) {
+        expect($row->refresh()->evidence['resolution'] ?? null)->toBe($recovered ? 'fresh_doctor_success' : null);
+    }
+})->with([['linux', 'absent', true, 'complete'], ['macos', 'complete', true, 'absent'], ['linux', 'complete', true], ['macos', 'complete', true], ['linux', 'absent', true], ['macos', 'absent', true], ['linux', 'incomplete', false], ['macos', 'incomplete', false], ['linux', 'unsupported', false], ['macos', 'unsupported', false]]);
+
+it('keeps failed Tool jobs separate and recovers only the job observed clean', function (): void {
+    $this->freezeTime();
+    $node = tool_probe_linux_node();
+    $otherNode = Node::query()->create(['name' => 'other-probe-node', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.42']);
+    (new CollectDoctorResource('failed-checks', [$otherNode->id], $otherNode->id, DoctorFamily::Tool, new DoctorResources(DoctorResourceKind::Inventory)))->failed(new RuntimeException('Worker stopped.'));
+    foreach ([DoctorResourceKind::Inventory, DoctorResourceKind::Environments] as $kind) {
+        (new CollectDoctorResource('failed-checks', [$node->id], $node->id, DoctorFamily::Tool, new DoctorResources($kind)))
+            ->failed(new RuntimeException('Worker stopped.'));
+    }
+    expect(ProblemFingerprint::query()->pluck('fingerprint')->all())->toEqualCanonicalizing([
+        'doctor|tool.inspection_failed|tool|node:'.$node->id.':inventory',
+        'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments',
+        'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory',
+    ]);
+    $this->travel(1)->minutes();
+    $inventory = tool_doctor_scans([
+        tool_doctor_scan(ToolManagerName::Brew, ToolInventoryScanState::Complete),
+        tool_doctor_scan(ToolManagerName::BrewCask, ToolInventoryScanState::Unsupported),
+        tool_doctor_scan(ToolManagerName::Vp, ToolInventoryScanState::Complete),
+    ]);
+    $probe = tool_doctor_probe(tool_doctor_installed_inspector(), $inventory);
+    $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Inventory)));
+
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':inventory')->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments')->sole()->evidence)->not->toHaveKey('resolved_at');
+    $this->travel(1)->minutes();
+    $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true), resources: new DoctorResources(DoctorResourceKind::Environments)));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [$report])]), now());
+
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$node->id.':environments')->sole()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+    expect(ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole()->evidence)->not->toHaveKey('resolved_at');
+    $otherNode->delete();
+    $row = ProblemFingerprint::query()->where('fingerprint', 'doctor|tool.inspection_failed|tool|node:'.$otherNode->id.':inventory')->sole();
+    $row->update(['evidence' => [...$row->evidence, 'doctor_node' => null]]);
+    expect(app(ProblemRecovery::class)->reason($row))->toBeNull();
+    $row->update(['evidence' => [...$row->evidence, 'doctor_node' => (string) $otherNode->id]]);
+    expect(app(ProblemRecovery::class)->reason($row))->toBe('resource_gone');
 });

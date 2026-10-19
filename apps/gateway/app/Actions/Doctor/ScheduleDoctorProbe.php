@@ -56,7 +56,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
                     ScheduleDoctorIssueCode::NodeUnreachable,
                     DoctorIssueKind::Unverifiable,
                     'schedule',
-                    null,
+                    DoctorResources::nodeCheckId($context->node->id),
                     null,
                     'Schedule state cannot be inspected because the Node is unreachable.',
                     'reachable',
@@ -88,18 +88,21 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        $knownIds = $context->resources?->kind === DoctorResourceKind::Inventory
+        $knownIds = $context->covers(DoctorResourceKind::Inventory)
             ? Schedule::query()->where('host_node_id', $context->node->id)->pluck('id')->all()
             : $schedules->pluck('id')->all();
-        if (! $context->inspection->reachable || ($context->resources !== null && $context->resources->kind !== DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+        if (! $context->inspection->reachable || ! $context->covers(DoctorResourceKind::Inventory) || ! $this->scansForOrphans($context, $knownIds !== [])) {
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues, array_values($schedules->modelKeys()), $context->inspection->reachable ? [DoctorResources::nodeCheckId($context->node->id) => [ScheduleDoctorIssueCode::NodeUnreachable->value]] : []);
         }
 
+        $inventories = [];
         try {
-            foreach ($this->inspector->orphanIds($context->node, array_values(array_filter(
+            $orphans = $this->inspector->orphanIds($context->node, array_values(array_filter(
                 $knownIds,
                 is_string(...),
-            ))) as $id) {
+            )));
+            $inventories[ScheduleDoctorIssueCode::OrphanArtifact->value] = $orphans;
+            foreach ($orphans as $id) {
                 $issues[] = new DoctorIssueData(
                     ScheduleDoctorIssueCode::OrphanArtifact,
                     DoctorIssueKind::Drift,
@@ -116,7 +119,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
                 ScheduleDoctorIssueCode::InspectionFailed,
                 DoctorIssueKind::Unverifiable,
                 'schedule',
-                null,
+                DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Inventory),
                 null,
                 'Schedule artifact inventory could not be inspected.',
                 'verifiable',
@@ -124,7 +127,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
             );
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Schedule, $schedules->count(), $issues, array_values($schedules->modelKeys()), [DoctorResources::nodeCheckId($context->node->id) => [ScheduleDoctorIssueCode::NodeUnreachable->value], DoctorResources::nodeCheckId($context->node->id, DoctorResourceKind::Inventory) => [ScheduleDoctorIssueCode::InspectionFailed->value]], observedInventories: $inventories);
     }
 
     /**

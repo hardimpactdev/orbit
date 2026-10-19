@@ -9,6 +9,7 @@ use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
+use Illuminate\Contracts\Queue\Job;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
@@ -136,10 +137,17 @@ it('notifies through release alerts when the nightly job fails without including
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
 
-    new MaintainMachineRecipe(snapshot: true)->failed(new RuntimeException('private response'));
+    $queued = Mockery::mock(Job::class);
+    $queued->shouldReceive('uuid')->once()->andReturn('745d00ac-a29c-43e7-8c8f-31b8ec5e8dfa');
+    $job = new MaintainMachineRecipe(snapshot: true);
+    $job->setJob($queued);
+    $job->failed(new RuntimeException('private response'));
 
     expect($alerts->alerts)->toHaveCount(1);
     expect($alerts->alerts[0]->summary)->toContain('snapshot PR failed')->not->toContain('private response');
+    expect($alerts->alerts[0]->incident->resource)->toBe('recipe-maintenance:snapshot-pr')
+        ->and($alerts->alerts[0]->incident->attempt)->toBe('745d00ac-a29c-43e7-8c8f-31b8ec5e8dfa')
+        ->and($alerts->alerts[0]->incident->fault)->toBe('job_failed');
 });
 
 it('opens one reviewed PR that moves every Sury PHP pin together and reuses it on later nights', function (): void {

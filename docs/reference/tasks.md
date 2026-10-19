@@ -310,6 +310,8 @@ The Gateway files a Backlog task when the same production problem keeps returnin
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
+Doctor incidents close only after a new successful observation of the resource or proof that its persisted resource is gone. A skipped check, an unreachable Node, and a cleared occurrence episode do not prove recovery. Only untouched generated Backlog groups close automatically; groups that an operator has changed stay open.
+
 ### Fingerprints
 
 Each signal updates one row in `problem_fingerprints`. The fingerprint is unique.
@@ -337,9 +339,9 @@ Each occurrence stores the UTC time of the first signal in its 5-minute window a
 | Activity | `activity\|command\|error_code` |
 | Log | `log\|exception class\|first app frame` |
 | Assistance | `assist\|normalized reason` |
-| Release alert | `release\|kind\|target\|sha` |
+| Release alert | `release\|kind\|resource\|attempt\|fault` |
 
-A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
+Node reachability checks use `node:{id}`. Node-wide inventory and environment checks use `node:{id}:inventory` and `node:{id}:environments` as their resource ids. Queued reports retain the time when their Node observation started. A delayed job cannot turn that cached observation into fresh recovery evidence. Each check recovers only after its own successful observation; a different job or Node cannot close it. Other null Doctor resource ids use `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
 
 An Activity row counts only when it is server-class. A row is server-class in any of these cases:
 
@@ -446,7 +448,7 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 | Activity | `{command} failed with {error_code}` | The command name |
 | Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
-| Release alert | `Release failed`, `Release paused`, or `Rollout halted`, then `for {target} at {first 12 characters of the sha}` | `{repository}@{sha}`, and the release id when there is one |
+| Release alert | Alert kind, then `for {resource}, attempt {attempt}` | Repository, resource, attempt, and fault |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
 
@@ -1669,13 +1671,15 @@ The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waitin
 
 A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
 
-Collecting it from the release's Activity row is rejected: the Activity key has no commit, so two different bad commits would share one task, and a single row would never be ready. The key holds the commit, because each failed commit is its own problem and is not released again. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
+The release producer supplies the failing resource, attempt, and fault. The Gateway SHA stays in evidence, so a Gateway update does not create another incident for an unchanged failure. The Activity key lacks that incident identity, and a single Activity row would never be ready. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
 
 ### One fingerprint per problem
 
 The Activity key is the command and the error code. Putting the resource id in that key is rejected, because the id lives only in `properties.path` and the same failure would split into one task per resource. Merging a log error with its Activity row is also rejected. The keys differ, and a log error with no Activity row would disappear.
 
 ### A small sample, and no past rows on the first run
+
+Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. The incident identity migration retires old unscoped and hashed Doctor incidents; the next filing pass closes their untouched generated groups before filing scoped replacements. The incident identity migration accepts generated groups with symptom briefs or fixed subtask instructions. New groups and refreshed groups use the same fixed instructions. The operator keeps control of groups they edited.
 
 The sample keeps bounded Doctor values and a short redacted log excerpt. Storing raw Doctor reports or full traces is rejected, because that output exposes paths and credentials. [Doctor](/cli/doctor#no-stored-reports) keeps no raw report for the caller. Counting past Activity and log rows on the first run is rejected, because those rows would take the daily cap on the day the loop starts. The first run records its cursors at the end of the current data.
 

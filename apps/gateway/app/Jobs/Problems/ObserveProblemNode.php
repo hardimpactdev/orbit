@@ -22,8 +22,9 @@ final class ObserveProblemNode extends ProblemCollectionJob
     {
         $node = Node::query()->find($this->nodeId);
         if ($node instanceof Node) {
+            $startedAt = now();
             $context = $deadline->within(self::ProbeSeconds, fn () => $doctor->context($node));
-            Cache::put(ProblemCollection::contextKey($this->collection, $this->nodeId), ['inspection' => $context->inspection->toArray(), 'failed' => $context->inspectionFailed], now()->addHour());
+            Cache::put(ProblemCollection::contextKey($this->collection, $this->nodeId), ['inspection' => $context->inspection->toArray(), 'failed' => $context->inspectionFailed, 'observed_at' => $startedAt->toISOString()], now()->addHour());
         }
     }
 }

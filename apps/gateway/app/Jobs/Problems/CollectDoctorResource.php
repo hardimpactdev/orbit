@@ -18,6 +18,7 @@ use App\Domain\Problems\ProblemCollector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Node;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 use UnexpectedValueException;
@@ -32,11 +33,15 @@ final class CollectDoctorResource extends ProblemCollectionJob
 
     public function handle(RunDoctorAction $doctor, ProblemCollector $collector, CommandDeadline $deadline): void
     {
+        $startedAt = now();
         $contexts = [];
         foreach ($this->nodeIds as $id) {
             $stored = Cache::get(ProblemCollection::contextKey($this->collection, $id));
             if ($stored !== null && ! is_array($stored)) {
                 throw new UnexpectedValueException('Invalid cached Doctor observation.');
+            }
+            if ($id === $this->nodeId && $stored !== null) {
+                $startedAt = Carbon::parse(Arr::string($stored, 'observed_at'));
             }
             $node = Node::query()->find($id);
             if ($node instanceof Node) {
@@ -51,7 +56,7 @@ final class CollectDoctorResource extends ProblemCollectionJob
         }
         $context = new DoctorNodeContext($context->node, $context->inspection, $context->inspectionFailed, new DoctorInspectionScope($contexts), $this->resources);
         $report = $deadline->within(self::ProbeSeconds, fn () => $doctor->inspectFamily($context, $this->family));
-        $collector->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($this->nodeId, $context->node->name, [$report])]));
+        $collector->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($this->nodeId, $context->node->name, [$report])]), $startedAt);
     }
 
     public function failed(?Throwable $exception): void
@@ -60,6 +65,6 @@ final class CollectDoctorResource extends ProblemCollectionJob
             DoctorNodeReportData::fromFamilies($this->nodeId, (string) $this->nodeId, [
                 DoctorFamilyReportData::fromIssues($this->family, 0, $this->resources->failures($this->family, $this->nodeId)),
             ]),
-        ]));
+        ]), now());
     }
 }

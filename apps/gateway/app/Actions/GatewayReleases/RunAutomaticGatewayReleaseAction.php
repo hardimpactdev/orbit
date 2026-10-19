@@ -205,7 +205,7 @@ final readonly class RunAutomaticGatewayReleaseAction
                 $stall['since'],
                 $errorCode,
                 $message,
-            ));
+            ), 'stall:'.$stall['since'], $errorCode);
             $this->automation->stallAlerted();
         }
 
@@ -246,7 +246,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             $state['behind_since'],
             substr($deployed, 0, 12),
             $this->source->checkName,
-        ));
+        ), 'head:'.$state['head'], 'branch_head_unreleased');
         $this->automation->branchHeadAlerted();
     }
 

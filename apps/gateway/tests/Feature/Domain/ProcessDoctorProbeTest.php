@@ -239,7 +239,7 @@ it('does not inspect runtimes when the node is unreachable', function (): void {
         ->and($report->issues[0]->kind->value)
         ->toBe('unverifiable')
         ->and($report->issues[0]->resourceId)
-        ->toBeNull()
+        ->toBe('node:'.$node->id)
         ->and($report->issues[0]->resourceName)
         ->toBeNull();
 });

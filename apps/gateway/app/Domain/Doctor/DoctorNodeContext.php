@@ -29,7 +29,7 @@ final readonly class DoctorNodeContext
         if ($this->resources === null) {
             return $rows;
         }
-        if ($this->resources->kind !== $kind) {
+        if (! $this->covers($kind)) {
             return $rows->slice(0, 0);
         }
         if ($kind === DoctorResourceKind::Environments) {
@@ -37,6 +37,11 @@ final readonly class DoctorNodeContext
         }
 
         return $rows->whereIn($key, $this->resources->ids)->values();
+    }
+
+    public function covers(DoctorResourceKind $kind): bool
+    {
+        return $this->resources === null || $this->resources->kind === $kind;
     }
 
     public function withScope(DoctorInspectionScope $scope): self

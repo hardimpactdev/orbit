@@ -69,6 +69,6 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
     {
         app(RecipeMaintenanceAlerts::class)->halted($this->snapshot
             ? 'Nightly recipe snapshot PR failed. Inspect the failed Gateway job; the fleet was not advanced by this job.'
-            : 'Recipe maintenance job failed or timed out. Inspect the build report and Doctor; an interrupted Node visit halts on the next tick.');
+            : 'Recipe maintenance job failed or timed out. Inspect the build report and Doctor; an interrupted Node visit halts on the next tick.', incident: RecipeMaintenanceAlerts::jobIncident($this->uniqueId(), (string) $this->job?->uuid()));
     }
 }

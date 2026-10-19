@@ -270,6 +270,8 @@ Adoption errors use the Tool envelope. `details.step` is `adopt`. `details.id` i
 
 Install still refuses an unregistered installed package with `tool.already_installed_unmanaged` (HTTP 409). It does not adopt that package. The caller uses `tool:adopt`.
 
+For `brew-cask`, adoption requires an installed entry from `homebrew/cask`. A foreign-tap cask shown in discovery as `unsupported_source` returns `tool.package_absent` (HTTP 409) on adoption.
+
 On Linux, unconstrained adoption records the apt version string, such as `5.8.3-1`. A constraint is checked only when that version normalizes to SemVer. `^1.25` accepts `1.25.0-2ubuntu4`. A version that does not normalize returns `tool.installed_version_unparseable` and creates no Tool row.
 
 ## Install a Tool
@@ -278,7 +280,7 @@ A caller sends only the Node, the manager, the package name, and an optional ver
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
-When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser.
+When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
 
 A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
@@ -342,7 +344,7 @@ When the official cask is gone, Homebrew says `homebrew/cask/<token>` is unavail
 
 Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed` and `list --cask -1`. A cask that `list` names and `info` omits stays in discovery with `unsupported_source`.
 
-The installed-version read uses `info --json=v2 --cask --installed`. Only an entry from `homebrew/cask` counts as the official Tool. A same-token cask from another tap does not count. An unreadable installed version affects only that cask.
+The installed-version read uses `info --json=v2 --cask --installed`. Only an entry from `homebrew/cask` counts as the official Tool. A same-token cask from another tap does not count. Discovery reports it as `unsupported_source`; adoption returns `tool.package_absent` (HTTP 409) and creates no Tool. An unreadable installed version affects only that cask.
 
 The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
 

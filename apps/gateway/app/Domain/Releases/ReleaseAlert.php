@@ -17,6 +17,7 @@ final readonly class ReleaseAlert
         public ReleaseAlertKind $kind,
         public ReleaseAlertSubject $subject,
         public string $summary,
+        public ReleaseIncident $incident,
         public ?string $evidenceUrl = null,
     ) {
         if (trim($summary) === '') {

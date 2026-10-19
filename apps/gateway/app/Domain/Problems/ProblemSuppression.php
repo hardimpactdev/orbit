@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Problems;
 
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\ProblemFingerprint;
+use App\Models\Task;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 /**
  * Exact fingerprints and source-path prefixes the outer loop neither counts nor files.
@@ -12,6 +16,14 @@ use App\Models\ProblemFingerprint;
  */
 final readonly class ProblemSuppression
 {
+    public function muteUntil(?Task $task): Carbon
+    {
+        $stored = $task?->getAttributes()['updated_at'] ?? null;
+        $from = $stored instanceof CarbonInterface || (is_string($stored) && $stored !== '') ? Carbon::parse($stored) : now();
+
+        return $from->addDays($task?->groupStatus() === TaskGroupStatus::Cancelled ? 14 : 7);
+    }
+
     /** @param array<string, mixed> $observation */
     public function suppressesSignal(string $fingerprint, array $observation): bool
     {

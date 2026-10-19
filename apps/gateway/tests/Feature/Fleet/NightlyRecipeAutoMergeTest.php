@@ -152,6 +152,9 @@ it('blocks and alerts for any author commit file or snapshot evidence outside th
     Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
     expect($alerts->alerts)->toHaveCount(1);
     expect($alerts->alerts[0]->summary)->toContain('pull/99', 'blocked:');
+    expect($alerts->alerts[0]->incident->resource)->toBe('recipe-pr:99')
+        ->and($alerts->alerts[0]->incident->attempt)->toBe(str_repeat('b', 40))
+        ->and($alerts->alerts[0]->incident->fault)->toBe('merge_blocked');
 })->with(['human PR author', 'other App', 'extra commit count', 'extra commit response', 'human commit author', 'human committer', 'unsigned commit', 'missing signature', 'invalid signature', 'wrong author type', 'wrong committer type', 'wrong commit head', 'merge commit',
     'extra file count', 'extra file response', 'wrong file', 'renamed file', 'missing patch', 'extra patch line', 'wrong snapshot date', 'hidden tool edit',
     'head changed at merge', 'extra commit at merge', 'wrong base', 'fork']);
