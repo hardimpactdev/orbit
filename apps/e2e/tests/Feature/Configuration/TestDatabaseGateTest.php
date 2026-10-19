@@ -142,7 +142,7 @@ it('records a database safety refusal as a failed gate and retains normal succes
     expect($refusal->getExitCode())->not->toBe(0);
     expect($refusal->getOutput().$refusal->getErrorOutput())
         ->toContain(
-            '[apps/gateway] composer test:affected: FAILED',
+            '[apps/gateway] composer test:affected -- --tia-base=graph: FAILED',
             'Gateway tests refused an unsafe database connection.',
             'Candidate gate FAILED',
         );
@@ -151,7 +151,7 @@ it('records a database safety refusal as a failed gate and retains normal succes
     expect($failedReceipts[0]['passed'] ?? null)->toBeFalse();
     $gatewayTest = collect($failedReceipts[0]['checks'] ?? [])->first(
         static fn (array $check): bool => ($check['project'] ?? null) === 'apps/gateway'
-            && ($check['command'] ?? null) === ['composer', 'test:affected'],
+            && ($check['command'] ?? null) === ['composer', 'test:affected', '--', '--tia-base=graph'],
     );
     expect($gatewayTest['exit_code'] ?? null)->toBe(23);
 

@@ -199,3 +199,22 @@ it('records inherited approval only for converted heads with unambiguous reviewe
     'unreviewed approval' => [['b'], false, null],
     'no approval' => [[], true, null],
 ]);
+
+it('preserves unrelated handoff holders with unsettled work without blocking the migration', function (bool $uncertain, bool $pending): void {
+    $group = retired_gate_group();
+    $check = retired_gate_check($group);
+    $lease = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => 123, 'active_instance_id' => 123, 'group_id' => $group->id,
+        'kind' => 'handoff', 'owner' => 'unrelated', 'status' => 'held', 'remote_uncertain' => $uncertain]);
+    if ($pending) {
+        DB::table('task_workspace_operations')->insert(['lease_id' => $lease->id, 'operation' => 'pending-command',
+            'binding' => 'stored', 'connection' => '{}', 'status' => 'pending']);
+    }
+    $before = $lease->fresh()->getRawOriginal();
+    $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
+
+    $migration->up();
+
+    expect($lease->fresh()->getRawOriginal())->toBe($before)
+        ->and(DB::table('task_checks')->where('id', $check)->exists())->toBeFalse()
+        ->and(DB::table('task_workspace_operations')->where('lease_id', $lease->id)->where('status', 'pending')->exists())->toBe($pending);
+})->with(['uncertain handoff' => [true, false], 'pending handoff' => [false, true]]);

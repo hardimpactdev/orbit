@@ -249,7 +249,7 @@ Only `graph.json` and the optional `js-module-graph.cache.json` travel to the No
 
 The restore runs as the managed user, as do setup and the task candidate check. It asks the installed Pest for its cache directory without running tests. The directory must be inside that user's home or this checkout, with no symlink components. It stages files under a cache lock and publishes a new directory atomically. A nonempty cache stays unchanged, so retries and later subtasks keep their own results. Remove an obsolete cache explicitly before requesting a fresh import. Pest remains responsible for rejecting an incompatible runtime fingerprint and recording a new local baseline when needed.
 
-This step does not provision a VM or change the CI publication policy. It follows the same setup ordering, time budget, and failure cleanup as other steps. The list's total timeout must still fit the Project setup limits.
+This step does not provision a VM or change the CI publication policy. It follows the same setup ordering, hard timeout, and failure cleanup as other steps. The list's total timeout must still fit the Project setup limits.
 
 ## Import CI main caches
 

@@ -8942,12 +8942,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "6d6000ac626dda698c6a41dadc947767374d418b"
+                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/6d6000ac626dda698c6a41dadc947767374d418b",
-                "reference": "6d6000ac626dda698c6a41dadc947767374d418b",
+                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
+                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
                 "shasum": ""
             },
             "require": {
@@ -9059,7 +9059,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-14T17:27:14+00:00"
+            "time": "2026-10-19T08:56:01+00:00"
         },
         {
             "name": "nunomaduro/collision",

@@ -324,10 +324,9 @@ final readonly class TaskSubtaskRunner
     {
         $check = $this->deliverableCheck($task);
         $group = $task->parent;
-        $start = TaskReviewBase::testBase($task);
-        if ($group->project->slug === 'orbit'
-            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
-            $check = [...($check ?? ['start' => TaskReviewBase::commit($task), 'commands' => []]), 'test_base' => $start];
+        $start = TaskReviewBase::commit($task);
+        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
+            $check = [...($check ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
         }
 
         $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];

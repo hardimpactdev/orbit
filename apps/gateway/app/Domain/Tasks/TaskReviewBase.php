@@ -6,7 +6,6 @@ namespace App\Domain\Tasks;
 
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
 
 /**
@@ -40,16 +39,6 @@ final class TaskReviewBase
         $starting = $instance instanceof Instance ? $instance->starting_commit : null;
 
         return self::isCommit($starting) ? $starting : '';
-    }
-
-    /** A passed handoff tree includes uncommitted work that HEAD alone would miss. */
-    public static function testBase(Task $task): string
-    {
-        $check = $task->checks()->where('kind', TaskCheckKind::Handoff)
-            ->where('status', TaskCheckStatus::Passed)->latest('id')->first();
-        $tree = $check instanceof TaskCheck ? ($check->tree_after ?? $check->tree_before) : null;
-
-        return self::isTree($tree) ? $tree : self::commit($task);
     }
 
     /** The last review whose findings this turn addresses, including a final-review fixup. */
