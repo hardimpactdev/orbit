@@ -218,13 +218,14 @@ final class TaskWorkspaceLease
      */
     public function run(Task $group, string $kind, string $owner, Closure $operation, ?int $taskId = null): mixed
     {
-        if (! $group->taskable instanceof Instance) {
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
             return $operation();
         }
         if ($kind === 'teardown') {
-            RemoveTaskWorkspaceAction::awaitVmPreservation($group, $group->taskable);
+            RemoveTaskWorkspaceAction::awaitVmPreservation($group, $instance);
         }
-        $instanceId = $group->taskable->id;
+        $instanceId = $instance->id;
         if ($this->activeScope($instanceId) instanceof TaskWorkspaceLeaseRecord) {
             return $operation();
         }
