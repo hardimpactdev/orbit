@@ -76,7 +76,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                     $observed = $guest->observeSettled($vm);
                     if ($observed !== null && $vm->hostSweepWaitReason() !== null) {
                         $vm->update(['error_code' => null, 'error_message' => null]);
-                        $removal->clearFailure($group);
                     }
                     if ($commit !== null) {
                         if ($observed !== null && ! $observed->running) {
