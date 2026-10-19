@@ -2,8 +2,9 @@
 # shellcheck shell=bash
 # Timeout: 60
 # Input: <Process ID> <retire|complete>.
-# Result: no data. Refuses symlinks and units without the exact Process ownership marker.
-# Removes the retired collector unit before the one-time rename publishes its replacement.
+# Result: no data.
+# retire: removes the old unit before publishing its replacement; refuses symlinks and units without its Process marker.
+# complete: removes /var/lib/orbit/proxycli and /etc/caddy/orbit-proxycli-cert-current after the replacement starts.
 
 id=$1
 [[ "$id" =~ ^[1-9][0-9]*$ ]]

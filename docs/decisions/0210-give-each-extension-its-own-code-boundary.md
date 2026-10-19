@@ -16,9 +16,9 @@ Principle: [lean](/mission#principles). An optional feature costs core nothing w
 
 ## Context
 
-Today an [extension](/cli/extension) is only a switch. `ExtensionStore` holds a fixed list, `['tasks', 'ai-router']`, and the request middleware, the MCP server, the CLI, and the web app each repeat that list or a route name prefix. The code of an optional feature lives in the core namespaces next to everything else.
+Today an [extension](/cli/extension) is only a switch. `ExtensionStore` holds a fixed list, `['tasks', 'proxycli']`, and the request middleware, the MCP server, the CLI, and the web app each repeat that list or a route name prefix. The code of an optional feature lives in the core namespaces next to everything else.
 
-Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release handoff binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and AI router. Core also names AI router in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
+Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release handoff binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and ProxyCli. Core also names ProxyCli in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
 
 The Gateway caches its routes, and migrations must give the same schema on every install. So an extension cannot be loaded or skipped based on a database switch.
 
@@ -50,7 +50,9 @@ Each extension has exactly one service provider. It extends `App\Providers\Exten
 
 The provider registers its routes, migrations, console commands, schedule entries, and plug-in contributions. `bootstrap/providers.php` lists it. `ExtensionRegistry` builds the list of known extensions from the registered providers that implement `Extension`. No other list of slugs exists in the Gateway.
 
-Tasks stays in core until its planned move. Its provider in `App\Providers` implements `Extension`. The AI router moved in ADR 0212 step 3. Tasks moves its realtime broadcast on a switch change into its `enable()` and `disable()` hooks.
+Tasks and ProxyCli stay in core until their planned move. Their providers in `App\Providers` implement `Extension`, so they keep their switches. Tasks moves its realtime broadcast on a switch change into its `enable()` and `disable()` hooks.
+
+ADR 0212 step 3 moves ProxyCli to `extensions/ai-router` and renames it AI router, so core no longer owns its provider or code.
 
 ### Plug-in points
 
@@ -89,13 +91,13 @@ A Pest architecture test fails when any class under `App\` uses a class under `O
 The boundary is about who owns code. It does not decide what loads.
 
 - Routes, migrations, console commands, and MCP tools are always registered.
-- An extension's route group adds `RequireEnabledExtension:<name>`. While the switch is off, those operations refuse with HTTP 409 `extension.disabled`. Tasks and AI router use the same middleware parameter, so the middleware no longer guesses an extension from a route name.
+- An extension's route group adds `RequireEnabledExtension:<name>`. While the switch is off, those operations refuse with HTTP 409 `extension.disabled`. Tasks and ProxyCli use the same middleware parameter, so the middleware no longer guesses an extension from a route name.
 - `bin/docs-openapi` records the slug as `x-orbit-extension`, and the MCP server filters tools on it, as before.
 - Background work that finishes recorded work keeps running while the switch is off. For Documents that is the cleanup worker, the probe reconciliation, the release cleanup handoff, and the removal of a Project's documents. The switch hides operations; it does not abandon bytes that are already scheduled for deletion.
 
 ### Enable and disable
 
-Enabling an extension refuses with HTTP 409 `extension.dependency_disabled` while one of its dependencies is off. Disabling refuses with HTTP 409 `extension.required` while an enabled extension depends on it. The Gateway runs `enable()` first and writes the switch only after the hook returns. A failed enable leaves the switch off: when `enable()` throws, the switch keeps its earlier state and the API returns the hook's error. So the hook runs while the switch is still off and must not rely on it. `disable()` runs after the switch turns off. Both run in the same request. A hook must be safe to repeat, because enabling an enabled extension runs it again. A hook that needs fleet resources still belongs in the extension's own setup command, as with `ai-router:setup`.
+Enabling an extension refuses with HTTP 409 `extension.dependency_disabled` while one of its dependencies is off. Disabling refuses with HTTP 409 `extension.required` while an enabled extension depends on it. The Gateway runs `enable()` first and writes the switch only after the hook returns. A failed enable leaves the switch off: when `enable()` throws, the switch keeps its earlier state and the API returns the hook's error. So the hook runs while the switch is still off and must not rely on it. `disable()` runs after the switch turns off. Both run in the same request. A hook must be safe to repeat, because enabling an enabled extension runs it again. A hook that needs fleet resources still belongs in the extension's own setup command, as with `proxycli:setup`.
 
 Documents declares no dependencies and needs neither hook.
 
@@ -123,7 +125,7 @@ A migration turns `vault` on for an install with a stored Vaultwarden setup or a
 
 1. Documents, in this pull request.
 2. Vault and Conn, in the next pull request. They needed only the Activity redaction point.
-3. AI router, only after a separate plan. Tasks depends on it: `TaskVmRuntime` formerly imported the router, and Tasks must keep working through the move.
+3. ProxyCli, only after a separate plan. Tasks depends on it: `TaskVmRuntime` imports ProxyCli, and Tasks must keep working through the move.
 4. Analytics stays core while `RoleName` is a core enum.
 5. Tasks gets a boundary only after its scheduler is simplified. Tasks is an essential feature and stays.
 

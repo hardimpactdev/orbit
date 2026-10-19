@@ -34,7 +34,7 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
                     local suffix = string.sub(key, string.len(ARGV[1]) + 1)
                     if suffix == 'lock' then
                         redis.call('DEL', key)
-                    else
+                    elseif redis.call('EXISTS', key) == 1 then
                         redis.call('RENAME', key, ARGV[2] .. suffix)
                         renamed = renamed + 1
                     end
