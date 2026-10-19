@@ -70,7 +70,7 @@ const TOOLING_BASELINE_PROJECTS = [
         // extensions holds each extension's code, routes, and migrations (docs/reference/extensions.md).
         'rector' => ['app', 'extensions'],
         // Routes and migrations are Gateway runtime code.
-        'phpstan' => ['app', 'routes', 'database/migrations', 'extensions', '../../tools/phpstan'],
+        'phpstan' => ['app', 'routes', 'database/migrations', 'extensions', '../../tools/phpstan', '../../tools/boost'],
         'pint' => ['app', 'bootstrap', 'config', 'database', 'extensions', 'routes', 'tests'],
         'scripts' => [
             'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'The Gateway generates its guidance with Boost.'],
@@ -92,7 +92,7 @@ const TOOLING_BASELINE_PROJECTS = [
     'apps/e2e' => [
         'phpunit' => 'phpunit.xml',
         'rector' => ['app'],
-        'phpstan' => ['app', '../../tools/phpstan'],
+        'phpstan' => ['app', '../../tools/phpstan', '../../tools/boost'],
         'pint' => ['app', 'bootstrap', 'config', 'tests'],
         'scripts' => [
             'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'E2E generates its guidance with Boost.'],

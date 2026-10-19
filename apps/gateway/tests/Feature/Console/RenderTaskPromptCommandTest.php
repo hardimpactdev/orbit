@@ -377,7 +377,7 @@ it('omits the group start lines when the workspace commit is missing or not a re
 });
 
 it('renders the blocking rule and follow-up policy for opening and continued reviews but not for implementers', function (): void {
-    $sentence = 'Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, state the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up, unless a deliverable names that guarantee. List follow-ups under \'Follow-ups\' in the approval; they never block. Do not prescribe new markers, fences or locks; prefer an operator recovery command. After two changes_requested on one subtask, only (b), (c) and (d) findings may block; everything else becomes a follow-up.';
+    $sentence = 'Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour; (e) a breach of the quality bar that the repository\'s instructions define. For each blocking finding, give its file:line, the rule it meets, and what must change; for (a), also name the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee; do not ask for markers, fences or locks against it; an operator recovery command is enough. List follow-ups under \'Follow-ups\' in the approval; they never block. After two changes_requested on one subtask, only (b), (c) and (d) findings may block; list (a) and (e) findings as follow-ups with file:line.';
     $payload = [
         'group' => render_task_prompt_group(),
         'subtask' => render_task_prompt_subtask(),
@@ -388,9 +388,9 @@ it('renders the blocking rule and follow-up policy for opening and continued rev
     $continuedPayload['review_packet'] = render_task_prompt_review_packet(continued: true);
 
     expect(render_task_prompt('reviewer', $payload)['prompt'])
-        ->toContain('Do not commit; Orbit commits after you approve. '.$sentence.' ');
+        ->toContain('Do not edit or commit the code; Orbit commits after you approve. '.$sentence.' ');
     expect(render_task_prompt('reviewer-continue', $continuedPayload)['prompt'])
-        ->toContain('Do not commit; Orbit commits after you approve. '.$sentence.' ');
+        ->toContain('Do not edit or commit the code; Orbit commits after you approve. '.$sentence.' ');
     expect(render_task_prompt('implementer', [
         'group' => render_task_prompt_group(),
         'subtask' => render_task_prompt_subtask(),

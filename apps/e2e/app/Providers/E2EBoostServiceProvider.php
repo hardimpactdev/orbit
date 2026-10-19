@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\BoostServiceProvider;
+use Laravel\Boost\Install\GuidelineComposer;
 
 final class E2EBoostServiceProvider extends ServiceProvider
 {
@@ -25,5 +26,7 @@ final class E2EBoostServiceProvider extends ServiceProvider
         {
             protected function registerRoutes(): void {}
         });
+
+        $this->app->singleton(GuidelineComposer::class, E2EGuidelineComposer::class);
     }
 }

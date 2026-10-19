@@ -108,15 +108,14 @@ it('regenerates strict guidance while preserving project-owned sections', functi
         ->toStartWith($projectPrefix)
         ->toEndWith($projectSuffix)
         ->toContain(
-            'The complete project guidance inventory is required repository state.',
-            'Run `composer guidance:check` before planning or editing.',
-            'Restore the exact affected tracked guidance path',
+            'If guidance is missing or incomplete, follow Required Guidance Bootstrap above.',
         )
         ->not
         ->toContain(
             'stale guidance',
             '## Frontend Bundling',
             '## Vite Error',
+            '## Documentation Files',
             '=== deployments rules ===',
             'Laravel Cloud',
             'in `.ai/rules` when that directory exists',
@@ -128,6 +127,9 @@ it('regenerates strict guidance while preserving project-owned sections', functi
         ->toBe(trim($effectiveGuidance))
         ->and($committedMatches[1] ?? null)
         ->toBe(trim($effectiveGuidance));
+
+    expect(substr_count($regeneratedGuidance, '## Skills Activation'))->toBe(1)
+        ->and(substr_count($regeneratedGuidance, 'Run `composer guidance:check` before planning or editing.'))->toBe(1);
 });
 
 it('keeps regenerated Pest check guidance under the root check policy', function (): void {

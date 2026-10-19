@@ -257,12 +257,8 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
 
     expect($appRules)->toContain('pinned gateway SSH', 'explicit narrow sudo');
     expect($bootstrapRules)
-        ->toContain(
-            'composer guidance:check',
-            'composer guidance:update',
-            'Restore the exact tracked guidance paths',
-            'no product-code edits',
-        );
+        ->toContain('Follow Required Guidance Bootstrap in `AGENTS.md`.')
+        ->not->toContain('composer guidance:update');
     expect($databaseRules)
         ->toContain(
             'SQLite',
@@ -362,7 +358,7 @@ it('preserves project and installed testing guidance', function (): void {
             'Use Pest 5 with `describe()` and `it()`.',
             'Use Pint for formatting and Larastan for static analysis.',
             '## Skills Activation',
-            'Test every code change by adding or updating a test.',
+            'Add or update tests for behavior and logic changes',
             'Read the `testing-best-practices` skill before writing tests.',
         );
 

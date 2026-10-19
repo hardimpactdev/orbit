@@ -65,9 +65,8 @@ final readonly class TaskFinalReview
     {
         $previous = $group->tasks()->reorder('position', 'desc')->first();
         if ($previous instanceof Task && $previous->fixup_problem === self::FixupProblem) {
-            return 'Re-review only the delta since the last final review and its earlier findings. '
-                .'Confirm that those findings are resolved and check for new rule-(a)–(d) defects in the delta. '
-                .'Do not re-review the whole branch. Orbit applies unresolved findings in a new subtask.';
+            return 'Re-review only the change since the last final review. Confirm that its findings are resolved and look for new blocking findings in that change. '
+                .'Orbit applies unresolved findings in a new subtask.';
         }
         $default = $group->project->default_branch ?? 'the default branch';
         if ($group->reviewsIncomingPullRequest()) {
@@ -75,14 +74,14 @@ final readonly class TaskFinalReview
                 .'The diff runs from its merge base with origin/'.$default.' to the pull request head. '
                 .'Approve only when the complete change is correct, tested, documented, and ready to merge as it is. '
                 .'Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
-                .'Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.';
+                .'Orbit applies the findings in a new subtask.';
         }
 
         return 'Review the whole task branch before Orbit pushes it'.(is_string($group->pr_url) && $group->pr_url !== '' ? ' to '.$group->pr_url : ' and opens the pull request').'. '
             .'The diff runs from its merge base with origin/'.$default.' to HEAD, and covers every approved subtask. '
             .'Approve only when the complete change meets the task brief, is tested and documented, and is ready to merge. '
             .'Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
-            .'Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.';
+            .'Orbit applies the findings in a new subtask.';
     }
 
     /** @return list<array<string, string>> */
@@ -102,8 +101,8 @@ final readonly class TaskFinalReview
             $findings = mb_substr($findings, 0, self::FindingsLimit)."\n\n[Cut. The full findings are comment #".$receipt->id.' on subtask #'.$finalReview->id.'.]';
         }
 
-        return 'Address each blocking finding of final review subtask #'.$finalReview->id.' with the smallest change, or explain in your handoff why it does not apply within the task brief. List follow-ups in the handoff instead of implementing them. '
-            ."Do not rebase and do not force-push.\n\nFindings:\n\n".$findings;
+        return 'Fix each blocking finding of final review subtask #'.$finalReview->id.' at its root cause, or explain in your handoff why it does not apply within the task brief. List follow-ups in the handoff instead of implementing them. Do not rebase and do not force-push.'
+            ."\n\nFindings:\n\n".$findings;
     }
 
     /** @return list<array<string, string>> */

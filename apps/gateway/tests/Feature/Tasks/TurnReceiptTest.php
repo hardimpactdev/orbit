@@ -721,9 +721,8 @@ it('names the turn command in the prompts and the reminder', function (): void {
 
     expect($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=ready_for_review')
         ->and($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=blocked')
-        ->and($prompt)->toContain('consult')
-        ->and($prompt)->toContain('answered')
-        ->and($prompt)->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
+        ->and($prompt)->toContain('Your reviewer answers first.')
+        ->and($prompt)->not->toContain('brief_unclear')
         ->and($prompt)->not->toContain('.git/orbit/run')
         ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=approved')
         ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=changes_requested')
