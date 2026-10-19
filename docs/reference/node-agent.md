@@ -110,7 +110,7 @@ Refusing a file that `root` owns means the agent reads only files that other use
 
 `journalctl` is part of systemd on every supported Ubuntu Node, at `/usr/bin/journalctl`. The agent starts it with no environment and no input, and stops it when the stream stops, so no `journalctl` outlives its stream. When the agent itself stops, systemd stops any `journalctl` that is left, because it runs in the agent's unit. [Live logs](/reference/live-logs#sources) describes how the agent hands over from the first lines to the follow and how it cuts a long entry.
 
-The agent redacts each line with the Gateway's secret patterns before it sends it. [Live logs](/reference/live-logs#redaction) lists the patterns. The agent and the Gateway tests share one table of cases in `apps/agent/tests/redaction_cases.json`.
+The agent redacts each line with the Gateway's secret patterns before it sends it. [Live logs](/reference/live-logs#redaction) lists the patterns and the handling of unclosed PEM blocks. Both implementations scan in linear time and test the same expected bytes from `apps/agent/tests/redaction_cases.json`, including multiline text and long repeated inputs.
 
 | Limit | Value |
 | --- | --- |
