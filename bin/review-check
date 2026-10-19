@@ -160,7 +160,7 @@ def handoff_cache(root):
     return Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit-handoff-tia'
 
 
-def publish_handoff_cache(root, directory, tree, head, test_base=None):
+def publish_handoff_cache(root, directory, tree, test_base=None):
     """Publish one complete entry per tree and retain only the active start and published trees."""
     cached = handoff_cache(root)
     cached.mkdir(parents=True, exist_ok=True)
@@ -173,7 +173,6 @@ def publish_handoff_cache(root, directory, tree, head, test_base=None):
                 source = directory / 'tia' / project.replace('/', '-')
                 if (source / 'graph.json').is_file():
                     shutil.copytree(source, staged / project)
-            (staged / 'receipt.json').write_text(json.dumps({'tree': tree, 'candidate': head}))
             staged.rename(entry)
     protected = {tree}
     if test_base is not None:
@@ -252,16 +251,10 @@ def prepare_tia_directory(root, project, destination, test_base=None):
     selector = 'graph'
     if test_base is not None:
         tree = git(root, 'rev-parse', test_base + '^{tree}')
-        cached = handoff_cache(root) / tree
-        try:
-            metadata = json.loads((cached / 'receipt.json').read_text())
-            candidate = cached / project
-            if (isinstance(metadata, dict)
-                    and (candidate / 'graph.json').is_file()):
-                source = candidate
-                selector = test_base
-        except (OSError, json.JSONDecodeError):
-            pass
+        candidate = handoff_cache(root) / tree / project
+        if (candidate / 'graph.json').is_file():
+            source = candidate
+            selector = test_base
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
         shutil.copytree(source, destination, dirs_exist_ok=True)
@@ -503,7 +496,7 @@ def main():
     report['passed'] = report['unchanged'] and bool(report['checks']) and all(
         check['exit_code'] == 0 for check in report['checks'])
     if report['passed']:
-        publish_handoff_cache(root, directory, tree, head, test_base)
+        publish_handoff_cache(root, directory, tree, test_base)
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')

@@ -1102,9 +1102,7 @@ describe('native start commit selection', function (): void {
         expect($log)->toContain($selected === 0 ? 'No affected tests found' : $selected.' passed');
         $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
         $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
-        $metadata = json_decode((string) file_get_contents($cache.'/receipt.json'), true, flags: JSON_THROW_ON_ERROR);
-        expect($metadata['tree'])->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput()))
-            ->and(is_file($cache.'/apps/gateway/graph.json'))->toBeTrue()
+        expect(is_file($cache.'/apps/gateway/graph.json'))->toBeTrue()
             ->and(orb277_check($run['receipt'], 'apps/gateway', 'test:affected')['command'])->toBe(['composer', 'test:affected', '--', '--tia-base=graph']);
     })->with(['older graph' => ['older', 1], 'current graph' => ['current', 0], 'missing graph' => ['missing', 2]]);
 
