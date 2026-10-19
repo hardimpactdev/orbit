@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Count Gateway scripts and refuse growth relative to a Git base (ADR 0225)."""
+import argparse
+import io
+import json
+import re
+import subprocess
+import tarfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCOPE = 'apps/gateway'
+DATA_LABELS = frozenset({
+    'SQL', 'CADDY', 'CADDYFILE', 'FPM', 'INI', 'UNIT', 'SYSTEMD', 'CONF',
+    'EXTENSIONS', 'TEXT', 'MARKDOWN', 'HTML', 'REGEX',
+})
+# Every non-PHP file counts unless it is one of these data types.
+DATA_SUFFIXES = ('.json', '.xml', '.md', '.blade.php', '.pem', '.crt', '.cer')
+# This PHP runs in the Gateway's own FPM pool, like Artisan, not as a Node program.
+OPCACHE_RESET = SCOPE + '/resources/fpm/opcache-reset.php'
+HEREDOC = re.compile(r"<<<[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*$", re.MULTILINE)
+# Option flags may have values, such as bash -o pipefail -c.
+INTERPRETERS = ((r'(?:sh|bash|python3)', 'c'), ('php', 'r'), (r'(?:perl|node)', 'e'))
+ARGV_SCRIPTS = [re.compile(
+    r"(['\"])(?:/[^'\"\s]*/)?" + names + r"\1"
+    r"(?:\s*,\s*['\"]-[^'\"]+['\"](?:\s*,\s*['\"][^-'\"\s][^'\"]*['\"])?)*?"
+    r"\s*,\s*(['\"])-[a-zA-Z]*" + flag + r"[a-zA-Z]*\2",
+) for names, flag in INTERPRETERS]
+SHELL_SCRIPTS = [re.compile(
+    r"(?<![\w/.-])(?:/[^\s'\"]*/)?" + names
+    + r"(?:\s+--?[a-zA-Z][a-zA-Z-]*(?:\s+[^-\s'\";]+)?)*?"
+    r"\s+-[a-zA-Z]*" + flag + r"[a-zA-Z]*(?=\s|['\"]|$)",
+) for names, flag in INTERPRETERS]
+
+
+def inline_count(source):
+    count = 0
+    remaining = source
+    outside = []
+    while match := HEREDOC.search(remaining):
+        count += match[2] not in DATA_LABELS
+        outside.append(remaining[:match.start()])
+        end = re.search(r'^[ \t]*' + re.escape(match[2]) + r'\b', remaining[match.end():], re.MULTILINE)
+        if end is None:
+            raise ValueError(f'Unclosed heredoc: {match[2]}')
+        remaining = remaining[match.end() + end.end():]
+    outside.append(remaining)
+    code = '\n'.join(outside)
+    return count + sum(len(pattern.findall(code)) for pattern in ARGV_SCRIPTS + SHELL_SCRIPTS)
+
+
+def inventory(files):
+    counts = {'inline': {}, 'files': {}}
+    for name, content in files:
+        path = Path(name)
+        parts = path.relative_to(SCOPE).parts
+        if parts[0] in ('tests', 'vendor', 'node_modules') or (
+            len(parts) > 2 and parts[0] == 'extensions' and parts[2] == 'tests'
+        ):
+            continue
+        in_resources = 'resources' in parts
+        is_php = path.suffix == '.php' or content.lstrip().startswith(b'<?php')
+        is_data = name.endswith(DATA_SUFFIXES) or (path.name == '.gitkeep' and not content.strip())
+        if in_resources and path.suffix in ('.json', '.xml'):
+            try:
+                json.loads(content) if path.suffix == '.json' else ET.fromstring(content)
+            except (ValueError, ET.ParseError):
+                is_data = False
+        if name != OPCACHE_RESET and (
+            (not is_data and (not is_php or in_resources)) or content.startswith(b'#!')
+        ):
+            counts['files'][name] = 1
+        if is_php:
+            count = inline_count(content.decode('utf-8'))
+            if count:
+                counts['inline'][name] = count
+    return counts
+
+
+def checkout_files():
+    names = subprocess.check_output(
+        ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', SCOPE], cwd=ROOT,
+    ).decode().split('\0')
+    for name in sorted(set(names) - {''}):
+        path = ROOT / name
+        if path.is_symlink():
+            yield name, path.readlink().as_posix().encode()
+        elif path.is_file():
+            yield name, path.read_bytes()
+
+
+def base_files(base):
+    archive = subprocess.run(
+        ['git', 'archive', '--format=tar', base, SCOPE], cwd=ROOT, check=True, capture_output=True,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
+        for entry in tree:
+            if entry.issym():
+                yield entry.name, entry.linkname.encode()
+            elif entry.isfile():
+                yield entry.name, tree.extractfile(entry).read()
+
+
+def growth(before, after):
+    return [
+        f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}'
+        for kind in before
+        if sum(after[kind].values()) > sum(before[kind].values())
+    ]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base', required=True, help='Git base; PR CI uses the merge commit first parent.')
+    args = parser.parse_args()
+    before = inventory(base_files(args.base))
+    after = inventory(checkout_files())
+    for kind in before:
+        print(f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}', flush=True)
+    if growth(before, after):
+        raise SystemExit('Gateway script totals may only decrease. Use a named Rust agent command.')
+
+
+if __name__ == '__main__':
+    main()

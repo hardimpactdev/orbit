@@ -30,7 +30,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) | Build task VM images as chains of small jobs | In progress; changes [task VM image builds](/reference/compute-drivers#build-the-base-image) |
 | [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) | Run long operations as durable queued operations | In progress |
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
-| [0211](/decisions/0211-ship-node-changes-as-remote-programs) | Ship Node changes as remote programs | In progress |
+| [0211](/decisions/0211-ship-node-changes-as-remote-programs) | Ship Node changes as remote programs | Superseded on 2026-10-19 by [0225](/decisions/0225-make-node-changes-through-agent-commands) |
 | [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress |
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
@@ -40,6 +40,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
 | [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) | Run one gate from handoff to merge | In progress; changes [CI main cache imports](/reference/instance-setup#import-ci-main-caches); shares the `Administration: write` grant of [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) |
 | [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) | Give each task group one workspace holder and one sender | In progress; approved on 2026-10-18; built after [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) and before the Tasks extension move; supersedes the scope of backlog group 1758 |
+| [0225](/decisions/0225-make-node-changes-through-agent-commands) | Make Node changes through agent commands | In progress; decided on 2026-10-19; supersedes [0211](/decisions/0211-ship-node-changes-as-remote-programs); runtime build follows [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) |
 
 ## Retired decisions
 

@@ -626,6 +626,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Refuse Gateway script growth
+        env:
+          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
+        run: |
+          python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
+          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
         uses: ./.github/actions/php
