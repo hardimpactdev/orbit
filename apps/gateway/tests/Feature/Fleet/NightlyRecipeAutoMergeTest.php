@@ -341,3 +341,76 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     }
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files?'));
 })->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'changed old head', 'changed old author', 'comment failure']);
+
+
+it('finishes blocked PR retirement before merging a green replacement after a temporary cleanup failure', function (string $failure): void {
+    $this->freezeTime();
+    $evidence = nightlyMergeEvidence();
+    $evidence['after'] .= ' ';
+    nightlyMergeHttp($evidence);
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $replacement = nightlyMergeEvidence();
+    $snapshot = new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day');
+    $replacement['after'] = str_replace(substr($evidence['pr']['head']['ref'], -8).'T000000Z', $snapshot->format('Ymd\THis\Z'), $replacement['after']);
+    $replacement['files'][0]['patch'] = str_replace(substr($evidence['pr']['head']['ref'], -8).'T000000Z', $snapshot->format('Ymd\THis\Z'), $replacement['files'][0]['patch']);
+    $replacement['pr']['number'] = 100;
+    $replacement['pr']['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['pr']['head']['ref'] = 'nightly/recipe-'.$snapshot->format('Ymd');
+    $replacement['pr']['head']['sha'] = str_repeat('d', 40);
+    $replacement['commits'][0]['sha'] = $replacement['runs'][0]['head_sha'] = str_repeat('d', 40);
+    Http::swap(new Factory);
+    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $closed = false;
+    $fail = true;
+    nightlyMergeHttp($evidence, [
+        // Newest first proves cleanup does not depend on GitHub's list ordering.
+        $base.'/pulls?*' => function () use ($evidence, $replacement, &$closed) {
+            return Http::response($closed ? [$replacement['pr']] : [$replacement['pr'], $evidence['pr']]);
+        },
+        $base.'/pulls/100' => Http::response($replacement['pr']),
+        $base.'/pulls/100/commits?*' => Http::response($replacement['commits']),
+        $base.'/pulls/100/files?*' => Http::response($replacement['files']),
+        $base.'/commits/'.str_repeat('d', 40).'/check-runs?*' => Http::response(['total_count' => 1, 'check_runs' => $replacement['runs']]),
+        $base.'/contents/apps/gateway/resources/machine-software/recipe.json*' => fn (Request $request) => Http::response(['content' => base64_encode(str_contains($request->url(), 'ref='.str_repeat('a', 40)) ? $replacement['before'] : $replacement['after'])]),
+        $base.'/issues/99/comments' => function () use ($failure, &$fail) {
+            if ($failure === 'comment' && $fail) {
+                $fail = false;
+
+                return Http::response([], 503);
+            }
+
+            return Http::response([], 201);
+        },
+        $base.'/pulls/99' => function (Request $request) use ($evidence, $failure, &$fail, &$closed) {
+            if ($request->method() === 'PATCH') {
+                if ($failure === 'close' && $fail) {
+                    $fail = false;
+
+                    return Http::response([], 503);
+                }
+                $closed = true;
+            }
+
+            return Http::response($evidence['pr']);
+        },
+        $base.'/pulls/100/merge' => function () use (&$closed) {
+            expect($closed)->toBeTrue();
+
+            return Http::response(['merged' => true, 'sha' => str_repeat('c', 40), 'message' => 'Merged']);
+        },
+    ]);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $this->travel(4)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($closed)->toBeFalse();
+
+    $this->travel(2)->minutes();
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    expect($closed)->toBeTrue();
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/pulls/100/merge') && $request['sha'] === str_repeat('d', 40));
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments') && str_contains($request['body'], 'Recipe contents differ') && str_contains($request['body'], 'pull/100'));
+})->with(['comment', 'close']);

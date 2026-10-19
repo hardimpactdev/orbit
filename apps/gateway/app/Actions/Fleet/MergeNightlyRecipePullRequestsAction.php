@@ -40,38 +40,46 @@ final readonly class MergeNightlyRecipePullRequestsAction
             return;
         }
         $scope = 'machine-recipe:nightly-merge:'.$repository->owner.'/'.$repository->name;
-        if (Cache::has($scope.':list-retry')) {
+        if (Cache::has($scope.':retry')) {
             return;
         }
         try {
             $token = $this->access->token($repository);
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
-            Cache::put($scope.':list-retry', true, 300);
+            Cache::put($scope.':retry', true, 300);
             $this->blocked('list', 'Nightly recipe PRs could not be read. No automatic merge was attempted.');
 
             return;
         }
+        $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
+            ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
+        $author = $credentials->slug.'[bot]';
+        $pulls = array_values(array_filter($pulls, static fn (GitHubListedPullRequest $pull): bool => preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) === 1));
+        // Finish retirement before any replacement can merge and disappear from the open list.
         foreach ($pulls as $pull) {
-            if (preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $pull->headRef) !== 1) {
-                continue;
-            }
-            $blockedHeadKey = 'machine-recipe:blocked-pr-head:'.$repository->owner.'/'.$repository->name.':'.$pull->number;
-            $retryKey = $scope.':retry:'.$pull->number.':'.$pull->headSha;
-            if (Cache::has($retryKey)) {
+            $blocked = Cache::get($this->blockedHeadKey($repository, $pull->number));
+            if (! is_array($blocked) || ($blocked['sha'] ?? null) !== $pull->headSha || ! is_string($blocked['reason'] ?? null)) {
                 continue;
             }
             try {
-                $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
-                    ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
-                $path = '/pulls/'.$pull->number;
-                $author = $credentials->slug.'[bot]';
-                $blocked = Cache::get($blockedHeadKey);
-                if (is_array($blocked) && ($blocked['sha'] ?? null) === $pull->headSha && is_string($blocked['reason'] ?? null)) {
-                    $this->supersede($http, $repository, $pull, $pulls, $author, $blocked['reason']);
+                $this->supersede($http, $repository, $pull, $pulls, $author, $blocked['reason']);
+            } catch (Throwable) {
+                Cache::put($scope.':retry', true, 300);
+                $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] retirement failed; retrying in five minutes before merging its replacement.");
 
-                    continue;
-                }
+                return;
+            }
+        }
+        foreach ($pulls as $pull) {
+            $blockedHeadKey = $this->blockedHeadKey($repository, $pull->number);
+            $blocked = Cache::get($blockedHeadKey);
+            $retryKey = $scope.':retry:'.$pull->number.':'.$pull->headSha;
+            if ((is_array($blocked) && ($blocked['sha'] ?? null) === $pull->headSha) || Cache::has($retryKey)) {
+                continue;
+            }
+            try {
+                $path = '/pulls/'.$pull->number;
                 $checksToken = $this->access->checksToken($repository);
                 $check = config()->string('orbit.gateway_releases.check');
                 if ($checksToken === null) {
@@ -97,7 +105,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
                     Cache::forever($blockedHeadKey, ['sha' => $pull->headSha, 'reason' => $error->getMessage()]);
                     $this->blocked($pull->number.':'.$pull->headSha, "Nightly recipe PR [{$pull->url}] blocked: {$error->getMessage()}");
 
-                    continue;
+                    return;
                 }
                 $merged = $this->github->mergePullRequest($token, $repository, $pull->number, $pull->headSha);
                 if (! $merged->merged) {
@@ -111,6 +119,11 @@ final readonly class MergeNightlyRecipePullRequestsAction
         }
     }
 
+    private function blockedHeadKey(GitHubRepository $repository, int $number): string
+    {
+        return 'machine-recipe:blocked-pr-head:'.$repository->owner.'/'.$repository->name.':'.$number;
+    }
+
     /** @param list<GitHubListedPullRequest> $pulls */
     private function supersede(PendingRequest $http, GitHubRepository $repository, GitHubListedPullRequest $pull, array $pulls, string $author, string $reason): void
     {
@@ -118,8 +131,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
             return;
         }
         foreach ($pulls as $replacement) {
-            if (preg_match('/\Anightly\/recipe-[0-9]{8}\z/', $replacement->headRef) !== 1
-                || $replacement->headRef <= $pull->headRef || $replacement->authorLogin !== $author) {
+            if ($replacement->headRef <= $pull->headRef || $replacement->authorLogin !== $author) {
                 continue;
             }
             $this->metadata($http->get('/pulls/'.$replacement->number)->throw()->json(), $replacement->headSha, $replacement->headRef, $repository, $author);
