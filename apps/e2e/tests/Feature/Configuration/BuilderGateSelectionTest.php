@@ -866,8 +866,7 @@ function orb1803_clear_reports(string $root): void
 
 function orb1803_clear_handoff_cache(string $root): void
 {
-    $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
-        $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
+    $cache = $root.'/.git/orbit-handoff-tia';
     if (is_dir($cache)) {
         (new Process(['rm', '-rf', $cache]))->mustRun();
     }
