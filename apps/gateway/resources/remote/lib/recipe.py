@@ -676,13 +676,14 @@ def inspect(tools):
     return versions
 
 
-def safe_directory(path, uid=0, gid=0):
+def safe_directory(path, uid=0, gid=0, *, mode=0o755):
     path = Path(path)
     if path.is_symlink() or (path.exists() and (not path.is_dir() or path.stat().st_uid != uid)):
         raise RecipeFailure()
     if not path.exists():
-        path.mkdir(mode=0o755)
+        path.mkdir(mode=mode)
         os.chown(path, uid, gid)
+    path.chmod(mode)
     return path
 
 
@@ -859,7 +860,7 @@ def install_javascript(tools, downloads, work, account, vp_lock=None):
     if not scope.exists():
         safe_directory(home / '.local', uid, gid)
         safe_directory(home / '.local/share', uid, gid)
-    safe_directory('/opt/orbit')
+    safe_directory('/opt/orbit', mode=0o711)
     safe_directory(scope, uid, gid)
     bin_dir = safe_directory(scope / 'bin', uid, gid)
     runtime = safe_directory(scope / 'recipe', uid, gid)

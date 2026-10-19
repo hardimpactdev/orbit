@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import sys
 import tarfile
 import tempfile
@@ -85,10 +86,15 @@ def seed_npm(source, home, artifact, digest):
 
 if __name__ == '__main__':
     shared = Path(sys.argv[1])
+    marker = shared / '.orbit-owned'
     for _attempt in range(100):
-        if (shared / '.orbit-owned').is_file():
+        try:
+            ready = stat.S_ISREG(marker.stat().st_mode)
+        except FileNotFoundError:
+            ready = False
+        if ready:
             break
         time.sleep(0.1)
     else:
-        raise RuntimeError('Read-only package cache mount did not arrive')
+        raise RuntimeError(f'Read-only package cache marker [{marker}] did not arrive')
     seed(shared, Path.home(), json.load(sys.stdin))
