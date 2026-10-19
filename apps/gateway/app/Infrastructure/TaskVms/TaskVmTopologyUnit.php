@@ -13,6 +13,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Node;
 use JsonException;
 
@@ -33,7 +34,7 @@ final readonly class TaskVmTopologyUnit
      */
     public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology): void
     {
-        $script = TaskVmScripts::read(self::Script);
+        $script = TaskUnitProgram::read('task-vms/'.self::Script);
         $this->run($node, new RemoteCommand(
             ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $this->vpn->subnet()],
             input: $script,
@@ -47,7 +48,7 @@ final readonly class TaskVmTopologyUnit
     {
         try {
             $result = $this->run($node, new RemoteCommand(
-                ['bash', '-c', TaskVmScripts::read(self::Script), 'topology', 'status', $run],
+                ['bash', '-c', TaskUnitProgram::read('task-vms/'.self::Script), 'topology', 'status', $run],
                 maxOutputBytes: 65536,
                 timeout: 30,
             ));

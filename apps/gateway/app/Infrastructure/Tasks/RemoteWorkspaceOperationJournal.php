@@ -156,12 +156,7 @@ final class RemoteWorkspaceOperationJournal implements TaskWorkspaceOperationRec
 
     private function program(): string
     {
-        $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
-        if (! is_string($program) || $program === '') {
-            throw new \RuntimeException('The task workspace receipt protocol is unavailable.');
-        }
-
-        return $program;
+        return TaskUnitProgram::read('tasks/workspace-operation.py');
     }
 
     /** @return array<string, mixed> */

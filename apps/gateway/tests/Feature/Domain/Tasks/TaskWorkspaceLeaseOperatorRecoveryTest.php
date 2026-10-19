@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -105,7 +106,7 @@ function operator_recovery_holder(): array
 function operator_protocol(string $mode, string $operation, string $binding, array $arguments = []): CommandResult
 {
     return test()->transport->execute(test()->connection, new RemoteCommand([
-        'python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+        'python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
         $mode, $operation, $binding, '0', ...$arguments,
     ]));
 }
@@ -315,7 +316,7 @@ it('requires a reason and validates exact operator lease and gateway identifiers
 
 it('binds reboot interruption to the exact run even when pid and start ticks repeat', function (): void {
     $script = $this->receiptHome.'/check';
-    copy(resource_path('tasks/check'), $script);
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
     $program = <<<'PYTHON'
 import contextlib, importlib.machinery, importlib.util, io, json, os, sys
 loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
@@ -410,7 +411,7 @@ SH);
             chmod($this->receiptHome.'/bin/sudo', 0o700);
             $environment['PATH'] = $this->receiptHome.'/bin:'.getenv('PATH');
         }
-        $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
+        $program = TaskUnitProgram::read('tasks/workspace-operation.py');
         $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
             'bash', '-c', 'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo],
             cwd: $this->receiptHome, env: $environment);
@@ -517,7 +518,7 @@ it('proves native quiescence for only the target binding and check run without s
         expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
         $targetBinding = $relevant ? $binding : bin2hex(random_bytes(32));
         $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
-        $probe = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+        $probe = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
             'seal', str_repeat('0', 32), $targetBinding, '0', '[]', json_encode($checkRuns, JSON_THROW_ON_ERROR)],
             env: ['HOME' => $this->receiptHome]);
         $data = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -537,7 +538,7 @@ it('preserves literal command arguments through native workspace supervision', f
     $operation = bin2hex(random_bytes(16));
     $binding = bin2hex(random_bytes(32));
     $arguments = ['${HOME}', '$HOME', '$$', '${1-}', 'space and "quotes"', "line\nnext", '%n', ''];
-    $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
+    $program = TaskUnitProgram::read('tasks/workspace-operation.py');
     $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
         'python3', '-c', 'import json, sys; print(json.dumps(sys.argv[1:]))', ...$arguments],
         cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
@@ -557,8 +558,8 @@ it('preserves literal command arguments through native workspace supervision', f
 it('reads topology status through native workspace supervision without expanding the shell program', function (): void {
     $operation = bin2hex(random_bytes(16));
     $binding = bin2hex(random_bytes(32));
-    $process = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
-        'run', $operation, $binding, '0', 'bash', '-c', file_get_contents(resource_path('task-vms/topology.sh')),
+    $process = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
+        'run', $operation, $binding, '0', 'bash', '-c', TaskUnitProgram::read('task-vms/topology.sh'),
         'topology', 'status', 'abcdef0123456789'], cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
 
     try {
