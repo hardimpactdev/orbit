@@ -1517,7 +1517,8 @@ fi
         source = run / 'tia/apps-gateway'
         source.mkdir(parents=True)
         (source / 'graph.json').write_text('start graph')
-        first, second = 'a' * 40, 'b' * 40
+        first = cache.git(self.root, 'rev-parse', self.commit + '^{tree}')
+        second = 'b' * 40
         gate.publish_handoff_cache(self.root, run, first, self.commit)
         cache_root = gate.handoff_cache(self.root)
         first_graph = cache_root / first / 'apps/gateway/graph.json'
@@ -1535,7 +1536,7 @@ fi
 
         with patch.object(gate.shutil, 'copytree', side_effect=interrupted_copy):
             with self.assertRaisesRegex(OSError, 'interrupted publication'):
-                gate.publish_handoff_cache(self.root, run, second, self.commit)
+                gate.publish_handoff_cache(self.root, run, second, self.commit, self.commit)
         self.assertEqual([first], sorted(path.name for path in cache_root.iterdir()))
         self.assertEqual('start graph', first_graph.read_text())
         original_rename = Path.rename
@@ -1548,17 +1549,17 @@ fi
             return original_rename(staged, destination)
 
         with patch.object(Path, 'rename', observe_publication):
-            gate.publish_handoff_cache(self.root, run, second, self.commit)
+            gate.publish_handoff_cache(self.root, run, second, self.commit, self.commit)
         self.assertEqual('new graph', (cache_root / second / 'apps/gateway/graph.json').read_text())
         self.assertEqual('start graph', first_graph.read_text())
         # A later same-tree run without a fresh graph cannot relabel or merge into the complete entry.
         (source / 'graph.json').unlink()
-        gate.publish_handoff_cache(self.root, run, second, self.commit)
+        gate.publish_handoff_cache(self.root, run, second, self.commit, self.commit)
         self.assertEqual('new graph', (cache_root / second / 'apps/gateway/graph.json').read_text())
         gate.publish_handoff_cache(self.root, run, 'c' * 40, self.commit)
         self.assertFalse((cache_root / ('c' * 40) / 'apps/gateway').exists())
 
-    def test_handoff_cache_is_bounded_without_pruning_the_active_start_tree(self):
+    def test_handoff_cache_keeps_only_the_start_and_just_published_trees(self):
         gate = self.gate_module(self.gate_fixture())
         run = self.root / 'run'
         source = run / 'tia/apps-gateway'
@@ -1568,15 +1569,19 @@ fi
         gate.publish_handoff_cache(self.root, run, start_tree, self.commit)
         cache_root = gate.handoff_cache(self.root)
         entries = []
-        for index in range(gate.HANDOFF_CACHE_ENTRIES + 3):
+        for index in range(4):
             tree = f'{index:040x}'
             entries.append(tree)
             gate.publish_handoff_cache(self.root, run, tree, self.commit, self.commit)
-        self.assertEqual({start_tree, *entries[-(gate.HANDOFF_CACHE_ENTRIES - 1):]},
+        self.assertEqual({start_tree, entries[-1]},
                          {path.name for path in cache_root.iterdir()})
         destination = self.root / 'selected'
         self.assertEqual(self.commit, gate.prepare_tia_directory(self.root, 'apps/gateway', destination, self.commit))
         self.assertEqual('start graph', (destination / 'graph.json').read_text())
+        gate.publish_handoff_cache(self.root, run, start_tree, self.commit, self.commit)
+        self.assertEqual({start_tree}, {path.name for path in cache_root.iterdir()})
+        gate.publish_handoff_cache(self.root, run, 'f' * 40, self.commit)
+        self.assertEqual({'f' * 40}, {path.name for path in cache_root.iterdir()})
 
     def test_gate_keeps_every_tool_within_the_process_budget(self):
         runner = self.gate_fixture()

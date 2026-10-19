@@ -17,8 +17,6 @@ import runpy
 _budget = runpy.run_path(str(Path(__file__).resolve().parent.parent / "tools/check_budget.py"))
 ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBudget", "lane_count", "lane_weight"))
 
-HANDOFF_CACHE_ENTRIES = 8
-
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
@@ -163,7 +161,7 @@ def handoff_cache(root):
 
 
 def publish_handoff_cache(root, directory, tree, head, test_base=None):
-    """Publish one complete entry per tree and retain the active start plus the newest entries."""
+    """Publish one complete entry per tree and retain only the active start and published trees."""
     cached = handoff_cache(root)
     cached.mkdir(parents=True, exist_ok=True)
     entry = cached / tree
@@ -180,16 +178,9 @@ def publish_handoff_cache(root, directory, tree, head, test_base=None):
     protected = {tree}
     if test_base is not None:
         protected.add(git(root, 'rev-parse', test_base + '^{tree}'))
-    entries = sorted((path for path in cached.iterdir()
-                      if re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', path.name)
-                      and path.is_dir()), key=lambda path: path.stat().st_mtime_ns, reverse=True)
-    retained = protected & {path.name for path in entries}
-    for path in entries:
-        if path.name in retained:
-            continue
-        if len(retained) < HANDOFF_CACHE_ENTRIES:
-            retained.add(path.name)
-        else:
+    for path in cached.iterdir():
+        if (re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', path.name)
+                and path.is_dir() and path.name not in protected):
             shutil.rmtree(path)
 
 
@@ -266,7 +257,6 @@ def prepare_tia_directory(root, project, destination, test_base=None):
             metadata = json.loads((cached / 'receipt.json').read_text())
             candidate = cached / project
             if (isinstance(metadata, dict)
-                    and metadata.get('tree') == tree
                     and (candidate / 'graph.json').is_file()):
                 source = candidate
                 selector = test_base
