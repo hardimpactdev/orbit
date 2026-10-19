@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\NightlyRecipeContents;
+use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
@@ -295,7 +295,6 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
     expect(app(PhpBuildBump::class)->called)->toBeTrue();
     expect($alerts->alerts)->toHaveCount($case === 'comment' ? 0 : 1);
 })->with(['list', 'update', 'comment']);
-
 
 it('uses the shared retirement rule before checking failed or green PR evidence in Refresh', function (string $trigger): void {
     $evidence = nightlyRefreshEvidence();

@@ -11,8 +11,8 @@ use App\Domain\Releases\ReleaseAlertSubject;
 use App\Domain\Releases\ReleaseIncident;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class RecipeMaintenanceAlerts

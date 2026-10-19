@@ -174,5 +174,4 @@ final readonly class MergeNightlyRecipePullRequestsAction
             throw new UnexpectedValueException($reason);
         }
     }
-
 }
