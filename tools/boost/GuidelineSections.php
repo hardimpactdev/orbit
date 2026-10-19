@@ -7,7 +7,7 @@ namespace Orbit\Boost;
 use RuntimeException;
 
 /**
- * The stock Laravel Boost guidance sections that Orbit's Boost projects drop: frontend bundling advice does not
+ * The stock Laravel Boost guidance sections that the Gateway and E2E drop: frontend bundling advice does not
  * apply to them, and Orbit writes the documentation a change needs.
  */
 final class GuidelineSections
