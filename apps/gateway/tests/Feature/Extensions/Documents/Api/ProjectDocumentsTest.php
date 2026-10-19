@@ -20,20 +20,19 @@ use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Psr\Http\Message\RequestInterface;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+uses(WithCommittedSqliteDatabase::class);
 
 beforeEach(function (): void {
-    DB::rollBack();
     $home = sys_get_temp_dir().'/orbit-document-api-'.Str::uuid();
     mkdir($home, 0700, true);
     config(['documents.cleanup_runtime' => $home.'/cleanup-runtime']);
-    touch($home.'/database.sqlite');
-    config(['database.connections.sqlite.database' => $home.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    $this->useCommittedSqliteDatabase($home.'/database.sqlite');
     // The fresh database has no switches; the directory's setup turned documents on in the one it replaced.
     app(ExtensionStore::class)->set('documents', true);
     $this->beforeApplicationDestroyed(static function () use ($home): void {
-        DB::disconnect('sqlite');
+        DB::disconnect();
         File::deleteDirectory($home);
     });
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));

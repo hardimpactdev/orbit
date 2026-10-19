@@ -27,23 +27,22 @@ use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+uses(WithCommittedSqliteDatabase::class);
 
 pest()->group('subprocess');
 
 beforeEach(function (): void {
-    DB::rollBack();
     $this->deletionHome = sys_get_temp_dir().'/orbit-document-deletion-'.Str::uuid();
     mkdir($this->deletionHome, 0700);
-    touch($this->deletionHome.'/database.sqlite');
-    config(['orbit.home' => $this->deletionHome, 'documents.cleanup_runtime' => $this->deletionHome.'/runtime',
-        'database.connections.sqlite.database' => $this->deletionHome.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    config(['orbit.home' => $this->deletionHome, 'documents.cleanup_runtime' => $this->deletionHome.'/runtime']);
+    $this->useCommittedSqliteDatabase($this->deletionHome.'/database.sqlite');
     $this->beforeApplicationDestroyed(function (): void {
         if (isset($this->deletionServer)) {
             $this->deletionServer->stop();
         }
-        DB::disconnect('sqlite');
+        DB::disconnect();
         File::deleteDirectory($this->deletionHome);
     });
 });

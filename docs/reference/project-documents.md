@@ -368,6 +368,12 @@ Download never overwrites an existing file. Use a new path; there is no implicit
 
 Storage uses `orbit project:document-storage:show` and `orbit project:document-storage:update`, without a Project selector. Update takes `--endpoint`, `--region`, `--bucket`, and credential input files `--access-key-id-file` and `--secret-access-key-file` (or masked terminal prompts); secret values are not command-line arguments or human output. Both credential files must be supplied together in noninteractive mode when setting or rotating credentials. Existing credentials may be omitted. Secret files are UTF-8 with one optional final newline stripped. Storage commands support `--json` and expose only the redacted configuration/status.
 
+## Test boundaries
+
+Documents lifecycle, recovery, deletion, and API tests use private copies of a migrated SQLite template, not an enclosing transaction. This preserves real commits, rollback checks, independent connections, and subprocess visibility without running the migration chain for each case. See the [contributor test guidance](/contributor-guide#3-implement-and-verify).
+
+The transport tests keep one real stalled-TLS handshake and one real stalled-response deadline case. Body-error classification injects those same transport failures without waiting again, and checks the production request bounds and the response status and partial bytes. The other loopback HTTP cases still exercise signing, bounded sinks, response parsing, redirects, and provider error mapping. Recovery and deletion retain their real provider and subprocess fixtures.
+
 ## SDK and MCP contract
 
 The PHP SDK follows its existing `GatewayRequest`/`GatewayConnector::send` pattern. It provides `ListProjectDocumentsRequest`, `SearchProjectDocumentsRequest`, `CreateProjectDocumentRequest`, `ShowProjectDocumentRequest`, `UpdateProjectDocumentRequest`, `WriteProjectDocumentRequest`, `ReadProjectDocumentRequest`, `DownloadProjectDocumentRequest`, `ListProjectDocumentVersionsRequest`, `RestoreProjectDocumentVersionRequest`, `ArchiveProjectDocumentRequest`, `RestoreProjectDocumentRequest`, and `DestroyProjectDocumentRequest`. Storage uses `ShowProjectDocumentStorageRequest` and `UpdateProjectDocumentStorageRequest`. Constructor inputs match the API table and use numeric IDs. Each request maps its envelope to a typed response through `createDtoFromResponse`, preserving request correlation and the existing `GatewayApiException` contract.

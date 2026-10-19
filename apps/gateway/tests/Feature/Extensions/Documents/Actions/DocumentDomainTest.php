@@ -32,20 +32,19 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+uses(WithCommittedSqliteDatabase::class);
 
 pest()->group('subprocess');
 
 beforeEach(function (): void {
     // These lifecycle tests need real commits, not RefreshDatabase's enclosing transaction.
-    DB::rollBack();
     $home = sys_get_temp_dir().'/orbit-document-domain-'.Str::uuid();
     mkdir($home, 0700, true);
-    touch($home.'/database.sqlite');
-    config(['database.connections.sqlite.database' => $home.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    $this->useCommittedSqliteDatabase($home.'/database.sqlite');
     $this->beforeApplicationDestroyed(static function () use ($home): void {
-        DB::disconnect('sqlite');
+        DB::disconnect();
         File::deleteDirectory($home);
     });
 });
@@ -186,7 +185,7 @@ describe('immutable bodies and publication', function (): void {
         $provider->beforePut = function (string $key): void {
             expect(DB::transactionLevel())->toBe(0);
             expect(DB::getPdo()->inTransaction())->toBeFalse();
-            $independent = new PDO('sqlite:'.config()->string('database.connections.sqlite.database'));
+            $independent = new PDO('sqlite:'.DB::connection()->getDatabaseName());
             $intent = $independent->query('SELECT * FROM project_document_uploads')->fetch(PDO::FETCH_ASSOC);
             expect($intent['storage_key'])->toBe($key);
             expect($intent['state'])->toBe('active');
@@ -243,7 +242,7 @@ describe('immutable bodies and publication', function (): void {
     it('retains a committed intent after writer death following PUT and recovers its exact key', function (): void {
         $project = domain_documents_project();
         domain_documents_provider();
-        $database = config()->string('database.connections.sqlite.database');
+        $database = DB::connection()->getDatabaseName();
         $process = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/interrupted_document.php'), $database, (string) $project->id],
             env: ['APP_KEY' => config()->string('app.key')]);
         $process->setTimeout(15);

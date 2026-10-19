@@ -127,6 +127,8 @@ Each Gateway test process keeps its fixtures in its own directory under `TMPDIR`
 
 Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root.
 
+Gateway tests that need real commits or a database visible to subprocesses use `Tests\Support\WithCommittedSqliteDatabase`. It migrates a pristine SQLite template once per test file and copies it into each case's private directory. The ordinary `RefreshDatabase` connection stays inside its transaction; the committed fixture uses a separate connection. Do not roll back or purge the ordinary connection to replace it, because that invalidates Laravel's migration cache and reruns the full migration chain for every case. Migration-chain tests still run real migrations.
+
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
