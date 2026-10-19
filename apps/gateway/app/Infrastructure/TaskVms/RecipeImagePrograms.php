@@ -16,6 +16,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use Closure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -334,7 +335,7 @@ final readonly class RecipeImagePrograms
         }
 
         // Reuse the checked download, archive extraction and platform helpers without invoking the Node entry point.
-        $shared = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$shared;
+        $shared = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".TaskUnitProgram::embed($shared);
 
         return RecipeProgramInput::source(str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".str_replace("if __name__ == '__main__':\n    sys.exit(image_main())", '', $image), $payload, 'image_main');
     }

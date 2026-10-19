@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Node;
 use RuntimeException;
 
@@ -239,7 +240,7 @@ final readonly class NodeRecipeProgram
         if ($program === false) {
             throw new RuntimeException('The recipe converge program is missing.');
         }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program;
+        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".TaskUnitProgram::embed($program);
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');

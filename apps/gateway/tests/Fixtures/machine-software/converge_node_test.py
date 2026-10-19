@@ -16,7 +16,9 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('recipe', sys.argv.pop())
 recipe = importlib.util.module_from_spec(spec)
 exec(compile((Path(spec.origin).parent / 'artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
-spec.loader.exec_module(recipe)
+source = Path(spec.origin).read_text().replace('# ORBIT_TASK_UNIT_STATE',
+    (Path(spec.origin).parents[2] / 'tasks/unit-state.py').read_text())
+exec(compile(source, spec.origin, 'exec'), recipe.__dict__)
 
 
 class ConvergenceTest(unittest.TestCase):
@@ -179,7 +181,11 @@ class ConvergenceTest(unittest.TestCase):
                 self.assertEqual(['systemctl', 'is-active', '--quiet', 'caddy.service'] in self.commands, checked)
 
     def test_service_selection_skips_transient_or_vanished_units_and_refuses_ambiguous_state(self):
-        for state, selected in [('LoadState=not-found\n', False), ('LoadState=loaded\nTransient=yes\n', False),
+        stub = 'LoadState=not-found\nActiveState=inactive\nControlGroup=\nJob=\n'
+        for state, selected in [(stub, False), ('LoadState=not-found\n', None),
+                                (stub.replace('inactive', 'active'), None),
+                                (stub.replace('ControlGroup=\n', 'ControlGroup=/system.slice/live.service\n'), None),
+                                (stub.replace('Job=\n', 'Job=123\n'), None), ('LoadState=loaded\nTransient=yes\n', False),
                                 ('LoadState=loaded\nTransient=no\n', True), ('LoadState=error\nTransient=no\n', None),
                                 ('LoadState=loaded\n', None), ('', None)]:
             with self.subTest(state=state):
@@ -198,7 +204,7 @@ class ConvergenceTest(unittest.TestCase):
             if argv[:2] == ['systemctl', 'is-active'] and argv[-1] == 'curl.service':
                 return subprocess.CompletedProcess(argv, 4, '', '')
             if argv[:2] == ['systemctl', 'show'] and ['systemctl', 'is-active', '--quiet', 'curl.service'] in self.commands:
-                result.stdout = 'LoadState=not-found\n'
+                result.stdout = 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nControlGroup=\nJob=\nDescription=curl.service\n'
             return result
 
         result = self.apply(command)
@@ -208,7 +214,10 @@ class ConvergenceTest(unittest.TestCase):
 
     def test_health_still_refuses_a_loaded_stopped_or_unreadable_service(self):
         for state in ['LoadState=loaded\nActiveState=inactive\n', 'LoadState=loaded\nActiveState=failed\n',
-                      'LoadState=error\n', '', None]:
+                      'LoadState=not-found\nActiveState=active\nControlGroup=/system.slice/live.service\nJob=\n',
+                      'LoadState=not-found\nActiveState=inactive\nControlGroup=/system.slice/live.service\nJob=\n',
+                      'LoadState=not-found\nActiveState=inactive\nControlGroup=\nJob=123\n',
+                      'LoadState=not-found\n', 'LoadState=error\n', '', None]:
             with self.subTest(state=state):
                 self.commands.clear()
                 def command(argv, *, state=state, **kwargs):

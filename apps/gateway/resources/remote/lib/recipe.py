@@ -18,6 +18,8 @@ import tempfile
 import zipfile
 from urllib.parse import urlsplit
 
+# ORBIT_TASK_UNIT_STATE
+
 POLICY = Path('/usr/sbin/policy-rc.d')
 APT_ETC = Path('/etc/apt')
 DPKG_LOG = Path('/var/log/dpkg.log')
@@ -756,7 +758,7 @@ def extract(archive, destination):
 
 
 def service_state(service):
-    output = run(['systemctl', 'show', '--no-pager', '--property=LoadState,Transient', service]).stdout
+    output = run(['systemctl', 'show', '--no-pager', '--property=LoadState,ActiveState,ControlGroup,Job,Transient', service]).stdout
     return dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
 
 
@@ -769,7 +771,7 @@ def persistent_services(candidates):
     services = set()
     for service in candidates:
         state = service_state(service)
-        if state.get('LoadState') == 'not-found':
+        if vanished(state):
             continue
         if state.get('LoadState') != 'loaded' or state.get('Transient') not in ('yes', 'no'):
             raise RecipeFailure()
@@ -1044,7 +1046,7 @@ def apply_recipe(payload, snapshots):
                 stage = 'health:' + service
                 result = run(['systemctl', 'is-active', '--quiet', service], required=False)
                 if result.returncode != 0:
-                    if service_state(service).get('LoadState') == 'not-found':
+                    if vanished(service_state(service)):
                         continue
                     raise RecipeFailure(result=result)
             record_git(payload, after_versions)
