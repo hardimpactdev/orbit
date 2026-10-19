@@ -244,7 +244,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 - Baseline, handoff and review overrun rows use Activity `command: tasks:tick`.
 - Command overrun rows use Activity `command: <project-slug>:<project-directory>:<command-name>`, with a project-relative directory (`.` for a single-directory Project) and no task or run IDs, so distinct commands in one Project have stable, separate `command|code` fingerprints.
 - `ProblemCollector` treats `_over_budget` codes as server-class so the existing fingerprints and daily filing cap bound repeats without a new mechanism.
-- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets. Receipt entries for setup steps record seconds only and do not produce command overruns; their time is covered by the baseline stage time budget.
+- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets. Receipt entries for setup steps do not produce command overruns; their time is covered by the baseline stage time budget.
 - After step 7 is deployed and enough setup runs have recorded per-step timings for p90 values, propose exact Project 46 setup timeouts at about three times each p90 in a separate PR or note for Nick to apply, scaling them down to fit both the 540-second cap and the stored list total.
 - Orbit stores the list in a new JSON column of the check row.
 - Orbit's `bin/review-check` writes the list from `result.json`, including a selected test count for each test command.
