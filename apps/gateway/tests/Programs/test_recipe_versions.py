@@ -172,7 +172,7 @@ class RecipeVersionsTest(unittest.TestCase):
             with patch.object(recipe, 'POLICY', policy), \
                  patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
                  patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
-                 patch.object(recipe, 'active_services', return_value=set()), \
+                 patch.object(recipe, 'active_units', return_value=set()), \
                  patch.object(recipe, 'publish', side_effect=publish), \
                  patch.object(recipe.pwd, 'getpwnam', return_value=None), \
                  patch.object(recipe, 'run', side_effect=self.command):
@@ -305,7 +305,7 @@ class RecipeVersionsTest(unittest.TestCase):
         with patch.object(recipe, 'POLICY', self.apt / 'policy'), \
              patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
              patch.object(recipe, 'inspect', return_value=observed), \
-             patch.object(recipe, 'active_services', return_value=set()), \
+             patch.object(recipe, 'active_units', return_value=set()), \
              patch.object(recipe, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
              patch.object(recipe.pwd, 'getpwnam', return_value=None), \
              patch.object(recipe, 'run', side_effect=command):
@@ -560,7 +560,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 with patch.object(recipe, 'POLICY', policy), \
                      patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
                      patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
-                     patch.object(recipe, 'active_services', return_value=set()), \
+                     patch.object(recipe, 'active_units', return_value=set()), \
                      patch.object(recipe.os, 'chown'), \
                      patch.object(recipe.pwd, 'getpwnam', return_value=None), \
                      patch.object(recipe, 'run', side_effect=command):
@@ -670,7 +670,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 with patch.object(recipe, 'POLICY', self.apt / 'policy'), \
                      patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
                      patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
-                     patch.object(recipe, 'active_services', return_value=set()), \
+                     patch.object(recipe, 'active_units', return_value=set()), \
                      patch.object(recipe, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
                      patch.object(recipe.pwd, 'getpwnam', return_value=None), \
                      patch.object(recipe, 'run', side_effect=command):
@@ -769,7 +769,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 with patch.object(module, 'POLICY', Path(directory) / 'policy'), \
                      patch.object(module, 'packages', side_effect=lambda observed=observed: dict(observed)), \
                      patch.object(module, 'inspect', side_effect=lambda tools, observed=observed: dict(observed)), \
-                     patch.object(module, 'active_services', return_value=set()), \
+                     patch.object(module, 'active_units', return_value=set()), \
                      patch.object(module, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
                      patch.object(module.pwd, 'getpwnam', return_value=None), \
                      patch.object(module, 'download', side_effect=lambda pin, architecture, path: path), \

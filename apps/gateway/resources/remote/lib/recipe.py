@@ -757,28 +757,38 @@ def extract(archive, destination):
     return destination
 
 
+DEPENDENT_PROPERTIES = ('RequiredBy', 'BoundBy', 'ConsistsOf')
+
+
 def service_state(service):
-    output = run(['systemctl', 'show', '--no-pager', '--property=LoadState,ActiveState,ControlGroup,Job,Transient', service]).stdout
+    properties = 'LoadState,ActiveState,ControlGroup,Job,' + ','.join(DEPENDENT_PROPERTIES)
+    output = run(['systemctl', 'show', '--no-pager', '--property=' + properties, service]).stdout
     return dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
 
 
-def active_services():
-    output = run(['systemctl', 'list-units', '--type=service', '--state=active', '--no-legend', '--plain']).stdout
+def active_units():
+    output = run(['systemctl', 'list-units', '--state=active', '--no-legend', '--plain']).stdout
     return {line.split()[0] for line in output.splitlines() if line.strip()}
 
 
-def persistent_services(candidates):
-    services = set()
-    for service in candidates:
-        state = service_state(service)
+def affected_units(candidates, before_active):
+    selected, visited = set(), set()
+    pending = set(candidates)
+    while pending:
+        unit = pending.pop()
+        visited.add(unit)
+        try:
+            state = service_state(unit)
+        except RecipeFailure as error:
+            raise RecipeFailure('preflight:' + unit, result=error.result) from error
         if vanished(state):
             continue
-        if state.get('LoadState') != 'loaded' or state.get('Transient') not in ('yes', 'no'):
-            raise RecipeFailure()
-        # Transient work has its own completion protocol; it need not outlive convergence.
-        if state['Transient'] == 'no':
-            services.add(service)
-    return services
+        if state.get('LoadState') != 'loaded' or any(name not in state for name in DEPENDENT_PROPERTIES):
+            raise RecipeFailure('preflight:' + unit)
+        selected.add(unit)
+        dependents = {name for property_name in DEPENDENT_PROPERTIES for name in state[property_name].split()}
+        pending.update((dependents & before_active) - visited)
+    return selected
 
 
 def services_for(changed, before_active):
@@ -981,11 +991,11 @@ def apply_recipe(payload, snapshots):
         check_git_siblings(payload)
         assessment = assess(tools, versions, snapshots=snapshots, git_names=git_packages(payload))
         supported(assessment)
-        active = active_services()
+        active = active_units()
         recipe_packages = {pin['package'] for pin in tools.values() if pin['source'] == 'ubuntu'}
         recipe_packages.update(name for name, pin in tools.items() if pin['source'] != 'ubuntu'
                                and pin['artifacts'][payload['architecture']]['url'].endswith('.deb'))
-        health_services = persistent_services(services_for(recipe_packages, active))
+        health_services = affected_units(services_for(recipe_packages, active), active)
         js = set(tools) & {'node', 'vp', 'vp-cli', 'pnpm', 'bun'}
         if js:
             vite_scope(account)
@@ -1036,12 +1046,12 @@ def apply_recipe(payload, snapshots):
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
             stage = 'restart'
-            restarted = sorted(persistent_services(services_for(changed, active)))
-            for service in restarted:
-                stage = 'restart:' + service
-                run(['systemctl', 'restart', service])
+            restarted = sorted(affected_units(services_for(changed, active), active))
+            if restarted:
+                stage = 'restart:' + ','.join(restarted)
+                run(['systemctl', 'restart', *restarted])
             stage = 'health'
-            # Check recipe services and changed dependencies; role requirements are verified by Doctor.
+            # Check package services and every active unit their restart propagates to; Doctor checks role requirements.
             for service in sorted(health_services | set(restarted)):
                 stage = 'health:' + service
                 result = run(['systemctl', 'is-active', '--quiet', service], required=False)

@@ -27,6 +27,7 @@ class ConvergenceTest(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.policy = Path(self.directory.name) / 'policy'
         self.commands = []
+        self.unit_states = {}
         self.published = {}
         self.before = {'curl': '1.0', 'unchanged': '1.0', 'php8.5-common': '1.0'}
         self.after = {'curl': '2.0', 'unchanged': '1.0', 'php8.5-common': '2.0', 'dependency': '3.0'}
@@ -41,7 +42,7 @@ class ConvergenceTest(unittest.TestCase):
                       'dependency': '/lib/systemd/system/dependency.service\n',
                       'unchanged': '/lib/systemd/system/unchanged.service\n'}.get(argv[2], '')
         elif argv[:2] == ['systemctl', 'show']:
-            output = 'LoadState=loaded\nTransient=no\n'
+            output = self.unit_states.get(argv[-1], 'LoadState=loaded\nRequiredBy=\nBoundBy=\nConsistsOf=\n')
         return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, output, '')
 
     def publish(self, path, content, *args):
@@ -49,7 +50,7 @@ class ConvergenceTest(unittest.TestCase):
         if path == self.policy:
             self.policy.write_bytes(content)
 
-    def apply(self, command=None, active_services=None):
+    def apply(self, command=None, active_units=None):
         def execute(argv, **kwargs):
             result = (command or self.command)(argv, **kwargs)
             if result.returncode != 0 and kwargs.get('required', True):
@@ -60,7 +61,7 @@ class ConvergenceTest(unittest.TestCase):
              patch.object(recipe, 'inspect', side_effect=[
                  {name: '1.0' for name in self.payload['tools']},
                  {name: '2.0' if name == 'curl' else '1.0' for name in self.payload['tools']}]), \
-             patch.object(recipe, 'active_services', side_effect=active_services,
+             patch.object(recipe, 'active_units', side_effect=active_units,
                           return_value={'curl.service', 'unchanged.service', 'php8.5-fpm.service'}), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=execute), \
@@ -110,14 +111,32 @@ class ConvergenceTest(unittest.TestCase):
             if argv[:2] == ['systemctl', 'list-units']:
                 result.stdout = 'dependency.service loaded active running\n'
             elif argv[:2] == ['systemctl', 'show']:
-                result.stdout = 'LoadState=loaded\nTransient=no\n'
+                result.stdout = 'LoadState=loaded\nRequiredBy=\nBoundBy=\nConsistsOf=\n'
             return result
 
-        result = self.apply(command, active_services=recipe.active_services)
+        result = self.apply(command, active_units=recipe.active_units)
 
         self.assertTrue(result['healthy'])
         self.assertEqual(result['restarted_services'], ['dependency.service'])
         self.assertIn(['systemctl', 'is-active', '--quiet', 'dependency.service'], self.commands)
+
+    def test_health_checks_a_requires_dependent_of_a_restarted_service(self):
+        self.before = {'dependency': '1.0'}
+        self.after = {'dependency': '2.0'}
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv[:2] == ['systemctl', 'show']:
+                result.stdout = ('LoadState=loaded\nRequiredBy=' +
+                                 ('consumer.service' if argv[-1] == 'dependency.service' else '') +
+                                 '\nBoundBy=\nConsistsOf=\nTransient=no\n')
+            elif argv[:2] == ['systemctl', 'is-active'] and argv[-1] == 'consumer.service':
+                return subprocess.CompletedProcess(argv, 3, '', '')
+            return result
+
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^health:consumer.service$'):
+            self.apply(command, active_units=lambda: {'dependency.service', 'consumer.service'})
+
+        self.assertIn(['systemctl', 'restart', 'consumer.service', 'dependency.service'], self.commands)
 
     def test_health_failure_never_retries_or_rolls_back(self):
         def command(argv, **kwargs):
@@ -128,7 +147,8 @@ class ConvergenceTest(unittest.TestCase):
         with self.assertRaisesRegex(recipe.RecipeFailure, '^health:curl.service$'):
             self.apply(command)
         self.assertEqual(sum(c[:2] == ['apt-get', 'install'] for c in self.commands), 1)
-        self.assertEqual(sum(c[:2] == ['systemctl', 'restart'] for c in self.commands), 2)
+        self.assertEqual([c for c in self.commands if c[:2] == ['systemctl', 'restart']],
+                         [['systemctl', 'restart', 'curl.service', 'php8.5-fpm.service']])
         self.assertFalse(self.policy.exists())
 
     def test_health_excludes_unrelated_transient_work(self):
@@ -138,30 +158,47 @@ class ConvergenceTest(unittest.TestCase):
             if argv[:2] == ['systemctl', 'list-units']:
                 result.stdout = f'curl.service loaded active running\n{transient} loaded active running\n'
             elif argv[:2] == ['systemctl', 'show']:
-                result.stdout = 'LoadState=loaded\nTransient=' + ('yes' if argv[-1] == transient else 'no') + '\n'
+                result.stdout += 'Transient=' + ('yes' if argv[-1] == transient else 'no') + '\n'
             elif argv[:2] == ['systemctl', 'is-active'] and argv[-1] == transient:
                 return subprocess.CompletedProcess(argv, 4, '', '')
             return result
 
-        result = self.apply(command, active_services=recipe.active_services)
+        result = self.apply(command, active_units=recipe.active_units)
 
         self.assertTrue(result['healthy'])
         self.assertNotIn(['systemctl', 'is-active', '--quiet', transient], self.commands)
         self.assertFalse(any(argv[:2] == ['systemctl', 'show'] and argv[-1] == transient for argv in self.commands))
         self.assertIn(['systemctl', 'is-active', '--quiet', 'curl.service'], self.commands)
 
-    def test_health_excludes_a_transient_package_service(self):
-        def command(argv, **kwargs):
-            result = self.command(argv, **kwargs)
-            if argv[:2] == ['systemctl', 'show'] and argv[-1] == 'curl.service':
-                result.stdout = 'LoadState=loaded\nTransient=yes\n'
-            return result
+    def test_restarts_the_transitive_active_unit_closure_in_one_transaction(self):
+        self.unit_states = {
+            'curl.service': 'LoadState=loaded\nRequiredBy=bridge.target dormant.service\nBoundBy=\nConsistsOf=\n',
+            'bridge.target': 'LoadState=loaded\nRequiredBy=\nBoundBy=worker.service\nConsistsOf=\n',
+            'worker.service': 'LoadState=loaded\nRequiredBy=\nBoundBy=\nConsistsOf=curl.service leaf.service\n',
+            'leaf.service': 'LoadState=loaded\nRequiredBy=\nBoundBy=\nConsistsOf=\nTransient=yes\n'}
+        active = {'curl.service', 'bridge.target', 'worker.service', 'leaf.service', 'unrelated.service'}
 
-        result = self.apply(command)
+        result = self.apply(active_units=lambda: active)
+
+        expected = ['bridge.target', 'curl.service', 'leaf.service', 'worker.service']
+        self.assertEqual(result['restarted_services'], expected)
+        self.assertEqual([c for c in self.commands if c[:2] == ['systemctl', 'restart']],
+                         [['systemctl', 'restart', *expected]])
+        for unit in expected:
+            self.assertIn(['systemctl', 'is-active', '--quiet', unit], self.commands)
+            self.assertEqual(sum(c[:2] == ['systemctl', 'show'] and c[-1] == unit for c in self.commands), 2)
+        self.assertFalse(any(c[:2] == ['systemctl', 'show'] and c[-1] in ('unrelated.service', 'dormant.service')
+                             for c in self.commands))
+
+    def test_health_checks_dependents_of_unchanged_pinned_packages_without_restarting_them(self):
+        self.unit_states['unchanged.service'] = 'LoadState=loaded\nRequiredBy=consumer.service\nBoundBy=\nConsistsOf=\n'
+        self.payload['tools']['unchanged'] = {'source': 'ubuntu', 'package': 'unchanged', 'version': '1.0'}
+
+        result = self.apply(active_units=lambda: {'unchanged.service', 'consumer.service'})
 
         self.assertTrue(result['healthy'])
-        self.assertNotIn(['systemctl', 'is-active', '--quiet', 'curl.service'], self.commands)
-        self.assertNotIn(['systemctl', 'restart', 'curl.service'], self.commands)
+        self.assertIn(['systemctl', 'is-active', '--quiet', 'consumer.service'], self.commands)
+        self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
 
     def test_health_owns_debian_artifact_services_but_not_archive_name_collisions(self):
         for suffix, checked in [('.deb', True), ('.tar.gz', False)]:
@@ -175,44 +212,52 @@ class ConvergenceTest(unittest.TestCase):
                         result.stdout = '/usr/lib/systemd/system/caddy.service\n'
                     return result
 
-                result = self.apply(command, active_services=lambda: {'caddy.service'})
+                result = self.apply(command, active_units=lambda: {'caddy.service'})
 
                 self.assertTrue(result['healthy'])
                 self.assertEqual(['systemctl', 'is-active', '--quiet', 'caddy.service'] in self.commands, checked)
 
-    def test_service_selection_skips_transient_or_vanished_units_and_refuses_ambiguous_state(self):
-        stub = 'LoadState=not-found\nActiveState=inactive\nControlGroup=\nJob=\n'
-        for state, selected in [(stub, False), ('LoadState=not-found\n', None),
-                                (stub.replace('inactive', 'active'), None),
-                                (stub.replace('ControlGroup=\n', 'ControlGroup=/system.slice/live.service\n'), None),
-                                (stub.replace('Job=\n', 'Job=123\n'), None), ('LoadState=loaded\nTransient=yes\n', False),
-                                ('LoadState=loaded\nTransient=no\n', True), ('LoadState=error\nTransient=no\n', None),
-                                ('LoadState=loaded\n', None), ('', None)]:
+    def test_dependent_selection_skips_vanished_units_and_names_ambiguous_or_unreadable_units(self):
+        stub = 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nControlGroup=\nJob=\nDescription=consumer.service\n'
+        for state in [stub, 'LoadState=not-found\n', stub.replace('inactive', 'active'),
+                      stub.replace('ControlGroup=\n', 'ControlGroup=/system.slice/live.service\n'),
+                      stub.replace('Job=\n', 'Job=123\n'), 'LoadState=error\n', 'LoadState=loaded\n', '', None]:
             with self.subTest(state=state):
-                def command(argv, *, state=state, **kwargs):
-                    return subprocess.CompletedProcess(argv, 0, state, '')
-                with patch.object(recipe, 'run', side_effect=command):
-                    if selected is not None:
-                        self.assertEqual(recipe.persistent_services({'candidate.service'}), {'candidate.service'} if selected else set())
-                    else:
-                        with self.assertRaises(recipe.RecipeFailure):
-                            recipe.persistent_services({'candidate.service'})
+                self.commands.clear()
+                self.unit_states['curl.service'] = 'LoadState=loaded\nRequiredBy=consumer.service\nBoundBy=\nConsistsOf=\n'
+                self.unit_states['consumer.service'] = state
+                def command(argv, **kwargs):
+                    if argv[:2] == ['systemctl', 'show'] and argv[-1] == 'consumer.service' and state is None:
+                        return subprocess.CompletedProcess(argv, 1, '', 'unreadable')
+                    return self.command(argv, **kwargs)
 
-    def test_health_accepts_a_service_that_unloads_after_the_active_snapshot(self):
+                if state == stub:
+                    result = self.apply(command, active_units=lambda: {'curl.service', 'consumer.service'})
+                    self.assertEqual(result['restarted_services'], ['curl.service'])
+                else:
+                    with self.assertRaisesRegex(recipe.RecipeFailure, '^preflight:consumer.service$'):
+                        self.apply(command, active_units=lambda: {'curl.service', 'consumer.service'})
+                    self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
+
+    def test_health_accepts_a_collected_transient_dependent_after_the_restart_transaction(self):
+        transient = 'orbit-task-check-' + '2' * 32 + '.service'
+        self.unit_states['curl.service'] = 'LoadState=loaded\nRequiredBy=' + transient + '\nBoundBy=\nConsistsOf=\n'
+        self.unit_states[transient] = 'LoadState=loaded\nRequiredBy=\nBoundBy=\nConsistsOf=\nTransient=yes\n'
         def command(argv, **kwargs):
             result = self.command(argv, **kwargs)
-            if argv[:2] == ['systemctl', 'is-active'] and argv[-1] == 'curl.service':
+            if argv[:2] == ['systemctl', 'is-active'] and argv[-1] == transient:
                 return subprocess.CompletedProcess(argv, 4, '', '')
-            if argv[:2] == ['systemctl', 'show'] and ['systemctl', 'is-active', '--quiet', 'curl.service'] in self.commands:
-                result.stdout = 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nControlGroup=\nJob=\nDescription=curl.service\n'
+            if argv[:2] == ['systemctl', 'show'] and argv[-1] == transient and ['systemctl', 'is-active', '--quiet', transient] in self.commands:
+                result.stdout = 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nControlGroup=\nJob=\nDescription=' + transient + '\n'
             return result
 
-        result = self.apply(command)
+        result = self.apply(command, active_units=lambda: {'curl.service', transient})
 
         self.assertTrue(result['healthy'])
-        self.assertEqual(self.commands.count(['systemctl', 'is-active', '--quiet', 'curl.service']), 1)
+        self.assertIn(['systemctl', 'restart', 'curl.service', transient], self.commands)
+        self.assertEqual(self.commands.count(['systemctl', 'is-active', '--quiet', transient]), 1)
 
-    def test_health_still_refuses_a_loaded_stopped_or_unreadable_service(self):
+    def test_health_still_refuses_a_loaded_stopped_or_unreadable_dependent(self):
         for state in ['LoadState=loaded\nActiveState=inactive\n', 'LoadState=loaded\nActiveState=failed\n',
                       'LoadState=not-found\nActiveState=active\nControlGroup=/system.slice/live.service\nJob=\n',
                       'LoadState=not-found\nActiveState=inactive\nControlGroup=/system.slice/live.service\nJob=\n',
@@ -220,18 +265,19 @@ class ConvergenceTest(unittest.TestCase):
                       'LoadState=not-found\n', 'LoadState=error\n', '', None]:
             with self.subTest(state=state):
                 self.commands.clear()
-                def command(argv, *, state=state, **kwargs):
+                self.unit_states['curl.service'] = 'LoadState=loaded\nRequiredBy=consumer.service\nBoundBy=\nConsistsOf=\n'
+                def command(argv, **kwargs):
                     result = self.command(argv, **kwargs)
-                    if argv[:2] == ['systemctl', 'is-active']:
+                    if argv[:2] == ['systemctl', 'is-active'] and argv[-1] == 'consumer.service':
                         return subprocess.CompletedProcess(argv, 3, '', '')
-                    if argv[:2] == ['systemctl', 'show'] and ['systemctl', 'is-active', '--quiet', 'curl.service'] in self.commands:
+                    if argv[:2] == ['systemctl', 'show'] and argv[-1] == 'consumer.service' and ['systemctl', 'is-active', '--quiet', 'consumer.service'] in self.commands:
                         if state is None:
-                            raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 1, '', 'unreadable'))
+                            return subprocess.CompletedProcess(argv, 1, '', 'unreadable')
                         result.stdout = state
                     return result
 
-                with self.assertRaisesRegex(recipe.RecipeFailure, '^health:curl.service$'):
-                    self.apply(command)
+                with self.assertRaisesRegex(recipe.RecipeFailure, '^health:consumer.service$'):
+                    self.apply(command, active_units=lambda: {'curl.service', 'consumer.service'})
                 self.assertFalse(self.policy.exists())
 
     def test_package_failure_cleans_up_suppression_without_restart_or_rollback(self):
@@ -282,7 +328,7 @@ class ConvergenceTest(unittest.TestCase):
     def test_unchanged_explicit_pins_are_not_reinstalled(self):
         with patch.object(recipe, 'POLICY', self.policy), \
              patch.object(recipe, 'packages', return_value={'curl': '2.0'}), \
-             patch.object(recipe, 'active_services', return_value=set()), \
+             patch.object(recipe, 'active_units', return_value=set()), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=self.command), \
              patch.object(recipe.pwd, 'getpwnam', return_value=None):
@@ -294,7 +340,7 @@ class ConvergenceTest(unittest.TestCase):
         with patch.object(recipe, 'POLICY', self.policy), \
              patch.object(recipe, 'packages', return_value=self.before), \
              patch.object(recipe, 'inspect', return_value={'curl': 'wrong'}), \
-             patch.object(recipe, 'active_services', return_value=set()), \
+             patch.object(recipe, 'active_units', return_value=set()), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=self.command), \
              patch.object(recipe.pwd, 'getpwnam', return_value=None):

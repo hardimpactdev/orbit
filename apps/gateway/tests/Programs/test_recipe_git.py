@@ -85,7 +85,7 @@ class RecipeGitTest(unittest.TestCase):
     def install(self, module):
         with patch.object(module, 'packages', side_effect=lambda: dict(self.installed)), \
              patch.object(module, 'run', side_effect=self.command), \
-             patch.object(module, 'active_services', return_value=set()), \
+             patch.object(module, 'active_units', return_value=set()), \
              patch.object(module.pwd, 'getpwnam', return_value=None), \
              patch.object(module, 'publish', side_effect=lambda path, data, *args: Path(path).write_bytes(data)), \
              patch.object(module, 'download', side_effect=lambda pin, arch, path: path) as download:
