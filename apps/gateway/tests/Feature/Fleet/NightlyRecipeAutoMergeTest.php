@@ -189,13 +189,13 @@ it('verifies each head once while retrying refused merges for 24 hours', functio
     $snapshots->shouldReceive('latest')->twice()->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
     app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
 
-    for ($tick = 0; $tick < 288; $tick++) {
+    for ($tick = 0; $tick <= 288; $tick++) {
         app(MergeNightlyRecipePullRequestsAction::class)->execute();
         $this->travel(5)->minutes();
     }
 
     expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
-    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge')))->toHaveCount(288);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge')))->toHaveCount(289);
 
     $head = str_repeat('d', 40);
     $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
