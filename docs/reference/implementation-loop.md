@@ -747,7 +747,7 @@ A complete normal-VM gate on Beast on 2026-10-19 UTC exercised the Gateway worke
 | --- | --- | --- | --- | --- | --- | --- |
 | Normal: 2 CPUs, 4 GiB, resident Pi, Gateway and E2E tests | 1 | 3.864 GiB | 2.094 GiB | 1.185 GiB | 538.0 MiB | 3160.337 |
 
-That root `composer check` passed with zero OOM events. The nominal 200 ms sampler's longest interval was 1.214 seconds. Forked test children share pages, so summed RSS counts those mappings repeatedly; the continuous kernel peak records the gate's charged memory. The source was `0e6511df1` plus documentation changes, with receipt tree `0e342edbc5641a76fa917945cb49da8bd58a2364`. It used the initial 1280 MiB allocation and 640 MiB reserve. Both that rule and the final 1664 MiB allocation select one worker from its recorded 3.054 GiB available at start, so its lane shares are unchanged. Later source changes receive separate checks.
+That root `composer check` passed with zero OOM events. The nominal 200 ms sampler's longest interval was 1.214 seconds. Forked test children share pages, so summed RSS counts those mappings repeatedly; the continuous kernel peak records the gate's charged memory. The measured gate used one worker. The final rule also selects one worker from its recorded 3.054 GiB available at start, so its lane shares are unchanged.
 
 The final 640 MiB reserve gives about 19% headroom above the measured 538.0 MiB controller PSS. These counts use the final rule at the recorded starting memory:
 
