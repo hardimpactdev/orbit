@@ -191,6 +191,8 @@ Each Composer project job checks out full history. On `main`, the job checks out
 
 The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
 
+The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP process with PCRE JIT disabled, independently of TIA and shard selection. This step keeps the large-value redaction regressions in `Required checks`.
+
 The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change.
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
