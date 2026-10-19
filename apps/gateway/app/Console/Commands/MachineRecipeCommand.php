@@ -16,6 +16,7 @@ final class MachineRecipeCommand extends Command
         {--path= : Candidate recipe JSON; defaults to the repository recipe}
         {--role= : Show gateway, app-dev, app-prod, operator, or base}
         {--architecture= : Require the displayed profile(s) to support amd64 or arm64}
+        {--validate-ubuntu : Verify all Ubuntu pins against signed snapshot indexes without fetching artifacts}
         {--validate : Verify signed snapshot indexes and all artifact bytes}
         {--json : Print the complete recipe, identity, validation state, and selected effective profiles as JSON}
         {--artifact-directory= : Local internal artifacts; defaults to ORBIT_HOME/sandbox-artifacts}';
@@ -37,7 +38,11 @@ final class MachineRecipeCommand extends Command
             if ($this->option('validate')) {
                 $directory = $this->option('artifact-directory');
                 $validator->validate($recipe, is_string($directory) ? $directory : config()->string('orbit.home').'/sandbox-artifacts');
+            } elseif ($this->option('validate-ubuntu')) {
+                $validator->validateUbuntu($recipe);
             }
+            $validation = $this->option('validate') ? 'structure_availability_integrity'
+                : ($this->option('validate-ubuntu') ? 'structure_ubuntu_snapshot' : 'structure_only');
             if ($this->option('json')) {
                 $profiles = [];
                 foreach ($roles as $name) {
@@ -45,7 +50,7 @@ final class MachineRecipeCommand extends Command
                 }
                 $this->line(json_encode([
                     'identity' => $recipe->identity,
-                    'validation' => $this->option('validate') ? 'structure_availability_integrity' : 'structure_only',
+                    'validation' => $validation,
                     'recipe' => json_decode($recipe->json, flags: JSON_THROW_ON_ERROR),
                     'profiles' => $profiles,
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
@@ -56,7 +61,9 @@ final class MachineRecipeCommand extends Command
             $this->line('Ubuntu: 26.04; snapshot: '.$recipe->snapshot);
             $this->line($this->option('validate')
                 ? 'Validation: structure, availability, and integrity verified (whole recipe).'
-                : 'Validation: structure only; availability and integrity NOT checked.');
+                : ($this->option('validate-ubuntu')
+                    ? 'Validation: structure and all Ubuntu snapshot pins verified; artifacts NOT checked.'
+                    : 'Validation: structure only; availability and integrity NOT checked.'));
             foreach ($roles as $name) {
                 $this->newLine();
                 $this->line($name.' (architectures: '.implode(', ', $recipe->supportedArchitectures($name)).')');

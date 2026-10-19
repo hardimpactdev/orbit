@@ -304,6 +304,16 @@ jobs:
           RESTORED_KEY: ${{ steps.orbit-tia-restore.outputs.cache-matched-key }}
         run: ../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"
 
+      # Use the shared selection base. An unknown base validates the recipe, as a full test selection does.
+      - name: Verify Ubuntu recipe pins against the named snapshot
+        if: matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        env:
+          RECIPE_BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+        run: |
+          if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
+            php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
+          fi
+
       - name: Run tests affected since the main graph
         if: matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
         shell: bash

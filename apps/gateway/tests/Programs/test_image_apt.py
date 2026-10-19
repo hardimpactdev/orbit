@@ -31,7 +31,9 @@ class ImageAptTest(unittest.TestCase):
         self.status = self.root / 'status'
         # The base full-upgrade can install a newer dependency before a missing recipe tool is installed.
         self.status.write_text('Package: bind9-libs\nStatus: install ok installed\nArchitecture: amd64\n'
-                               'Version: 2.0\nDescription: fixture\n\n')
+                               'Version: 2.0\nDescription: fixture\n\n'
+                               'Package: phased-library\nStatus: install ok installed\nArchitecture: amd64\n'
+                               'Version: 1.0\nDescription: fixture\n\n')
         self.payload = {'snapshot': '20261014T000000Z', 'architecture': 'amd64', 'profile': 'base',
                         'tools': {'bind9-dnsutils': {'source': 'ubuntu', 'package': 'bind9-dnsutils', 'version': '2.0'}}}
         prefix = 'snapshot.ubuntu.com_ubuntu_20261014T000000Z_dists_resolute'
@@ -40,9 +42,11 @@ class ImageAptTest(unittest.TestCase):
         packages = ''
         for name, version, dependency in [('bind9-dnsutils', '1.0', 'bind9-libs (= 1.0)'),
                                            ('bind9-dnsutils', '2.0', 'bind9-libs (= 2.0)'),
-                                           ('bind9-libs', '1.0', ''), ('bind9-libs', '2.0', '')]:
+                                           ('bind9-libs', '1.0', ''), ('bind9-libs', '2.0', ''),
+                                           ('phased-library', '1.0', ''), ('phased-library', '2.0', '')]:
             packages += (f'Package: {name}\nVersion: {version}\nArchitecture: amd64\n'
                          + (f'Depends: {dependency}\n' if dependency else '')
+                         + ('Phased-Update-Percentage: 0\n' if name in ('bind9-libs', 'phased-library') and version == '2.0' else '')
                          + f'Filename: pool/{name}_{version}_amd64.deb\nSize: 1\nDescription: fixture\n\n')
         (self.lists / (prefix + '_main_binary-amd64_Packages')).write_text(packages)
         self.results = []
@@ -54,7 +58,7 @@ class ImageAptTest(unittest.TestCase):
                    f'Dir::State::lists "{self.lists}";\nDir::State::status "{self.status}";\n'
                    f'Dir::State::extended_states "{self.root}/extended_states";\n'
                    f'Dir::Cache "{self.root}/cache";\nDir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n'
-                   'APT::Architecture "amd64";\n')
+                   'APT::Architecture "amd64";\nAPT::Machine-ID "12345678-1234-1234-1234-123456789abc";\n')
 
         for name, value in [('IMAGE_APT', self.root / 'image-apt'), ('POLICY', self.root / 'policy'),
                             ('image_apt_configuration', isolated_configuration), ('publish', self.publish)]:
@@ -76,6 +80,7 @@ class ImageAptTest(unittest.TestCase):
         with image.image_apt_environment(self.payload):
             config = self.apt(['apt-config', 'dump']).stdout
             self.assertNotIn('ImageTest::', config)
+            self.assertIn('APT::Get::Always-Include-Phased-Updates "true";', config)
             update = self.apt(['apt-get', '--print-uris', 'update']).stdout
             self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/', update)
             self.assertNotIn('live.invalid', update)
@@ -107,6 +112,8 @@ class ImageAptTest(unittest.TestCase):
             image.image_packages(self.payload)
 
         self.assertEqual([phase for phase, _ in self.results], ['update', 'full-upgrade', 'install', 'check'])
+        upgrade = next(output for phase, output in self.results if phase == 'full-upgrade')
+        self.assertIn('Inst phased-library [1.0] (2.0', upgrade)
         install = next(output for phase, output in self.results if phase == 'install')
         self.assertIn('Inst bind9-dnsutils (2.0 Ubuntu:26.04/resolute [amd64])', install)
         self.assertNotRegex(install, r'[1-9][0-9]* downgraded')
