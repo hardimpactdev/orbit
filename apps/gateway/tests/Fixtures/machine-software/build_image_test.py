@@ -270,7 +270,7 @@ print(json.dumps({'outcome': 'current'}))
         self.assertIn('dependency conflict', log.read_text())
         self.assertIn('exit code: 17', log.read_text())
         self.assertIn('RecipeFailure', log.read_text())
-        self.assertIn('dependency conflict', errors.getvalue())
+        self.assertEqual(errors.getvalue(), '')
 
     def test_skips_matching_javascript_without_fetching_packages(self):
         self.payload['tools'] = {'node': {'version': '24.1.0'}}

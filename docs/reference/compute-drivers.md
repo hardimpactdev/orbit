@@ -754,6 +754,18 @@ Each phase is a separate queued job. No workspace or Project setup runs and neit
 
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
 
+Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway stages the existing installer with private input, starts the service, and polls its recorded result.
+
+Incus releases its queue job between polls. Incus reconnects to the same service after a lost SSH reply or queue-worker restart without starting another installer. UpCloud uses the same service protocol to reconnect after SSH loss while its existing template job survives; it does not resume the builder after that worker dies. No new Node program or inline script implements this supervision.
+
+Before issuing a start, the Gateway records the builder boot ID in the phase state. A missing unit on that boot can start; a changed boot ID fails with a builder-reboot diagnostic naming `task-vms:build-recipe --retry`. Completed services remain loaded. Unreadable status replies have an unknown outcome and share the SSH-loss observation bound.
+
+Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget and disk-backed temporary files; digest verification and atomic rename publish only complete input. Failed transfers remove their temporary files.
+
+The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
+
+The Python installer writes its private phase log once and does not echo it to stderr. Service stderr appends to the phase log, including Pi shell and Python startup errors. Direct verification reads the private log on failure.
+
 Every image package command, including assessment and the separate PHP installer during verification, inherits the same snapshot configuration through `APT_CONFIG`. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies.
 
 Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
@@ -961,6 +973,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
 | `task_vm.topology_seed_failed` | 502 | `task-vms.build-topology-seed` failed in the smoke VM. The error ends with the program's log |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
+| `task_vm.image_channel_lost` | 409 | The bounded observation period ended without a readable phase result. The guest outcome is unknown; inspect the retained builder before resuming |
 | `task_vm.image_build_running` | 409 | A recipe image build on the host is already running |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |

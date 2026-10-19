@@ -8,6 +8,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\IncusGuestCall;
+use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
@@ -63,6 +64,9 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<IncusGuestCall> what ran in a guest, in order */
     public array $guest = [];
 
@@ -83,6 +87,9 @@ final class FakeIncusImageHost implements SshExecutor
     public bool $recipeImages = false;
 
     public ?CommandResult $recipeFailure = null;
+
+    /** @var array<string, RecipeImageUnitGuest> */
+    public array $unitGuests = [];
 
     /** @var array<string, string> */
     private array $recipeLogs = [];
@@ -105,6 +112,7 @@ final class FakeIncusImageHost implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $result = $this->executeCommand($command);
         if ($this->afterExecute !== null) {
             ($this->afterExecute)($command);
@@ -198,6 +206,13 @@ final class FakeIncusImageHost implements SshExecutor
         // `timeout <seconds> <command>`, as the cloud-init status read runs.
         $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
 
+        $units = $this->unitGuests[$call->vm] ??= new RecipeImageUnitGuest(function (string $profile, string $phase) use ($call): CommandResult {
+            return $this->recipeResult($this->unitGuests[$call->vm], $profile, $phase);
+        });
+        if (($result = $units->run($command, $call->input)) !== null) {
+            return $result;
+        }
+
         if ($command[0] === 'bash' && str_contains($command[2] ?? '', 'cat >> "$1"')) {
             $path = $command[4];
             $this->recipeLogs[$path] = ($this->recipeLogs[$path] ?? '').(string) $call->input;
@@ -218,7 +233,7 @@ final class FakeIncusImageHost implements SshExecutor
                 default => new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false),
             },
             'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
-            'python3' => $this->answer('recipe '.RecipeProgramPayload::read($call->input)['profile'].':'.$command[2], static fn (): string => '{"ok":true}'),
+            'python3' => $this->recipeResult($units, RecipeProgramPayload::read($call->input)['profile'], $command[2]),
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),
@@ -232,6 +247,18 @@ final class FakeIncusImageHost implements SshExecutor
                 }),
             default => $this->answer('exec'),
         };
+    }
+
+    private function recipeResult(RecipeImageUnitGuest $guest, string $profile, string $phase): CommandResult
+    {
+        $result = $this->answer('recipe '.$profile.':'.$phase, static fn (): string => '{"ok":true}');
+        if ($phase === 'pi') {
+            return $result;
+        }
+        $path = '/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log';
+        $guest->files[$path] = ($guest->files[$path] ?? '').$result->stdout.$result->stderr;
+
+        return new CommandResult($result->exitCode, $result->succeeded() ? $result->stdout : '', '', $result->durationMs, $result->truncated);
     }
 
     private function fingerprintOf(string $alias): ?string

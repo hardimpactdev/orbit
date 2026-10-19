@@ -58,6 +58,7 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
+use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -248,6 +249,9 @@ final class FakeUpCloud
 /** Answers the SSH commands that reach an UpCloud server before it is a Node. */
 class FakeUpCloudSsh implements SshExecutor
 {
+    /** @var array<string, RecipeImageUnitGuest> */
+    public array $unitGuests = [];
+
     /** @var list<array{string, list<string>, ?string}> */
     public array $calls = [];
 
@@ -259,6 +263,11 @@ class FakeUpCloudSsh implements SshExecutor
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments, $command->input];
+        $units = $this->unitGuests[$connection->host] ??= new RecipeImageUnitGuest(fn (string $profile, string $phase, string $source): CommandResult => $this->phaseResult($phase, $source));
+        if (array_slice($command->arguments, 0, 2) === ['sudo', '-n']
+            && ($result = $units->run(array_slice($command->arguments, 2), $command->protectedInput ?? $command->input)) !== null) {
+            return $result;
+        }
         $line = implode(' ', $command->arguments);
         if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']) {
             $this->recipeMarker = null;
@@ -278,12 +287,21 @@ class FakeUpCloudSsh implements SshExecutor
             str_contains($line, 'cloud-init status') => new CommandResult($this->cloudInit === '' ? 255 : 0, $this->cloudInit, '', 1, false),
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'dpkg', '--print-architecture'] => new CommandResult(0, "amd64\n", '', 1, false),
-            str_starts_with($line, 'sha256sum ') => new CommandResult(0, app(RecipeImageBuilds::class)->currentRecipe()->tools['pi']->artifacts['amd64']->digest.'  pi', '', 1, false),
+            str_starts_with($line, 'sha256sum ') || str_starts_with($line, 'sudo -n sha256sum ') => new CommandResult(0, app(RecipeImageBuilds::class)->currentRecipe()->tools['pi']->artifacts['amd64']->digest.'  pi', '', 1, false),
             str_contains($line, 'python3 - verify') => new CommandResult(0, '{"ok":true}', '', 1, false),
             str_contains($line, 'bash -s') => new CommandResult(0, "{\"ok\":true}\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'ufw', 'status'] => new CommandResult(0, "Status: active\n", '', 1, false),
             default => new CommandResult(0, '', '', 1, false),
         };
+    }
+
+    protected function phaseResult(string $phase, string $source): CommandResult
+    {
+        if ($phase === 'packages') {
+            $this->recipeMarker = null;
+        }
+
+        return new CommandResult(0, '{"ok":true}', '', 1, false);
     }
 }
 
@@ -773,7 +791,7 @@ describe('image build', function (): void {
 
         $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
         $recipe = app(RecipeImageBuilds::class)->currentRecipe();
-        $packages = array_values(array_filter($this->ssh->calls, static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']))[0];
+        $packages = array_values(array_filter($this->ssh->calls, static fn (array $call): bool => array_slice($call[1], 0, 3) === ['sudo', '-n', 'install'] && is_string($call[2]) && str_contains($call[2], 'sys.exit(image_main())')))[0];
         $payload = RecipeProgramPayload::read($packages[2]);
         expect($payload)->toMatchArray(['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'profile' => 'base', 'architecture' => 'amd64'])
             ->and(array_keys($payload['tools']))->toBe($recipe->profile('base', 'amd64'))
@@ -799,7 +817,7 @@ describe('image build', function (): void {
             ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
             ->and(end($commands))->toEndWith(' -- orbit 1000:1000 --ufw')
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
-            ->and(array_filter($commands, static fn (string $command): bool => str_ends_with($command, 'python3 - packages')))->toHaveCount(1)
+            ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'systemd-run') && str_ends_with($command, ' packages')))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true))->not->toHaveKey('packages');
     });
 
@@ -877,6 +895,12 @@ describe('image build', function (): void {
             public function __construct(private string $phase, private bool $truncated) {}
 
             #[Override]
+            protected function phaseResult(string $phase, string $source): CommandResult
+            {
+                return $phase === $this->phase ? new CommandResult(1, '', '', 1, false) : parent::phaseResult($phase, $source);
+            }
+
+            #[Override]
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
                 if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', $this->phase]) {
@@ -902,13 +926,13 @@ describe('image build', function (): void {
         $this->ssh = new class extends FakeUpCloudSsh
         {
             #[Override]
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            protected function phaseResult(string $phase, string $source): CommandResult
             {
-                if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']) {
+                if ($phase === 'packages') {
                     return new CommandResult(100, 'recipe-image-stage:packages', 'apt dependency conflict API_TOKEN=private-token', 1, false);
                 }
 
-                return parent::execute($connection, $command);
+                return parent::phaseResult($phase, $source);
             }
         };
         app()->instance(SshExecutor::class, $this->ssh);
@@ -923,7 +947,8 @@ describe('image build', function (): void {
         expect($this->upcloud->servers)->toBe([]);
         $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
         $failure = UpCloudTaskVmImageBuild::query()->latest('id')->firstOrFail()->failure;
-        expect($failure)->toBe(['phase' => 'base:packages', 'exit_code' => 100, 'stderr' => 'apt dependency conflict API_TOKEN=[REDACTED]']);
+        expect($failure)->toMatchArray(['phase' => 'base:packages', 'exit_code' => 100]);
+        expect($failure['stderr'])->toContain('apt dependency conflict API_TOKEN=[REDACTED]')->not->toContain('private-token');
         Artisan::call('task-vms:image-builds');
         expect(Artisan::output())->toContain('base:packages', 'exit_code', 'apt dependency conflict')->not->toContain('private-token');
 

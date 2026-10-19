@@ -9,7 +9,11 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -19,6 +23,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Infrastructure\TaskVms\RecipeImagePrograms;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
+use App\Infrastructure\TaskVms\TaskVmGuestShell;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ImageBuild\PromoteImage;
@@ -29,6 +34,8 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
+use Tests\Support\IncusGuestCall;
+use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -141,12 +148,11 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     $host = app(TaskVmSettings::class)->hosts[0];
     $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'recipe-builder');
     app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), 'base', 'packages');
-    $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'python3');
-    expect($call->argv)->toBe(['python3', '-', 'packages']);
+    $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'install' && is_string($call->input) && str_contains($call->input, 'sys.exit(image_main())'));
     expect(strlen($call->input))->toBeGreaterThan(131072);
 
     // Execute the real assembled input boundary; print its decoded document instead of running the installer.
-    $process = new Process($call->argv);
+    $process = new Process(['python3', '-', 'packages']);
     $process->setInput(str_replace('sys.exit(image_main())', 'print(sys.argv[2])', $call->input));
     $process->mustRun();
     $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -162,7 +168,7 @@ it('installs OpenTelemetry only in app-dev image profiles', function (string $pr
 
     app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), $profile, 'packages');
 
-    $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'python3'));
+    $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'install' && is_string($call->input) && str_contains($call->input, 'sys.exit(image_main())')));
     expect($calls)->toHaveCount(1);
     $payload = RecipeProgramPayload::read($calls[0]->input);
     expect($payload['php']['input']['opentelemetry'])->toBe($enabled);
@@ -185,6 +191,457 @@ it('identifies publish failures as host commands without requesting a guest log'
     $failed = array_find($build->refresh()->steps, fn (array $step): bool => $step['program'] === 'base:publish');
     expect($failed['error'])->toContain('`incus publish`', 'Error: publish failed', 'Publishing runs on Incus host [recipe-beast].')
         ->not->toContain('Builder log unavailable', '/var/log/orbit/recipe-images/base-publish.log');
+});
+
+it('reconnects to the same phase after losing its start acknowledgement without running the installer twice', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '{"ok":true}', '', 1, false));
+    $guest->loseStartReply = true;
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
+        ->and($build->steps[0]['seconds'])->toBeNull()
+        ->and($build->steps[0]['error'])->toBeNull();
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['seconds'])->toBeNull();
+    $guest->running = false;
+    // A fresh delivery carries no in-memory program state from the original worker.
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['seconds'])->not->toBeNull()
+        ->and($guest->starts)->toBe(1);
+    $start = collect($incus->guest)->first(static fn ($call): bool => $call->argv[0] === 'systemd-run');
+    expect($start->argv)->toContain('--property=RuntimeMaxSec='.RecipeImagePrograms::PhaseSeconds,
+        '--property=ExitType=cgroup', '--property=KillMode=control-group');
+    expect(implode(' ', $start->argv))->not->toContain('--wait', '--pipe');
+});
+
+it('starts a missing unit again only on the recorded boot', function (bool $reboot): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->loseUnsentStart = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['phase_state']['boot_id'])->toBe($guest->bootId);
+    expect($guest->starts)->toBe(0);
+
+    if ($reboot) {
+        $guest->bootId = '22222222-2222-4222-8222-222222222222';
+        expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+            ->toThrow(TaskVmException::class, 'builder rebooted during phase [base:packages]');
+        expect($guest->starts)->toBe(0);
+    } else {
+        new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+        expect($build->refresh()->steps[0]['seconds'])->not->toBeNull();
+        expect($guest->starts)->toBe(1);
+    }
+})->with([false, true]);
+
+it('never restarts an installer lost during a builder reboot', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    $guest->bootId = '22222222-2222-4222-8222-222222222222';
+    $guest->units = [];
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'builder rebooted during phase [base:packages]');
+    expect($guest->starts)->toBe(1);
+});
+
+/** The UpCloud waiting path uses the same guest protocol without an Incus queue step. */
+function recipePhaseShell(RecipeImageUnitGuest $guest): TaskVmGuestShell
+{
+    return new class($guest) implements TaskVmGuestShell
+    {
+        public function __construct(private RecipeImageUnitGuest $guest) {}
+
+        public function asUser(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0, ?string $cwd = null): CommandResult
+        {
+            throw new LogicException('Installer phases run as root.');
+        }
+
+        public function asRoot(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
+        {
+            return $this->guest->run($command, $input) ?? new CommandResult(0, $command[0] === 'dpkg' ? 'amd64' : '', '', 1, false);
+        }
+    };
+}
+
+it('uses the same boot fence while UpCloud waits for its phase', function (bool $reboot): void {
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->loseUnsentStart = ! $reboot;
+    $guest->running = $reboot;
+    Sleep::whenFakingSleep(static function () use ($guest, $reboot): void {
+        if ($reboot) {
+            $guest->bootId = '22222222-2222-4222-8222-222222222222';
+            $guest->units = [];
+            $guest->running = false;
+        }
+    });
+    $run = fn () => app(RecipeImagePrograms::class)->apply(recipePhaseShell($guest), new RecipeLoader()->decode(recipeImageDocument()), 'base', 'packages');
+
+    if ($reboot) {
+        expect($run)->toThrow(TaskVmException::class, 'builder rebooted during phase [base:packages]');
+    } else {
+        $run();
+    }
+    expect($guest->starts)->toBe(1);
+})->with([false, true]);
+
+it('retries an unreadable phase status without restarting its installer', function (CommandResult $reply): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $job->handle(app(RecipeImageBuildSteps::class));
+    $guest->statusReplies = [$reply];
+
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+    expect($build->steps[0]['error'])->toBeNull();
+    $guest->running = false;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    expect($guest->starts)->toBe(1);
+    expect($build->refresh()->steps[0]['seconds'])->not->toBeNull();
+})->with([
+    'empty success' => new CommandResult(0, '', '', 1, false),
+    'partial success' => new CommandResult(0, "LoadState=loaded\n", '', 1, false),
+    'incus exec error' => new CommandResult(1, '', 'Error: guest agent is unavailable', 1, false),
+    'truncated reply' => new CommandResult(0, 'LoadState=loaded', '', 1, true),
+]);
+
+it('ends unknown status retries at the shared bound and redacts the guest-log observation', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    $steps = $build->refresh()->steps;
+    $steps[0]['phase_state']['observed_at'] = microtime(true) - 1501;
+    $build->steps = $steps;
+    $build->save();
+    $guest->statusReplies = [new CommandResult(1, '', 'API_TOKEN=do-not-store-this', 1, false)];
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'The guest phase outcome is unknown');
+    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'Gateway observation:'));
+    expect($logs)->not->toBeEmpty();
+    foreach ($logs as $log) {
+        expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this');
+    }
+});
+
+it('reuses a succeeded unit and restarts a failed unit only on explicit resume', function (bool $succeeded): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult($succeeded ? 0 : 100, '', 'installer diagnostic', 1, false));
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
+    $run = fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    if ($succeeded) {
+        $run();
+        $steps = $build->refresh()->steps;
+        $steps[0]['seconds'] = null;
+        $steps[0]['error'] = 'Observation failed after guest success.';
+        $build->update(['state' => TaskVmImageBuildState::Failed, 'steps' => $steps]);
+    } else {
+        expect($run)->toThrow(TaskVmException::class);
+    }
+    $unit = array_key_first($guest->units);
+    app(TaskVmImageBuildChain::class)->resume($host, $build->id);
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $job->buildAttempt = 2;
+    if ($succeeded) {
+        $job->handle(app(RecipeImageBuildSteps::class));
+        expect($guest->starts)->toBe(1);
+    } else {
+        expect(fn () => $job->handle(app(RecipeImageBuildSteps::class)))->toThrow(TaskVmException::class);
+        expect($guest->starts)->toBe(2);
+    }
+    expect(array_keys($guest->units))->toBe([$unit]);
+    expect($build->refresh()->steps[0]['phase_state']['boot_id'])->toBe($guest->bootId);
+})->with([true, false]);
+
+it('adopts a running unit on resume and reports its later failure without restarting', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    $build->update(['state' => TaskVmImageBuildState::Failed]);
+    app(TaskVmImageBuildChain::class)->resume($host, $build->id);
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $job->buildAttempt = 2;
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['phase_state']['attempt'])->toBe(2);
+
+    $guest->running = false;
+    $guest->signaled = true;
+    foreach ($guest->units as &$unit) {
+        $unit['exit'] = 9;
+    }
+    unset($unit);
+    expect(fn () => $job->handle(app(RecipeImageBuildSteps::class)))->toThrow(TaskVmException::class, 'signal 9');
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
+    expect($guest->starts)->toBe(1);
+});
+
+it('observes explicit restart identity after a lost acknowledgement', function (bool $unsent, bool $succeeded): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $exit = 100;
+    $guest = new RecipeImageUnitGuest(static function () use (&$exit): CommandResult {
+        return new CommandResult($exit, '', 'installer diagnostic', 1, false);
+    });
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class);
+    app(TaskVmImageBuildChain::class)->resume($host, $build->id);
+    $exit = $succeeded ? 0 : 100;
+    $guest->loseUnsentRestart = $unsent;
+    $guest->loseRestartReply = ! $unsent;
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $job->buildAttempt = 2;
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+
+    $next = new BuildRecipeImageStep($build->id, 'base', 'packages');
+    $next->buildAttempt = 2;
+    if ($succeeded) {
+        $next->handle(app(RecipeImageBuildSteps::class));
+    } else {
+        expect(fn () => $next->handle(app(RecipeImageBuildSteps::class)))->toThrow(TaskVmException::class, 'exit 100');
+    }
+    expect($guest->starts)->toBe(2);
+    expect($build->refresh()->steps[0]['phase_state']['attempt'])->toBe(2);
+})->with([false, true])->with([false, true]);
+
+it('keeps an actual installer traceback once when the unit routes its stderr', function (): void {
+    recipeImageTransport(recipeImageHost());
+    $directory = sys_get_temp_dir().'/recipe-traceback-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    $guest = null;
+    $guest = new RecipeImageUnitGuest(static function (string $profile, string $phase, string $source) use ($directory, &$guest): CommandResult {
+        $source = str_replace("Path('/var/log/orbit/recipe-images')", 'Path('.json_encode($directory, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).')', $source);
+        $source = str_replace("if __name__ == '__main__':", "def platform_check(architecture):\n    pass\ndef image_packages(payload):\n    raise RuntimeError('installer regression')\n\nif __name__ == '__main__':", $source);
+        $result = new NativeProcessRunner()->run(new ProcessInvocation(['python3', '-', $phase], timeout: 30, input: $source));
+        if (! is_file($directory.'/'.$profile.'-'.$phase.'.log')) {
+            throw new RuntimeException($result->stderr);
+        }
+        $guest->files['/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log'] = file_get_contents($directory.'/'.$profile.'-'.$phase.'.log');
+
+        return $result;
+    });
+    $state = [];
+    $failure = null;
+    try {
+        app(RecipeImagePrograms::class)->poll(recipePhaseShell($guest), new RecipeLoader()->decode(recipeImageDocument()), 'base', 'packages', 'traceback', $state);
+    } catch (TaskVmException $error) {
+        $failure = $error;
+    } finally {
+        foreach (glob($directory.'/*') as $file) {
+            unlink($file);
+        }
+        rmdir($directory);
+    }
+
+    expect($failure)->toBeInstanceOf(TaskVmException::class);
+    expect(substr_count($failure->getMessage(), 'Traceback (most recent call last):'))->toBe(1);
+    expect(substr_count($guest->files['/var/log/orbit/recipe-images/base-packages.log'], 'Traceback (most recent call last):'))->toBe(1);
+    expect($guest->journal)->toBe([]);
+});
+
+it('keeps stderr-only Pi installer failures in the phase log and build error', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'recipe base:pi';
+    $incus->recipeFailure = new CommandResult(1, '', 'mv: No space left on device', 1, false);
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'pi')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'mv: No space left on device');
+    expect($incus->unitGuests[$build->builder_vm_name]->files['/var/log/orbit/recipe-images/base-pi.log'])
+        ->toContain('mv: No space left on device');
+});
+
+it('reports a killed guest process as a signal without an exit code', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(9, '', 'signal diagnostic', 1, false));
+    $guest->signaled = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $failure = null;
+
+    try {
+        new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    } catch (TaskVmException $error) {
+        $failure = $error;
+    }
+    expect($failure)->toBeInstanceOf(TaskVmException::class);
+    expect($failure->getMessage())->toContain('signal 9')->not->toContain('exit 9');
+    expect($failure->imageFailure['exit_code'])->toBeNull();
+});
+
+it('uses disk and a transfer budget for the protected Pi artifact', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+
+    new BuildRecipeImageStep($build->id, 'base', 'pi')->handle(app(RecipeImageBuildSteps::class));
+    $transfer = collect($incus->commands)->first(fn ($command): bool => $command->protectedInput instanceof ProtectedInput);
+    expect(implode(' ', $transfer->arguments))->toContain('HOME=/var/tmp/', 'sha256sum --check --status', 'trap ');
+    $index = array_search($transfer, $incus->commands, true);
+    expect($incus->connections[$index]->commandTimeout)->toBe(900.0);
+    $start = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'systemd-run');
+    expect(implode(' ', $start->argv))->toContain('--property=StandardInput=file:/var/tmp/');
+});
+
+it('bounds both staging transfers inside one delivery budget covered by the job', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $elapsed = 0.0;
+    $clock = static function () use (&$elapsed): float {
+        return $elapsed;
+    };
+    app()->instance(RecipeImagePrograms::class, new RecipeImagePrograms(new CommandDeadline($clock)));
+    $transfers = [];
+    $incus->afterExecute = static function ($command) use ($incus, &$elapsed, &$transfers): void {
+        $call = IncusGuestCall::decode($command);
+        $connection = $incus->connections[array_key_last($incus->connections)];
+        if ($command->protectedInput !== null || ($call->argv[0] === 'install' && ($call->argv[3] ?? null) === '/dev/stdin')) {
+            $transfers[] = $connection->commandTimeout;
+            $elapsed += $connection->commandTimeout;
+        } else {
+            $elapsed += 1;
+        }
+    };
+    $job = new BuildRecipeImageStep($build->id, 'base', 'pi');
+
+    $job->handle(app(RecipeImageBuildSteps::class));
+
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+    expect($incus->unitGuests[$build->builder_vm_name]->starts)->toBe(0);
+    expect($transfers)->toHaveCount(2);
+    expect($transfers[0])->toBe((float) RecipeImagePrograms::TransferSeconds);
+    expect($transfers[1])->toBeLessThan(RecipeImagePrograms::TransferSeconds);
+    expect($elapsed)->toBe((float) RecipeImagePrograms::PhaseSeconds);
+    expect($job->timeout)->toBeGreaterThan($elapsed);
+});
+
+it('publishes only complete uploads and removes partial disk staging files', function (bool $truncated): void {
+    recipeImageTransport(recipeImageHost());
+    $directory = sys_get_temp_dir().'/image-upload-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $shell = new class($guest, $directory, $truncated) implements TaskVmGuestShell
+    {
+        public function __construct(private RecipeImageUnitGuest $guest, private string $directory, private bool $truncated) {}
+
+        public function asUser(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0, ?string $cwd = null): CommandResult
+        {
+            throw new LogicException('Installer phases run as root.');
+        }
+
+        public function asRoot(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
+        {
+            if ($command[0] === 'env' && str_starts_with($command[1], 'HOME=/var/tmp/orbit-recipe-image-')) {
+                $contents = $input instanceof ProtectedInput ? stream_get_contents($input->stream()) : $input;
+                $local = $command;
+                $local[1] = 'HOME='.$this->directory;
+                $result = new NativeProcessRunner()->run(new ProcessInvocation($local, timeout: $timeout,
+                    input: $this->truncated ? substr($contents, 0, -1) : $contents));
+                if (! $result->succeeded()) {
+                    return $result;
+                }
+            }
+
+            return $this->guest->run($command, $input) ?? new CommandResult(0, $command[0] === 'dpkg' ? 'amd64' : '', '', 1, false);
+        }
+    };
+    $state = [];
+    try {
+        $run = fn () => app(RecipeImagePrograms::class)->poll($shell, new RecipeLoader()->decode(recipeImageDocument()), 'base', 'pi', 'transfer', $state);
+        if ($truncated) {
+            expect($run)->toThrow(TaskVmException::class, 'Image control command [env] failed');
+            expect(glob($directory.'/.local/bin/*'))->toBe([]);
+            expect(glob($directory.'/.local/bin/.pi-server.*'))->toBe([]);
+            expect($guest->starts)->toBe(0);
+        } else {
+            expect($run())->toBeTrue();
+            expect(glob($directory.'/.local/bin/.pi-server.*'))->toBe([]);
+            expect($guest->starts)->toBe(1);
+            $files = glob($directory.'/.local/bin/pi-server');
+            expect($files)->toHaveCount(1);
+            expect(file_get_contents($files[0]))->toBe('pinned pi bytes');
+            expect(fileperms($directory) & 0777)->toBe(0700);
+        }
+    } finally {
+        foreach ([...glob($directory.'/.local/bin/*'), ...glob($directory.'/.local/bin/.pi-server.*')] as $file) {
+            unlink($file);
+        }
+        rmdir($directory.'/.local/bin');
+        rmdir($directory.'/.local');
+        rmdir($directory);
+    }
+})->with([false, true]);
+
+it('reports the guest service timeout without inventing a package exit code', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->timedOut = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'timed out after '.RecipeImagePrograms::PhaseSeconds.' seconds');
+    expect($build->refresh()->steps[0]['error'])->not->toContain('exit 255', 'Exit code [1]');
+    $state = $build->steps[0]['phase_state'];
+    $failure = null;
+    try {
+        app(RecipeImagePrograms::class)->poll(recipePhaseShell($guest), new RecipeLoader()->decode(recipeImageDocument()), 'base', 'packages', (string) $build->id, $state);
+    } catch (TaskVmException $error) {
+        $failure = $error;
+    }
+    expect($failure)->toBeInstanceOf(TaskVmException::class);
+    expect($failure->imageFailure['exit_code'])->toBeNull();
 });
 
 describe('recipe image triggers', function (): void {
@@ -375,10 +832,11 @@ it('records a bounded redacted output tail and a real builder log for failed rec
         '/var/log/orbit/recipe-images/base-'.$logPhase.'.log', $build->builder_vm_name)
         ->not->toContain('stdout diagnostic', 'line 1'."\n", 'do-not-store-this', 'do-not-store-that');
     expect(mb_strlen($failed['error']))->toBeLessThanOrEqual(4000);
-    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'apt dependency conflict'));
+    expect(substr_count($failed['error'], 'apt dependency conflict'))->toBe(1);
+    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'Gateway observation:'));
     expect($logs)->not->toBeEmpty();
     foreach ($logs as $log) {
-        expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this', 'do-not-store-that');
+        expect($log->input)->not->toContain('do-not-store-this', 'do-not-store-that', 'apt dependency conflict');
     }
 })->with(['packages', 'javascript', 'rust', 'agent', 'verify']);
 

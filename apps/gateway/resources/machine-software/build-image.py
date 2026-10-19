@@ -283,7 +283,6 @@ def image_main():
         if IMAGE_LOG is not None:
             traceback.print_exc(file=IMAGE_LOG)
             IMAGE_LOG.flush()
-            print('\n'.join(path.read_text(errors='replace').splitlines()[-40:]), file=sys.stderr)
         else:
             traceback.print_exc(file=sys.stderr)
         print('recipe-image-stage:' + phase)

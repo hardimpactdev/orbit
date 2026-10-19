@@ -73,9 +73,20 @@ final readonly class RecipeImageBuildSteps
         }
         try {
             if (in_array($phase, RecipeImagePrograms::Phases, true)) {
-                $this->programs->apply($shell, $recipe, $profile, $phase);
+                $index = array_find_key($build->steps, static fn (array $entry): bool => $entry['step'] === $step->value && $entry['program'] === $program);
+                if ($index === null) {
+                    throw new \LogicException('The running image phase has no persisted build step.');
+                }
+                $state = $build->steps[$index]['phase_state'] ?? [];
 
-                return true;
+                return $this->programs->poll($this->image->shell($host, $node, $name), $recipe, $profile, $phase, (string) $build->id, $state,
+                    function (array $state) use ($build, $index): void {
+                        $steps = $build->steps;
+                        $entry = $steps[$index] ?? throw new \LogicException('The running image phase has no persisted build step.');
+                        $steps[$index] = [...$entry, 'phase_state' => $state];
+                        $build->steps = $steps;
+                        $build->save();
+                    }, $build->attempt);
             }
             switch ($phase) {
                 case 'reset':
@@ -140,17 +151,18 @@ final readonly class RecipeImageBuildSteps
                 throw $error instanceof TaskVmException && $error->errorCode === TaskVmError::TopologySeedFailed->value ? $error
                     : new TaskVmException('task_vm.image_build_failed', $detail."\nThe topology seed is built from Incus host [{$node->name}].", previous: $error);
             }
+            $failure = $error instanceof TaskVmException ? $error->imageFailure : null;
+            $message = new CommandActivityInputSanitizer()->redactText($error->getMessage());
+            $summary = explode("\n", $message, 2)[0];
             try {
                 $logShell = $this->image->shell($host, $node, $phase === 'smoke' ? $name.'-smoke' : $name);
-                $logShell->forRecipePhase($profile, $phase)->recordRecipeFailure($detail);
-                $tail = $logShell->asRoot(['tail', '-n', '40', '--', $path]);
-                $output = new CommandActivityInputSanitizer()->redactText($tail->stdout);
-                $detail .= $tail->succeeded() ? "\nInspect the retained builder [{$logShell->vm}]: {$path}\n".mb_substr($output, -3200)
-                    : "\nBuilder log unavailable: {$path}";
+                // Installer diagnostics already belong to the guest log; append only the observation summary.
+                $logShell->forRecipePhase($profile, $phase)->recordRecipeFailure($failure === null ? $message : $summary);
+                $detail = $message."\nInspect the retained builder [{$logShell->vm}]: {$path}";
             } catch (Throwable) {
-                $detail .= "\nBuilder log unavailable: {$path}";
+                $detail = $message."\nBuilder log unavailable: {$path}";
             }
-            throw new TaskVmException('task_vm.image_build_failed', mb_substr($detail, 0, 4000), previous: $error);
+            throw new TaskVmException($error instanceof TaskVmException ? $error->errorCode : 'task_vm.image_build_failed', mb_substr($detail, 0, 4000), previous: $error, imageFailure: $failure);
         }
 
         return true;
