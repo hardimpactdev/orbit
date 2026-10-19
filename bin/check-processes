@@ -1,24 +1,72 @@
 #!/usr/bin/env python3
-"""Print how many processes a check may start: ORBIT_CHECK_PROCESSES, or the core count up to DEFAULT_LIMIT.
+"""Print the worker budget from available CPU and memory, or an internal lane share.
 
-Pest and Pint read this value in the Composer scripts, and bin/review-check and bin/test split it between the
-projects they run at once. tools/check-processes.php reads the same setting, with the same default, for PHPStan and
-Rector. An explicit value is used as it is, also above the default limit.
+Pest, Pint, PHPStan, and Rector share this rule. bin/review-check and bin/test divide the
+budget between concurrent lanes and pass each share through ORBIT_CHECK_PROCESSES.
 """
 import os
+from pathlib import Path
 import re
+import subprocess
 import sys
 
 SETTING = 'ORBIT_CHECK_PROCESSES'
-# Each PHPStan worker may use up to 1 GB, and a task VM can have 2 GB. Raise the setting on a larger machine.
-DEFAULT_LIMIT = 4
+# Measured Gateway worker RSS, rounded up with headroom. See implementation-loop.md.
+WORKER_MEMORY = 1664 * 1024 ** 2
+# Fixed gate overhead, in addition to the headroom in each worker allocation.
+MEMORY_RESERVE = 640 * 1024 ** 2
+PROC = Path('/proc')
+CGROUP = Path('/sys/fs/cgroup')
 
 
-def cores():
-    try:
-        return max(1, len(os.sched_getaffinity(0)))
-    except AttributeError:
-        return max(1, os.cpu_count() or 1)
+def cgroups():
+    """The current cgroup and its ancestors, whose limits also constrain this process."""
+    for line in (PROC / 'self/cgroup').read_text().splitlines():
+        if line.startswith('0::'):
+            relative = line[3:].lstrip('/')
+            if '..' in Path(relative).parts:
+                raise ValueError('Cannot resolve the current cgroup path.')
+            current = CGROUP / relative
+            if not current.is_dir():
+                raise ValueError(f'Cannot read the current cgroup: {current}.')
+            return [current, *[parent for parent in current.parents if parent.is_relative_to(CGROUP)]]
+    raise ValueError('Cannot find the current cgroup v2 path.')
+
+
+def linux_resources():
+    cpus = len(os.sched_getaffinity(0))
+    available = next((int(line.split()[1]) * 1024 for line in (PROC / 'meminfo').read_text().splitlines()
+                      if line.startswith('MemAvailable:')), None)
+    if available is None:
+        raise ValueError('Cannot read MemAvailable from /proc/meminfo.')
+    remaining_memory = [available]
+    for group in cgroups():
+        quota_file = group / 'cpu.max'
+        if quota_file.exists():
+            quota, period = quota_file.read_text().split()
+            if quota != 'max':
+                cpus = min(cpus, int(quota) // int(period))
+        memory_file = group / 'memory.max'
+        if memory_file.exists():
+            limit = memory_file.read_text().strip()
+            if limit != 'max':
+                statistics = dict(line.split() for line in (group / 'memory.stat').read_text().splitlines())
+                if 'inactive_file' not in statistics:
+                    raise ValueError(f'Cannot read reclaimable memory from {group}/memory.stat.')
+                working_set = max(0, int((group / 'memory.current').read_text()) - int(statistics['inactive_file']))
+                remaining_memory.append(int(limit) - working_set)
+    return cpus, min(remaining_memory)
+
+
+def macos_resources():
+    statistics = subprocess.check_output(['vm_stat'], text=True)
+    page_size = re.search(r'page size of ([0-9]+) bytes', statistics)
+    pages = [re.search(rf'^Pages {name}:\s+([0-9]+)\.', statistics, re.MULTILINE)
+             for name in ('free', 'inactive', 'speculative')]
+    cpus = os.cpu_count()
+    if cpus is None or page_size is None or any(page is None for page in pages):
+        raise ValueError('Cannot read available CPU and memory from macOS.')
+    return cpus, int(page_size[1]) * sum(int(page[1]) for page in pages)
 
 
 def processes(environment=os.environ):
@@ -27,12 +75,18 @@ def processes(environment=os.environ):
         if not re.fullmatch(r'[1-9][0-9]*', value):
             raise ValueError(f'{SETTING} must be a positive integer, not {value!r}.')
         return int(value)
-    return min(cores(), DEFAULT_LIMIT)
+    if sys.platform == 'linux':
+        cpus, memory = linux_resources()
+    elif sys.platform == 'darwin':
+        cpus, memory = macos_resources()
+    else:
+        raise ValueError(f'Unsupported check platform: {sys.platform}.')
+    return max(1, min(cpus, (memory - MEMORY_RESERVE) // WORKER_MEMORY))
 
 
 if __name__ == '__main__':
     try:
         print(processes())
-    except ValueError as error:
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
         sys.exit(2)

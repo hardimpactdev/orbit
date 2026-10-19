@@ -54,7 +54,7 @@ it('reads the shared process setting for PHPStan and Rector', function (): void 
 
     try {
         putenv('ORBIT_CHECK_PROCESSES');
-        $default = min(4, max(1, (int) trim((string) shell_exec('nproc'))));
+        $default = (int) trim((string) shell_exec(escapeshellarg($repository.'/bin/check-processes')));
         expect(require $repository.'/tools/check-processes.php')->toBe($default)
             ->and(require $repository.'/tools/phpstan/parallel.php')
             ->toBe(['parameters' => ['parallel' => ['maximumNumberOfProcesses' => $default]]]);

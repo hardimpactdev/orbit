@@ -22,7 +22,7 @@ declare(strict_types=1);
  * To change the tooling on purpose, change the projects and this baseline in the same commit.
  */
 
-/** Every tool runs in parallel processes. bin/check-processes reads ORBIT_CHECK_PROCESSES, or the core count. */
+/** Every tool runs in parallel processes. bin/check-processes derives the worker budget from resources, or reads an internal lane share. */
 const TOOLING_BASELINE_SCRIPTS = [
     'analyse' => 'vendor/bin/phpstan analyse --no-progress --memory-limit=1G',
     'format' => 'vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)',

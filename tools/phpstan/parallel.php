@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * PHPStan starts as many workers as tools/check-processes.php allows: ORBIT_CHECK_PROCESSES, or the core count up to 4.
+ * PHPStan reads the shared worker budget through tools/check-processes.php.
  */
 
 $processes = require __DIR__.'/../check-processes.php';

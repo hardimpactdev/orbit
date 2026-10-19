@@ -86,6 +86,8 @@ SH);
     file_put_contents($root.'/bin/pest-plain', "#!/usr/bin/env sh\nexec \"$@\"\n");
     chmod($root.'/bin/pest-plain', 0o700);
 
+    mkdir($root.'/tools', 0700, true);
+    copy(base_path('../../tools/check_budget.py'), $root.'/tools/check_budget.py');
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
     copy(base_path('../../bin/check-processes'), $root.'/bin/check-processes');
     copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');

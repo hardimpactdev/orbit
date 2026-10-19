@@ -227,7 +227,11 @@ describe('Composer configuration', function (): void {
             ]);
         expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
         expect($steps['Run project quality checks'])
-            ->toMatchArray(['if' => "matrix.part != 'subprocess'", 'run' => 'composer check']);
+            ->toMatchArray([
+                'if' => "matrix.part != 'subprocess'",
+                'run' => 'composer check',
+                'env' => ['ORBIT_CHECK_PROCESSES' => '${{ runner.environment == \'self-hosted\' && 6 || 4 }}'],
+            ]);
         // A pull request whose Gateway plan chose shards runs the Gateway job's shard instead of the TIA selection.
         expect($steps['Run affected tests'])
             ->toMatchArray([

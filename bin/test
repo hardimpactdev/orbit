@@ -1,63 +1,57 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+"""Run all project suites within the gate's shared worker budget."""
+from concurrent.futures import ThreadPoolExecutor
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import tempfile
+import threading
 
-set -euo pipefail
+ROOT = Path(__file__).resolve().parent.parent
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+_budget = runpy.run_path(str(ROOT / 'tools/check_budget.py'))
+ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ('ProcessBudget', 'lane_count', 'lane_weight'))
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repository_root"
-projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
-# ORBIT_CHECK_PROCESSES, then the older ORBIT_TEST_PROCESSES, then the default of bin/check-processes,
-# split between the suites.
-if [[ -z "${ORBIT_CHECK_PROCESSES:-}" && -n "${ORBIT_TEST_PROCESSES:-}" ]]; then
-    available_processes="$(ORBIT_CHECK_PROCESSES="$ORBIT_TEST_PROCESSES" "$repository_root/bin/check-processes")"
-else
-    available_processes="$("$repository_root/bin/check-processes")"
-fi
 
-suite_processes=$((available_processes / ${#projects[@]}))
-if ((suite_processes < 1)); then
-    suite_processes=1
-fi
+def main():
+    for project in PROJECTS:
+        if not os.access(ROOT / project / 'vendor/bin/pest', os.X_OK):
+            print(f'{project} is not installed. Run bin/bootstrap first.', file=sys.stderr)
+            return 2
+    result = subprocess.run([str(ROOT / 'bin/check-processes')], capture_output=True, text=True, check=False)
+    if result.returncode:
+        print(result.stderr, file=sys.stderr, end='')
+        return result.returncode
+    processes = int(result.stdout.strip())
+    weights = {project: lane_weight(ROOT, project) for project in PROJECTS}
+    budget = ProcessBudget(processes, weights)
+    output_lock = threading.Lock()
+    print(f'Running {len(PROJECTS)} suites within a budget of {processes} Pest processes.', flush=True)
+    with tempfile.TemporaryDirectory(prefix='orbit-test-') as directory:
+        def run(project):
+            budget.start(project)
+            try:
+                share = budget.acquire(project)
+                log = Path(directory) / project.replace('/', '-')
+                with log.open('w') as output:
+                    result = subprocess.run(
+                        [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--parallel', f'--processes={share}',
+                         '--tia', '--compact', '--colors=never'],
+                        cwd=ROOT / project, env={**os.environ, 'ORBIT_CHECK_PROCESSES': str(share)},
+                        stdout=output, stderr=subprocess.STDOUT, check=False,
+                    )
+                with output_lock:
+                    print(f'\n[{project}] {"passed" if result.returncode == 0 else "failed"}', flush=True)
+                    print(log.read_text(), end='', flush=True)
+                return result.returncode
+            finally:
+                budget.finish(project)
+        with ThreadPoolExecutor(max_workers=lane_count(PROJECTS, processes)) as pool:
+            results = list(pool.map(run, sorted(PROJECTS, key=lambda project: -weights[project])))
+    return int(any(results))
 
-for project in "${projects[@]}"; do
-    if [[ ! -x "$repository_root/$project/vendor/bin/pest" ]]; then
-        printf '%s is not installed. Run bin/bootstrap first.\n' "$project" >&2
-        exit 2
-    fi
-done
 
-log_directory="$(mktemp -d)"
-pids=()
-failed=0
-
-cleanup() {
-    find "$log_directory" -maxdepth 1 -type f -delete
-    rmdir "$log_directory"
-}
-
-trap cleanup EXIT
-
-for project in "${projects[@]}"; do
-    (
-        cd "$repository_root/$project"
-        "$repository_root/bin/pest-plain" vendor/bin/pest --parallel --processes="$suite_processes" --tia --compact --colors=never
-    ) >"$log_directory/${project//\//-}.log" 2>&1 &
-    pids+=("$!")
-done
-
-printf 'Running %s suites with %s Pest processes per suite.\n' "${#projects[@]}" "$suite_processes"
-
-for index in "${!projects[@]}"; do
-    project="${projects[$index]}"
-    log_file="$log_directory/${project//\//-}.log"
-
-    if wait "${pids[$index]}"; then
-        printf '\n[%s] passed\n' "$project"
-    else
-        printf '\n[%s] failed\n' "$project" >&2
-        failed=1
-    fi
-
-    sed 's/^/  /' "$log_file"
-done
-
-exit "$failed"
+if __name__ == '__main__':
+    sys.exit(main())

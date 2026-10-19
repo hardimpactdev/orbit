@@ -58,6 +58,7 @@ it('installs dependencies and runs Docs quality checks on the checked out merge 
     expect($steps['Install dependencies']['run'])->toBe('composer install --no-interaction --prefer-dist');
     expect($steps['Run Docs quality checks'])->toBe([
         'name' => 'Run Docs quality checks',
+        'env' => ['ORBIT_CHECK_PROCESSES' => 4],
         'run' => 'composer check',
     ]);
     expect(array_search('Install dependencies', array_keys($steps), true))

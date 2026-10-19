@@ -433,8 +433,8 @@ class Fixture:
 if __name__ == "__main__":
     fixture = None
     try:
-        if os.geteuid() != 0 or os.environ.get("ORBIT_CHECK_PROCESSES") != "1":
-            raise RuntimeError("The owned harness control requires root transport and ORBIT_CHECK_PROCESSES=1.")
+        if os.geteuid() != 0 or os.environ.get("ORBIT_ROUTER_LAN_FIREWALL_FIXTURE") != "1":
+            raise RuntimeError("The owned harness control requires root transport and ORBIT_ROUTER_LAN_FIREWALL_FIXTURE=1.")
         if len(sys.argv) != 3 or sys.argv[1] not in ("prepare", "overlap", "narrow", "rollback", "restore", "inspect"):
             raise RuntimeError("Only fixed fixture operations are allowed.")
         fixture = Fixture(json.loads(sys.argv[2]))
