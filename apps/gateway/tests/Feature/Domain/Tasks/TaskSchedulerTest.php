@@ -24,6 +24,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -1593,7 +1594,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(AgentSpawner::class, new TaskAgentSpawner(
         app(AgentDriverRegistry::class),
-        new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
+        new TaskReviewPacketBuilder(app(TaskReviewDiff::class), app(TaskCheckOutputBuilder::class)),
         app(TaskWorkspaceMcp::class),
     ));
 
@@ -1675,7 +1676,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(AgentSpawner::class, new TaskAgentSpawner(
         app(AgentDriverRegistry::class),
-        new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
+        new TaskReviewPacketBuilder(app(TaskReviewDiff::class), app(TaskCheckOutputBuilder::class)),
         app(TaskWorkspaceMcp::class),
     ));
 

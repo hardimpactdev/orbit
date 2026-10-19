@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskReviewContext;
 use App\Domain\Tasks\TaskReviewPacket;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 
 it('keeps every part the review packet cuts', function (): void {
     $taskBrief = "it's \$HOME\n".str_repeat('é', 2_100)."\nGROUP-END";
@@ -26,6 +28,7 @@ it('keeps every part the review packet cuts', function (): void {
         'paths' => [$path],
     ]);
     $packet = new TaskReviewPacket(
+        outputBuilder: new TaskCheckOutputBuilder(new CommandActivityInputSanitizer),
         groupBrief: $taskBrief,
         subtaskId: 7,
         subtaskTitle: 'Write the context',

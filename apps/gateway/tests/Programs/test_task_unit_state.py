@@ -17,6 +17,7 @@ BOOT = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 
 def program(name):
     source = (RESOURCES / name).read_text()
+    source = source.replace('__ORBIT_TASK_CHECK_OUTPUT_POLICY__', (RESOURCES / 'tasks/check-output.json').read_text().strip())
     return source.replace('# ORBIT_TASK_UNIT_STATE', (RESOURCES / 'tasks/unit-state.py').read_text())
 
 

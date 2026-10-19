@@ -236,8 +236,11 @@ final readonly class TaskConsultation
             return true;
         }
 
-        $reasons = array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures);
-        $this->requestAssistance($task, $group, ($failedCheck === null ? 'Checks still failed after the reminder. ' : 'The handoff check failed '.$checkFailures.' times in a row. ').implode(' ', $reasons));
+        $reasons = array_map(static fn (TaskRubricItem $item): string => $item->assistanceReason ?? $item->reminder, $failures);
+        $reason = $failedCheck !== null
+            ? 'The handoff check failed '.$checkFailures.' times in a row; see check #'.$failedCheck->id.' for its output.'
+            : 'Checks still failed after the reminder. '.implode(' ', $reasons);
+        $this->requestAssistance($task, $group, $reason);
 
         return true;
     }

@@ -91,6 +91,7 @@ def assemble(files):
 
     for file in files:
         content = file.read_text()
+        content = content.replace('__ORBIT_TASK_CHECK_OUTPUT_POLICY__', (RESOURCES / 'tasks/check-output.json').read_text().strip())
         content = content if content.endswith('\n') else content + '\n'
         if UNIT_MARKER in content.splitlines():
             if content.splitlines().count(UNIT_MARKER) != 1:

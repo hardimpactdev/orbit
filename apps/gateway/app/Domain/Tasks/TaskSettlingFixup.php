@@ -23,6 +23,7 @@ final readonly class TaskSettlingFixup
         public string $title,
         public string $brief,
         public array $deliverables,
+        public ?TaskPullRequestCheck $check = null,
     ) {}
 
     /** The base ref of a conflict fixup, or null when this fixup repairs a check. */
@@ -66,10 +67,16 @@ final readonly class TaskSettlingFixup
                 title: mb_substr('Fix '.$check->name, 0, 160),
                 brief: 'Check '.$check->name.' failed'.($check->url !== null ? ': '.$check->url : '').'. Do not rebase and do not force-push.',
                 deliverables: $deliverables,
+                check: $check,
             );
         }
 
         return $plans;
+    }
+
+    public function withCheckOutput(string $output): self
+    {
+        return new self($this->identity, $this->title, $this->brief."\n\n".$output, $this->deliverables, $this->check);
     }
 
     /** A per-account cap identity; source review IDs do not reset that identity. */

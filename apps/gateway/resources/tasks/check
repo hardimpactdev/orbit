@@ -45,8 +45,7 @@ import traceback
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 RESULT = os.path.join(DIRECTORY, 'check.json')
 LOG = os.path.join(DIRECTORY, 'check.log')
-OUTPUT_TAIL = 16384
-COMMAND_OUTPUT_TAIL = 4096
+OUTPUT_WINDOW_BYTES = json.loads('__ORBIT_TASK_CHECK_OUTPUT_POLICY__')['raw_window_bytes']
 # The log shows at most this much of a setup step's command: a Gateway-owned step carries its payload in the command.
 SETUP_COMMAND_LOG = 4096
 DELIVERABLE_RESULTS = os.path.join(DIRECTORY, 'deliverables')
@@ -556,7 +555,7 @@ def run_base(command, cwd, log, timeout):
         code = process.returncode
         CHILD_PROCESS = None
         log.write(output)
-        return code, output[-COMMAND_OUTPUT_TAIL:].decode('utf-8', errors='replace'), False
+        return code, output_records(output), False
     except subprocess.TimeoutExpired as timeout_error:
         stop_child_process()
         try:
@@ -567,7 +566,7 @@ def run_base(command, cwd, log, timeout):
             output = timeout_error.output or b''
         log.write(output)
         log.write(f'Base command timed out after {timeout} seconds.\n'.encode())
-        return None, output[-COMMAND_OUTPUT_TAIL:].decode('utf-8', errors='replace'), True
+        return None, output_records(output), True
 
 
 def copy_dependencies(checkout, scratch):
@@ -692,10 +691,7 @@ def verify_deliverables(checkout, head, tree, deliverables, log):
         base = base_run(checkout, spec.get('start'), command, log) if command.get('fails_on_base') is True else {}
         capture = os.path.join(DELIVERABLE_RESULTS, command['id'] + '.log')
         exit_code = run_logged(['bash', '-lc', command['command']], directory, log, capture)
-        with open(capture, 'rb') as output:
-            output.seek(0, os.SEEK_END)
-            output.seek(max(0, output.tell() - COMMAND_OUTPUT_TAIL))
-            tail = output.read().decode('utf-8', errors='replace')
+        tail = output_tail(path=capture)
         result = {'exit_code': exit_code, 'output': tail}
         result.update(base)
         evidence['commands'][command['id']] = result
@@ -821,14 +817,44 @@ def write_check_result(result, path=None):
     os.replace(temporary, path)
 
 
+def output_records(output):
+    """Keep the same line and orphan-PEM boundaries as TaskCheckOutputBuilder.rawWindow."""
+    output = output.decode('utf-8', errors='replace').encode('utf-8')
+    start = max(0, len(output) - OUTPUT_WINDOW_BYTES)
+    if start > 0 and output[start - 1:start] != b'\n':
+        newline = output.find(b'\n', start)
+        start = start if newline == -1 else newline + 1
+    window = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', output[start:])
+    window = re.sub(rb'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ', b'', window, flags=re.M)
+    opened = False
+    safe_start = 0
+    for marker in re.finditer(rb'-----(BEGIN|END) [A-Z0-9 ]+-----', window):
+        if marker.group(1) == b'BEGIN':
+            opened = True
+        else:
+            if not opened:
+                safe_start = marker.end()
+            opened = False
+    return window[safe_start:].decode('utf-8', errors='ignore')
+
+
 def output_tail(start=0, path=None):
     path = path or LOG
     if not os.path.exists(path):
         return ''
     with open(path, 'rb') as log:
-        log.seek(0, os.SEEK_END)
-        log.seek(max(start, log.tell() - OUTPUT_TAIL))
-        return log.read().decode('utf-8', errors='replace')
+        size = os.fstat(log.fileno()).st_size - start
+        log.seek(max(start, start + size - OUTPUT_WINDOW_BYTES - 1))
+        return output_records(log.read())
+
+
+def print_status(status):
+    """Each record keeps its own tail; no record is dropped for a larger sibling."""
+    result = status.get('result') or {}
+    failure_output = result.pop('failure_output', None)
+    if failure_output is not None:
+        status['output'] = output_records(failure_output.encode())
+    print(json.dumps(status))
 
 
 def managed_run(pid, started, run_id=''):
@@ -921,11 +947,11 @@ def status(pid, started, run_id='', checkout=None):
                              'failure_output': 'The workspace changed after the check result was written.'})
             data['managed_terminal_snapshot'] = True
             write_check_result(data, result_path)
-        print(json.dumps({'state': 'finished', 'result': data, 'output': data.get('failure_output', output_tail(data.get('setup_output_start') or 0, log_path))}))
+        print_status({'state': 'finished', 'result': data, 'output': '' if 'failure_output' in data else output_tail(data.get('setup_output_start') or 0, log_path)})
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:
-        print(json.dumps({'state': 'lost', 'output': output_tail(path=log_path)}))
+        print_status({'state': 'lost', 'output': output_tail(path=log_path)})
 
 
 def cancel(pid, started, run_id=''):

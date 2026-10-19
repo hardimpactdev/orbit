@@ -907,7 +907,7 @@ it('reminds three failed handoffs and asks for assistance on the fourth', functi
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
-        ->and($group->fresh()?->assistance_reason)->toStartWith('The handoff check failed 4 times in a row.')
+        ->and($group->fresh()?->assistance_reason)->toBe('The handoff check failed 4 times in a row; see check #'.TaskCheck::query()->latest('id')->firstOrFail()->id.' for its output.')
         ->and($group->tasks()->sole()->assistance_kind)->toBe(AssistanceKind::Failure)
         ->and($dispatcher->commands)->toHaveCount(3)
         ->and(TaskCheck::query()->count())->toBe(4);

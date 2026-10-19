@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
@@ -147,6 +148,8 @@ function tmpdir_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskChec
 
 function tmpdir_remove(string $path): bool
 {
+    $script = test()->directory.'/check.py';
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
     $probe = new Process([
         'python3', '-c', <<<'PYTHON'
 import importlib.machinery, importlib.util, sys
@@ -155,7 +158,7 @@ check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check',
 loader.exec_module(check)
 sys.exit(0 if check.remove_allocated_check_tmpdir(sys.argv[2]) else 1)
 PYTHON,
-        resource_path('tasks/check'),
+        $script,
         $path,
     ]);
 

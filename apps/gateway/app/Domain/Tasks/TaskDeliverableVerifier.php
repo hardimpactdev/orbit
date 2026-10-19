@@ -33,7 +33,7 @@ final readonly class TaskDeliverableVerifier
      * @param  list<TaskDeliverable>  $deliverables
      * @return list<string>
      */
-    public static function failures(array $deliverables, ?TaskDeliverableEvidence $evidence): array
+    public static function failures(array $deliverables, ?TaskDeliverableEvidence $evidence, TaskCheckOutputBuilder $outputBuilder): array
     {
         $checked = array_values(array_filter($deliverables, static fn (TaskDeliverable $deliverable): bool => $deliverable->type !== TaskDeliverableType::Review));
         if ($checked === []) {
@@ -47,7 +47,7 @@ final readonly class TaskDeliverableVerifier
         foreach ($checked as $deliverable) {
             $reason = match ($deliverable->type) {
                 TaskDeliverableType::File => self::file($deliverable, $evidence),
-                default => self::command($deliverable, $evidence),
+                default => self::command($deliverable, $evidence, $outputBuilder),
             };
             if ($reason !== null) {
                 $failures[] = "{$deliverable->id} ({$deliverable->type->value}): {$reason}";
@@ -81,7 +81,7 @@ final readonly class TaskDeliverableVerifier
         return 'the diff '.self::describe($matches[0]).", but the deliverable needs {$pattern} ".($deliverable->change === 'created' ? 'created' : 'modified').'.';
     }
 
-    private static function command(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence): ?string
+    private static function command(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence, TaskCheckOutputBuilder $outputBuilder): ?string
     {
         $run = $evidence->commands[$deliverable->id] ?? null;
         $where = '`'.$deliverable->command.'` in '.(TaskDeliverable::relative($deliverable->directory) ?: '.');
@@ -89,7 +89,7 @@ final readonly class TaskDeliverableVerifier
             return "Orbit's check did not run {$where}.";
         }
         if ($run['exit_code'] !== 0) {
-            return "{$where} exited with {$run['exit_code']}. The end of its output:\n\n```\n".rtrim($run['output'])."\n```\n";
+            return "{$where} exited with {$run['exit_code']}. The end of its output:\n\n".$outputBuilder->build($run['output'])."\n";
         }
         if ($deliverable->fails_on_base) {
             if (($run['base_started'] ?? false) !== true) {

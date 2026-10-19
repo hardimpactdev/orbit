@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskPromptGroup;
@@ -27,7 +28,7 @@ final class RenderTaskPromptCommand extends Command
     #[\Override]
     protected $description = 'Render a task agent prompt from JSON on standard input';
 
-    public function handle(): int
+    public function handle(TaskCheckOutputBuilder $outputBuilder): int
     {
         try {
             $input = $this->decode((string) file_get_contents('php://stdin'));
@@ -40,7 +41,7 @@ final class RenderTaskPromptCommand extends Command
             $this->validateRoleFields($input, $role);
             $prompt = match ($role) {
                 'implementer' => TaskPromptRenderer::implementer($this->group($input), $this->subtask($input), $this->threadId($input)),
-                'reviewer', 'reviewer-continue' => $this->reviewPacket($input, $role === 'reviewer-continue'),
+                'reviewer', 'reviewer-continue' => $this->reviewPacket($input, $role === 'reviewer-continue', $outputBuilder),
             };
 
             $this->rawLine(json_encode([
@@ -141,7 +142,7 @@ final class RenderTaskPromptCommand extends Command
     }
 
     /** @param array<string, mixed> $data */
-    private function reviewPacket(array $data, bool $continued): string
+    private function reviewPacket(array $data, bool $continued, TaskCheckOutputBuilder $outputBuilder): string
     {
         $group = $this->group($data);
         $subtask = $this->subtask($data);
@@ -212,6 +213,7 @@ final class RenderTaskPromptCommand extends Command
         $diff = $this->diff($diffBody, $untracked, $this->boolean($packet, 'diff_available', 'review_packet'));
 
         return new TaskReviewPacket(
+            outputBuilder: $outputBuilder,
             groupBrief: $group->brief,
             subtaskId: $subtask->id,
             subtaskTitle: $subtask->title,

@@ -594,6 +594,8 @@ final readonly class HttpGitHubApi implements GitHubApi
             status: $this->text($row['status'] ?? null),
             headSha: $this->text($row['head_sha'] ?? null),
             appSlug: is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null,
+            outputTitle: is_array($row['output'] ?? null) ? $this->text($row['output']['title'] ?? null) : null,
+            outputSummary: is_array($row['output'] ?? null) ? $this->text($row['output']['summary'] ?? null) : null,
         );
     }
 

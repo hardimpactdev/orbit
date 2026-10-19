@@ -10,6 +10,7 @@ use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -20,6 +21,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManagerException;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -825,7 +827,7 @@ describe('deliverable evidence', function (): void {
             ->and(file_exists($checkout.'/ignored/other-ran'))->toBe($exit === 0);
         if ($exit === 0) {
             expect($evidence->commands['project-check'])->toBe(['exit_code' => 0, 'output' => "project-output\n"])
-                ->and(TaskDeliverableVerifier::failures([$deliverable], $evidence))->toBe([]);
+                ->and(TaskDeliverableVerifier::failures([$deliverable], $evidence, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([]);
         } else {
             expect($reading->deliverables)->toBeNull();
         }
@@ -979,7 +981,7 @@ describe('deliverable evidence', function (): void {
             'diff' => [],
             'commands' => ['missing-base-command' => $reading->deliverables['commands']['missing-base-command']],
         ]);
-        expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->not->toBe([]);
+        expect(TaskDeliverableVerifier::failures([$deliverable], $evidence, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->not->toBe([]);
     });
 
     it('does not substitute HEAD when the resolved start commit is unavailable', function (): void {
@@ -1032,7 +1034,9 @@ print(json.dumps({
     'group_exists': module.process_group_exists(process_group),
 }))
 PYTHON);
-        $probe = new Process(['python3', $harness, resource_path('tasks/check'), $this->directory], base_path());
+        $script = $this->directory.'/check.py';
+        file_put_contents($script, TaskUnitProgram::read('tasks/check'));
+        $probe = new Process(['python3', $harness, $script, $this->directory], base_path());
         $result = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
         expect($result['code'])->toBeNull()
@@ -1152,7 +1156,7 @@ describe('fails_on_base command deliverables', function (): void {
             'commands' => ['base-repro' => ['base_started' => true, 'base_exit_code' => 0, 'base_output' => '', 'exit_code' => 0, 'output' => '']],
         ]);
 
-        expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->toBe([
+        expect(TaskDeliverableVerifier::failures([$deliverable], $evidence, new TaskCheckOutputBuilder(new CommandActivityInputSanitizer)))->toBe([
             'base-repro (command): `bash tests/check.sh` in app also exited 0 on the start commit, so it does not reproduce the failure.',
         ]);
     });
@@ -1680,3 +1684,192 @@ it('keeps a lost managed supervisor fenced until its surviving descendant termin
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
 });
+
+it('keeps secret-bearing output records intact until the shared builder runs at the real transport boundary', function (string $source, int $secretBytes, string $format): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $secret = match ($format) {
+        'quoted' => "'TOKEN=\"' + ('s' * 64 + '\\n') * ".intdiv($secretBytes, 64)." + '\"'",
+        'pem' => "'-----BEGIN PRIVATE KEY-----\\n' + ('s' * 64 + '\\n') * ".intdiv($secretBytes, 64)." + '-----END PRIVATE KEY-----'",
+        default => "'TOKEN=' + 's' * ".$secretBytes,
+    };
+    $command = 'python3 -c '.escapeshellarg('print('.$secret.'); print("Last line"); raise SystemExit(1)');
+    $head = (new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput();
+    $deliverables = $source === 'check' ? null : [
+        'start' => trim($head),
+        'commands' => [['id' => 'probe', 'command' => $command, 'directory' => '.', 'fails_on_base' => $source === 'base', 'paths' => ['uncommitted.php']]],
+    ];
+
+    $process = $runner->start($instance, $source === 'check' ? $command : null, deliverables: $deliverables);
+    $reading = check_runner_wait($runner, $instance, $process);
+    $output = match ($source) {
+        'check' => $reading->output,
+        'base' => $reading->deliverables['commands']['probe']['base_output'] ?? '',
+        default => $reading->deliverables['commands']['probe']['output'] ?? '',
+    };
+    $builder = app(TaskCheckOutputBuilder::class);
+    $excerpt = $builder->build($builder->tail($output));
+
+    expect($reading->state)->toBe('finished')
+        ->and($excerpt)->not->toContain('ssss')
+        ->and($excerpt)->toContain('[REDACTED]', 'Last line');
+})->with(['check', 'command', 'base'])->with([40_000, 100_000])->with(['assignment', 'quoted', 'pem']);
+
+it('uses the same safe raw window in the check transport and PHP builder', function (string $end): void {
+    $pem = $end !== '';
+    $raw = $pem
+        ? str_repeat("ordinary line\n", 5000).str_repeat("-----BEGIN PRIVATE KEY-----\n".str_repeat(str_repeat('A', 64)."\n", 50).$end."\n", 40)."FAILED last line\n"
+        : str_repeat('x', 200_000).'FAILED last line';
+    $pythonRaw = $pem
+        ? "'ordinary line\\n' * 5000 + ('-----BEGIN PRIVATE KEY-----\\n' + ('A' * 64 + '\\n') * 50 + ".json_encode($end, JSON_THROW_ON_ERROR)." + '\\n') * 40 + 'FAILED last line\\n'"
+        : "'x' * 200000 + 'FAILED last line'";
+    $setup = "import json\nraw = ".$pythonRaw."\n".<<<'PYTHON'
+        with open(check.RESULT, 'w') as result:
+            json.dump({'failure_output': raw, 'deliverables': {'commands': {'probe': {'output': check.output_records(raw.encode()), 'base_output': check.output_records(raw.encode())}}}}, result)
+        PYTHON;
+
+    $status = check_runner_status(alive: false, meanwhile: $setup);
+
+    $builder = app(TaskCheckOutputBuilder::class);
+    $expected = $builder->tail($raw);
+    foreach ([$status['output'], ...array_values($status['result']['deliverables']['commands']['probe'])] as $output) {
+        expect(strlen($output))->toBeLessThanOrEqual(100 * 1024);
+        expect($builder->tail($output))->toBe($expected)->toContain('FAILED last line');
+        expect($builder->tail($output))->not->toContain('AAAA');
+    }
+})->with(['many PEM keys' => ['-----END PRIVATE KEY-----'], 'ANSI END' => ["-----END PRIVATE\x1b[0m KEY-----"], 'oversized last line' => ['']]);
+
+it('windows only the raw failure record when printing status', function (): void {
+    $setup = <<<'PYTHON'
+        import json
+        original = check.output_records
+        def once(raw):
+            if raw != b'raw failure':
+                raise AssertionError('Status windowed an already bounded record')
+            return original(raw)
+        check.output_records = once
+        with open(check.RESULT, 'w') as result:
+            json.dump({'failure_output': 'raw failure', 'deliverables': {'commands': {'probe': {'output': 'bounded command', 'base_output': 'bounded base'}}}}, result)
+        PYTHON;
+
+    $status = check_runner_status(alive: false, meanwhile: $setup);
+
+    expect($status['output'])->toBe('raw failure')
+        ->and($status['result'])->not->toHaveKey('failure_output')
+        ->and($status['result']['deliverables']['commands']['probe'])->toBe([
+            'output' => 'bounded command', 'base_output' => 'bounded base',
+        ]);
+});
+
+it('keeps the failing tail of ordinary large output through the real check transport', function (string $source, int $lines): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = 'python3 -c '.escapeshellarg('print("PASS ordinary test output expected 200 got 200\\n" * '.$lines.'); print("FAILED expected 200, got 500"); raise SystemExit(1)');
+    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $mainCheck = $source === 'check';
+    $deliverables = $mainCheck ? null : [
+        'start' => $head,
+        'commands' => [['id' => 'probe', 'command' => $command, 'directory' => '.', 'fails_on_base' => $source === 'base', 'paths' => ['uncommitted.php']]],
+    ];
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $mainCheck ? $command : null, deliverables: $deliverables));
+    $output = match ($source) {
+        'check' => $reading->output,
+        'base' => $reading->deliverables['commands']['probe']['base_output'] ?? '',
+        default => $reading->deliverables['commands']['probe']['output'] ?? '',
+    };
+    $builder = app(TaskCheckOutputBuilder::class);
+    $excerpt = $builder->build($builder->tail($output));
+
+    expect($reading->state)->toBe('finished')
+        ->and(strlen($output))->toBeGreaterThan(64 * 1024)
+        ->and(strlen($output))->toBeLessThanOrEqual(100 * 1024)
+        ->and($excerpt)->toContain('FAILED expected 200, got 500')
+        ->and(strlen($excerpt))->toBeLessThan(33_000);
+})->with([
+    '76 KB check' => ['check', 1_800],
+    '106 KB check' => ['check', 2_600],
+    '7 MB check' => ['check', 150_000],
+    '76 KB command' => ['command', 1_800],
+    '106 KB command' => ['command', 2_600],
+    '76 KB base run' => ['base', 1_800],
+    '106 KB base run' => ['base', 2_600],
+]);
+
+it('keeps the failing tail without a stale log path above the status transport budget', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = 'python3 -c '.escapeshellarg('print("x" * (8 * 1024 * 1024)); print("TOKEN=" + "s" * 40000); print("FAILED last line"); raise SystemExit(1)');
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $command));
+
+    expect($reading->state)->toBe('finished')
+        ->and(app(TaskCheckOutputBuilder::class)->build(app(TaskCheckOutputBuilder::class)->tail($reading->output)))->toContain('FAILED last line', 'TOKEN=[REDACTED]')
+        ->not->toContain('ssss')->not->toContain('check.log');
+});
+
+it('keeps every command and base tail within the real status transport budget', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $local = new LocalShellSshExecutor;
+    $local->environment['HOME'] = $this->directory.'/home';
+    $transport = new class($local) implements SshExecutor
+    {
+        public function __construct(private readonly LocalShellSshExecutor $local) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $result = $this->local->execute($connection, $command);
+            expect(strlen($result->stdout))->toBeLessThanOrEqual($command->maxOutputBytes ?? 65_536);
+
+            return $result;
+        }
+    };
+    $runner = check_runner($transport);
+    $command = 'python3 -c '.escapeshellarg('print("START"); print("ordinary output\\n" * 65536); print("END")');
+    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $commands = array_map(static fn (int $id): array => [
+        'id' => 'probe-'.$id, 'command' => $command, 'directory' => '.', 'fails_on_base' => true, 'paths' => ['uncommitted.php'],
+    ], range(1, 5));
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: ['start' => $head, 'commands' => $commands]));
+
+    expect($reading->state)->toBe('finished')
+        ->and($reading->deliverables['commands'] ?? [])->toHaveCount(5);
+    foreach ($reading->deliverables['commands'] as $record) {
+        foreach (['output', 'base_output'] as $key) {
+            expect($record[$key])->toEndWith("END\n")
+                ->not->toContain($checkout.'/.git/orbit/')
+                ->and(strlen($record[$key]))->toBeLessThanOrEqual(100 * 1024);
+        }
+    }
+});
+
+it('keeps each tail when combined records exceed the status transport budget', function (bool $escaped): void {
+    $setup = $escaped ? <<<'PYTHON'
+        import json
+        output = ('\x01\n' * (512 * 1024)) + 'FAILED last line\n'
+        commands = {f'probe-{i}': {'output': check.output_records(output.encode()), 'base_output': check.output_records(output.encode())} for i in range(5)}
+        with open(check.RESULT, 'w') as result:
+            json.dump({'failure_output': output, 'deliverables': {'commands': commands}}, result)
+        PYTHON : <<<'PYTHON'
+        import json
+        with open(check.RESULT, 'w') as result:
+            json.dump({'failure_output': ('check line\n' * 500000) + 'FAILED last line\n',
+                       'deliverables': {'commands': {'probe': {'output': check.output_records((('command line\n' * 400000) + 'FAILED last line\n').encode())}}}}, result)
+        PYTHON;
+
+    $status = check_runner_status(alive: false, meanwhile: $setup);
+
+    expect($status['output'])->toContain('FAILED last line')
+        ->and(strlen(json_encode($status, JSON_THROW_ON_ERROR)))->toBeLessThan(8 * 1024 * 1024);
+    foreach ($status['result']['deliverables']['commands'] as $record) {
+        foreach ($record as $output) {
+            expect($output)->toContain('FAILED last line')
+                ->and(strlen($output))->toBeLessThanOrEqual(100 * 1024);
+        }
+    }
+})->with(['five plus four MiB' => [false], 'eleven JSON-escaped records' => [true]]);

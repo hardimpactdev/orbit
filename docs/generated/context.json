@@ -2246,6 +2246,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
