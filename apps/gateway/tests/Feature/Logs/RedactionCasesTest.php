@@ -14,6 +14,11 @@ use Tests\Support\RedactionPcreFailure;
 
 describe('the redaction cases shared with the Node agent', function (): void {
     it('redact every case exactly as the Node agent does', function (): void {
+        $expectedJit = getenv('PCRE_JIT');
+        if ($expectedJit !== false) {
+            expect(ini_get('pcre.jit'))->toBe($expectedJit);
+        }
+
         $path = dirname(base_path()).'/agent/tests/redaction_cases.json';
 
         expect(is_file($path))->toBeTrue();
