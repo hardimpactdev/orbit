@@ -95,8 +95,10 @@ it('keeps the promoted image until a cold candidate succeeds and promotes', func
     $host = currentRecipeClaimHost();
     $build = TaskVmRecipeImages::ready($host->id);
     $candidate = $build->replicate();
+    $images = $build->images;
+    $images['base']['fingerprint'] = str_repeat('b', 64);
     $candidate->fill(['recipe_generation' => 2, 'state' => $state, 'promoted_at' => $promoted ? now() : null,
-        'image_fingerprint' => str_repeat('b', 64)]);
+        'image_fingerprint' => str_repeat('b', 64), 'images' => $images]);
     $candidate->save();
 
     $vm = app(AllocateTaskVmAction::class)->execute(currentRecipeClaimGroup());
