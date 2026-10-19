@@ -89,8 +89,8 @@ final readonly class TaskVmHostAudit
     }
 
     /**
-     * The host's `ready` or `parked` rows with no group, or with a `completed` or `cancelled` group, unchanged for
-     * {@see self::RecordMinutes}, counted from the later change of the row and its group. A `failed` group is still open: its VM stays for the operator.
+     * The host's `ready` or `parked` rows with no group, or with an ended group, unchanged for
+     * {@see self::RecordMinutes}, counted from the later change of the row and its group.
      *
      * @return list<TaskVm>
      */
@@ -103,7 +103,7 @@ final readonly class TaskVmHostAudit
             ->where('updated_at', '<=', $cutoff)
             ->with('group')->orderBy('id')->get()
             ->filter(static fn (TaskVm $vm): bool => $vm->group === null
-                || (in_array($vm->group->groupStatus(), [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+                || (in_array($vm->group->groupStatus(), TaskGroupStatus::endedStatuses(), true)
                     && $vm->group->getAttribute('updated_at') instanceof Carbon && $vm->group->getAttribute('updated_at')->lessThanOrEqualTo($cutoff)))
             ->all());
     }

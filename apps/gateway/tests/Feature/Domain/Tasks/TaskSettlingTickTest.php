@@ -1310,8 +1310,6 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
         'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
         'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
     ]);
-    if ($orphaned) {
-    }
     tick_running_agents(fetchFails: true);
     $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null]);
     tick_watch_pulls([tick_open_pull(['mergeable' => false]), $merged, $merged], ['abc123' => []]);

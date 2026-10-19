@@ -475,11 +475,11 @@ describe('strays', function (): void {
             ->and(tvm_stray_doctor($this->beast))->toBe($expected);
     });
 
-    it('reports ready and parked rows without an open group after an hour, but never failed groups', function (): void {
+    it('reports ready and parked rows without an open group after an hour, including failed groups', function (): void {
         $noGroup = tvm_stray_vm($this->beast, TaskVmState::Ready, null, 61, '10.44.0.129');
         $completed = tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::Completed, 90, '10.44.0.130');
         tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Cancelled, 30, '10.44.0.131');
-        tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Failed, 600, '10.44.0.132');
+        $failed = tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Failed, 600, '10.44.0.132');
         tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::WaitingForReview, 600, '10.44.0.133');
         $this->incus->instances = ['10.44.0.7' => TaskVm::query()->pluck('name')->all()];
         Log::spy();
@@ -489,6 +489,7 @@ describe('strays', function (): void {
         expect(tvm_stray_doctor($this->beast))->toBe([
             ['node.task_vm_stray_record', $noGroup->name.' ready'],
             ['node.task_vm_stray_record', $completed->name.' parked'],
+            ['node.task_vm_stray_record', $failed->name.' ready'],
         ]);
         Log::shouldHaveReceived('warning')->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $noGroup->id, 'name' => $noGroup->name, 'state' => 'ready', 'group_id' => null])->once();
         Log::shouldHaveReceived('warning')->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $completed->id, 'name' => $completed->name, 'state' => 'parked', 'group_id' => $completed->group_id])->once();

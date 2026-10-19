@@ -793,6 +793,7 @@ describe('the abandoned workspace sweep', function (): void {
             'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
         ]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
         $removed = claim_hol_recording_remover();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)

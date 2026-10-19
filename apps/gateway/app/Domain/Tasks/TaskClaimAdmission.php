@@ -351,7 +351,7 @@ final readonly class TaskClaimAdmission
 
     private static function hasEnded(Task $group): bool
     {
-        return in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true);
+        return in_array($group->status, TaskGroupStatus::endedStatuses(), true);
     }
 
     private function holdsReservation(Task $group, Task $reserved): bool

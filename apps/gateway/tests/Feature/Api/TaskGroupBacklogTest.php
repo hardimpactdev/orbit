@@ -188,6 +188,7 @@ it('refuses to move a group the scheduler has claimed', function (TaskGroupStatu
     'running' => TaskGroupStatus::Running,
     'settling' => TaskGroupStatus::Settling,
     'completed' => TaskGroupStatus::Completed,
+    'failed' => TaskGroupStatus::Failed,
 ]);
 
 it('accepts only backlog and todo as a status', function (string $status): void {
@@ -387,7 +388,7 @@ it('keeps refusing a brief change on a started todo subtask of a running group',
     expect(Task::query()->findOrFail($group['tasks'][0]['id'])->brief)->toBe('Started brief.');
 });
 
-it('refuses subtask creation in completed and cancelled groups', function (TaskGroupStatus $status): void {
+it('refuses subtask creation in ended groups', function (TaskGroupStatus $status): void {
     $group = backlog_group($this, ['One']);
     Task::topLevel()->whereKey($group['id'])->update(['status' => $status->value]);
 
@@ -400,7 +401,7 @@ it('refuses subtask creation in completed and cancelled groups', function (TaskG
         ->assertJsonPath('error.code', 'tasks.group_closed');
 
     expect(Task::query()->where('parent_id', $group['id'])->count())->toBe(1);
-})->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
+})->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
 it('returns 404 for a subtask of another group', function (): void {
     $group = backlog_group($this);

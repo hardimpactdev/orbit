@@ -36,13 +36,23 @@ enum TaskGroupStatus: string
     }
 
     /**
-     * A cancelled or completed group, or one whose pull request may have merged and awaits completion.
+     * A group that has completed, failed, or been cancelled.
      *
      * @return list<self>
      */
     public static function endedStatuses(): array
     {
-        return [self::Completed, self::Cancelled, ...self::awaitingCompletion()];
+        return [self::Completed, self::Failed, self::Cancelled];
+    }
+
+    /**
+     * Statuses whose failed workspace removal the scheduler can retry.
+     *
+     * @return list<self>
+     */
+    public static function workspaceRemovalStatuses(): array
+    {
+        return [...self::endedStatuses(), ...self::awaitingCompletion()];
     }
 
     public function isActive(): bool
