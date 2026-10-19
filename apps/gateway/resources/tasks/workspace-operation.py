@@ -65,6 +65,9 @@ def all_managed_units_terminal(operations, check_runs):
                 return False
             name = item['unit']
             state = unit_state(name)
+            # systemd unloads a unit only after its last process exits.
+            if state is not None and state.get('LoadState') == 'not-found':
+                continue
             if state is None or state.get('LoadState') != 'loaded':
                 return False
             operation_match = re.fullmatch(r'orbit-workspace-operation-([a-f0-9]{32})\.service', name)
