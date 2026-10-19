@@ -58,8 +58,8 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
-use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -1200,7 +1200,6 @@ describe(DestroyTaskVm::class, function (): void {
         $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha);
         app()->instance(TaskPullRequestPublisher::class, $publisher);
         $scheduler = app(TaskScheduler::class);
-        app()->instance(ProjectLifecycleRunner::class, Mockery::mock(app(ProjectLifecycleRunner::class))->shouldReceive('run')->andReturn(true)->getMock());
         Queue::fake();
         $this->provider->observation = null;
 
