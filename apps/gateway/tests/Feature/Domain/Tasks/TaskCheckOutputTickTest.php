@@ -26,6 +26,7 @@ use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\RedactionPcreFailure;
 
 beforeEach(function (): void {
     tick_bind_defaults();
@@ -48,22 +49,14 @@ it('withholds check output and logs a sanitized error after a real PCRE failure'
         1, str_repeat('a', 40), str_repeat('b', 40), [],
         "password: do-not-store-password\nTOKEN=do-not-store-token\nFAILED last line",
     );
-    $jit = ini_set('pcre.jit', '0');
-    $recursion = ini_set('pcre.recursion_limit', '5');
-
-    try {
-        $runner->recordReading($check, $reading);
-    } finally {
-        ini_set('pcre.recursion_limit', $recursion);
-        ini_set('pcre.jit', $jit);
-    }
+    RedactionPcreFailure::run(fn () => $runner->recordReading($check, $reading));
 
     expect($check->fresh()->output)->toBe('Output withheld: redaction failed.');
     $buffer->flush();
     rewind($stream);
     $record = stream_get_contents($stream);
     fclose($stream);
-    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_RECURSION_LIMIT_ERROR)
+    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_BACKTRACK_LIMIT_ERROR)
         ->not->toContain('do-not-store-password')
         ->not->toContain('do-not-store-token');
     $signal = app(ProblemLogParser::class)->signal($record);
