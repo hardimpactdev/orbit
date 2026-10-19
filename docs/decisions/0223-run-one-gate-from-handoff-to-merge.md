@@ -14,6 +14,8 @@ In progress.
 
 Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles): about 17 hours of main-merge gates in five days, and the implementer's duplicate run, are deleted. No principle exception is proposed.
 
+Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/nckrtl/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/nckrtl/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
+
 Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chooses the subtask start commit, from the data below.
 
 ## Context
@@ -111,6 +113,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 
 ### 2. CI on the merge ref is the only integration gate
 
+- Nick chose full suites at merge and fast TIA in the task loop, rather than a declaration selector; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) defines the checks.
 - Orbit runs no Project check on a main merge. `TaskCheckKind::BaseMerge` goes.
 - Orbit does not merge main before a final review. The first final review still starts at the merge base of `HEAD` and `origin/{default branch}`, so it reviews the whole branch.
 - Orbit does not merge main before a push.
@@ -172,7 +175,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 - One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs; the same file holds stage time budgets in `stage_budgets`.
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
 - For a PHP project, the file holds `composer validate --strict`, `composer check`, and the architecture tests, which both gates run. It also holds `composer test:affected`, which only the local gate runs.
-- The test step of a PHP project in CI stays in `ci.yml`, because CI runs sharded Pest with its own TIA plan.
+- The test step of a PHP project in CI stays in `ci.yml`, because CI runs full sharded Pest on pull requests and selects tests separately on main.
 - `bin/review-check` reads it.
 - The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
 - Path triggers select only the checks that TIA cannot narrow: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
@@ -184,7 +187,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 - The architecture-test step runs `bin/review-check architecture PROJECT`.
 - CI path conditions read the triggers from the file.
 - CI runs every check that the file marks for CI.
-- Runner choice, Gateway shards, process counts, and the TIA plan stay in `ci.yml`, because only CI has runners.
+- Runner choice, Gateway shards, process counts, and the main TIA plan stay in `ci.yml`, because only CI has runners.
 - The E2E configuration test checks that every check job in `ci.yml` runs its commands through `bin/review-check`. It no longer holds its own copy.
 
 ### 5. One cache transport: Git refs
@@ -307,6 +310,8 @@ Each step is one small pull request. Docs change with the code in the same pull 
 8. **Close.** Read the converted reviewed-commit rows joined to their task groups and prove that no converted row belongs to an open group; then delete `inherited_approval_sha` and its `TaskPublication` branch. Absorb this ADR into the pages below and retire it.
 
 ## Rejected alternatives
+
+- **A declaration-data selector.** Runtime coverage cannot reliably link all consumers of enum cases, constants, property or parameter defaults and attribute arguments. The [audit fixture](/solutions/test-impact-declaration-data) passed TIA while the full suite had four failures. Widening declaration changes would affect 496 of 580 Gateway app changes (85.5%, about 86%) in the measured main first-parent window. Full PR suites provide the merge gate while the task loop keeps fast feedback.
 
 - **Keep the main-merge gate, with a test base.** It still repeats CI on a slower machine, after CI already tests the same merged tree on four runners. The parent classification and the repair and retry states stay.
 - **Keep the implementer's full gate and skip Orbit's.** Orbit cannot trust an agent's report of its own run. The deterministic check must run where Orbit records it.

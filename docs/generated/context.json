@@ -3097,6 +3097,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/solutions/test-impact-declaration-data.md",
+            "title": "Test impact analysis misses declaration data",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/tech-stack.md",
             "title": "Tech stack",
             "kind": "product",

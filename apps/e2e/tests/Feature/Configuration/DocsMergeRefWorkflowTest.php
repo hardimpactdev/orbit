@@ -85,10 +85,9 @@ it('requires the Docs merge result to succeed on PRs while allowing it to be ski
     $environment = array_fill_keys(array_keys($step['env']), 'success');
     $environment['EVENT'] = $event;
     $environment['DOCS_MERGE_REF_RESULT'] = $result;
-    // The Gateway plan runs on pull requests only and chose one Gateway test job, so the shards were skipped.
+    // Every PR requires the full Gateway shards; other events do not run the PR plan or shards.
     $environment['GATEWAY_PLAN_RESULT'] = $event === 'pull_request' ? 'success' : 'skipped';
-    $environment['GATEWAY_SHARDED'] = $event === 'pull_request' ? 'false' : '';
-    $environment['GATEWAY_SHARDS_RESULT'] = 'skipped';
+    $environment['GATEWAY_SHARDS_RESULT'] = $event === 'pull_request' ? 'success' : 'skipped';
     $process = new Process(['bash', '-e', '-c', $step['run']], env: $environment);
     $process->run();
 
@@ -108,27 +107,27 @@ it('provisions Gateway and web dependencies before the Docs merge proof can run'
     $steps = array_column($job['steps'], null, 'name');
     $names = array_keys($steps);
 
-    expect(array_column($job['strategy']['matrix']['include'], 'directory'))->toContain('apps/docs');
-    expect($job['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
+    expect(array_column($job['strategy']['matrix']['project'], 'directory'))->toContain('apps/docs');
+    expect($job['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
     expect($steps['Install dependencies'])->toMatchArray([
-        'if' => "matrix.directory != 'apps/e2e'",
+        'if' => "matrix.project.directory != 'apps/e2e'",
         'run' => 'composer install --no-interaction --prefer-dist',
     ]);
     expect($steps['Set up Bun for package cache and generated merge tests'])->toMatchArray([
-        'if' => "matrix.directory == 'apps/gateway' || matrix.directory == 'apps/docs'",
+        'if' => "matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs'",
         'uses' => 'oven-sh/setup-bun@v2',
         'with' => ['bun-version' => '1.4.2'],
     ]);
     expect($steps['Install generated merge proof dependencies'])->toBe([
         'name' => 'Install generated merge proof dependencies',
-        'if' => "matrix.directory == 'apps/docs'",
+        'if' => "matrix.project.directory == 'apps/docs'",
         'working-directory' => '.',
         'run' => "(cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)\n"
             ."(cd apps/web && bun install --frozen-lockfile)\n",
     ]);
     expect(array_search('Set up Bun for package cache and generated merge tests', $names, true))
         ->toBeLessThan(array_search('Install generated merge proof dependencies', $names, true));
-    foreach (['Run affected tests', 'Run full test suite and refresh Pest TIA graph', 'Run subprocess tests'] as $name) {
+    foreach (['Run full PR test suite', 'Run full test suite and refresh Pest TIA graph', 'Run subprocess tests'] as $name) {
         expect($names)->toContain($name);
         expect(array_search('Install generated merge proof dependencies', $names, true))
             ->toBeLessThan(array_search($name, $names, true));
