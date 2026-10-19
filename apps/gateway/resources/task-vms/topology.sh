@@ -53,7 +53,16 @@ case ${1-} in
                 result='{"state":"stale"}'
             fi
             printf '%s\n' "$result"
-        elif systemctl is-active --quiet "$unit_prefix$2.service"; then
+        elif python3 - "$unit_prefix$2.service" <<'PYTHON'
+# ORBIT_TASK_UNIT_STATE
+import sys
+
+state = unit_state(sys.argv[1])
+# Missing or unreadable evidence cannot prove a queued start has ended.
+sys.exit(0 if state is not None and state.get('LoadState') == 'loaded'
+         and empty_terminal(sys.argv[1], state=state) is None else 1)
+PYTHON
+        then
             echo '{"state":"running"}'
         else
             echo '{"state":"lost"}'

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\TaskVms\TaskVmScripts;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
@@ -24,7 +24,10 @@ function topology_script(array $arguments, array $environment = []): array
     }
     $stubs = [
         "{$work}/bin/sudo" => '[ "$1" = -n ] && shift; exec "$@"',
-        "{$work}/bin/systemctl" => 'exit "${SYSTEMCTL_EXIT:-3}"',
+        "{$work}/bin/systemctl" => <<<'SH'
+            [ "${SYSTEMCTL_EXIT:-3}" = 0 ] || exit 3
+            printf 'LoadState=loaded\nActiveState=%s\nSubState=%s\nJob=%s\nControlGroup=\n' "${UNIT_ACTIVE:-active}" "${UNIT_SUB:-running}" "${UNIT_JOB:-}"
+            SH,
         "{$work}/checkout/bin/e2e-topology-host-setup" => 'echo "host-setup $*" >> "$WORK/harness.log"; printf "%b" "${HOST_SETUP_OUTPUT:-}"; exit "${HOST_SETUP_EXIT:-0}"',
         "{$work}/checkout/bin/e2e-topology" => <<<'SH'
             echo "acquire $*" >> "$WORK/harness.log"
@@ -37,7 +40,7 @@ function topology_script(array $arguments, array $environment = []): array
         chmod($path, 0755);
     }
     $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-    $process = new Process([$bash, TaskVmScripts::path('topology.sh'), ...str_replace('__CHECKOUT__', "{$work}/checkout", $arguments)]);
+    $process = new Process([$bash, '-c', TaskUnitProgram::read('task-vms/topology.sh'), 'topology', ...str_replace('__CHECKOUT__', "{$work}/checkout", $arguments)]);
     $process->setEnv(['PATH' => "{$work}/bin:".getenv('PATH'), 'HOME' => "{$work}/home", 'WORK' => $work, ...$environment]);
     $process->run();
 
@@ -133,11 +136,14 @@ describe('the topology status', function () use ($runArguments): void {
             ->and($stale->getOutput())->toBe("{\"state\":\"stale\"}\n");
     });
 
-    it('reports a run without a result as running while its unit is active, else as lost', function (): void {
-        [$running] = topology_script(['status', 'abcdef0123456789'], ['SYSTEMCTL_EXIT' => '0']);
+    it('reports a run without a result as running while its unit is active or queued, else as lost', function (array $unit): void {
+        [$running] = topology_script(['status', 'abcdef0123456789'], ['SYSTEMCTL_EXIT' => '0', ...$unit]);
         [$lost] = topology_script(['status', 'abcdef0123456789']);
 
         expect($running->getOutput())->toBe("{\"state\":\"running\"}\n")
             ->and($lost->getOutput())->toBe("{\"state\":\"lost\"}\n");
-    });
+    })->with([
+        'active unit' => [[]],
+        'queued start' => [['UNIT_ACTIVE' => 'inactive', 'UNIT_SUB' => 'dead', 'UNIT_JOB' => '45809123']],
+    ]);
 });

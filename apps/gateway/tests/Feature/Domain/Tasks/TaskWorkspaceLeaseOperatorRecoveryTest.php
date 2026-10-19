@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -105,7 +106,7 @@ function operator_recovery_holder(): array
 function operator_protocol(string $mode, string $operation, string $binding, array $arguments = []): CommandResult
 {
     return test()->transport->execute(test()->connection, new RemoteCommand([
-        'python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+        'python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
         $mode, $operation, $binding, '0', ...$arguments,
     ]));
 }
@@ -315,7 +316,7 @@ it('requires a reason and validates exact operator lease and gateway identifiers
 
 it('binds reboot interruption to the exact run even when pid and start ticks repeat', function (): void {
     $script = $this->receiptHome.'/check';
-    copy(resource_path('tasks/check'), $script);
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
     $program = <<<'PYTHON'
 import contextlib, importlib.machinery, importlib.util, io, json, os, sys
 loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
@@ -368,30 +369,78 @@ it('records a rebooted exact check as failed and releases only with uncertain at
         ->and($lease->fresh()->getAttribute('causality_uncertain'))->toBeTrue();
 });
 
-it('never stops a native live managed unit to manufacture operator quiescence', function (): void {
+it('never stops a native live managed unit to manufacture operator quiescence', function (bool $queued): void {
     $operation = bin2hex(random_bytes(16));
     $binding = bin2hex(random_bytes(32));
     $fifo = $this->receiptHome.'/finish';
     posix_mkfifo($fifo, 0o600);
-    $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
-    $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
-        'bash', '-c', 'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo],
-        cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
-    $process->start();
+    $finish = fopen($fifo, 'r+');
+    $environment = ['HOME' => $this->receiptHome];
+    $barrier = null;
+    $process = null;
+    $barrierUnit = 'orbit-test-lease-start-'.$operation.'.service';
     try {
-        expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
+        if ($queued) {
+            $start = $this->receiptHome.'/start';
+            posix_mkfifo($start, 0o600);
+            $barrier = new Process(['sudo', '-n', 'systemd-run', '--quiet', '--pipe', '--unit='.$barrierUnit,
+                '--property=Type=oneshot', 'bash', '-c', 'printf "blocked\n"; read -r value < "$1"', '--', $start]);
+            $barrier->start();
+            expect($barrier->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'blocked')))->toBeTrue();
+            file_put_contents($this->receiptHome.'/bin/sudo', str_replace('BARRIER_UNIT', $barrierUnit, <<<'SH'
+#!/bin/sh
+if test "$2" = systemd-run; then
+    shift 2
+    exec /usr/bin/sudo -n systemd-run --property=After=BARRIER_UNIT "$@"
+fi
+exec /usr/bin/sudo "$@"
+SH));
+            // Hold the native start job behind the oneshot, then release it only after observing its queued state.
+            file_put_contents($this->receiptHome.'/bin/systemctl', <<<'SH'
+#!/bin/sh
+state=$(/usr/bin/systemctl "$@") || exit "$?"
+if printf '%s\n' "$state" | grep -qx 'LoadState=loaded' &&
+   printf '%s\n' "$state" | grep -qx 'ActiveState=inactive' &&
+   printf '%s\n' "$state" | grep -qx 'ExecMainCode=0' &&
+   ! test -f "$HOME/queued-state"; then
+    printf '%s\n' "$state" > "$HOME/queued-state"
+    printf 'start\n' > "$HOME/start"
+fi
+printf '%s\n' "$state"
+SH);
+            chmod($this->receiptHome.'/bin/sudo', 0o700);
+            $environment['PATH'] = $this->receiptHome.'/bin:'.getenv('PATH');
+        }
+        $program = TaskUnitProgram::read('tasks/workspace-operation.py');
+        $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
+            'bash', '-c', 'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo],
+            cwd: $this->receiptHome, env: $environment);
+        $process->start();
+        $ready = $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready'));
+        if ($queued) {
+            expect(file_get_contents($this->receiptHome.'/queued-state'))->toContain('LoadState=loaded', 'ActiveState=inactive', 'SubState=dead', 'ExecMainCode=0', 'ExecMainStatus=0');
+        }
+        expect($ready)->toBeTrue();
         $probe = new Process(['python3', '-c', $program, 'seal', str_repeat('0', 32), $binding, '0', json_encode([$operation], JSON_THROW_ON_ERROR)],
             env: ['HOME' => $this->receiptHome]);
         $data = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         expect($data['state'])->toBe('running')->and($process->isRunning())->toBeTrue();
-        file_put_contents($fifo, "finish\n");
+        fwrite($finish, "finish\n");
         $process->wait();
         expect($process->getExitCode())->toBe(0)->and($process->getOutput())->toContain('completed');
+        $receipt = json_decode(file_get_contents($this->receiptHome.'/.local/state/orbit/task-workspace-operations/'.$operation), true, flags: JSON_THROW_ON_ERROR);
+        expect($receipt['state'])->toBe('finished')->and($receipt['exit_code'])->toBe(0);
     } finally {
-        $process->stop(0);
+        fclose($finish);
+        $process?->stop(0);
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-workspace-operation-'.$operation.'.service']))->run();
+        if ($barrier !== null) {
+            (new Process(['sudo', '-n', 'systemctl', 'stop', $barrierUnit]))->run();
+            $barrier->stop(0);
+        }
+        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-workspace-operation-'.$operation.'.service', $barrierUnit]))->run();
     }
-})->group('privileged');
+})->with(['immediate start' => false, 'queued start' => true])->group('privileged');
 
 it('does not let a stale historical check completion release a successor with reused pid and ticks', function (): void {
     $leases = app(TaskWorkspaceLease::class);
@@ -469,7 +518,7 @@ it('proves native quiescence for only the target binding and check run without s
         expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
         $targetBinding = $relevant ? $binding : bin2hex(random_bytes(32));
         $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
-        $probe = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+        $probe = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
             'seal', str_repeat('0', 32), $targetBinding, '0', '[]', json_encode($checkRuns, JSON_THROW_ON_ERROR)],
             env: ['HOME' => $this->receiptHome]);
         $data = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -489,7 +538,7 @@ it('preserves literal command arguments through native workspace supervision', f
     $operation = bin2hex(random_bytes(16));
     $binding = bin2hex(random_bytes(32));
     $arguments = ['${HOME}', '$HOME', '$$', '${1-}', 'space and "quotes"', "line\nnext", '%n', ''];
-    $program = file_get_contents(resource_path('tasks/workspace-operation.py'));
+    $program = TaskUnitProgram::read('tasks/workspace-operation.py');
     $process = new Process(['python3', '-c', $program, 'run', $operation, $binding, '0',
         'python3', '-c', 'import json, sys; print(json.dumps(sys.argv[1:]))', ...$arguments],
         cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
@@ -509,8 +558,8 @@ it('preserves literal command arguments through native workspace supervision', f
 it('reads topology status through native workspace supervision without expanding the shell program', function (): void {
     $operation = bin2hex(random_bytes(16));
     $binding = bin2hex(random_bytes(32));
-    $process = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
-        'run', $operation, $binding, '0', 'bash', '-c', file_get_contents(resource_path('task-vms/topology.sh')),
+    $process = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
+        'run', $operation, $binding, '0', 'bash', '-c', TaskUnitProgram::read('task-vms/topology.sh'),
         'topology', 'status', 'abcdef0123456789'], cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
 
     try {

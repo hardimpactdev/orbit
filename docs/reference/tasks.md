@@ -592,6 +592,8 @@ Separate guards for reviewers, checks, and main merges leave other actor pairs f
 
 System services retain completion evidence after an SSH client or Gateway process dies. Orbit verifies that the exact service is terminal and its cgroup is empty before it releases ownership. A raw SSH exit status or a missing supervisor PID cannot prove that descendants stopped. Atomic tombstones exclude requests that reach the remote host after recovery. Missing or unreadable evidence keeps the fence; no elapsed-time expiry or blind release command bypasses it.
 
+A garbage-collected unit (`not-found`) with a `running` receipt keeps the lease held until an operator releases it, because Orbit cannot distinguish it from a unit that has not yet been created.
+
 Task work requires systemd 250 or newer, cgroup v2, and the managed account's passwordless sudo prerequisite. Unsupported supervision refuses remote operations. The remote receipt stores operation identity and completion, without commands, credentials, or output. Lease and operation history survives task or Instance removal because an older review can still refer to it. Operations restrict deletion of their lease; a retention policy must preserve referenced baselines before history can be removed.
 
 ## Task workspace
