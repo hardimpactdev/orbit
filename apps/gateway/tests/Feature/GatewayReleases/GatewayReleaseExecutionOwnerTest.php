@@ -77,7 +77,15 @@ it('accepts the supported owner with matching private configuration and refuses 
                 expect(Artisan::call('gateway:release:stage', ['commit' => str_repeat('a', 40)]))->toBe(1);
                 expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
                 clearstatcache(true, $path);
-                expect(lstat($path))->toBe($stat);
+                $after = lstat($path);
+                // Path resolution can update symlink atime, which lstat reports under both keys.
+                unset($stat[8], $stat['atime'], $after[8], $after['atime']);
+                expect($after)->toBe($stat);
+                if ($fault === 'symlink') {
+                    expect(readlink($path))->toBe($database);
+                } else {
+                    expect(file_get_contents($path))->toBe('preserved');
+                }
                 expect($this->pipeline->snapshots)->toBe(0);
                 expect($this->pipeline->steps)->toBe([]);
                 unlink($path);
