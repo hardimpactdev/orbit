@@ -29,6 +29,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\VpToolManager;
@@ -142,7 +143,7 @@ function check_runner_status(bool $alive, string $meanwhile = ''): array
 {
     $script = test()->directory.'/script/check';
     File::ensureDirectoryExists(dirname($script));
-    File::copy(resource_path('tasks/check'), $script);
+    File::put($script, TaskUnitProgram::read('tasks/check'));
     $status = new Process(['python3', '-c', <<<'PYTHON'
         import importlib.machinery, importlib.util, sys
         loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
@@ -776,7 +777,7 @@ it('reports a check that writes its result and exits while status looks it up as
 it('keeps a check running while the wall-clock start time of its process moves, as on a freshly booted VM', function (): void {
     $script = test()->directory.'/script/check';
     File::ensureDirectoryExists(dirname($script));
-    File::copy(resource_path('tasks/check'), $script);
+    File::put($script, TaskUnitProgram::read('tasks/check'));
     $status = new Process(['python3', '-c', <<<'PYTHON'
         import importlib.machinery, importlib.util, json, subprocess, sys
         loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
@@ -1225,7 +1226,7 @@ it('writes a failed result when the check script hits an unexpected error', func
     $checkout = check_runner_checkout('echo ok');
     $script = test()->directory.'/script/check';
     File::ensureDirectoryExists(dirname($script));
-    File::copy(resource_path('tasks/check'), $script);
+    File::put($script, TaskUnitProgram::read('tasks/check'));
     $deliverables = test()->directory.'/not-a-file';
     File::ensureDirectoryExists($deliverables);
     $ran = new Process(['python3', '-c', <<<'PYTHON'
@@ -1305,7 +1306,7 @@ it('runs no project command when start and run omit the command file, and still 
     $checkout = check_runner_checkout('touch composer-check-ran');
     $script = test()->directory.'/helper/check';
     File::ensureDirectoryExists(dirname($script));
-    File::copy(resource_path('tasks/check'), $script);
+    File::put($script, TaskUnitProgram::read('tasks/check'));
     $deliverables = test()->directory.'/deliverables.json';
     file_put_contents($deliverables, json_encode([
         'start' => null,

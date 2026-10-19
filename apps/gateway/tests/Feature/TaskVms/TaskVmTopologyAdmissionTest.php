@@ -16,6 +16,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Node;
 use App\Models\Project;
@@ -105,7 +106,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
         ->and($vm?->topology_run)->toMatch('/\A[0-9a-f]{16}\z/')
         ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '10.44.0.0/24'])
         ->and($start->arguments[0])->toBe('bash')
-        ->and($start->input)->toBe(file_get_contents(resource_path('task-vms/topology.sh')));
+        ->and($start->input)->toBe(TaskUnitProgram::read('task-vms/topology.sh'));
 
     expect(fn () => $admission->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, 'preparing the topology');
     $admission->prepare($this->group, $subtask);

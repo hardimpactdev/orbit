@@ -59,10 +59,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     private function startPrepared(Instance $instance, ?string $command, array $setup, ?array $deliverables, bool &$dispatched, ?string $runId): TaskCheckProcess
     {
         $instance->refresh();
-        $script = file_get_contents(resource_path('tasks/check'));
-        if ($script === false) {
-            throw new TaskCheckException('The check script is missing from the Gateway.');
-        }
+        $script = TaskUnitProgram::read('tasks/check');
         foreach ($setup as &$step) {
             if (GatewaySetupSteps::owns($step['command'])) {
                 try {
@@ -112,10 +109,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
     {
-        $script = file_get_contents(resource_path('tasks/check'));
-        if (! is_string($script)) {
-            throw new TaskCheckException('The check script is unavailable.');
-        }
+        $script = TaskUnitProgram::read('tasks/check');
         $data = $this->run($instance, [$runId], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
             'check_python "$dir/check" recover-start "$2"');
         if (($data['run_id'] ?? null) !== $runId) {
@@ -154,20 +148,14 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     private function statusProtocol(): string
     {
-        $script = file_get_contents(resource_path('tasks/check'));
-        if (! is_string($script)) {
-            throw new TaskCheckException('The check script is unavailable.');
-        }
+        $script = TaskUnitProgram::read('tasks/check');
 
         return TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]);
     }
 
     public function snapshot(Instance $instance): TaskWorkspaceSnapshot
     {
-        $script = file_get_contents(resource_path('tasks/check'));
-        if ($script === false) {
-            throw new TaskCheckException('The check script is missing from the Gateway.');
-        }
+        $script = TaskUnitProgram::read('tasks/check');
         $data = $this->run($instance, [], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
             'check_python "$dir/check" snapshot "$checkout"', 'The task workspace could not be reached for the workspace tree.', 'The workspace tree could not be read.');
         $head = $data['head'] ?? null;
