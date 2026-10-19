@@ -32,7 +32,7 @@ final readonly class RecipeImageBuilds
         }
         $this->chain->recoverSubmissions();
         $builds = $rebuild ? $this->coldRebuild($recipe) : [];
-        $generation = $rebuild ? (int) DB::table('task_vm_image_recipe')->where('id', 1)->value('generation') : $this->desire($recipe);
+        $generation = $rebuild ? (int) DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail()->generation : $this->desire($recipe);
         foreach ($this->settings->hosts as $host) {
             if ($rebuild || ($hostId !== null && $host->nodeId !== $hostId)) {
                 continue;
