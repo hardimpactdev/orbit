@@ -97,8 +97,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             port: $data->wireguardPort,
             endpoint: $data->wireguardEndpoint,
             dnsServer: $data->dnsServer,
-            dnsThroughWireGuard: true,
-            usesDefaultDnsResolver: true,
             domain: $data->domain,
             serverAddress: "{$data->wireguardIp}/{$prefixLength}",
             peerAddress: "{$data->wireguardIp}/{$prefixLength}",

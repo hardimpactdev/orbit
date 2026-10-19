@@ -43,6 +43,12 @@ describe('POST /api/v1/nodes', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
     });
 
+    it('returns 422 for a DNS override outside the WireGuard subnet', function (string $address): void {
+        $this->postJson('/api/v1/nodes', ['name' => 'peer', 'public_ssh_host' => '192.0.2.3', 'dns_server_override' => $address])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect(Node::query()->where('name', 'peer')->exists())->toBeFalse();
+    })->with(['10.0.0.2', '2001:db8::53', '10.44.0.0', '10.44.0.255']);
+
     it('fails provisioning at step agent', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger
         {
@@ -118,7 +124,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'lan_ip' => '10.0.0.3',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
-                'dns_server_override' => '10.0.0.1',
+                'dns_server_override' => '10.44.0.53',
             ])
             ->assertCreated()
             ->assertJsonPath('data.name', 'app-dev')
@@ -131,7 +137,7 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('data.lan_ip', '10.0.0.3')
             ->assertJsonMissingPath('data.wireguard_address')
             ->assertJsonPath('data.wireguard_endpoint_override', '10.0.0.2:51820')
-            ->assertJsonPath('data.dns_server_override', '10.0.0.1')
+            ->assertJsonPath('data.dns_server_override', '10.44.0.53')
             ->assertJsonPath('data.roles.0', 'app-dev')
             ->assertJsonPath('meta.request_id', $requestId);
 

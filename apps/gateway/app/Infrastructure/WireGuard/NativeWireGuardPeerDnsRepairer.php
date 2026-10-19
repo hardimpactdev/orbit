@@ -25,18 +25,8 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
     public function repair(Node $node): void
     {
         $vpn = $this->configuration->forPeer($node);
-        $domains = $vpn->usesDefaultDnsResolver
-            ? ['.']
-            : array_values(array_unique(array_filter([$vpn->domain, $node->tld])));
-
-        if ($domains === []) {
-            throw new NodeProvisioningException(
-                step: 'wireguard-peer-state',
-                errorCode: 'vpn.peer_dns_state_unsupported',
-                message: "The existing WireGuard DNS state is not repairable on node [{$node->name}].",
-            );
-        }
-        $dnsMode = $vpn->dnsThroughWireGuard ? 'wireguard' : 'underlay';
+        $domains = app(PeerDnsPolicy::class)->domains($node);
+        $dnsMode = 'wireguard';
         $result = $this->ssh->execute(
             new SshConnection(
                 host: (string) $node->wireguard_ip,
@@ -114,7 +104,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
             ],
             input: str_replace(
                 '__TRANSACTION_OWNER__',
-                'dns-repair-v1',
+                'dns-repair-v2',
                 <<<'BASH_WRAP'
                 dns_mode=$1
                 dns_server=$2
@@ -123,13 +113,13 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 dns_domains=("$@")
 
                 case "$dns_mode" in
-                    wireguard|underlay) ;;
+                    wireguard) ;;
                     *) exit 43 ;;
                 esac
                 if [[ ! "$dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
                     || [[ ! "$expected_public_key" =~ ^[A-Za-z0-9+/]{43}=$ ]] \
                     || [ "${#dns_domains[@]}" -lt 1 ] \
-                    || [ "${#dns_domains[@]}" -gt 2 ]; then
+                    || [ "${#dns_domains[@]}" -gt 512 ]; then
                     exit 43
                 fi
                 for dns_domain in "${dns_domains[@]}"; do
@@ -171,7 +161,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                     if [[ ! "$parsed_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
                         || [[ ! "$parsed_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
                         || [ "${#parsed_dns_domains[@]}" -lt 1 ] \
-                        || [ "${#parsed_dns_domains[@]}" -gt 2 ]; then
+                        || [ "${#parsed_dns_domains[@]}" -gt 1024 ]; then
                         return 1
                     fi
                     for parsed_dns_domain in "${parsed_dns_domains[@]}"; do
@@ -232,6 +222,9 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                         return 1
                     fi
 
+                    old_default_route=$(sed -n '2p' "$transaction")
+                    case "$old_default_route" in yes|no) ;; *) return 1 ;; esac
+                    resolvectl default-route orbit "$old_default_route" || return 1
                     cleanup_transaction
                 }
 
@@ -265,16 +258,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 old_dns_server=$parsed_dns_server
                 old_dns_domains=("${parsed_dns_domains[@]}")
 
-                if [ "$dns_mode" = wireguard ]; then
-                    dns_link=orbit
-                else
-                    route=$(ip -o route get "$dns_server")
-                    if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then
-                        dns_link=${BASH_REMATCH[1]}
-                    else
-                        exit 43
-                    fi
-                fi
+                dns_link=orbit
 
                 resolvectl_domains=()
                 persistent_domains=()
@@ -289,15 +273,26 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                     dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${persistent_domains[*]}"$'\n'
                 fi
 
+                if [ "$old_dns_link" != orbit ] && [ "$dns_link" = orbit ]; then
+                    network_state=$(timeout --kill-after=5s 10s networkctl --no-legend --no-pager --full list "$old_dns_link") || exit 43
+                    read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
+                    [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ] || exit 43
+                fi
+
                 hook_pattern="~^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+\\r?\\n(?:^PreDown = (?:resolvectl revert %i|resolvectl dns %i ''; resolvectl domain %i '')\\r?\\n?)?~m"
                 if ! php -r '
-                    [$live, $candidate, $mode, $replacement, $pattern] = array_slice($argv, 1);
+                    [$live, $candidate, $mode, $replacement, $pattern, $oldLink] = array_slice($argv, 1);
                     $configuration = file_get_contents($live);
                     if (!is_string($configuration)) { exit(1); }
                     $updated = preg_replace_callback($pattern, static fn (): string => $replacement, $configuration, -1, $count);
-                    if (!is_string($updated) || $count > 1 || ($mode === "wireguard" && $count !== 1)) { exit(1); }
+                    if (!is_string($updated) || $count > 1) { exit(1); }
+                    if ($mode === "wireguard" && $count === 0) {
+                        if ($oldLink === "orbit") { exit(1); }
+                        $updated = preg_replace_callback("/^\\[Interface\\]\\r?$/m", static fn ($match): string => $match[0]."\n".$replacement, $configuration, -1, $headers);
+                        if (!is_string($updated) || $headers !== 1) { exit(1); }
+                    }
                     if (file_put_contents($candidate, $updated) === false) { exit(1); }
-                ' -- "$live" "$candidate" "$dns_mode" "$dns_hooks" "$hook_pattern"; then
+                ' -- "$live" "$candidate" "$dns_mode" "$dns_hooks" "$hook_pattern" "$old_dns_link"; then
                     rm -f -- "$candidate" "$dns_state_candidate"
                     exit 44
                 fi
@@ -314,9 +309,12 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 chown root:root "$dns_state_candidate"
                 chmod 0600 "$dns_state_candidate"
 
+                old_default_route=$(resolvectl default-route orbit)
+                old_default_route=${old_default_route##*: }
+                case "$old_default_route" in yes|no) ;; *) exit 43 ;; esac
                 if ! cp -a --no-dereference -- "$live" "$backup" \
                     || ! cp -a --no-dereference -- "$dns_state" "$dns_state_backup" \
-                    || ! printf '%s\n' "$transaction_owner" > "$transaction_candidate" \
+                    || ! printf '%s\n%s\n' "$transaction_owner" "$old_default_route" > "$transaction_candidate" \
                     || ! chmod 0600 "$transaction_candidate" \
                     || ! mv -fT -- "$transaction_candidate" "$transaction"; then
                     rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" \
@@ -341,9 +339,33 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 if [ "$old_dns_link" != "$dns_link" ]; then
                     resolvectl dns "$old_dns_link" '' || apply_failed=1
                     resolvectl domain "$old_dns_link" '' || apply_failed=1
+                    if [ "$old_dns_link" != orbit ] && [ "$dns_link" = orbit ]; then
+                        timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link" || apply_failed=1
+                        provider_usable=0
+                        provider_deadline=$((SECONDS + 15))
+                        while [ "$apply_failed" = 0 ] && [ "$SECONDS" -lt "$provider_deadline" ]; do
+                            network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
+                            read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
+                            provider_dns=$(timeout --kill-after=2s 2s resolvectl dns "$old_dns_link") || provider_dns=
+                            provider_dns=${provider_dns#*: }
+                            if [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
+                                for provider_server in $provider_dns; do
+                                    if [[ "$provider_server" =~ ^[A-Fa-f0-9:.]+$ ]] && [ "$provider_server" != "$old_dns_server" ] && [ "$provider_server" != "$dns_server" ]; then
+                                        case "$provider_server" in 127.*|::1) ;; *) provider_usable=1 ;; esac
+                                    fi
+                                done
+                            fi
+                            [ "$provider_usable" = 0 ] || break
+                            sleep 0.25
+                        done
+                        [ "$provider_usable" = 1 ] || apply_failed=1
+                    fi
                 fi
                 resolvectl dns "$dns_link" "$dns_server" || apply_failed=1
                 resolvectl domain "$dns_link" "${resolvectl_domains[@]}" || apply_failed=1
+                if [ "$dns_link" = orbit ]; then
+                    resolvectl default-route orbit no || apply_failed=1
+                fi
                 if ! active_public_key=$(wg show orbit public-key) \
                     || [ "$active_public_key" != "$expected_public_key" ]; then
                     apply_failed=1

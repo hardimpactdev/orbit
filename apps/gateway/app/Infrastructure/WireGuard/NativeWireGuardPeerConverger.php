@@ -30,8 +30,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
         SshConnection $connection,
         bool $rolelessOperator = false,
     ): void {
+        $vpn = $this->configuration->forPeer($node);
+        $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
         $publicKey = $this->preflightPeerKey($node, $connection, 'new');
-        $this->publishPeer($node, $connection, $publicKey, 'finalize', $rolelessOperator);
+        $this->publishPeer($node, $connection, $publicKey, 'finalize', $rolelessOperator, $vpn, $domains);
     }
 
     public function convergeRecoverably(
@@ -40,11 +42,13 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
         Closure $completion,
         bool $rolelessOperator = false,
     ): void {
+        $vpn = $this->configuration->forPeer($node);
+        $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
         $publicKey = $this->preflightPeerKey($node, $connection, 'recoverable');
         $finalize = $connection;
 
         try {
-            $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator);
+            $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator, $vpn, $domains);
             // The completion may hand back the verified tunnel connection: role
             // convergence closes the public path that published the peer before
             // the transaction can be finalized.
@@ -120,21 +124,22 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
         return $publicKey;
     }
 
+    /** @param non-empty-list<string> $domains */
     private function publishPeer(
         Node $node,
         SshConnection $connection,
         string $publicKey,
         string $transactionMode,
         bool $rolelessOperator,
+        VpnConfiguration $vpn,
+        array $domains,
     ): void {
         $retainTransaction = $transactionMode === 'retain';
-        $vpn = $this->configuration->forPeer($node);
         $this->configuration->assignPeerKey($node, $publicKey);
         $this->gatewayPeers->converge($node);
         $dnsMode = match (true) {
             $rolelessOperator => 'operator',
-            $vpn->dnsThroughWireGuard => 'wireguard',
-            default => 'underlay',
+            default => 'wireguard',
         };
         $gatewayWireGuardAddress = explode(
             separator: '/',
@@ -145,11 +150,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
             $vpn,
             $publicKey,
             [
-                'appDevTld' => $node->tld,
                 'transactionMode' => $transactionMode,
                 'dnsMode' => $dnsMode,
                 'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
-                'dnsPolicy' => $vpn->usesDefaultDnsResolver ? 'default' : 'split',
+                'domains' => $domains,
             ],
         );
         $peerResult = $this->ssh->execute($connection, $peerCommand);
@@ -484,16 +488,15 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     }
 
     /**
-     * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string, dnsPolicy: string}  $dns
+     * @param  array{transactionMode: string, dnsMode: string, operatorDns: string, domains: non-empty-list<string>}  $dns
      */
     private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
     {
         [
-            'appDevTld' => $appDevTld,
             'transactionMode' => $transactionMode,
             'dnsMode' => $dnsMode,
             'operatorDns' => $operatorDns,
-            'dnsPolicy' => $dnsPolicy,
+            'domains' => $domains,
         ] = $dns;
         $cleanup = $transactionMode === 'retain'
             ? 'trap - EXIT'
@@ -520,11 +523,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $vpn->subnet,
                 $vpn->dnsServer,
                 $vpn->domain,
-                $appDevTld ?? '',
                 $dnsMode,
                 $operatorDns,
                 $transactionMode,
-                $dnsPolicy,
+                ...$domains,
             ],
             input: str_replace(
                 '__FINALIZE__',
@@ -537,11 +539,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     subnet=$5
                     dns_server=$6
                     domain=$7
-                    app_dev_tld=$8
-                    dns_mode=$9
-                    operator_dns=${10}
-                    transaction_mode=${11}
-                    dns_policy=${12}
+                    dns_mode=$8
+                    operator_dns=$9
+                    transaction_mode=${10}
+                    dns_domains=("${@:11}")
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -627,13 +628,15 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     trap cleanup_finalize EXIT
 
                     case "$dns_mode:$transaction_mode" in
-                        operator:retain|operator:finalize|wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
+                        operator:retain|operator:finalize|wireguard:retain|wireguard:finalize) ;;
                         *) exit 43 ;;
                     esac
-                    case "$dns_policy" in
-                        default|split) ;;
-                        *) exit 43 ;;
-                    esac
+                    if [ "${#dns_domains[@]}" -lt 1 ] || [ "${#dns_domains[@]}" -gt 512 ]; then
+                        exit 43
+                    fi
+                    for dns_domain in "${dns_domains[@]}"; do
+                        [[ "$dns_domain" =~ ^[A-Za-z0-9.-]+$ ]] && [ "$dns_domain" != . ] || exit 43
+                    done
                     if [ -e "$backup" ] || [ -L "$backup" ] \
                         || [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ] \
                         || [ -e "$transaction" ] || [ -L "$transaction" ]; then
@@ -691,14 +694,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     printf -v dns_server_escaped '%q' "$dns_server"
                     printf -v operator_dns_escaped '%q' "$operator_dns"
 
-                    if [ "$dns_policy" = default ]; then
-                        dns_domains=(".")
-                    else
-                        dns_domains=("$domain")
-                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
-                            dns_domains+=("$app_dev_tld")
-                        fi
-                    fi
                     dns_domains_escaped=()
                     for dns_domain in "${dns_domains[@]}"; do
                         printf -v dns_domain_escaped '%q' "~$dns_domain"
@@ -830,6 +825,11 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         fi
                         restore_previous || return 1
                     }
+                    if [ "$dns_mode" = wireguard ] && [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
+                        network_state=$(timeout --kill-after=5s 10s networkctl --no-legend --no-pager --full list "$old_dns_link") || exit 43
+                        read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
+                        [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ] || exit 43
+                    fi
                     if ! mv -f -- "$candidate" "$live"; then
                         exit 1
                     fi
@@ -861,29 +861,12 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         exit 1
                     fi
 
+                    if [ "$dns_mode" = wireguard ] && ! resolvectl default-route orbit no; then
+                        restore_after_failure || exit 1
+                        exit 1
+                    fi
                     if [ "$dns_mode" = operator ]; then
                         rm -f -- "$dns_state"
-                    elif [ "$dns_mode" = underlay ]; then
-                        route=$(ip -o route get "$dns_server")
-                        if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then
-                            dns_link=${BASH_REMATCH[1]}
-                        else
-                            echo 'Could not resolve DNS interface.' >&2
-                            restore_after_failure || exit 1
-                            exit 1
-                        fi
-                        if ! resolvectl dns "$dns_link" "$dns_server"; then
-                            restore_after_failure || exit 1
-                            exit 1
-                        fi
-                        resolvectl_domain=()
-                        for dns_domain in "${dns_domains[@]}"; do
-                            resolvectl_domain+=("~$dns_domain")
-                        done
-                        if ! resolvectl domain "$dns_link" "${resolvectl_domain[@]}"; then
-                            restore_after_failure || exit 1
-                            exit 1
-                        fi
                     else
                         dns_link=orbit
                     fi
@@ -892,6 +875,33 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
                             if ! resolvectl dns "$old_dns_link" '' \
                                 || ! resolvectl domain "$old_dns_link" ''; then
+                                restore_after_failure || exit 1
+                                exit 1
+                            fi
+                        fi
+                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
+                            if ! timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link"; then
+                                restore_after_failure || exit 1
+                                exit 1
+                            fi
+                            provider_usable=0
+                            provider_deadline=$((SECONDS + 15))
+                            while [ "$SECONDS" -lt "$provider_deadline" ]; do
+                                network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
+                                read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
+                                provider_dns=$(timeout --kill-after=2s 2s resolvectl dns "$old_dns_link") || provider_dns=
+                                provider_dns=${provider_dns#*: }
+                                if [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
+                                    for provider_server in $provider_dns; do
+                                        if [[ "$provider_server" =~ ^[A-Fa-f0-9:.]+$ ]] && [ "$provider_server" != "$old_dns_server" ] && [ "$provider_server" != "$dns_server" ]; then
+                                            case "$provider_server" in 127.*|::1) ;; *) provider_usable=1 ;; esac
+                                        fi
+                                    done
+                                fi
+                                [ "$provider_usable" = 0 ] || break
+                                sleep 0.25
+                            done
+                            if [ "$provider_usable" != 1 ]; then
                                 restore_after_failure || exit 1
                                 exit 1
                             fi

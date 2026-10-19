@@ -25,6 +25,8 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\WireGuard\PeerDnsInspector;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Database\Eloquent\Collection;
@@ -121,6 +123,20 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
             );
 
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+        }
+        $dnsPolicy = app(PeerDnsPolicy::class);
+        if ($dnsPolicy->manages($node)) {
+            try {
+                $dns = app(PeerDnsInspector::class)->inspect($node);
+                foreach (['policy' => NodeDoctorIssueCode::PrivateDnsPolicyMismatch, 'answers' => NodeDoctorIssueCode::PrivateDnsUnreachable] as $check => $code) {
+                    if (! $dns[$check]) {
+                        $issues[] = new DoctorIssueData($code, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                            $check === 'policy' ? 'Managed private DNS policy does not match.' : 'Private DNS does not return the expected Gateway address.', expected: true, observed: false);
+                    }
+                }
+            } catch (Throwable) {
+                $issues[] = new DoctorIssueData(NodeDoctorIssueCode::PrivateDnsPolicyMismatch, DoctorIssueKind::Drift, 'node', $node->id, $node->name, 'Managed private DNS policy could not be inspected.', expected: true, observed: false);
+            }
         }
         $expectedPlatform = match (strtolower($node->platform)) {
             'linux' => 'linux',

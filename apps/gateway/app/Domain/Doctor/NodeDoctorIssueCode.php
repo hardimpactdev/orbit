@@ -11,6 +11,8 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case SshUnreachable = 'node.ssh_unreachable';
     case PlatformMismatch = 'node.platform_mismatch';
     case ArchitectureMismatch = 'node.architecture_mismatch';
+    case PrivateDnsPolicyMismatch = 'node.private_dns_policy_mismatch';
+    case PrivateDnsUnreachable = 'node.private_dns_unreachable';
     case WireGuardAddressMismatch = 'node.wireguard_ip_mismatch';
     case AgentMissing = 'node.agent_missing';
     case AgentBinaryMismatch = 'node.agent_binary_mismatch';
