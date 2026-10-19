@@ -17,8 +17,6 @@ import runpy
 _budget = runpy.run_path(str(Path(__file__).resolve().parent.parent / "tools/check_budget.py"))
 ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBudget", "lane_count", "lane_weight"))
 
-HANDOFF_CACHE_ENTRIES = 8
-
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
@@ -162,8 +160,8 @@ def handoff_cache(root):
     return Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit-handoff-tia'
 
 
-def publish_handoff_cache(root, directory, tree, head, test_base=None):
-    """Publish one complete entry per tree and retain the active start plus the newest entries."""
+def publish_handoff_cache(root, directory, tree, test_base=None):
+    """Publish one complete entry per tree and retain only the active start and published trees."""
     cached = handoff_cache(root)
     cached.mkdir(parents=True, exist_ok=True)
     entry = cached / tree
@@ -175,21 +173,13 @@ def publish_handoff_cache(root, directory, tree, head, test_base=None):
                 source = directory / 'tia' / project.replace('/', '-')
                 if (source / 'graph.json').is_file():
                     shutil.copytree(source, staged / project)
-            (staged / 'receipt.json').write_text(json.dumps({'tree': tree, 'candidate': head}))
             staged.rename(entry)
     protected = {tree}
     if test_base is not None:
         protected.add(git(root, 'rev-parse', test_base + '^{tree}'))
-    entries = sorted((path for path in cached.iterdir()
-                      if re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', path.name)
-                      and path.is_dir()), key=lambda path: path.stat().st_mtime_ns, reverse=True)
-    retained = protected & {path.name for path in entries}
-    for path in entries:
-        if path.name in retained:
-            continue
-        if len(retained) < HANDOFF_CACHE_ENTRIES:
-            retained.add(path.name)
-        else:
+    for path in cached.iterdir():
+        if (re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', path.name)
+                and path.is_dir() and path.name not in protected):
             shutil.rmtree(path)
 
 
@@ -261,17 +251,10 @@ def prepare_tia_directory(root, project, destination, test_base=None):
     selector = 'graph'
     if test_base is not None:
         tree = git(root, 'rev-parse', test_base + '^{tree}')
-        cached = handoff_cache(root) / tree
-        try:
-            metadata = json.loads((cached / 'receipt.json').read_text())
-            candidate = cached / project
-            if (isinstance(metadata, dict)
-                    and metadata.get('tree') == tree
-                    and (candidate / 'graph.json').is_file()):
-                source = candidate
-                selector = test_base
-        except (OSError, json.JSONDecodeError):
-            pass
+        candidate = handoff_cache(root) / tree / project
+        if (candidate / 'graph.json').is_file():
+            source = candidate
+            selector = test_base
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
         shutil.copytree(source, destination, dirs_exist_ok=True)
@@ -513,7 +496,7 @@ def main():
     report['passed'] = report['unchanged'] and bool(report['checks']) and all(
         check['exit_code'] == 0 for check in report['checks'])
     if report['passed']:
-        publish_handoff_cache(root, directory, tree, head, test_base)
+        publish_handoff_cache(root, directory, tree, test_base)
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')

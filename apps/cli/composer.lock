@@ -7808,12 +7808,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf"
+                "reference": "1a7b957430bf47f46f075a516f30d02218704b57"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
-                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
+                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/1a7b957430bf47f46f075a516f30d02218704b57",
+                "reference": "1a7b957430bf47f46f075a516f30d02218704b57",
                 "shasum": ""
             },
             "require": {
@@ -7925,7 +7925,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-19T08:56:01+00:00"
+            "time": "2026-10-19T18:04:59+00:00"
         },
         {
             "name": "nikic/php-parser",
