@@ -17,7 +17,9 @@ use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -73,9 +75,7 @@ final readonly class RecipeImageBuildSteps
         }
         try {
             if (in_array($phase, RecipeImagePrograms::Phases, true)) {
-                $this->programs->apply($shell, $recipe, $profile, $phase);
-
-                return true;
+                return $this->programs->poll($this->image->shell($host, $node, $name), $recipe, $profile, $phase, $build->id.':'.$build->attempt);
             }
             switch ($phase) {
                 case 'reset':
@@ -130,6 +130,14 @@ final readonly class RecipeImageBuildSteps
                     throw new TaskVmException('task_vm.image_build_failed', 'Unknown recipe image phase.');
             }
         } catch (Throwable $error) {
+            if ($error instanceof TaskVmException && $error->errorCode === TaskVmError::ImageChannelLost->value) {
+                Log::warning($error->getMessage(), ['build_id' => $build->id, 'phase' => $program]);
+                $entry = array_find($build->steps, static fn (array $entry): bool => $entry['step'] === $step->value && $entry['program'] === $program);
+                if (now()->diffInSeconds(Carbon::parse($entry['started_at'] ?? now()), absolute: true)
+                    <= RecipeImagePrograms::PhaseSeconds + RecipeImagePrograms::ObservationGraceSeconds) {
+                    return false;
+                }
+            }
             $path = IncusGuestShell::recipeLog($profile, $phase);
             $detail = mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 500);
             if ($phase === 'publish') {

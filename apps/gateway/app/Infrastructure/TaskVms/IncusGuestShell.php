@@ -37,19 +37,26 @@ final readonly class IncusGuestShell implements TaskVmGuestShell
 
     public function recordRecipeFailure(string $message): void
     {
-        $this->record(new CommandResult(1, '', $message, 0, false));
+        $this->appendLog('Gateway observation: '.new CommandActivityInputSanitizer()->redactText($message)."\n");
     }
 
     private function record(CommandResult $result): CommandResult
     {
         if ($this->recipeLog !== null) {
             $text = new CommandActivityInputSanitizer()->redactText($result->stdout."\n".$result->stderr);
-            $this->incus->run($this->host, $this->node, ['exec', '--', $this->vm, 'bash', '-ceu',
-                'umask 077; install -d -m 0700 /var/log/orbit/recipe-images; cat >> "$1"; chmod 0600 "$1"', '--', $this->recipeLog],
-                "Exit code [{$result->exitCode}]\n".$text."\n", 30);
+            $this->appendLog("Exit code [{$result->exitCode}]\n".$text."\n");
         }
 
         return $result;
+    }
+
+    private function appendLog(string $text): void
+    {
+        if ($this->recipeLog !== null) {
+            $this->incus->run($this->host, $this->node, ['exec', '--', $this->vm, 'bash', '-ceu',
+                'umask 077; install -d -m 0700 /var/log/orbit/recipe-images; cat >> "$1"; chmod 0600 "$1"', '--', $this->recipeLog],
+                $text, 30);
+        }
     }
 
     public function asUser(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0, ?string $cwd = null): CommandResult

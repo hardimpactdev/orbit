@@ -8,6 +8,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\IncusGuestCall;
+use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
@@ -83,6 +84,9 @@ final class FakeIncusImageHost implements SshExecutor
     public bool $recipeImages = false;
 
     public ?CommandResult $recipeFailure = null;
+
+    /** @var array<string, RecipeImageUnitGuest> */
+    public array $unitGuests = [];
 
     /** @var array<string, string> */
     private array $recipeLogs = [];
@@ -197,6 +201,16 @@ final class FakeIncusImageHost implements SshExecutor
         }
         // `timeout <seconds> <command>`, as the cloud-init status read runs.
         $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
+
+        $units = $this->unitGuests[$call->vm] ??= new RecipeImageUnitGuest(function (string $profile, string $phase): CommandResult {
+            $result = $this->answer('recipe '.$profile.':'.$phase, static fn (): string => '{"ok":true}');
+            $this->recipeLogs['/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log'] = $result->stdout.$result->stderr;
+
+            return $result;
+        });
+        if (($result = $units->run($command, $call->input)) !== null) {
+            return $result;
+        }
 
         if ($command[0] === 'bash' && str_contains($command[2] ?? '', 'cat >> "$1"')) {
             $path = $command[4];

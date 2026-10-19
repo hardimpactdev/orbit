@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
+use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -141,12 +142,11 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     $host = app(TaskVmSettings::class)->hosts[0];
     $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'recipe-builder');
     app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), 'base', 'packages');
-    $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'python3');
-    expect($call->argv)->toBe(['python3', '-', 'packages']);
+    $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'install' && is_string($call->input) && str_contains($call->input, 'sys.exit(image_main())'));
     expect(strlen($call->input))->toBeGreaterThan(131072);
 
     // Execute the real assembled input boundary; print its decoded document instead of running the installer.
-    $process = new Process($call->argv);
+    $process = new Process(['python3', '-', 'packages']);
     $process->setInput(str_replace('sys.exit(image_main())', 'print(sys.argv[2])', $call->input));
     $process->mustRun();
     $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -162,7 +162,7 @@ it('installs OpenTelemetry only in app-dev image profiles', function (string $pr
 
     app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), $profile, 'packages');
 
-    $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'python3'));
+    $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'install' && is_string($call->input) && str_contains($call->input, 'sys.exit(image_main())')));
     expect($calls)->toHaveCount(1);
     $payload = RecipeProgramPayload::read($calls[0]->input);
     expect($payload['php']['input']['opentelemetry'])->toBe($enabled);
@@ -185,6 +185,48 @@ it('identifies publish failures as host commands without requesting a guest log'
     $failed = array_find($build->refresh()->steps, fn (array $step): bool => $step['program'] === 'base:publish');
     expect($failed['error'])->toContain('`incus publish`', 'Error: publish failed', 'Publishing runs on Incus host [recipe-beast].')
         ->not->toContain('Builder log unavailable', '/var/log/orbit/recipe-images/base-publish.log');
+});
+
+it('reconnects to the same phase after losing its start acknowledgement without running the installer twice', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '{"ok":true}', '', 1, false));
+    $guest->loseStartReply = true;
+    $guest->running = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+    $job = new BuildRecipeImageStep($build->id, 'base', 'packages');
+
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
+        ->and($build->steps[0]['seconds'])->toBeNull()
+        ->and($build->steps[0]['error'])->toBeNull();
+    $job->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['seconds'])->toBeNull();
+    $guest->running = false;
+    // A fresh delivery carries no in-memory program state from the original worker.
+    new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
+    expect($build->refresh()->steps[0]['seconds'])->not->toBeNull()
+        ->and($guest->starts)->toBe(1);
+    $start = collect($incus->guest)->first(static fn ($call): bool => $call->argv[0] === 'systemd-run');
+    expect($start->argv)->toContain('--property=RuntimeMaxSec='.RecipeImagePrograms::PhaseSeconds,
+        '--property=ExitType=cgroup', '--property=KillMode=control-group');
+    expect(implode(' ', $start->argv))->not->toContain('--wait', '--pipe');
+});
+
+it('reports the guest service timeout without inventing a package exit code', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
+    $guest->timedOut = true;
+    $incus->unitGuests[$build->builder_vm_name] = $guest;
+
+    expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'timed out after '.RecipeImagePrograms::PhaseSeconds.' seconds');
+    expect($build->refresh()->steps[0]['error'])->not->toContain('exit 255', 'Exit code [1]');
 });
 
 describe('recipe image triggers', function (): void {
@@ -375,10 +417,10 @@ it('records a bounded redacted output tail and a real builder log for failed rec
         '/var/log/orbit/recipe-images/base-'.$logPhase.'.log', $build->builder_vm_name)
         ->not->toContain('stdout diagnostic', 'line 1'."\n", 'do-not-store-this', 'do-not-store-that');
     expect(mb_strlen($failed['error']))->toBeLessThanOrEqual(4000);
-    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'apt dependency conflict'));
+    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'Gateway observation:'));
     expect($logs)->not->toBeEmpty();
     foreach ($logs as $log) {
-        expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this', 'do-not-store-that');
+        expect($log->input)->not->toContain('do-not-store-this', 'do-not-store-that');
     }
 })->with(['packages', 'javascript', 'rust', 'agent', 'verify']);
 
