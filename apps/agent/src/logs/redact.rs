@@ -2,21 +2,22 @@
 //!
 //! PHP runs these patterns without `/u`, so `\b`, `\s`, `\S`, and `/i` use ASCII byte semantics. The
 //! patterns below use `(?-u)` on bytes for the same result. `tests/redaction_cases.json` holds the
-//! expected results, computed by the PHP implementation; the Gateway runs the same file.
-use regex::bytes::{Captures, Regex};
+//! shared golden corpus, including multiline and repeated pathological inputs. PHP needs possessive
+//! repeats and `(*SKIP)` guards, which Rust's regex engine does not support; the corpus is the contract.
+use regex::bytes::Regex;
 use std::sync::OnceLock;
 
 pub const REDACTED: &str = "[REDACTED]";
-/// A PEM block that spans lines is redacted for at most this many lines, counting its `BEGIN` line.
-pub const PEM_MAX_LINES: usize = 200;
 
 const PREFIX: &str = r"(?:[A-Za-z][A-Za-z0-9]*[_-])";
 const SUFFIX: &str = r"(?:[_-](?:HASH|BASE))?";
 
 struct Patterns {
     pem: Regex,
+    pem_text: Regex,
     url: Regex,
     authorization: Regex,
+    authorization_value: Regex,
     bearer: Regex,
     env: Regex,
     json: Regex,
@@ -34,11 +35,11 @@ fn patterns() -> &'static Patterns {
         let compile = |pattern: &str| Regex::new(pattern).expect("redaction pattern compiles");
         Patterns {
             pem: compile(r"(?-u)-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----"),
+            pem_text: compile(r"(?-u)-----BEGIN [A-Z0-9 ]+-----[\s\S]*?(?:-----END [A-Z0-9 ]+-----|\z)"),
             url: compile(r"(?i-u)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@"),
-            // PHP adds `(?!\[REDACTED\])` after the second `\s*`; `replace_authorization` emulates it.
-            authorization: compile(
-                r#"(?i-u)\b((?:Proxy-)?Authorization)\s*:\s*([^\s'"]+(?:\s+[^\s'"]+)?)"#,
-            ),
+            // Check PHP's negative lookahead before scanning the potentially long value.
+            authorization: compile(r"(?i-u)\b((?:Proxy-)?Authorization)\s*:\s*"),
+            authorization_value: compile(r#"(?-u)\A[^\s'"]+(?:\s+[^\s'"]+)?"#),
             bearer: compile(
                 r#"(?i-u)\bBearer\s+(?:"[^"]*"|'[^']*'|[A-Za-z0-9][A-Za-z0-9._\-+/=]{7,})"#,
             ),
@@ -60,14 +61,14 @@ fn patterns() -> &'static Patterns {
 /// Redacts one text exactly as the Gateway's `redactText` does.
 pub fn redact_text(text: &str) -> String {
     let p = patterns();
-    let pem = p.pem.replace_all(text.as_bytes(), REDACTED.as_bytes());
+    let pem = p.pem_text.replace_all(text.as_bytes(), REDACTED.as_bytes());
     into_string(redact_after_pem(&pem))
 }
 
 fn redact_after_pem(text: &[u8]) -> Vec<u8> {
     let p = patterns();
     let text = p.url.replace_all(text, b"${1}[REDACTED]@".as_slice());
-    let text = replace_authorization(&p.authorization, &text);
+    let text = replace_authorization(p, &text);
     let text = p.bearer.replace_all(&text, b"Bearer [REDACTED]".as_slice());
     let text = p.env.replace_all(&text, b"${1}=[REDACTED]".as_slice());
     let text = p.json.replace_all(&text, b"${1}\"[REDACTED]\"".as_slice());
@@ -78,36 +79,35 @@ fn redact_after_pem(text: &[u8]) -> Vec<u8> {
 
 /// PCRE rejects a start position whose value begins with `[REDACTED]` (ASCII case-insensitive) and
 /// then tries the next position, so this searches again from one byte after a rejected start.
-fn replace_authorization(pattern: &Regex, text: &[u8]) -> Vec<u8> {
+fn replace_authorization(patterns: &Patterns, text: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len());
     let mut copied = 0;
     let mut at = 0;
     while at <= text.len() {
-        let Some(captures) = pattern.captures_at(text, at) else {
+        let Some(captures) = patterns.authorization.captures_at(text, at) else {
             break;
         };
-        let (whole, name, value) = parts(&captures);
+        let whole = captures.get(0).expect("group 0 always matches");
+        let name = captures.get(1).expect("header name always matches");
+        let value = &text[whole.end()..];
         if value.len() >= REDACTED.len()
             && value[..REDACTED.len()].eq_ignore_ascii_case(REDACTED.as_bytes())
         {
-            at = whole.0 + 1;
+            at = whole.start() + 1;
             continue;
         }
-        out.extend_from_slice(&text[copied..whole.0]);
-        out.extend_from_slice(name);
+        let Some(value_match) = patterns.authorization_value.find(value) else {
+            at = whole.start() + 1;
+            continue;
+        };
+        out.extend_from_slice(&text[copied..whole.start()]);
+        out.extend_from_slice(name.as_bytes());
         out.extend_from_slice(b": [REDACTED]");
-        copied = whole.1;
-        at = whole.1;
+        copied = whole.end() + value_match.end();
+        at = copied;
     }
     out.extend_from_slice(&text[copied..]);
     out
-}
-
-fn parts<'a>(captures: &Captures<'a>) -> ((usize, usize), &'a [u8], &'a [u8]) {
-    let whole = captures.get(0).expect("group 0 always matches");
-    let name = captures.get(1).map_or(&[][..], |m| m.as_bytes());
-    let value = captures.get(2).map_or(&[][..], |m| m.as_bytes());
-    ((whole.start(), whole.end()), name, value)
 }
 
 fn into_string(bytes: Vec<u8>) -> String {
@@ -115,16 +115,10 @@ fn into_string(bytes: Vec<u8>) -> String {
         .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into())
 }
 
-/// The line that replaces the last hidden line of a PEM block that has no `END` within the limit.
-pub fn unclosed_marker(hidden: usize) -> String {
-    format!("[orbit] {hidden} lines redacted after a PEM BEGIN line without END")
-}
-
 /// Redacts a stream line by line. It carries the state of a PEM block that spans lines.
 #[derive(Debug, Default)]
 pub struct Redactor {
-    /// Lines of the open PEM block so far, counting its `BEGIN` line.
-    pem_lines: Option<usize>,
+    pem_open: bool,
 }
 
 impl Redactor {
@@ -135,16 +129,16 @@ impl Redactor {
 
     /// Updates the PEM state for a line that is dropped without being sent.
     pub fn observe(&mut self, line: &str) {
-        if self.pem_lines.is_some() || line.contains("-----") {
+        if self.pem_open || line.contains("-----") {
             self.process(line, false);
         }
     }
 
     fn process(&mut self, line: &str, render: bool) -> Option<String> {
         let p = patterns();
-        if let Some(count) = self.pem_lines {
+        if self.pem_open {
             if let Some(end) = p.end.find(line.as_bytes()) {
-                self.pem_lines = None;
+                self.pem_open = false;
                 let rest = &line[end.end()..];
                 return if rest.is_empty() {
                     None
@@ -152,14 +146,7 @@ impl Redactor {
                     self.process(rest, render)
                 };
             }
-            let count = count + 1;
-            if count < PEM_MAX_LINES {
-                self.pem_lines = Some(count);
-                return None;
-            }
-            // No END within the limit: the block ends here, and the reader learns what was hidden.
-            self.pem_lines = None;
-            return render.then(|| unclosed_marker(count - 1));
+            return None;
         }
         if !render && !line.contains("-----") {
             return None;
@@ -167,7 +154,7 @@ impl Redactor {
         let pem = p.pem.replace_all(line.as_bytes(), REDACTED.as_bytes());
         // Complete blocks are gone, so a remaining BEGIN opens a block that continues on later lines.
         if let Some(begin) = p.begin.find(&pem) {
-            self.pem_lines = Some(1);
+            self.pem_open = true;
             if !render {
                 return None;
             }
@@ -187,8 +174,37 @@ mod tests {
     #[derive(Deserialize)]
     struct Case {
         name: String,
-        input: String,
-        expected: String,
+        input: Text,
+        expected: Text,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Text {
+        Literal(String),
+        Parts(Vec<Part>),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Part {
+        Literal(String),
+        Repeat { text: String, repeat: usize },
+    }
+
+    impl Text {
+        fn expand(self) -> String {
+            match self {
+                Self::Literal(text) => text,
+                Self::Parts(parts) => parts
+                    .into_iter()
+                    .map(|part| match part {
+                        Part::Literal(text) => text,
+                        Part::Repeat { text, repeat } => text.repeat(repeat),
+                    })
+                    .collect(),
+            }
+        }
     }
 
     #[test]
@@ -197,22 +213,14 @@ mod tests {
             serde_json::from_str(include_str!("../../tests/redaction_cases.json")).unwrap();
         assert!(cases.len() >= 50);
         for case in cases {
-            assert_eq!(
-                redact_text(&case.input),
-                case.expected,
-                "case {}",
-                case.name
-            );
-            assert!(
-                !case.input.contains('\n'),
-                "case {} must be one line",
-                case.name
-            );
+            let input = case.input.expand();
+            let expected = case.expected.expand();
+            assert_eq!(redact_text(&input), expected, "case {}", case.name);
             let mut redactor = Redactor::default();
-            if !case.input.contains("-----BEGIN") {
+            if !input.contains('\n') {
                 assert_eq!(
-                    redactor.line(&case.input).as_deref(),
-                    Some(case.expected.as_str()),
+                    redactor.line(&input).as_deref(),
+                    Some(expected.as_str()),
                     "case {} through the line redactor",
                     case.name
                 );
@@ -254,20 +262,18 @@ mod tests {
     }
 
     #[test]
-    fn pem_block_without_end_resumes_after_200_lines() {
+    fn pem_block_without_end_stays_hidden_beyond_200_lines() {
         let mut r = Redactor::default();
         assert_eq!(
             r.line("-----BEGIN CERTIFICATE-----").as_deref(),
             Some("[REDACTED]")
         );
-        for _ in 2..PEM_MAX_LINES {
+        for _ in 0..1000 {
             assert_eq!(r.line("MIIBszCCAVmgAwIBAgIU"), None);
         }
-        // The 200th line of the block ends it with a marker that counts the hidden lines.
-        assert_eq!(
-            r.line("MIIBszCCAVmgAwIBAgIU").as_deref(),
-            Some("[orbit] 199 lines redacted after a PEM BEGIN line without END")
-        );
+        r.observe("still private");
+        assert_eq!(r.line("still hidden"), None);
+        assert_eq!(r.line("-----END CERTIFICATE-----"), None);
         assert_eq!(r.line("after").as_deref(), Some("after"));
     }
 
