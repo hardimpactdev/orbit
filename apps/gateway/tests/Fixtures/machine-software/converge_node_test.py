@@ -143,8 +143,9 @@ class ConvergenceTest(unittest.TestCase):
         self.assertIn('--collect', fences[0])
         self.assertIn('--property=After=consumer.service dependency.service', fences[0])
         self.assertIn('--property=DefaultDependencies=no', fences[0])
-        self.assertIn('--property=JobTimeoutSec=600', fences[0])
         self.assertTrue(any(c.startswith('--unit=orbit-recipe-health-') and c.endswith('.service') for c in fences[0]))
+        fence = next(c.removeprefix('--unit=') for c in fences[0] if c.startswith('--unit='))
+        self.assertIn(['systemctl', 'stop', '--no-block', fence], self.commands)
         self.assertLess(self.commands.index(fences[0]), self.commands.index(['systemctl', 'is-active', '--quiet', 'consumer.service']))
 
     def test_restart_fence_failure_stops_before_health_without_retry(self):
@@ -152,10 +153,16 @@ class ConvergenceTest(unittest.TestCase):
             result = self.command(argv, **kwargs)
             if argv[0] == 'systemd-run':
                 return subprocess.CompletedProcess(argv, 1, '', 'ordering fence failed')
+            if argv[:3] == ['systemctl', 'stop', '--no-block']:
+                raise recipe.RecipeFailure(detail='cleanup failed')
             return result
 
-        with self.assertRaisesRegex(recipe.RecipeFailure, '^restart:curl.service,php8.5-fpm.service$'):
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^restart:curl.service,php8.5-fpm.service$') as failure:
             self.apply(command)
+
+        self.assertEqual(failure.exception.result.stderr, 'ordering fence failed')
+        fence = next(c.removeprefix('--unit=') for c in failure.exception.result.args if c.startswith('--unit='))
+        self.assertIn(['systemctl', 'stop', '--no-block', fence], self.commands)
 
         self.assertEqual(sum(c[:2] == ['systemctl', 'restart'] for c in self.commands), 1)
         self.assertEqual(sum(c[0] == 'systemd-run' for c in self.commands), 1)

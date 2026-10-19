@@ -1053,9 +1053,16 @@ def apply_recipe(payload, snapshots):
                 run(['systemctl', 'restart', *restarted])
                 # systemctl submits separate jobs; a later dependency can restart an already-completed dependent.
                 fence = 'orbit-recipe-health-' + uuid.uuid4().hex + '.service'
-                run(['systemd-run', '--quiet', '--wait', '--collect', '--unit=' + fence,
-                     '--property=Type=oneshot', '--property=DefaultDependencies=no', '--property=JobTimeoutSec=600',
-                     '--property=After=' + ' '.join(restarted), '/usr/bin/true'])
+                try:
+                    run(['systemd-run', '--quiet', '--wait', '--collect', '--unit=' + fence,
+                         '--property=Type=oneshot', '--property=DefaultDependencies=no',
+                         '--property=After=' + ' '.join(restarted), '/usr/bin/true'])
+                finally:
+                    # Cancel only our fence if its bounded client wait timed out; it may already be collected.
+                    try:
+                        run(['systemctl', 'stop', '--no-block', fence], required=False)
+                    except RecipeFailure:
+                        pass
             stage = 'health'
             # Check package services and every active unit their restart propagates to; Doctor checks role requirements.
             for service in sorted(health_services | set(restarted)):
