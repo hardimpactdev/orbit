@@ -134,50 +134,56 @@ final readonly class CommandActivityInputSanitizer
 
     public function redactText(string $value): string
     {
-        $redacted =
-            preg_replace(
-                pattern: self::PEM_BLOCK_PATTERN,
-                replacement: self::REDACTED,
-                subject: $value,
-            ) ?? $this->redactionFailed();
-        $redacted =
-            preg_replace(
-                pattern: '/\b([a-z][a-z0-9+.-]*+:\/\/)[^\/@\s]++@|\b[a-z][a-z0-9+.-]*+(*SKIP)(*F)/i',
-                replacement: '$1'.self::REDACTED.'@',
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
-        $redacted =
-            preg_replace(
-                pattern: '/\b((?:Proxy-)?Authorization)\s*+:\s*+(?!\[REDACTED\])[^\s\'\"]++(?:\s++[^\s\'\"]++)?+/i',
-                replacement: '$1: '.self::REDACTED,
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
-        $redacted =
-            preg_replace(
-                pattern: '/\bBearer\s++(?:"[^"]*+"|\'[^\']*+\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,}+)/i',
-                replacement: 'Bearer '.self::REDACTED,
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
-        $keys = self::SECRET_KEY_IDENTIFIER;
-        $redacted =
-            preg_replace(
-                pattern: '/\b('.$keys.')\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s&#]++)'.self::SKIP_KEY_PREFIX.'/i',
-                replacement: '$1='.self::REDACTED,
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
-        $redacted =
-            preg_replace(
-                pattern: '/("(?:'.$keys.')"\s*+:\s*+)(?:"(?:\\\\.|[^"\\\\])*+"|\'(?:\\\\.|[^\'\\\\])*+\'|[^,}\s]++)/i',
-                replacement: '$1"'.self::REDACTED.'"',
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
+        $limit = ini_set('pcre.backtrack_limit', (string) max(1_000_000, 4 * strlen($value)));
 
-        return
-            preg_replace(
-                pattern: '/\b('.$keys.')\s*+:\s*+(?:"[^"]*+"|\'[^\']*+\'|\S++)'.self::SKIP_KEY_PREFIX.'/i',
-                replacement: '$1: '.self::REDACTED,
-                subject: $redacted,
-            ) ?? $this->redactionFailed();
+        try {
+            $redacted =
+                preg_replace(
+                    pattern: self::PEM_BLOCK_PATTERN,
+                    replacement: self::REDACTED,
+                    subject: $value,
+                ) ?? $this->redactionFailed();
+            $redacted =
+                preg_replace(
+                    pattern: '/\b([a-z][a-z0-9+.-]*+:\/\/)[^\/@\s]++@|\b[a-z][a-z0-9+.-]*+(*SKIP)(*F)/i',
+                    replacement: '$1'.self::REDACTED.'@',
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+            $redacted =
+                preg_replace(
+                    pattern: '/\b((?:Proxy-)?Authorization)\s*+:\s*+(?!\[REDACTED\])[^\s\'\"]++(?:\s++[^\s\'\"]++)?+/i',
+                    replacement: '$1: '.self::REDACTED,
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+            $redacted =
+                preg_replace(
+                    pattern: '/(*NO_START_OPT)\bBearer\s++(?:"[^"]*+"|\'[^\']*+\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,}+)/i',
+                    replacement: 'Bearer '.self::REDACTED,
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+            $keys = self::SECRET_KEY_IDENTIFIER;
+            $redacted =
+                preg_replace(
+                    pattern: '/\b('.$keys.')\s*+=\s*+(?:"[^"]*+"|\'[^\']*+\'|[^\s&#]++)'.self::SKIP_KEY_PREFIX.'/i',
+                    replacement: '$1='.self::REDACTED,
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+            $redacted =
+                preg_replace(
+                    pattern: '/("(?:'.$keys.')"\s*+:\s*+)(?:"(?:\\\\.|[^"\\\\])*+"|\'(?:\\\\.|[^\'\\\\])*+\'|[^,}\s]++)/i',
+                    replacement: '$1"'.self::REDACTED.'"',
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+
+            return
+                preg_replace(
+                    pattern: '/\b('.$keys.')\s*+:\s*+(?:"[^"]*+"|\'[^\']*+\'|\S++)'.self::SKIP_KEY_PREFIX.'/i',
+                    replacement: '$1: '.self::REDACTED,
+                    subject: $redacted,
+                ) ?? $this->redactionFailed();
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+        }
     }
 
     private function redactionFailed(): string

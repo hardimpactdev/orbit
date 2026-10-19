@@ -7,6 +7,7 @@ use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Log;
 use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\BufferHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
 
@@ -26,11 +27,13 @@ describe('the redaction cases shared with the Node agent', function (): void {
             ));
         };
         Log::spy();
+        $limit = ini_get('pcre.backtrack_limit');
 
         expect($cases)->not->toBeEmpty();
 
         foreach ($cases as $case) {
             expect($sanitizer->redactText($expand($case['input'])))->toBe($expand($case['expected']), $case['name']);
+            expect(ini_get('pcre.backtrack_limit'))->toBe($limit);
         }
 
         Log::shouldNotHaveReceived('error');
@@ -51,28 +54,27 @@ it('still withholds text and logs a sanitized error when PCRE fails', function (
     $stream = fopen('php://memory', 'w+');
     $handler = new StreamHandler($stream);
     $handler->setFormatter(new LineFormatter(dateFormat: 'Y-m-d H:i:s', allowInlineLineBreaks: true, includeStacktraces: true));
-    $logger = new Logger(new MonologLogger('testing', [$handler]));
-    $errors = [];
-    Log::shouldReceive('error')->atLeast()->once()->andReturnUsing(static function (string $message, array $context) use (&$errors): void {
-        $errors[] = [$message, $context];
-    });
+    $buffer = new BufferHandler($handler);
+    Log::swap(new Logger(new MonologLogger('testing', [$buffer])));
     $sanitizer = app(CommandActivityInputSanitizer::class);
-    $limit = ini_set('pcre.backtrack_limit', '0');
+    $limit = ini_get('pcre.backtrack_limit');
+    $jit = ini_set('pcre.jit', '0');
+    $recursion = ini_set('pcre.recursion_limit', '1');
 
     try {
         $output = $sanitizer->redactText('password: sentinel-password TOKEN=sentinel-token');
     } finally {
-        ini_set('pcre.backtrack_limit', $limit);
+        ini_set('pcre.recursion_limit', $recursion);
+        ini_set('pcre.jit', $jit);
     }
 
     expect($output)->toBe('Output withheld: redaction failed.');
-    foreach ($errors as [$message, $context]) {
-        $logger->error($message, $context);
-    }
+    expect(ini_get('pcre.backtrack_limit'))->toBe($limit);
+    $buffer->flush();
     rewind($stream);
     $record = stream_get_contents($stream);
     fclose($stream);
-    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_BACKTRACK_LIMIT_ERROR)
+    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_RECURSION_LIMIT_ERROR)
         ->not->toContain('sentinel-password')
         ->not->toContain('sentinel-token');
     $signal = app(ProblemLogParser::class)->signal($record);

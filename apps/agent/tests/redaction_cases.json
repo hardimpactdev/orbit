@@ -954,5 +954,89 @@
             },
             "FAILED last line"
         ]
+    },
+    {
+        "name": "1 MiB unbroken key-name run",
+        "input": [
+            {
+                "text": "a_",
+                "repeat": 524288
+            },
+            "a=x"
+        ],
+        "expected": [
+            {
+                "text": "a_",
+                "repeat": 524288
+            },
+            "a=x"
+        ]
+    },
+    {
+        "name": "1 MiB secret key-name run",
+        "input": [
+            {
+                "text": "a_",
+                "repeat": 524288
+            },
+            "TOKEN=x"
+        ],
+        "expected": [
+            {
+                "text": "a_",
+                "repeat": 524288
+            },
+            "TOKEN=[REDACTED]"
+        ]
+    },
+    {
+        "name": "1 MiB closed PEM body",
+        "input": [
+            "-----BEGIN PRIVATE KEY-----\n",
+            {
+                "text": "A",
+                "repeat": 1048576
+            },
+            "\n-----END PRIVATE KEY-----\nvisible"
+        ],
+        "expected": "[REDACTED]\nvisible"
+    },
+    {
+        "name": "1 MiB unclosed PEM body",
+        "input": [
+            "-----BEGIN PRIVATE KEY-----\n",
+            {
+                "text": "A",
+                "repeat": 1048576
+            }
+        ],
+        "expected": "[REDACTED]"
+    },
+    {
+        "name": "1 MiB JSON secret value",
+        "input": [
+            "{\"password\":\"",
+            {
+                "text": "A",
+                "repeat": 1048576
+            },
+            "\"}"
+        ],
+        "expected": "{\"password\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "1 MiB repeated Bearer headers",
+        "input": [
+            {
+                "text": "BEARER ABCDEFGH1 ",
+                "repeat": 65536
+            }
+        ],
+        "expected": [
+            {
+                "text": "Bearer [REDACTED] ",
+                "repeat": 65536
+            }
+        ]
     }
 ]

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Problems\ProblemLogParser;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -13,9 +14,14 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\BufferHandler;
+use Monolog\Handler\StreamHandler;
+use Monolog\Logger as MonologLogger;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeTaskCheckRunner;
@@ -23,6 +29,46 @@ use Tests\Support\FakeTaskTurnReceipts;
 
 beforeEach(function (): void {
     tick_bind_defaults();
+});
+
+it('withholds check output and logs a sanitized error after a real PCRE failure', function (): void {
+    $stream = fopen('php://memory', 'w+');
+    $handler = new StreamHandler($stream);
+    $handler->setFormatter(new LineFormatter(dateFormat: 'Y-m-d H:i:s', allowInlineLineBreaks: true, includeStacktraces: true));
+    $buffer = new BufferHandler($handler);
+    Log::swap(new Logger(new MonologLogger('testing', [$buffer])));
+    $task = tick_group()->tasks()->sole();
+    $check = TaskCheck::query()->create([
+        'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running,
+        'pid' => 1, 'process_started' => 'start', 'head_before' => str_repeat('a', 40),
+        'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+    $runner = app(TaskSubtaskRunner::class);
+    $reading = TaskCheckReading::finished(
+        1, str_repeat('a', 40), str_repeat('b', 40), [],
+        "password: do-not-store-password\nTOKEN=do-not-store-token\nFAILED last line",
+    );
+    $jit = ini_set('pcre.jit', '0');
+    $recursion = ini_set('pcre.recursion_limit', '1');
+
+    try {
+        $runner->recordReading($check, $reading);
+    } finally {
+        ini_set('pcre.recursion_limit', $recursion);
+        ini_set('pcre.jit', $jit);
+    }
+
+    expect($check->fresh()->output)->toBe('Output withheld: redaction failed.');
+    $buffer->flush();
+    rewind($stream);
+    $record = stream_get_contents($stream);
+    fclose($stream);
+    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_RECURSION_LIMIT_ERROR)
+        ->not->toContain('do-not-store-password')
+        ->not->toContain('do-not-store-token');
+    $signal = app(ProblemLogParser::class)->signal($record);
+    expect($signal)->not->toBeNull()
+        ->and($signal->excerpt)->toBe('Output withheld: redaction failed.');
 });
 
 it('stores redacted check output after a large hyphenated run without a PCRE error', function (): void {
