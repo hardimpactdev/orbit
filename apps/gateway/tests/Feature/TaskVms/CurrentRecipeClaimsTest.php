@@ -97,7 +97,7 @@ it('keeps the promoted image until a cold candidate succeeds and promotes', func
     $candidate = $build->replicate();
     $images = $build->images;
     $images['base']['fingerprint'] = str_repeat('b', 64);
-    $candidate->fill(['recipe_generation' => 2, 'state' => $state, 'promoted_at' => $promoted ? now() : null,
+    $candidate->fill(['recipe_generation' => $build->recipe_generation, 'state' => $state, 'promoted_at' => $promoted ? now() : null,
         'image_fingerprint' => str_repeat('b', 64), 'images' => $images]);
     $candidate->save();
 

@@ -971,36 +971,34 @@ describe('image build', function (): void {
     });
 });
 
+function tvm_up_refresh_job(): RefreshUpCloudTaskVmBaseImage
+{
+    $builds = app(RecipeImageBuilds::class);
+    $builds->reconcile();
+    $recipe = $builds->currentRecipe();
+
+    return new RefreshUpCloudTaskVmBaseImage($recipe->identity, UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity),
+        (int) DB::table('task_vm_image_recipe')->where('id', 1)->value('generation'));
+}
+
 describe('recipe-driven UpCloud base image refresh', function (): void {
     it('builds a new template on the image queue and keeps the two newest', function (): void {
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
 
-        app()->call([new RefreshUpCloudTaskVmBaseImage, 'handle']);
+        app()->call([tvm_up_refresh_job(), 'handle']);
 
         $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
         expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
             ->and($this->upcloud->servers)->toBe([])
-            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds-optional']);
-    });
-
-    it('handles a serialized refresh job queued before the recipe fence', function (): void {
-        $job = new RefreshUpCloudTaskVmBaseImage;
-        unset($job->recipeIdentity, $job->afterAttemptId, $job->generation, $job->rebuild);
-        $job = unserialize(serialize($job));
-
-        app()->call([$job, 'handle']);
-        app()->call([$job, 'handle']);
-
-        expect($this->upcloud->created)->toHaveCount(2);
-        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
+            ->and([tvm_up_refresh_job()->connection, tvm_up_refresh_job()->queue])->toBe(['gateway', 'builds-optional']);
     });
 
     it('builds nothing when the recipe already matches or UpCloud is unconfigured', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
         $this->upcloud->template('orbit-task-base-20261011000000', app(RecipeImageBuilds::class)->currentRecipe()->identity);
 
-        app()->call([new RefreshUpCloudTaskVmBaseImage, 'handle']);
+        app()->call([tvm_up_refresh_job(), 'handle']);
 
         expect($this->upcloud->created)->toBe([]);
     })->with([
@@ -1010,7 +1008,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
 
     it('builds the first current recipe template without enabling overflow', function (): void {
         tvm_up_settings(['enabled' => false]);
-        app()->call([new RefreshUpCloudTaskVmBaseImage, 'handle']);
+        app()->call([tvm_up_refresh_job(), 'handle']);
         expect(app(UpCloudServers::class)->currentTemplate(app(RecipeImageBuilds::class)->currentRecipe()->identity))->not->toBeNull()
             ->and(app(TaskVmSettings::class)->upcloud->enabled)->toBeFalse();
     });

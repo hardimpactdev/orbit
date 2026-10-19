@@ -620,8 +620,8 @@ def failure_output(value):
     return value.encode('utf-8', errors='replace')[-8000:].decode('utf-8', errors='replace')
 
 
-def binary_version(binary, env=None):
-    result = run([str(binary), '--version'], required=False, env=env)
+def binary_version(binary, env=None, *, prefix=()):
+    result = run([*prefix, str(binary), '--version'], required=False, env=env)
     match = re.search(r'(?:^|[\s v])([0-9]+\.[0-9]+\.[0-9]+)\b', result.stdout) if result.returncode == 0 else None
     return match.group(1) if match else None
 

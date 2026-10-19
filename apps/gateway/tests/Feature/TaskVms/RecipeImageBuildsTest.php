@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\ConvergeFleetRecipeAction;
+use App\Domain\Fleet\FleetServingRelease;
+use App\Domain\Problems\ProblemCollector;
+use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -29,6 +33,7 @@ use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ImageBuild\PromoteImage;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -1107,7 +1112,7 @@ it('cold rebuilds the same recipe from stock and swaps its image only after the 
     $candidate = TaskVmImageBuild::query()->latest('id')->firstOrFail();
     expect($candidate->id)->not->toBe($old->id)
         ->and($candidate->recipe_identity)->toBe($old->recipe_identity)
-        ->and($candidate->recipe_generation)->toBe($old->recipe_generation + 1)
+        ->and($candidate->recipe_generation)->toBe($old->recipe_generation)
         ->and($candidate->from_stock)->toBeTrue()
         ->and($candidate->images)->toBe([])
         ->and($candidate->steps)->toBe([])
@@ -1194,4 +1199,72 @@ it('keeps the last admissible image when intervening cold rebuilds fail after pr
     expect($incus->images)->toHaveKey($old->image_fingerprint)
         ->and($old->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
     expect($incus->images)->not->toHaveKey($middle->image_fingerprint);
+});
+
+it('keeps a halted Node rollout and its incident through cold rebuild and promotion', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    app()->instance(FleetServingRelease::class, new FleetServingRelease(config()->string('orbit.gateway_checkout')));
+    $builds = app(RecipeImageBuilds::class);
+    $old = $builds->reconcile()[0];
+    runRecipeImageBuild($old);
+    $halt = ['generation' => $old->recipe_generation, 'status' => 'halted', 'node_id' => $host->id,
+        'message' => 'Node failed. No automatic retry.', 'nodes' => []];
+    $old->forceFill(['fleet_convergence' => $halt])->save();
+    app(ProblemCollector::class)->recordRelease('rollout_halted|recipe-fleet:'.$old->recipe_identity.'|'.$old->recipe_generation.':'.$old->id.':1|convergence_halted', [
+        'summary' => $halt['message'], 'release_kind' => 'rollout_halted', 'incident_resource' => 'recipe-fleet:'.$old->recipe_identity,
+        'incident_attempt' => $old->recipe_generation.':'.$old->id.':1', 'incident_fault' => 'convergence_halted',
+    ]);
+    $incident = ProblemFingerprint::query()->sole();
+    $desired = DB::table('task_vm_image_recipe')->where('id', 1)->first();
+
+    $candidate = $builds->reconcile(rebuild: true)[0];
+    runRecipeImageBuild($candidate);
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($candidate->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($candidate->promoted_at)->not->toBeNull()
+        ->and($candidate->fleet_convergence)->toBeNull()
+        ->and($old->refresh()->fleet_convergence)->toBe($halt)
+        ->and(DB::table('task_vm_image_recipe')->where('id', 1)->value('generation'))->toBe($desired->generation)
+        ->and(app(ProblemRecovery::class)->reason($incident->refresh()))->toBeNull()
+        ->and($incident->evidence)->not->toHaveKey('resolved_at');
+});
+
+it('reactivates a retained successful recipe after a failed cold rebuild and a recipe revert', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    $firstRecipe = recipeImageDocument();
+    recipeImageCurrent($firstRecipe);
+    $builds = app(RecipeImageBuilds::class);
+    $old = $builds->reconcile()[0];
+    runRecipeImageBuild($old);
+    $failed = $builds->reconcile(rebuild: true)[0];
+    $incus->fail = 'recipe base:verify';
+    expect(fn () => runRecipeImageBuild($failed))->toThrow(TaskVmException::class);
+    $incus->fail = null;
+    recipeImageCurrent(recipeImageDocument('20261016T000000Z'));
+    runRecipeImageBuild($builds->reconcile()[0]);
+    recipeImageCurrent($firstRecipe);
+
+    $reverted = $builds->reconcile()[0];
+    expect($reverted->id)->toBe($old->id)
+        ->and($reverted->current_step)->toBe(TaskVmImageBuildStep::Promote);
+    runRecipeImageBuild($reverted);
+    expect($reverted->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($incus->images[$old->image_fingerprint])->toContain(TaskVmHost::BaseImage)
+        ->and($failed->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
+});
+
+it('refuses a cold rebuild instead of changing the desired Node recipe', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $desired = DB::table('task_vm_image_recipe')->where('id', 1)->first();
+
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('current desired recipe')->assertFailed();
+
+    expect(DB::table('task_vm_image_recipe')->where('id', 1)->first())->toEqual($desired);
+    $this->assertDatabaseCount('task_vm_image_builds', 0);
 });

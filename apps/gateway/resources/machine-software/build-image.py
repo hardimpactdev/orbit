@@ -4,6 +4,7 @@ import traceback
 
 IMAGE_LOG = None
 IMAGE_APT = Path('/var/tmp/orbit-image-apt')
+IMAGE_GUEST = ['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit']
 
 
 def command_output(result):
@@ -209,17 +210,12 @@ def php_install(payload):
 
 
 def image_guest_run(argv):
-    return run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit', *argv])
+    return run([*IMAGE_GUEST, *argv])
 
 
 def image_guest_cache():
-    # A read-only mount supplies its own modes, but cannot make an inaccessible parent traversable.
-    # This private probe supplies the mount's public marker without baking a package cache into the image.
-    with tempfile.TemporaryDirectory(prefix='.package-cache-verify-', dir='/opt/orbit') as directory:
-        os.chmod(directory, 0o755)
-        marker = str(Path(directory) / '.orbit-owned')
-        run(['install', '-m', '0444', '/dev/null', marker])
-        image_guest_run(['cat', '--', marker])
+    # Images have no mounted cache. Read its existing parent as the guest without changing the image.
+    image_guest_run(['ls', '-A', '--', '/opt/orbit/.'])
 
 
 def image_verify(payload):
@@ -264,10 +260,9 @@ def image_verify(payload):
                             if re.fullmatch(r'php[0-9]+\.[0-9]+-cli', name)]
             for name, binary in guest_tools:
                 if name in payload['tools']:
-                    result = image_guest_run([binary, '--version'])
-                    match = re.search(r'(?:^|[\s v])([0-9]+\.[0-9]+\.[0-9]+)\b', result.stdout)
-                    expected = re.search(r'(?:^|:)([0-9]+\.[0-9]+\.[0-9]+)', payload['tools'][name]['version'])
-                    if not match or not expected or match.group(1) != expected.group(1):
+                    root = binary_version(binary)
+                    guest = binary_version(binary, prefix=IMAGE_GUEST)
+                    if root is None or guest != root:
                         raise RecipeFailure('verify', detail='Guest tool version failed: ' + name)
             image_guest_cache()
             for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):

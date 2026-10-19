@@ -311,29 +311,29 @@ print(json.dumps({'outcome': 'current'}))
                      patch.object(recipe, 'inspect', return_value={name: '1.2.3'}), \
                      patch.object(recipe, 'assess', return_value={name: {'status': 'current'}}), \
                      patch.object(recipe, 'json_file', return_value={name: {'sha256': 'a' * 64}}), \
-                     patch.object(recipe, 'binary_version', return_value='1.2.3'), \
                      patch.object(recipe, 'run', side_effect=command):
                     with self.assertRaisesRegex(recipe.RecipeFailure, 'guest permission denied'):
                         recipe.image_verify(self.payload)
 
-    def test_guest_cache_probe_reads_the_marker_and_removes_it_on_failure(self):
-        real_temporary = tempfile.TemporaryDirectory
-        def temporary(**kwargs):
-            self.assertEqual(kwargs['dir'], '/opt/orbit')
-            return real_temporary(dir=self.work.name, prefix=kwargs['prefix'])
-        def command(argv, **kwargs):
-            if argv[0] == 'install':
-                Path(argv[-1]).touch(mode=0o444)
-                return subprocess.CompletedProcess(argv, 0, '', '')
-            self.assertEqual(argv[:7], ['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit'])
-            self.assertEqual(argv[7:9], ['cat', '--'])
-            self.assertEqual(Path(argv[-1]).parent.stat().st_mode & 0o777, 0o755)
-            raise recipe.RecipeFailure('guest cache read failed')
-        with patch.object(recipe.tempfile, 'TemporaryDirectory', side_effect=temporary), \
-             patch.object(recipe, 'run', side_effect=command):
+    def test_guest_cache_probe_only_reads_the_existing_parent(self):
+        with patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('guest cache read failed')) as command, \
+             patch.object(recipe.tempfile, 'TemporaryDirectory') as temporary:
             with self.assertRaisesRegex(recipe.RecipeFailure, 'guest cache read failed'):
                 recipe.image_guest_cache()
-        self.assertEqual(list(Path(self.work.name).iterdir()), [])
+        command.assert_called_once_with(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                                         'ls', '-A', '--', '/opt/orbit/.'])
+        temporary.assert_not_called()
+
+    def test_guest_access_check_accepts_the_same_newer_ubuntu_binary_as_root(self):
+        self.payload.update({'identity': 'sha256:current', 'tools': {'git': {'source': 'ubuntu', 'version': '2.54.0', 'package': 'git'}}})
+        with self.verification(), \
+             patch.object(recipe, 'inspect', return_value={'git': '2.55.0'}), \
+             patch.object(recipe, 'assess', return_value={'git': {'status': 'newer_than_recipe'}}), \
+             patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'git version 2.55.0', '')) as command:
+            recipe.image_verify(self.payload)
+        self.assertIn(unittest.mock.call(['/usr/bin/git', '--version'], required=False, env=None), command.call_args_list)
+        self.assertIn(unittest.mock.call(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                                         '/usr/bin/git', '--version'], required=False, env=None), command.call_args_list)
 
     def test_puts_orbit_in_incus_admin_after_the_packages_only_when_the_profile_installs_incus(self):
         self.packages()

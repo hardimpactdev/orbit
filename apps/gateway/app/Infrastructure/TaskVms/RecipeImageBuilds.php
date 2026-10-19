@@ -32,12 +32,19 @@ final readonly class RecipeImageBuilds
         }
         $this->chain->recoverSubmissions();
         $builds = $rebuild ? $this->coldRebuild($recipe) : [];
-        $generation = $this->desire($recipe);
+        $generation = $rebuild ? (int) DB::table('task_vm_image_recipe')->where('id', 1)->value('generation') : $this->desire($recipe);
         foreach ($this->settings->hosts as $host) {
             if ($rebuild || ($hostId !== null && $host->nodeId !== $hostId)) {
                 continue;
             }
             $existing = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)->latest('id')->first();
+            if ($existing !== null && $existing->recipe_generation !== $generation) {
+                $retained = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)
+                    ->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('promoted_at')->latest('id')->first();
+                if ($retained !== null) {
+                    $existing = $retained;
+                }
+            }
             if ($existing !== null) {
                 $reactivate = $existing->state === TaskVmImageBuildState::Succeeded && $existing->recipe_generation !== $generation;
                 $restart = $existing->restartsAutomatically() || ($retry && $existing->state === TaskVmImageBuildState::Failed);
@@ -123,7 +130,7 @@ final readonly class RecipeImageBuilds
     }
 
     /**
-     * A cold rebuild is admitted as one generation; no promoted record or image is overwritten.
+     * A cold rebuild stays inside the desired generation; no Node state or promoted image is changed.
      *
      * @return list<TaskVmImageBuild>
      */
@@ -133,6 +140,10 @@ final readonly class RecipeImageBuilds
             // The same writer fence guards starts, allocation, desired changes, and promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $state = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
+            if ($state->identity !== $recipe->identity) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Cold rebuild requires the current desired recipe. Reconcile it before rebuilding images.');
+            }
+            $generation = (int) $state->generation;
             $lastAttempt = UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity);
             $pending = $state->identity === $recipe->identity && $state->upcloud_rebuild_after_attempt !== null
                 && (int) $state->upcloud_rebuild_after_attempt === $lastAttempt;
@@ -144,9 +155,7 @@ final readonly class RecipeImageBuilds
                 || $pending) {
                 throw new TaskVmException('task_vm.image_build_running', 'A recipe image build is running or its cold rebuild is pending. Wait for it to finish before rebuilding.');
             }
-            $generation = (int) $state->generation + 1;
             DB::table('task_vm_image_recipe')->where('id', 1)->update([
-                'identity' => $recipe->identity, 'recipe_json' => $recipe->json, 'generation' => $generation,
                 'upcloud_rebuild_after_attempt' => $this->settings->upcloud === null ? null : $lastAttempt,
             ]);
             $builds = [];
