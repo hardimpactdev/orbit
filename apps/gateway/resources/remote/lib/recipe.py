@@ -755,9 +755,28 @@ def extract(archive, destination):
     return destination
 
 
+def service_state(service):
+    output = run(['systemctl', 'show', '--no-pager', '--property=LoadState,Transient', service]).stdout
+    return dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
+
+
 def active_services():
     output = run(['systemctl', 'list-units', '--type=service', '--state=active', '--no-legend', '--plain']).stdout
     return {line.split()[0] for line in output.splitlines() if line.strip()}
+
+
+def persistent_services(candidates):
+    services = set()
+    for service in candidates:
+        state = service_state(service)
+        if state.get('LoadState') == 'not-found':
+            continue
+        if state.get('LoadState') != 'loaded' or state.get('Transient') not in ('yes', 'no'):
+            raise RecipeFailure()
+        # Transient work has its own completion protocol; it need not outlive convergence.
+        if state['Transient'] == 'no':
+            services.add(service)
+    return services
 
 
 def services_for(changed, before_active):
@@ -961,6 +980,10 @@ def apply_recipe(payload, snapshots):
         assessment = assess(tools, versions, snapshots=snapshots, git_names=git_packages(payload))
         supported(assessment)
         active = active_services()
+        recipe_packages = {pin['package'] for pin in tools.values() if pin['source'] == 'ubuntu'}
+        recipe_packages.update(name for name, pin in tools.items() if pin['source'] != 'ubuntu'
+                               and pin['artifacts'][payload['architecture']]['url'].endswith('.deb'))
+        health_services = persistent_services(services_for(recipe_packages, active))
         js = set(tools) & {'node', 'vp', 'vp-cli', 'pnpm', 'bun'}
         if js:
             vite_scope(account)
@@ -1011,15 +1034,19 @@ def apply_recipe(payload, snapshots):
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
             stage = 'restart'
-            restarted = services_for(changed, active)
+            restarted = sorted(persistent_services(services_for(changed, active)))
             for service in restarted:
                 stage = 'restart:' + service
                 run(['systemctl', 'restart', service])
             stage = 'health'
-            # Check all services active before this operation, including unchanged services; restart none here.
-            for service in sorted(active):
+            # Check recipe services and changed dependencies; role requirements are verified by Doctor.
+            for service in sorted(health_services | set(restarted)):
                 stage = 'health:' + service
-                run(['systemctl', 'is-active', '--quiet', service])
+                result = run(['systemctl', 'is-active', '--quiet', service], required=False)
+                if result.returncode != 0:
+                    if service_state(service).get('LoadState') == 'not-found':
+                        continue
+                    raise RecipeFailure(result=result)
             record_git(payload, after_versions)
             return {'changed_packages': changed, 'restarted_services': restarted,
                     'changed_tools': sorted(name for name in tools if versions[name] != after_versions[name]),
