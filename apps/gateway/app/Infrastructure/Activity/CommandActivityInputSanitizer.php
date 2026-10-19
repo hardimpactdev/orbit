@@ -134,7 +134,8 @@ final readonly class CommandActivityInputSanitizer
 
     public function redactText(string $value): string
     {
-        $limit = ini_set('pcre.backtrack_limit', (string) max(1_000_000, 4 * strlen($value)));
+        // Allow 2 steps per byte and up to 2.5x growth from earlier replacements, with headroom.
+        $limit = ini_set('pcre.backtrack_limit', (string) max(1_000_000, 10 * strlen($value)));
 
         try {
             $redacted =

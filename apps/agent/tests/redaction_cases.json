@@ -1038,5 +1038,30 @@
                 "repeat": 65536
             }
         ]
+    },
+    {
+        "name": "1 MiB JSON secret with expanding URI credentials",
+        "input": [
+            "{\"password\":\"",
+            {
+                "text": "a://b@",
+                "repeat": 174762
+            },
+            "aaaa",
+            "\"}"
+        ],
+        "expected": "{\"password\":\"[REDACTED]\"}"
+    },
+    {
+        "name": "1 MiB JSON secret with expanding token assignments",
+        "input": [
+            "{\"password\":\"",
+            {
+                "text": "TOKEN=x ",
+                "repeat": 131072
+            },
+            "\"}"
+        ],
+        "expected": "{\"password\":\"[REDACTED]\"}"
     }
 ]

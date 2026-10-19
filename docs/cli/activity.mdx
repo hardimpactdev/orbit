@@ -144,7 +144,7 @@ Doctor writes one ordinary Activity for each run and stores no findings in it.
 
 ### Text-redaction failures
 
-The Gateway and Node agent use the same text-redaction rules, checked against one shared corpus in `apps/agent/tests/redaction_cases.json`. PHP bounds each regex pass to `max(1_000_000, 4 × input bytes)` PCRE steps and restores the previous limit after redaction, even on failure. Possessive matches and failed-prefix skips avoid repeated scans of long names and values; the Bearer pass disables PCRE's start optimization to keep repeated headers linear with JIT off. Rust's regex engine provides the linear scan. A PEM `BEGIN` without an `END` hides the rest of the text.
+The Gateway and Node agent use the same text-redaction rules, checked against one shared corpus in `apps/agent/tests/redaction_cases.json`. PHP sets `pcre.backtrack_limit` to `max(1_000_000, 10 × input bytes)` and restores the previous limit after redaction, even on failure. The limit bounds one match attempt from one start position so long linear scans are not withheld; it does not bound a pass's total time. The possessive patterns, failed-prefix skips, and Bearer start-optimization guard keep each pass linear. The budget allows for two PCRE steps per byte and up to 2.5× text growth from earlier replacements. Rust's regex engine provides the linear scan. A PEM `BEGIN` without an `END` hides the rest of the text.
 
 If a text-redaction pass fails, the Gateway replaces that text with `Output withheld: redaction failed.` and logs an error with the PCRE error code and an exception, without the input, so the problem collector can report it. This rule applies to every Gateway text-redaction caller, including Activity, logs, and database results.
 
