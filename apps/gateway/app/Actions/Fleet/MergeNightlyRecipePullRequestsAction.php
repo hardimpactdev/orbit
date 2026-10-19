@@ -48,7 +48,7 @@ final readonly class MergeNightlyRecipePullRequestsAction
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
             Cache::put($scope.':retry', true, 300);
-            $this->blocked('list', 'Nightly recipe PRs could not be read. No automatic merge was attempted.');
+            $this->blocked('list', 'Nightly recipe PRs could not be read; retrying in five minutes. No automatic merge was attempted.');
 
             return;
         }
@@ -134,7 +134,9 @@ final readonly class MergeNightlyRecipePullRequestsAction
             if ($replacement->headRef <= $pull->headRef || $replacement->authorLogin !== $author) {
                 continue;
             }
-            $this->metadata($http->get('/pulls/'.$replacement->number)->throw()->json(), $replacement->headSha, $replacement->headRef, $repository, $author);
+            if (! $this->identity($http->get('/pulls/'.$replacement->number)->throw()->json(), $replacement->headSha, $replacement->headRef, $repository, $author)) {
+                continue;
+            }
             $pr = $http->get('/pulls/'.$pull->number)->throw()->json();
             if (! $this->identity($pr, $pull->headSha, $pull->headRef, $repository, $author)) {
                 return;

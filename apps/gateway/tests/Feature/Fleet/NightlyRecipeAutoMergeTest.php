@@ -251,6 +251,7 @@ it('retries temporary failures on the same green head after backoff', function (
     $evidence = nightlyMergeEvidence();
     $base = 'https://api.github.com/repos/nckrtl/orbit';
     $overrides = match ($failure) {
+        'PR list' => [$base.'/pulls?*' => Http::sequence()->pushStatus(503)->push([$evidence['pr']])],
         'PR read' => [$base.'/pulls/99' => Http::sequence()->pushStatus(503)->push($evidence['pr'])->push($evidence['final'])],
         'check runs' => [$base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::sequence()->pushStatus(503)->push(['total_count' => 1, 'check_runs' => $evidence['runs']])],
         'merge' => [$base.'/pulls/99/merge' => Http::sequence()->pushStatus(503)->push(['merged' => true, 'sha' => str_repeat('c', 40), 'message' => 'Merged'])],
@@ -282,7 +283,7 @@ it('retries temporary failures on the same green head after backoff', function (
 
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === $evidence['pr']['head']['sha']);
     expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request->method() === 'PUT')->last()[1]->json('merged'))->toBeTrue();
-})->with(['PR read', 'check runs', 'merge', 'timeout', 'snapshot download']);
+})->with(['PR list', 'PR read', 'check runs', 'merge', 'timeout', 'snapshot download']);
 
 it('does not record rejected evidence before Required checks pass', function (): void {
     $evidence = nightlyMergeEvidence();
@@ -312,10 +313,16 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     $date = new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day');
     $replacement['head']['ref'] = 'nightly/recipe-'.$date->format('Ymd');
     $replacement['head']['sha'] = str_repeat('d', 40);
+    $later = $replacement;
+    $later['number'] = 101;
+    $later['html_url'] = 'https://github.com/nckrtl/orbit/pull/101';
+    $later['head']['ref'] = 'nightly/recipe-'.$date->modify('+1 day')->format('Ymd');
+    $later['head']['sha'] = str_repeat('e', 40);
     $current = $evidence['pr'];
     match ($case) {
         'human replacement' => $replacement['user']['login'] = 'nick',
-        'fork replacement' => $replacement['head']['repo']['full_name'] = 'other/orbit',
+        'fork replacement', 'invalid candidate before App replacement' => $replacement['head']['repo']['full_name'] = 'other/orbit',
+        'extra commits replacement' => $replacement['commits'] = 2,
         'changed old head' => $current['head']['sha'] = str_repeat('e', 40),
         'changed old author' => $current['user'] = ['id' => 42, 'login' => 'nick', 'type' => 'User'],
         default => null,
@@ -323,24 +330,31 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     Http::swap(new Factory);
     $base = 'https://api.github.com/repos/nckrtl/orbit';
     nightlyMergeHttp($evidence, [
-        $base.'/pulls?*' => Http::response($case === 'no replacement' ? [$evidence['pr']] : [$evidence['pr'], $replacement]),
+        $base.'/pulls?*' => Http::response(match ($case) {
+            'no replacement' => [$evidence['pr']],
+            'invalid candidate before App replacement' => [$evidence['pr'], $replacement, $later],
+            default => [$evidence['pr'], $replacement],
+        }),
         $base.'/pulls/99' => Http::response($current),
         $base.'/pulls/100' => Http::response($replacement),
+        $base.'/pulls/101' => Http::response($later),
+        $base.'/commits/'.str_repeat('e', 40).'/check-runs?*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         $base.'/commits/'.str_repeat('d', 40).'/check-runs?*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         $base.'/issues/99/comments' => Http::response([], $case === 'comment failure' ? 503 : 201),
     ]);
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
 
-    if ($case === 'valid') {
+    if (in_array($case, ['valid', 'extra commits replacement', 'invalid candidate before App replacement'], true)) {
+        $replacementUrl = $case === 'invalid candidate before App replacement' ? 'pull/101' : 'pull/100';
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/issues/99/comments')
-            && str_contains($request['body'], 'pull/100') && str_contains($request['body'], 'Recipe contents differ'));
+            && str_contains($request['body'], $replacementUrl) && str_contains($request['body'], 'Recipe contents differ'));
         Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99') && $request['state'] === 'closed');
     } else {
         Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
     }
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files?'));
-})->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'changed old head', 'changed old author', 'comment failure']);
+})->with(['valid', 'no replacement', 'human replacement', 'fork replacement', 'invalid candidate before App replacement', 'extra commits replacement', 'changed old head', 'changed old author', 'comment failure']);
 
 
 it('finishes blocked PR retirement before merging a green replacement after a temporary cleanup failure', function (string $failure): void {
