@@ -88,17 +88,21 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 }
                 try {
                     $this->metadata($http->get($path)->throw()->json(), $pull->headSha, $pull->headRef, $repository, $author);
-                    $commits = $http->get($path.'/commits', ['per_page' => 2])->throw()->json();
-                    $files = $http->get($path.'/files', ['per_page' => 2])->throw()->json();
-                    $this->require($this->contents->appCommit($commits, $pull->headSha, $author),
-                        'Expected exactly one Gateway App commit with a verified GitHub web-flow signature.');
-                    $parents = data_get($commits, '0.parents');
-                    $parent = data_get($commits, '0.parents.0.sha');
-                    if (! is_array($parents) || count($parents) !== 1 || ! $this->contents->isSha($parent)) {
-                        throw new UnexpectedValueException('Expected a single-parent snapshot commit.');
+                    $verifiedHeadKey = $scope.':verified:'.$pull->number;
+                    if (Cache::get($verifiedHeadKey) !== $pull->headSha) {
+                        $commits = $http->get($path.'/commits', ['per_page' => 2])->throw()->json();
+                        $files = $http->get($path.'/files', ['per_page' => 2])->throw()->json();
+                        $this->require($this->contents->appCommit($commits, $pull->headSha, $author),
+                            'Expected exactly one Gateway App commit with a verified GitHub web-flow signature.');
+                        $parents = data_get($commits, '0.parents');
+                        $parent = data_get($commits, '0.parents.0.sha');
+                        if (! is_array($parents) || count($parents) !== 1 || ! $this->contents->isSha($parent)) {
+                            throw new UnexpectedValueException('Expected a single-parent snapshot commit.');
+                        }
+                        $this->patch($http, $files, $parent, $pull->headSha, substr($pull->headRef, -8).'T000000Z');
+                        $this->metadata($http->get($path)->throw()->json(), $pull->headSha, $pull->headRef, $repository, $author);
+                        Cache::forever($verifiedHeadKey, $pull->headSha);
                     }
-                    $this->patch($http, $files, $parent, $pull->headSha, substr($pull->headRef, -8).'T000000Z');
-                    $this->metadata($http->get($path)->throw()->json(), $pull->headSha, $pull->headRef, $repository, $author);
                 } catch (UnexpectedValueException $error) {
                     Cache::forever($blockedHeadKey, ['sha' => $pull->headSha, 'reason' => $error->getMessage()]);
                     $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] blocked: {$error->getMessage()}", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_blocked'));
@@ -107,7 +111,8 @@ final readonly class MergeNightlyRecipePullRequestsAction
                 }
                 $merged = $this->github->mergePullRequest($token, $repository, $pull->number, $pull->headSha);
                 if (! $merged->merged) {
-                    throw new RuntimeException('GitHub refused the expected-head merge; recheck the PR and branch protection.');
+                    Cache::put($retryKey, true, $retrySeconds);
+                    $this->alerts->haltedOnce("Nightly recipe PR [{$pull->url}] merge refused (GitHub HTTP {$merged->status}): {$merged->message}. Recheck the PR and branch protection; retrying in {$retrySeconds} seconds.", RecipeMaintenanceAlerts::pullIncident($pull->number, $pull->headSha, 'merge_refused'));
                 }
             } catch (Throwable $error) {
                 Cache::put($retryKey, true, $retrySeconds);
