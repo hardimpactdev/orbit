@@ -142,7 +142,7 @@ it('records a database safety refusal as a failed gate and retains normal succes
     expect($refusal->getExitCode())->not->toBe(0);
     expect($refusal->getOutput().$refusal->getErrorOutput())
         ->toContain(
-            '[apps/gateway] composer test:affected: FAILED',
+            '[apps/gateway] composer test:affected -- --tia-base=graph: FAILED',
             'Gateway tests refused an unsafe database connection.',
             'Candidate gate FAILED',
         );
