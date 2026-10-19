@@ -8,6 +8,7 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -235,6 +236,7 @@ it('does not recheck a blocked head even after the alert expires and checks a ch
     $head = str_repeat('d', 40);
     $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
     $evidence['commits'][0]['sha'] = $evidence['runs'][0]['head_sha'] = $head;
+    Http::swap(new Factory);
     $retried = nightlyMergeHttp($evidence);
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
