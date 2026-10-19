@@ -81,6 +81,8 @@ It returns a `ProgramResult` with `outcome`, `data`, and `log`, the program's st
 
 A caller matches the outcome and maps it to its own error codes. It never sees the transport. When an outcome or a failure fails the caller's step, the caller keeps the program's log as the step's command output, so the command's Activity shows it in `stderr`.
 
+Every `RemoteProgramFailed` retains a sanitized stderr tail of at most 4096 bytes. Its exception message includes that tail and the exit status when available, so callers that record or show only the message still retain the failure evidence. Secret redaction runs before the tail is bounded, so truncation cannot cut off a secret's label or a private-key header before redaction.
+
 `SshProgramRunner` implements the runner over SSH. It connects to the Node's WireGuard address as the Node's user, with the Gateway's key and pinned host keys, and sends the program on standard input. A call can pass a shorter timeout than the program's and a cancellation check.
 
 An internal caller may select a validated Unix account through the catalog's optional `user` argument. The runner prefixes that program's command with `sudo -n -u <user> -H`; SSH still connects as the enrolled account. This is not a caller-supplied API option. Project metadata inspection uses the Instance account on production, so version files are read with application permissions rather than as the store owner.
