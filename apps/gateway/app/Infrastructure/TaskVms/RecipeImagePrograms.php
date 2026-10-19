@@ -97,13 +97,15 @@ final readonly class RecipeImagePrograms
         $unit = 'orbit-recipe-image-'.substr(hash('sha256', $recipe->identity.':'.$profile.':'.$phase.':'.$execution), 0, 32).'.service';
         $status = $this->status($shell, $unit);
         if ($status['LoadState'] === 'loaded' && ($state['attempt'] ?? $attempt) < $attempt
-            && $status['ActiveState'] !== 'failed' && ! isset($state['restart_from'])) {
-            $state['attempt'] = $attempt;
+            && ! isset($state['restart_from'])) {
+            if ($status['ActiveState'] === 'failed') {
+                $state['restart_from'] = $status['InvocationID'];
+            } else {
+                $state['attempt'] = $attempt;
+            }
             $save?->__invoke($state);
         }
-        if ($status['LoadState'] === 'loaded' && (isset($state['restart_from']) || (($status['ActiveState'] ?? null) === 'failed' && ($state['attempt'] ?? $attempt) < $attempt))) {
-            $state['restart_from'] ??= $status['InvocationID'];
-            $save?->__invoke($state);
+        if ($status['LoadState'] === 'loaded' && isset($state['restart_from'])) {
             if ($status['InvocationID'] === $state['restart_from']) {
                 $restart = $this->control($shell, ['systemctl', 'restart', '--', $unit], required: false);
                 $status = $this->status($shell, $unit);
