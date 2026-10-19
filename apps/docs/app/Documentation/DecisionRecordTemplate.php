@@ -14,7 +14,7 @@ final readonly class DecisionRecordTemplate
 {
     public const array SECTIONS = ['Status', 'Context', 'Decision', 'Rejected alternatives', 'Consequences', 'Affects'];
 
-    private const string STATUS_PATTERN = '/^(In progress|Proposed|Withdrawn on \d{4}-\d{2}-\d{2}|Accepted on \d{4}-\d{2}-\d{2})\./';
+    private const string STATUS_PATTERN = '/^(In progress|Proposed|Withdrawn on \d{4}-\d{2}-\d{2}|Superseded on \d{4}-\d{2}-\d{2} by ADR \d{4}|Accepted on \d{4}-\d{2}-\d{2})\./';
 
     public function __construct(
         private string $rule,
@@ -73,7 +73,7 @@ final readonly class DecisionRecordTemplate
                 $findings[] = $this->error(
                     $record,
                     (int) key($lines),
-                    'Status must start with `In progress.`, `Proposed.`, `Withdrawn on YYYY-MM-DD.`, or `Accepted on YYYY-MM-DD.`.',
+                    'Status must start with `In progress.`, `Proposed.`, `Withdrawn on YYYY-MM-DD.`, `Superseded on YYYY-MM-DD by ADR NNNN.`, or `Accepted on YYYY-MM-DD.`.',
                 );
             }
         }

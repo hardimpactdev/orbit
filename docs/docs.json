@@ -669,7 +669,8 @@
               "decisions/0219-answer-cluster-names-from-a-dns-on-the-router",
               "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users",
               "decisions/0223-run-one-gate-from-handoff-to-merge",
-              "decisions/0224-give-each-task-group-one-holder-and-one-sender"
+              "decisions/0224-give-each-task-group-one-holder-and-one-sender",
+              "decisions/0225-make-node-changes-through-agent-commands"
             ]
           }
         ]
