@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import runpy
+import errno
 import sys
 import tempfile
 import unittest
@@ -14,9 +15,20 @@ import subprocess
 
 cache = runpy.run_path(sys.argv[1])
 seed = runpy.run_path(sys.argv[2])['seed']
+seed_program = sys.argv[2]
 
 
 class ComposerCacheTest(unittest.TestCase):
+    def test_mount_marker_access_failure_names_the_operation_and_path_without_waiting(self):
+        marker = Path('/opt/orbit/package-cache/.orbit-owned')
+        with patch('pathlib.Path.stat', side_effect=PermissionError(errno.EACCES, 'Permission denied', str(marker))), \
+             patch('pathlib.Path.is_file', return_value=False), \
+             patch('time.sleep') as sleep, \
+             patch.object(sys, 'argv', [seed_program, str(marker.parent)]):
+            with self.assertRaisesRegex(PermissionError, r'/opt/orbit/package-cache/\.orbit-owned'):
+                runpy.run_path(seed_program, run_name='__main__')
+        sleep.assert_not_called()
+
     def artifact(self, data=b'archive', checksum=True):
         url = 'https://api.github.com/repos/acme/demo/zipball/' + 'a' * 40
         return dict(manager='composer', package='acme/demo', version='1.0.0', url=url,

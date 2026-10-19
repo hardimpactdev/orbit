@@ -66,7 +66,7 @@ final readonly class UpCloudTaskVmImageBuilder
      *
      * @throws TaskVmException `task_vm.image_build_running` while another UpCloud build runs, else `task_vm.image_build_failed`
      */
-    public function build(?Closure $progress = null, ?MachineRecipe $machineRecipe = null, ?int $afterAttemptId = null): string
+    public function build(?Closure $progress = null, ?MachineRecipe $machineRecipe = null, ?int $afterAttemptId = null, ?int $generation = null): string
     {
         $machineRecipe ??= $this->builds->currentRecipe();
         $lock = Cache::lock(self::Lock, self::LockSeconds);
@@ -82,12 +82,19 @@ final readonly class UpCloudTaskVmImageBuilder
 
         $attempt = null;
         try {
-            if ($afterAttemptId !== null && self::lastAttempt($machineRecipe->identity) !== $afterAttemptId) {
-                throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'This UpCloud recipe was already attempted. Request an explicit retry.');
-            }
-            $attempt = DB::table('upcloud_task_vm_image_builds')->insertGetId([
-                'recipe_identity' => $machineRecipe->identity, 'state' => 'running', 'started_at' => now(),
-            ]);
+            $attempt = DB::transaction(function () use ($machineRecipe, $afterAttemptId, $generation): int {
+                DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
+                if ($generation !== null) {
+                    $this->fence($machineRecipe, $generation);
+                }
+                if ($afterAttemptId !== null && self::lastAttempt($machineRecipe->identity) !== $afterAttemptId) {
+                    throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'This UpCloud recipe was already attempted. Request an explicit retry.');
+                }
+
+                return DB::table('upcloud_task_vm_image_builds')->insertGetId([
+                    'recipe_identity' => $machineRecipe->identity, 'state' => 'running', 'started_at' => now(),
+                ]);
+            });
             $this->stage($progress, 'sweep', fn () => $this->sweep());
             [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
@@ -107,7 +114,12 @@ final readonly class UpCloudTaskVmImageBuilder
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
             $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
-            $this->stage($progress, 'promote', fn () => $this->servers->renameTemplate($template, $title, $machineRecipe->identity));
+            $this->stage($progress, 'promote', fn () => DB::transaction(function () use ($template, $title, $machineRecipe, $generation): void {
+                if ($generation !== null) {
+                    $this->fence($machineRecipe, $generation);
+                }
+                $this->servers->renameTemplate($template, $title, $machineRecipe->identity);
+            }));
             $published = $template;
             $template = null;
             $this->stage($progress, 'prune', fn () => $this->prune());
@@ -134,6 +146,15 @@ final readonly class UpCloudTaskVmImageBuilder
         } finally {
             Cache::forget(self::Running.$stamp);
             $lock->release();
+        }
+    }
+
+    private function fence(MachineRecipe $recipe, int $generation): void
+    {
+        $matched = DB::table('task_vm_image_recipe')->where('id', 1)->where('identity', $recipe->identity)
+            ->where('generation', $generation)->update(['generation' => $generation]);
+        if ($matched !== 1) {
+            throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'A newer recipe image generation is desired. This UpCloud build cannot continue or promote.');
         }
     }
 

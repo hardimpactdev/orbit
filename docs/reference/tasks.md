@@ -507,7 +507,7 @@ When the task fails on two ticks in a row, the task and its open subtasks ask fo
 
 A claim takes the oldest `todo` task and moves it to `reserved`. Every task runs on its own [task VM](/reference/compute-drivers#task-vms). The claim gets the VM, and the provisioner creates the [task workspace](#task-workspace) on that VM's Node. [Task VM workspace](#task-vm-workspace) describes the steps. Until the VM is `ready`, the task returns to `todo` with a `Task VM:` reason.
 
-When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
+When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. Workspace provisioning failures retry after 60, 120, 300, 600, then 1800 seconds. Waiting groups do not block later groups. A successful start resets the backoff.
 
 The claim records `reserved_at` when it reserves the task. It clears `reserved_at` when the task starts, or when the claim ends without starting it. While `reserved_at` is set and younger than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, the claim is in flight. A cancel can end the task while its claim is in flight. The sweeps of ended tasks then wait for the claim, which removes the workspace it created. A claim that stopped part way leaves `reserved_at` set, so the sweeps wait until the timeout passes.
 
@@ -516,7 +516,7 @@ The claim records `reserved_at` when it reserves the task. It clears `reserved_a
 | The task VM is not ready yet | The task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. |
 | Source defaults are invalid, or provisioning throws | Count consecutive failures per group in cache. Request `failure` assistance at `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` (default `3`, minimum `1`). |
 | Provisioning failure with a known cause | Prefix `Workspace provisioning did not return an instance.` followed by the constraint or exception class, step, and message, such as `app-instance-source-prepare` for an existing checkout. |
-| Workspace creation exception | Log the exception through Laravel `report()` before returning a typed failure. |
+| Workspace creation exception | Report the exception once for each failure cause, until a successful workspace start resets that state. The same cause stays silent, including under a direction request. |
 | Provisioner returns null | Use the fixed reason `Workspace provisioning did not return an instance.` |
 | Successful start after provisioning failures | Clear the claim-failure reason and reset the consecutive-failure counter. |
 | The move to `running` fails after provisioning | Reason `The task could not start after its workspace was provisioned.` The task keeps its workspace. |

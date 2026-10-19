@@ -24,17 +24,27 @@ final readonly class RecipeImageBuilds
     public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain, private RecipeMaintenanceAlerts $alerts, private UpCloudServers $servers) {}
 
     /** @return list<TaskVmImageBuild> */
-    public function reconcile(?int $hostId = null, bool $retry = false): array
+    public function reconcile(?int $hostId = null, bool $retry = false, bool $rebuild = false): array
     {
         $recipe = $this->currentRecipe();
-        $generation = $this->desire($recipe);
-        $builds = [];
+        if ($rebuild && ($retry || $hostId !== null)) {
+            throw new TaskVmException('task_vm.image_build_failed', 'A cold rebuild targets every configured backend and cannot be combined with --retry.');
+        }
         $this->chain->recoverSubmissions();
+        $builds = $rebuild ? $this->coldRebuild($recipe) : [];
+        $generation = $rebuild ? (int) DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail()->generation : $this->desire($recipe);
         foreach ($this->settings->hosts as $host) {
-            if ($hostId !== null && $host->nodeId !== $hostId) {
+            if ($rebuild || ($hostId !== null && $host->nodeId !== $hostId)) {
                 continue;
             }
-            $existing = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)->first();
+            $existing = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)->latest('id')->first();
+            if ($existing !== null && $existing->recipe_generation !== $generation) {
+                $retained = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('recipe_identity', $recipe->identity)
+                    ->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('promoted_at')->latest('id')->first();
+                if ($retained !== null) {
+                    $existing = $retained;
+                }
+            }
             if ($existing !== null) {
                 $reactivate = $existing->state === TaskVmImageBuildState::Succeeded && $existing->recipe_generation !== $generation;
                 $restart = $existing->restartsAutomatically() || ($retry && $existing->state === TaskVmImageBuildState::Failed);
@@ -48,14 +58,8 @@ final readonly class RecipeImageBuilds
                 continue;
             }
             $node = Node::query()->findOrFail($host->nodeId);
-            $architecture = match ($node->architecture) {
-                'x86_64', 'amd64' => 'amd64',
-                'aarch64', 'arm64' => 'arm64',
-                default => throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.'),
-            };
-            $recipe->profile('base', $architecture);
             try {
-                $builds[] = $this->chain->start($node, $recipe, $generation);
+                $builds[] = $this->start($node, $recipe, $generation);
             } catch (TaskVmException $error) {
                 // Another scheduler or manual command may have won admission since the read above.
                 if ($error->errorCode !== 'task_vm.image_build_running') {
@@ -66,10 +70,12 @@ final readonly class RecipeImageBuilds
 
         try {
             $upcloud = $this->upcloudStatus($recipe);
-            if ($upcloud !== null && $upcloud['template'] === null) {
+            $request = DB::table('task_vm_image_recipe')->where('id', 1)->value('upcloud_rebuild_after_attempt');
+            $coldPending = is_numeric($request) && UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity) === (int) $request;
+            if ($upcloud !== null && ($upcloud['template'] === null || $coldPending)) {
                 $attempt = $upcloud['attempt'];
-                if ($attempt === null || $retry) {
-                    RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt->id ?? 0);
+                if ($attempt === null || $retry || $coldPending) {
+                    RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt->id ?? 0, $generation, $coldPending);
                 } elseif ($attempt->fenced()) {
                     $key = 'task-vms:upcloud-image-build:fenced:'.$attempt->id;
                     if (Cache::add($key, true, 3600)) {
@@ -116,16 +122,67 @@ final readonly class RecipeImageBuilds
             // A write first acquires SQLite's writer fence, which promotion holds across its alias move.
             DB::table('task_vm_image_recipe')->where('id', 1)->where('identity', '!=', $recipe->identity)
                 ->orWhere(fn ($query) => $query->where('id', 1)->whereNull('identity'))
-                ->update(['identity' => $recipe->identity, 'recipe_json' => $recipe->json, 'generation' => DB::raw('generation + 1')]);
+                ->update(['identity' => $recipe->identity, 'recipe_json' => $recipe->json, 'generation' => DB::raw('generation + 1'), 'upcloud_rebuild_after_attempt' => null]);
             $state = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
 
             return (int) $state->generation;
         });
     }
 
-    public static function alias(string $prefix, string $identity, string $profile): string
+    /**
+     * A cold rebuild stays inside the desired generation; no Node state or promoted image is changed.
+     *
+     * @return list<TaskVmImageBuild>
+     */
+    private function coldRebuild(MachineRecipe $recipe): array
     {
-        $suffix = '-recipe-'.substr($identity, 7, 12).'-'.$profile;
+        return DB::transaction(function () use ($recipe): array {
+            // The same writer fence guards starts, allocation, desired changes, and promotion.
+            DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
+            $state = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
+            if ($state->identity !== $recipe->identity) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Cold rebuild requires the current desired recipe. Reconcile it before rebuilding images.');
+            }
+            $generation = (int) $state->generation;
+            $lastAttempt = UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity);
+            $pending = $state->identity === $recipe->identity && $state->upcloud_rebuild_after_attempt !== null
+                && (int) $state->upcloud_rebuild_after_attempt === $lastAttempt;
+            if (TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)
+                ->where(fn ($query) => $query->where('recipe_identity', $recipe->identity)
+                    ->orWhereIn('host_node_id', array_map(static fn ($host): int => $host->nodeId, $this->settings->hosts)))->exists()
+                || UpCloudTaskVmImageBuild::query()->where('recipe_identity', $recipe->identity)
+                    ->where('state', TaskVmImageBuildState::Running)->where('started_at', '>', now()->subSeconds(UpCloudTaskVmImageBuild::RunningSeconds))->exists()
+                || $pending) {
+                throw new TaskVmException('task_vm.image_build_running', 'A recipe image build is running or its cold rebuild is pending. Wait for it to finish before rebuilding.');
+            }
+            DB::table('task_vm_image_recipe')->where('id', 1)->update([
+                'upcloud_rebuild_after_attempt' => $this->settings->upcloud === null ? null : $lastAttempt,
+            ]);
+            $builds = [];
+            foreach ($this->settings->hosts as $host) {
+                $node = Node::query()->findOrFail($host->nodeId);
+                $builds[] = $this->start($node, $recipe, $generation);
+            }
+
+            return $builds;
+        });
+    }
+
+    private function start(Node $node, MachineRecipe $recipe, int $generation): TaskVmImageBuild
+    {
+        $architecture = match ($node->architecture) {
+            'x86_64', 'amd64' => 'amd64',
+            'aarch64', 'arm64' => 'arm64',
+            default => throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.'),
+        };
+        $recipe->profile('base', $architecture);
+
+        return $this->chain->start($node, $recipe, $generation);
+    }
+
+    public static function alias(string $prefix, string $identity, string $profile, int $buildId): string
+    {
+        $suffix = '-recipe-'.substr($identity, 7, 12).'-'.$buildId.'-'.$profile;
 
         return substr($prefix, 0, 64 - strlen($suffix)).$suffix;
     }

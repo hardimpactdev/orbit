@@ -829,6 +829,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 return original_read(path, *args, **kwargs)
             with patch.object(image.Path, 'read_text', read_text), \
                  patch.object(image.Path, 'exists', return_value=False), \
+                 patch.object(image, 'image_guest_cache'), \
                  patch.object(image, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
                  patch.object(image, 'inspect', return_value={'curl': NEWER}), \
                  patch.object(image, 'run', side_effect=self.command):

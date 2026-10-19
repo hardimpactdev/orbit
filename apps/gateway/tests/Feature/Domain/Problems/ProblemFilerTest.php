@@ -1070,6 +1070,7 @@ it('resolves an image-build incident only after recovery or supersession', funct
 
     match ($recovery) {
         'success' => $build->update(['state' => TaskVmImageBuildState::Succeeded]),
+        'replacement' => $build->replicate()->fill(['state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()])->save(),
         'identity' => DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('e', 64)]),
         'gone' => $build->delete(),
     };
@@ -1079,6 +1080,7 @@ it('resolves an image-build incident only after recovery or supersession', funct
     expect($fingerprint->refresh()->evidence['resolution'])->toBe($reason);
 })->with([
     'later attempt succeeded' => ['success', 'verified_image_build'],
+    'later cold build promoted' => ['replacement', 'verified_image_build'],
     'identity superseded' => ['identity', 'recipe_generation_superseded'],
     'build removed' => ['gone', 'resource_gone'],
 ]);
@@ -1104,4 +1106,29 @@ it('keeps an image-build incident open when a recipe revert returns to the faile
 
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
     expect($fingerprint->refresh()->evidence)->not->toHaveKey('resolved_at');
+});
+
+it('requires a newer promoted successful build for the failed image host and identity', function (): void {
+    problem_filer_project();
+    $recipe = 'sha256:'.str_repeat('d', 64);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => $recipe, 'generation' => 14]);
+    $host = Node::query()->create(['name' => 'image-host', 'status' => 'active', 'public_ssh_host' => 'image-host.test']);
+    $other = Node::query()->create(['name' => 'other-image-host', 'status' => 'active', 'public_ssh_host' => 'other-image-host.test']);
+    $older = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => $recipe,
+        'recipe_generation' => 14, 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()]);
+    $failed = $older->replicate();
+    $failed->fill(['state' => TaskVmImageBuildState::Failed, 'promoted_at' => null])->save();
+    foreach ([['state' => TaskVmImageBuildState::Failed], ['promoted_at' => null], ['host_node_id' => $other->id],
+        ['recipe_identity' => 'sha256:'.str_repeat('e', 64)]] as $attributes) {
+        $older->replicate()->fill($attributes)->save();
+    }
+    app(ProblemCollector::class)->recordRelease('rollout_halted|recipe-image:'.$failed->id.'|1|build_failed', [
+        'summary' => 'Image failed', 'release_kind' => 'rollout_halted', 'incident_resource' => 'recipe-image:'.$failed->id,
+        'incident_attempt' => '1', 'incident_fault' => 'build_failed',
+    ]);
+
+    Artisan::call('problems:file');
+
+    expect(Task::topLevel()->sole()->status)->toBe(TaskGroupStatus::Backlog)
+        ->and(ProblemFingerprint::query()->sole()->evidence)->not->toHaveKey('resolved_at');
 });

@@ -68,8 +68,8 @@ final readonly class ConvergeFleetRecipeAction
             }
             $ready = true;
             foreach ($hosts as $host) {
-                $build = $builds->firstWhere('host_node_id', $host);
-                if ($build?->state !== TaskVmImageBuildState::Succeeded || $build->promoted_at === null || $build->recipe_generation !== $generation || ! isset($build->images['base'])) {
+                if (! $builds->contains(static fn (TaskVmImageBuild $build): bool => $build->host_node_id === $host
+                    && $build->state === TaskVmImageBuildState::Succeeded && $build->promoted_at !== null && isset($build->images['base']))) {
                     $ready = false;
                 }
             }

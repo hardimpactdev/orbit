@@ -129,6 +129,7 @@ it('claimNext continues after provision null', function (): void {
         ->assertJsonPath('data.status', 'todo')
         ->assertJsonPath('data.assistance_reason', TaskScheduler::ProvisioningFailedReason);
 
+    $this->travel(60)->seconds();
     $recovered = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 

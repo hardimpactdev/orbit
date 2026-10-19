@@ -111,6 +111,10 @@ final readonly class ProblemRecovery
             if (is_string($desired) && $desired !== $build->recipe_identity) {
                 return 'recipe_generation_superseded';
             }
+            if (TaskVmImageBuild::query()->where('host_node_id', $build->host_node_id)->where('recipe_identity', $build->recipe_identity)
+                ->where('id', '>', $build->id)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('promoted_at')->exists()) {
+                return 'verified_image_build';
+            }
 
             return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
         }

@@ -411,3 +411,17 @@ it('records accepted newer Ubuntu security builds in nightly convergence without
         ->and($changes['newer_than_recipe']['curl'])->toBe(['installed' => new RecipeLoader()->load()->tools['curl']->version.'+fixture1', 'version' => new RecipeLoader()->load()->tools['curl']->version])
         ->and($alerts->alerts)->toBe([]);
 });
+
+it('starts an unvisited rollout when a same-generation cold image replaces a failed image', function (): void {
+    [$record, $other, $doctor] = nightlyRecipeFleet();
+    $record->update(['state' => TaskVmImageBuildState::Failed, 'promoted_at' => null]);
+    $replacement = $record->replicate();
+    $replacement->fill(['state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()])->save();
+
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($doctor->visited)->toBe([$record->host_node_id])
+        ->and($record->refresh()->fleet_convergence['status'])->toBe('ready')
+        ->and($record->fleet_convergence['nodes'])->toHaveKey($record->host_node_id)
+        ->and($replacement->refresh()->fleet_convergence)->toBeNull();
+});
