@@ -103,6 +103,7 @@ use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
+    test_ready_workspace_services();
 });
 
 beforeEach(function (): void {

@@ -189,13 +189,17 @@ it('verifies each head once while retrying refused merges for 24 hours', functio
     $snapshots->shouldReceive('latest')->twice()->andReturnUsing(new FakeUbuntuSnapshot()->latest(...));
     app()->instance(NightlyRecipeContents::class, new NightlyRecipeContents($snapshots));
 
-    for ($tick = 0; $tick <= 288; $tick++) {
-        app(MergeNightlyRecipePullRequestsAction::class)->execute();
-        $this->travel(5)->minutes();
+    $started = now()->toImmutable();
+    $merge = app(MergeNightlyRecipePullRequestsAction::class);
+    // Exercise consecutive retries and both sides of the day boundary without replaying identical ticks.
+    foreach ([0, 5, 10, 1435, 1440, 1445] as $minutes) {
+        $this->travelTo($started->addMinutes($minutes));
+        $merge->execute();
+        expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
     }
 
     expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files?')))->toHaveCount(1);
-    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge')))->toHaveCount(289);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/merge')))->toHaveCount(6);
 
     $head = str_repeat('d', 40);
     $evidence['pr']['head']['sha'] = $evidence['final']['head']['sha'] = $head;
@@ -524,9 +528,13 @@ it('ends refused green merges for three days of ticks before re-resolving supers
 
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
     $reached = true;
-    for ($tick = 0; $tick < 864; $tick++) {
-        $this->travel(5)->minutes();
-        app(MergeNightlyRecipePullRequestsAction::class)->execute();
+    $started = now()->toImmutable();
+    $merge = app(MergeNightlyRecipePullRequestsAction::class);
+    foreach ([5, 10, 1440, 2880, 4320] as $minutes) {
+        $this->travelTo($started->addMinutes($minutes));
+        $merge->execute();
+        expect($closed)->toBeTrue();
+        expect(Http::recorded(fn (Request $request): bool => $request->method() === 'PATCH' && str_ends_with($request->url(), '/pulls/99')))->toHaveCount(1);
     }
 
     expect($closed)->toBeTrue();

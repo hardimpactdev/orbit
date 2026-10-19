@@ -519,7 +519,11 @@ def stop_child_process():
     except ProcessLookupError:
         pass
     deadline = time.monotonic() + 5
-    while process_group_exists(process.pid) and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        # Reap an exited leader before probing the group: its zombie would keep the group alive for the full grace.
+        process.poll()
+        if not process_group_exists(process.pid):
+            break
         time.sleep(0.05)
     if process_group_exists(process.pid):
         try:

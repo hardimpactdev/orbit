@@ -41,6 +41,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\WithCachedConfig;
+use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -84,6 +86,15 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
+
+uses(WithCachedConfig::class, WithCachedRoutes::class)
+    ->in(
+        'Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+        'Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
+        'Feature/Domain/Tasks/TaskSchedulerTest.php',
+        'Feature/Domain/Tasks/TaskSettlingTickTest.php',
+        'Feature/Fleet/NightlyRecipeAutoMergeTest.php',
+    );
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

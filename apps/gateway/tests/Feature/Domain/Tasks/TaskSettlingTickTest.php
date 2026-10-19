@@ -84,6 +84,7 @@ use Tests\Support\NullTaskWorkspaceDiffReader;
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
+    test_ready_workspace_services();
     tick_bind_defaults();
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {

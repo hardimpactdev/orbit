@@ -48,10 +48,79 @@ use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
 pest()->group('privileged');
+
+beforeAll(function (): void {
+    check_runner_programs();
+});
+
+afterAll(function (): void {
+    check_runner_programs()->close();
+});
+
+function check_runner_programs(): ForkedPythonPrograms
+{
+    static $programs = null;
+
+    return $programs ??= new ForkedPythonPrograms;
+}
+
+/** Run the real check synchronously when capture/status, not detached admission, is the subject. */
+function check_runner_capture(Instance $instance, ?string $command, ?array $deliverables = null): TaskCheckProcess
+{
+    $directory = $instance->checkout_path.'/.git/orbit';
+    File::ensureDirectoryExists($directory);
+    $script = $directory.'/check';
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
+    $evidence = $directory.'/deliverables.json';
+    file_put_contents($evidence, json_encode($deliverables, JSON_THROW_ON_ERROR));
+    $payload = json_encode(['script' => $script, 'checkout' => $instance->checkout_path, 'command' => $command ?? '', 'deliverables' => $deliverables === null ? null : $evidence], JSON_THROW_ON_ERROR);
+    $bootstrap = <<<'PYTHON'
+        import json, os, sys
+        source, payload = sys.stdin.buffer.read().split(b'\0', 1)
+        options = json.loads(payload)
+        check = {'__name__': 'check', '__file__': options['script']}
+        exec(compile(source, sys.argv[1], 'exec'), check)
+        os.chdir(options['checkout'])
+        head = check['git'](options['checkout'], 'rev-parse', 'HEAD')
+        tree = check['working_tree'](options['checkout'])
+        started = check['process_started'](os.getpid())
+        check['run'](options['checkout'], head, tree, None, options['deliverables'], options['command'])
+        print(json.dumps({'pid': os.getpid(), 'started': started, 'head': head, 'tree': tree}))
+        PYTHON;
+    $result = check_runner_programs()->run($bootstrap, 'task-check-capture', TaskUnitProgram::read('tasks/check')."\0".$payload, ['HOME' => test()->directory.'/home']);
+    expect($result->exitCode)->toBe(0, $result->stderr);
+    $data = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+
+    return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree']);
+}
+
+function check_runner_clock_program(?string $trigger = null, bool $advanceDrain = false): string
+{
+    $clock = str_replace(['__DEADLINE_TRIGGER__', '__ADVANCE_DRAIN__'], [$trigger === null ? 'None' : json_encode($trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $advanceDrain ? 'True' : 'False'], file_get_contents(__DIR__.'/../../../Fixtures/task-check-clock.py'));
+
+    return str_replace("\nif __name__ == '__main__':", "\n".$clock."\nif __name__ == '__main__':", TaskUnitProgram::read('tasks/check'));
+}
+
+function check_runner_controlled_transport(?string $trigger = null, bool $advanceDrain = false): LocalShellSshExecutor
+{
+    $transport = new LocalShellSshExecutor;
+    $transport->transformInput = fn (string $input): string => preg_replace_callback("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| workspace_metadata/", function (array $match) use ($trigger, $advanceDrain): string {
+        $payload = json_decode(base64_decode($match[1]), true, flags: JSON_THROW_ON_ERROR);
+        if (isset($payload['script'])) {
+            expect($payload['script'])->toBe(base64_encode(TaskUnitProgram::read('tasks/check')));
+            $payload['script'] = base64_encode(check_runner_clock_program($trigger, $advanceDrain));
+        }
+
+        return "printf '%s' '".base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))."' | base64 -d | workspace_metadata";
+    }, $input);
+
+    return $transport;
+}
 
 function check_runner_checkout(string $check): string
 {
@@ -124,15 +193,21 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
 {
-    for ($attempt = 0; $attempt < 150; $attempt++) {
-        $reading = $runner->read($instance, $process);
-        if ($reading->state !== 'running') {
-            return $reading;
-        }
-        usleep(100_000);
-    }
+    // A pidfd becomes readable on exit, including an unreaped detached child. No status-polling sleeps are needed.
+    $wait = new Process(['python3', '-c', <<<'PYTHON'
+        import os, select, sys
+        try:
+            fd = os.pidfd_open(int(sys.argv[1]))
+        except ProcessLookupError:
+            sys.exit(0)
+        try:
+            assert select.select([fd], [], [], 15)[0], 'The check did not finish.'
+        finally:
+            os.close(fd)
+        PYTHON, (string) $process->pid]);
+    $wait->mustRun();
 
-    throw new RuntimeException('The check did not finish.');
+    return $runner->read($instance, $process);
 }
 
 /**
@@ -367,13 +442,16 @@ it('runs login shells with the fixture account home and profile', function (): v
 });
 
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
-    $checkout = check_runner_checkout($check);
+    $checkout = check_runner_checkout('read -r release < ignored/release; '.$check);
+    File::ensureDirectoryExists($checkout.'/ignored');
+    expect(posix_mkfifo($checkout.'/ignored/release', 0600))->toBeTrue();
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
     $status = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
 
     $process = $runner->start($instance, 'composer check');
     $first = $runner->read($instance, $process);
+    file_put_contents($checkout.'/ignored/release', "go\n");
     $reading = check_runner_wait($runner, $instance, $process);
 
     expect(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775);
@@ -389,12 +467,12 @@ it('runs composer check detached and reports running, then the exit code and out
         ->and($reading->finishedAt)->toBeLessThanOrEqual(microtime(true))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
 })->with([
-    'passing' => ['sleep 1 && echo all checks passed', 0, 'all checks passed'],
-    'failing' => ['sleep 1 && echo PHPStan found 2 errors && exit 2', 2, 'PHPStan found 2 errors'],
+    'passing' => ['echo all checks passed', 0, 'all checks passed'],
+    'failing' => ['echo PHPStan found 2 errors && exit 2', 2, 'PHPStan found 2 errors'],
 ]);
 
 it('reports the paths a check changed in the working tree, but not ignored files', function (): void {
-    $checkout = check_runner_checkout('sleep 1 && mkdir -p ignored && echo x > ignored/cache && echo y > written.txt');
+    $checkout = check_runner_checkout('mkdir -p ignored && echo x > ignored/cache && echo y > written.txt');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
 
@@ -625,10 +703,12 @@ it('runs setup payloads larger than the operating system argument limit', functi
 it('removes setup scripts after failure or timeout and skips later work', function (string $command, int $exit): void {
     $checkout = check_runner_checkout('touch check-ran');
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $trigger = $checkout.'/ignored/deadline';
+    $runner = check_runner(check_runner_controlled_transport($trigger));
+    $advance = $exit === 124 ? 'touch ignored/deadline; ' : '';
 
     $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
-        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$command, 'timeout_seconds' => 1],
+        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$advance.$command, 'timeout_seconds' => 1],
         ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
     ]));
 
@@ -658,6 +738,42 @@ it('stops at the first failing setup step without running composer check', funct
         ->and($reading->output)->toContain('cannot install')
         ->and($reading->output)->not->toContain('composer check')
         ->and(file_exists($checkout.'/never-ran'))->toBeFalse();
+});
+
+it('reaps an exited setup leader before waiting for its process group to disappear', function (): void {
+    $script = $this->directory.'/check.py';
+    file_put_contents($script, TaskUnitProgram::read('tasks/check'));
+    $probe = new Process(['python3', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, signal, sys
+        from types import SimpleNamespace
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        class Child:
+            pid = 123
+            reaped = False
+            def poll(self):
+                self.reaped = True
+                return 0
+            def wait(self):
+                self.reaped = True
+        child = Child()
+        clock = [0]
+        signals = []
+        def sleep(seconds):
+            clock[0] += seconds
+        check.time = SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep)
+        check.os.killpg = lambda pid, sig: signals.append((pid, sig))
+        check.process_group_exists = lambda pid: not child.reaped
+        check.CHILD_PROCESS = child
+        check.stop_child_process()
+        assert child.reaped
+        assert check.CHILD_PROCESS is None
+        assert clock[0] == 0, clock
+        assert signals == [(123, signal.SIGTERM)], signals
+        PYTHON, $script]);
+
+    expect($probe->run())->toBe(0, $probe->getErrorOutput());
 });
 
 it('reports a check that writes its result and exits while status looks it up as finished, not lost', function (): void {
@@ -765,7 +881,7 @@ describe('topology diff evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, null, [
             'start' => $start, 'commands' => [], 'topology' => true,
         ]));
 
@@ -795,7 +911,7 @@ describe('topology diff evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, null, [
             'start' => $start, 'commands' => [], 'topology' => true,
         ]));
 
@@ -814,7 +930,7 @@ describe('deliverable evidence', function (): void {
             ['id' => 'other', 'command' => 'touch ignored/other-ran', 'directory' => '.'],
         ]];
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+        $reading = $runner->read($instance, check_runner_capture($instance, 'composer check', $deliverables));
         $evidence = TaskDeliverableEvidence::fromArray($reading->deliverables);
         $deliverable = TaskDeliverable::fromArray([
             'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
@@ -845,7 +961,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'bash tests/check.sh', deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'bash tests/check.sh', [
             'start' => $start, 'commands' => [[
                 'id' => 'project-check', 'command' => 'bash tests/check.sh', 'directory' => '.',
                 'fails_on_base' => true, 'paths' => ['tests/check.sh'],
@@ -863,7 +979,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, null, [
             'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'echo snapshot-check', 'directory' => '.']],
         ]));
 
@@ -875,7 +991,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo current-check', deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'echo current-check', [
             'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'echo snapshot-check', 'directory' => '.']],
         ]));
 
@@ -888,7 +1004,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'basename "$PWD"', deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'basename "$PWD"', [
             'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'basename "$PWD"', 'directory' => 'app']],
         ]));
 
@@ -900,7 +1016,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'composer check', [
             'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'composer check', 'directory' => '.']],
         ]));
 
@@ -937,7 +1053,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo checks passed', [], [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'echo checks passed', [
             'start' => $start,
             'commands' => [['id' => 'base-repro', 'command' => 'bash tests/check.sh', 'directory' => 'app', 'fails_on_base' => true, 'paths' => ['app/tests/check.sh']]],
         ]));
@@ -963,7 +1079,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo checks passed', [], [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'echo checks passed', [
             'start' => $start,
             'commands' => [['id' => 'missing-base-command', 'command' => 'bash tests/check.sh', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['tests/check.sh']]],
         ]));
@@ -989,7 +1105,7 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo checks passed', [], [
+        $reading = $runner->read($instance, check_runner_capture($instance, 'echo checks passed', [
             'start' => str_repeat('f', 40),
             'commands' => [['id' => 'base-repro', 'command' => 'true', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['README.md']]],
         ]));
@@ -1035,7 +1151,7 @@ print(json.dumps({
 }))
 PYTHON);
         $script = $this->directory.'/check.py';
-        file_put_contents($script, TaskUnitProgram::read('tasks/check'));
+        file_put_contents($script, check_runner_clock_program());
         $probe = new Process(['python3', $harness, $script, $this->directory], base_path());
         $result = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
@@ -1322,15 +1438,17 @@ it('authenticates task VM setup through protected input and redacts tokens befor
     ]);
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
-    $transport = new class implements SshExecutor
+    $transport = new class(check_runner_controlled_transport($checkout.'/ignored/deadline')) implements SshExecutor
     {
         public array $commands = [];
+
+        public function __construct(private LocalShellSshExecutor $local) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $this->commands[] = $command;
 
-            return new LocalShellSshExecutor()->execute($connection, $command);
+            return $this->local->execute($connection, $command);
         }
     };
     $runner = check_runner($transport);
@@ -1376,7 +1494,7 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         BASH;
 
     $process = $runner->start($instance, 'test -z "${COMPOSER_AUTH:-}" && test -z "${ORBIT_SETUP_COMPOSER_AUTH:-}" && echo checked', [
-        ['name' => 'install-apps-cli', 'command' => $setup."\n".$ending, 'timeout_seconds' => $exitCode === 124 ? 5 : 10],
+        ['name' => 'install-apps-cli', 'command' => $setup."\n".($exitCode === 124 ? 'mkdir -p ignored; touch ignored/deadline; ' : '').$ending, 'timeout_seconds' => $exitCode === 124 ? 5 : 10],
     ]);
     $reading = check_runner_wait($runner, $instance, $process);
 
@@ -1448,7 +1566,8 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
     }
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $trigger = $checkout.'/ignored/deadline';
+    $runner = check_runner(check_runner_controlled_transport($trigger));
     $process = $runner->start($instance, 'true', [[
         'name' => 'waiting',
         'command' => 'mkdir -p ignored; sleep 30 & echo $! > ignored/setup-child; printf "streamed-output:%08000d" 0; wait',
@@ -1469,6 +1588,7 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
             $runner->cancel($instance, $process);
             expect(check_runner_wait($runner, $instance, $process)->state)->toBe('lost');
         } else {
+            touch($trigger);
             expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(124);
         }
         $probe = new Process(['python3', '-c', <<<'PYTHON'
@@ -1490,7 +1610,7 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
 it('bounds output draining after an escaped grandchild outlives the setup shell', function (?int $timeout): void {
     $checkout = check_runner_checkout('touch check-ran');
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $runner = check_runner(check_runner_controlled_transport(advanceDrain: true));
     $command = <<<'BASH'
         mkdir -p ignored
         python3 - <<'PY'
@@ -1701,8 +1821,8 @@ it('keeps secret-bearing output records intact until the shared builder runs at 
         'commands' => [['id' => 'probe', 'command' => $command, 'directory' => '.', 'fails_on_base' => $source === 'base', 'paths' => ['uncommitted.php']]],
     ];
 
-    $process = $runner->start($instance, $source === 'check' ? $command : null, deliverables: $deliverables);
-    $reading = check_runner_wait($runner, $instance, $process);
+    $process = check_runner_capture($instance, $source === 'check' ? $command : null, $deliverables);
+    $reading = $runner->read($instance, $process);
     $output = match ($source) {
         'check' => $reading->output,
         'base' => $reading->deliverables['commands']['probe']['base_output'] ?? '',
@@ -1774,7 +1894,7 @@ it('keeps the failing tail of ordinary large output through the real check trans
         'commands' => [['id' => 'probe', 'command' => $command, 'directory' => '.', 'fails_on_base' => $source === 'base', 'paths' => ['uncommitted.php']]],
     ];
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $mainCheck ? $command : null, deliverables: $deliverables));
+    $reading = $runner->read($instance, check_runner_capture($instance, $mainCheck ? $command : null, $deliverables));
     $output = match ($source) {
         'check' => $reading->output,
         'base' => $reading->deliverables['commands']['probe']['base_output'] ?? '',
@@ -1804,7 +1924,7 @@ it('keeps the failing tail without a stale log path above the status transport b
     $runner = check_runner(new LocalShellSshExecutor);
     $command = 'python3 -c '.escapeshellarg('print("x" * (8 * 1024 * 1024)); print("TOKEN=" + "s" * 40000); print("FAILED last line"); raise SystemExit(1)');
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $command));
+    $reading = $runner->read($instance, check_runner_capture($instance, $command));
 
     expect($reading->state)->toBe('finished')
         ->and(app(TaskCheckOutputBuilder::class)->build(app(TaskCheckOutputBuilder::class)->tail($reading->output)))->toContain('FAILED last line', 'TOKEN=[REDACTED]')
@@ -1835,7 +1955,7 @@ it('keeps every command and base tail within the real status transport budget', 
         'id' => 'probe-'.$id, 'command' => $command, 'directory' => '.', 'fails_on_base' => true, 'paths' => ['uncommitted.php'],
     ], range(1, 5));
 
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: ['start' => $head, 'commands' => $commands]));
+    $reading = $runner->read($instance, check_runner_capture($instance, null, ['start' => $head, 'commands' => $commands]));
 
     expect($reading->state)->toBe('finished')
         ->and($reading->deliverables['commands'] ?? [])->toHaveCount(5);

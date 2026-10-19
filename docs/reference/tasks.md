@@ -999,7 +999,9 @@ The check runs only the Project's ordered [setup steps](/reference/instance-setu
 
 Setup commands run in a login shell from a private temporary script file, which the check removes when the step ends or times out. Large cache payloads do not enter shell arguments or depend on the operating system's argument-size limit.
 
-Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
+Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. It sends SIGTERM, waits up to five seconds for the group to stop, then sends SIGKILL to any remaining members. During that wait, it reaps the exited shell before checking whether the group still exists, so an unreaped shell does not consume the grace period after all work has stopped.
+
+Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 

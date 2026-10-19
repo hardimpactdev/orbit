@@ -9,6 +9,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use Closure;
 use Symfony\Component\Process\Process;
 
 /**
@@ -19,12 +20,18 @@ final class LocalShellSshExecutor implements SshExecutor
     /** @var array<string, string> */
     public array $environment = [];
 
+    /** @var (Closure(string): string)|null */
+    public ?Closure $transformInput = null;
+
     public function __construct(private readonly ?string $workingDirectory = null) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $input = $command->protectedInput instanceof ProtectedInput ? stream_get_contents($command->protectedInput->stream()) : $command->input;
         HostPathGuardedProcessRunner::assertSafe($command->arguments, is_string($input) ? $input : null);
+        if ($this->transformInput !== null) {
+            $input = ($this->transformInput)($input ?? '');
+        }
         $process = new Process($command->arguments, $this->workingDirectory, [...$this->environment, 'COMPOSER_AUTH' => false], $input);
         $process->run();
 
