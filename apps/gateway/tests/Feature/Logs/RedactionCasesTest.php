@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Problems\ProblemLogParser;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Log;
+use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\StreamHandler;
+use Monolog\Logger as MonologLogger;
 
 describe('the redaction cases shared with the Node agent', function (): void {
     it('redact every case exactly as the Node agent does', function (): void {
@@ -43,7 +48,10 @@ it('preserves output and redacts secrets after a 100 KiB hyphenated run without 
 });
 
 it('still withholds text and logs a sanitized error when PCRE fails', function (): void {
-    Log::spy();
+    $stream = fopen('php://memory', 'w+');
+    $handler = new StreamHandler($stream);
+    $handler->setFormatter(new LineFormatter(dateFormat: 'Y-m-d H:i:s', allowInlineLineBreaks: true, includeStacktraces: true));
+    Log::swap(new Logger(new MonologLogger('testing', [$handler])));
     $sanitizer = app(CommandActivityInputSanitizer::class);
     $limit = ini_set('pcre.backtrack_limit', '0');
 
@@ -54,10 +62,13 @@ it('still withholds text and logs a sanitized error when PCRE fails', function (
     }
 
     expect($output)->toBe('Output withheld: redaction failed.');
-    Log::shouldHaveReceived('error')->with('Output withheld: redaction failed.', Mockery::on(
-        static fn (array $context): bool => array_keys($context) === ['pcre_error', 'exception']
-            && $context['pcre_error'] === PREG_BACKTRACK_LIMIT_ERROR
-            && $context['exception'] instanceof RuntimeException
-            && $context['exception']->getMessage() === 'Output withheld: redaction failed.',
-    ));
+    rewind($stream);
+    $record = stream_get_contents($stream);
+    fclose($stream);
+    expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_BACKTRACK_LIMIT_ERROR)
+        ->not->toContain('sentinel-password')
+        ->not->toContain('sentinel-token');
+    $signal = app(ProblemLogParser::class)->signal($record);
+    expect($signal)->not->toBeNull()
+        ->and($signal->excerpt)->toBe('Output withheld: redaction failed.');
 });
