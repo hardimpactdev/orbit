@@ -72,7 +72,7 @@ it('records an automatic cutover for a running collector without stopping it in 
         ->and(DB::table('ai_router_cutovers')->where('process_id', $id)->exists())->toBeTrue();
 });
 
-it('renames only the stopped configured collector and preserves every environment value and source row', function (): void {
+it('records only the configured collector and preserves its name environment and source row', function (): void {
     $node = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.3', 'wireguard_ip' => '10.44.0.3']);
     $other = Node::query()->create(['name' => 'other', 'status' => 'active', 'public_ssh_host' => '192.0.2.4', 'wireguard_ip' => '10.44.0.4']);
     app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'proxycli.node_id', (string) $node->id);
@@ -95,7 +95,7 @@ it('renames only the stopped configured collector and preserves every environmen
 
     $process = DB::table('processes')->where('id', $id)->first();
     $renamed = json_decode($process->runtime_config, true, flags: JSON_THROW_ON_ERROR);
-    expect($process->name)->toBe('ai-router-collector')
+    expect($process->name)->toBe('cli-proxy-api-collector')
         ->and($process->desired_state)->toBe('stopped')
         ->and($renamed['environment'])->toBe($oldEnvironment)
         ->and($renamed)->toBe($config)

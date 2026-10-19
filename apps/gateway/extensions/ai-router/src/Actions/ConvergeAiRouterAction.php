@@ -50,7 +50,7 @@ final readonly class ConvergeAiRouterAction
                 return false;
             }
             $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', AiRouterProcess::NAME)->first();
-            $pending = $process !== null && $this->cutover->pending($process);
+            $pending = $this->cutover->pending($nodeId);
             if ($deferCutover && $pending) {
                 return false;
             }
@@ -71,12 +71,12 @@ final readonly class ConvergeAiRouterAction
             }
             $takeover = $this->routes->takeoverCandidate($node);
             if ($pending) {
-                $this->cutover->retire($process);
+                $this->cutover->retire($node);
             }
             $this->publication->converge($node, $takeover);
             $this->runtime->converge($node, $environment);
             if ($pending) {
-                $this->cutover->complete($process);
+                $this->cutover->complete($node);
             }
 
             return true;

@@ -14,7 +14,9 @@ return new class extends Migration
     {
         DB::transaction(function (): void {
             Schema::create('ai_router_cutovers', function (Blueprint $table): void {
-                $table->foreignId('process_id')->primary()->constrained('processes')->cascadeOnDelete();
+                $table->foreignId('node_id')->primary()->constrained('nodes')->cascadeOnDelete();
+                // Intent must survive deletion of the retired Process until its replacement is published.
+                $table->unsignedBigInteger('process_id');
             });
             $nodeId = DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'proxycli.node_id')->value('value');
             $enabled = DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'proxycli.enabled')->value('value') === '1';
@@ -56,8 +58,7 @@ return new class extends Migration
             DB::table('settings')->where('key', 'caddy.certificate.proxycli')->delete();
 
             foreach ($collectors as $collector) {
-                DB::table('ai_router_cutovers')->insert(['process_id' => $collector->id]);
-                DB::table('processes')->where('id', $collector->id)->update(['name' => 'ai-router-collector']);
+                DB::table('ai_router_cutovers')->insert(['node_id' => $collector->owner_id, 'process_id' => $collector->id]);
             }
 
             DB::statement('ALTER TABLE task_vms RENAME COLUMN model_proxy_origin TO ai_router_origin');

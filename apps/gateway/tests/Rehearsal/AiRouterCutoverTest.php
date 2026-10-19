@@ -26,6 +26,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Route;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
@@ -103,6 +104,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         } while (microtime(true) < $deadline);
         throw new RuntimeException('Native rehearsal did not reach its observable readiness condition.');
     };
+    $newUnit = null;
     try {
         $wait(fn (): bool => is_file($home.'/probe.json'));
         $node = Node::query()->create(['name' => 'rehearsal', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip]);
@@ -180,13 +182,15 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $wait(fn (): bool => $cache->get('orbit:ai-router:snapshot') !== null);
         $snapshot = json_decode($cache->get('orbit:ai-router:snapshot'), true, flags: JSON_THROW_ON_ERROR);
         $firstSnapshotSeconds = microtime(true) - $started;
-        $journal = $run(['sudo', 'journalctl', '--unit=orbit-process-163-ai-router-collector.service', '--since=@'.(int) $started, '--output=json', '--no-pager']);
+        $replacement = Process::query()->where('name', 'ai-router-collector')->sole();
+        $newUnit = 'orbit-process-'.$replacement->id.'-ai-router-collector.service';
+        $journal = $run(['sudo', 'journalctl', '--unit='.$newUnit, '--since=@'.(int) $started, '--output=json', '--no-pager']);
         $starts = array_filter(explode("\n", trim($journal)), static fn (string $line): bool => str_starts_with(json_decode($line, true, flags: JSON_THROW_ON_ERROR)['MESSAGE'] ?? '', 'Started '));
         expect($starts)->toHaveCount(1);
-        $pid = trim($run(['systemctl', 'show', '--property=MainPID', '--value', 'orbit-process-163-ai-router-collector.service']));
+        $pid = trim($run(['systemctl', 'show', '--property=MainPID', '--value', $newUnit]));
         $footprint->converge($node, force: true);
         $this->artisan('orbit:ai-router-converge')->assertSuccessful();
-        expect(trim($run(['systemctl', 'show', '--property=MainPID', '--value', 'orbit-process-163-ai-router-collector.service'])))->toBe($pid);
+        expect(trim($run(['systemctl', 'show', '--property=MainPID', '--value', $newUnit])))->toBe($pid);
         $probeAfter = json_decode(file_get_contents($home.'/probe.json'), true, flags: JSON_THROW_ON_ERROR);
         if ($probeAfter['failed'] > 0) {
             fwrite(STDERR, json_encode($probeAfter, flags: JSON_THROW_ON_ERROR)."\n");
@@ -195,12 +199,12 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $curl = $run(['curl', '--interface', '10.44.0.254', '--fail', '--silent', '--show-error', '--noproxy', '*', '--cacert', $home.'/ca/root.pem', '--resolve', 'collector.ai-router.orbit:443:'.$ip, '-H', 'Authorization: Bearer synthetic-read', 'https://collector.ai-router.orbit/api/v1/usage']);
         expect(json_decode($curl, true, flags: JSON_THROW_ON_ERROR)['providers'])->not->toBeEmpty()
             ->and($snapshot['accounts'][0]['windows'])->not->toBeEmpty()
-            ->and($collector->refresh()->name)->toBe('ai-router-collector')
-            ->and($collector->runtime_config['command'][1])->toBe('/var/lib/orbit/ai-router/collector.py')
-            ->and($collector->runtime_config['environment'])->toHaveKey('AI_ROUTER_READ_TOKEN')
+            ->and($replacement->name)->toBe('ai-router-collector')
+            ->and($replacement->runtime_config['command'][1])->toBe('/var/lib/orbit/ai-router/collector.py')
+            ->and($replacement->runtime_config['environment'])->toHaveKey('AI_ROUTER_READ_TOKEN')
             ->and(file_exists('/etc/systemd/system/'.$oldUnit))->toBeFalse()
             ->and(file_exists('/var/lib/orbit/'.$slug))->toBeFalse()
-            ->and(trim($run(['systemctl', 'is-active', 'orbit-process-163-ai-router-collector.service'])))->toBe('active')
+            ->and(trim($run(['systemctl', 'is-active', $newUnit])))->toBe('active')
             ->and($caddyfile)->toContain('collector.ai-router.orbit')->not->toContain('collector.cli-proxy-api.orbit')
             ->and(Route::query()->find($routes['cli-proxy-api.orbit']->id))->not->toBeNull()
             ->and(trim($run(['valkey-cli', '--scan', '--pattern', 'orbit:'.$slug.':*'])))->toBe('')
@@ -215,8 +219,9 @@ it('rehearses the automatic rename with native services and continuous held-key 
         fwrite(STDOUT, '\nNative cutover evidence: '.json_encode(['migration_to_snapshot_seconds' => round($firstSnapshotSeconds, 3), 'model_requests_during_cutover' => $probeAfter['ok'] - $probeBefore['ok'], 'failed_model_requests' => $probeAfter['failed'], 'rollout_before_tick' => true, 'rollout_during_tick' => true])."\n");
     } finally {
         $upstream->stop();
-        $runner->run(new ProcessInvocation(arguments: ['sudo', 'systemctl', 'stop', 'orbit-process-163-cli-proxy-api-collector.service', 'orbit-process-163-ai-router-collector.service']));
-        $runner->run(new ProcessInvocation(arguments: ['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-process-163-cli-proxy-api-collector.service', '/etc/systemd/system/orbit-process-163-ai-router-collector.service']));
+        $units = array_filter(['orbit-process-163-cli-proxy-api-collector.service', $newUnit]);
+        $runner->run(new ProcessInvocation(arguments: ['sudo', 'systemctl', 'stop', ...$units]));
+        $runner->run(new ProcessInvocation(arguments: ['sudo', 'rm', '-f', '--', ...array_map(fn (string $unit): string => '/etc/systemd/system/'.$unit, $units)]));
         $runner->run(new ProcessInvocation(arguments: ['sudo', 'systemctl', 'daemon-reload']));
     }
 });

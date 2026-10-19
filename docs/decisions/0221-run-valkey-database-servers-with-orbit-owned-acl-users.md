@@ -16,7 +16,7 @@ Principle: [security fits the real threat model](/mission#principles) and [one w
 
 ## Context
 
-The Valkey on `services` is Docker Process 162, an operator-made Process with the Database connection `services-valkey`. The [Gateway queue](/reference/gateway-queue) and the [AI router collector](/reference/ai-router) both log in with its one password, so each client can read and delete the keys of the other. The Process writes that password from its environment into `requirepass` at each start. The environment is stored as plain JSON in the Gateway and shows in `docker inspect`.
+The Valkey on `services` is Docker Process 162, an operator-made Process with the Database connection `services-valkey`. The [Gateway queue](/reference/gateway-queue) and the [ProxyCli collector](/reference/ai-router) both log in with its one password, so each client can read and delete the keys of the other. The Process writes that password from its environment into `requirepass` at each start. The environment is stored as plain JSON in the Gateway and shows in `docker inspect`.
 
 A first version of pull request #1296 documented a manual ACL file with a separate user for the queue. The review blocked it: the users and passwords lived outside Orbit, so Doctor had nothing to check them against, and the setup failed open. With an ACL file, Valkey ignores `requirepass`. Without a `default` line in the file, or without `--aclfile` in the command, Valkey accepts every client without a password. A `process:update` without `--aclfile` opens the server to every WireGuard peer.
 

@@ -245,7 +245,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 
 The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
 
-`ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota reads resume when the tick renames the previous snapshot. The window includes up to one minute for dispatch, queue wait, and retirement of the old collector. When no snapshot exists, reads wait for the first successful poll. Cache key renames preserve TTLs, backoff deadlines, and account schedules; the old collector lock is deleted. Queue and upstream failures can extend it. Missing quota is unknown, never zero.
+`ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota reads resume when the tick renames the previous snapshot. The window includes up to one minute for dispatch, queue wait, and retirement of the old collector. When no snapshot exists, reads wait for the first successful poll. The tick replaces the old collector through the normal Process removal and creation actions. Pending intent survives removal of the old Process. Cache keys move individually; retries finish a partial rename and preserve TTLs, backoff deadlines, and account schedules; the old collector lock is deleted. Queue and upstream failures can extend it. Missing quota is unknown, never zero.
 
 ## Why it works this way
 

@@ -54,10 +54,10 @@ final readonly class AiRouterSourcePublisher
         return new RemoteCommand(arguments: ['sudo', 'sha256sum', '--', AiRouterFootprint::SourcePath]);
     }
 
-    public function removeCommand(): RemoteCommand
+    public function removeCommand(string $directory = AiRouterFootprint::SourceDirectory): RemoteCommand
     {
         return new RemoteCommand(
-            arguments: ['sudo', 'rm', '-rf', '--', AiRouterFootprint::SourceDirectory],
+            arguments: ['sudo', 'rm', '-rf', '--', $directory],
         );
     }
 }

@@ -6,13 +6,27 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Models\DatabaseConnection;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
+use Predis\Client;
+use Predis\ClientInterface;
 use RuntimeException;
+use Throwable;
 
 final readonly class ValkeyAiRouterCache implements AiRouterCache
 {
-    public function __construct(
-        private DatabaseConnection $connection,
-    ) {}
+    private ClientInterface $client;
+
+    public function __construct(DatabaseConnection $connection, ?ClientInterface $client = null)
+    {
+        $this->client = $client ?? new Client([
+            'scheme' => 'tcp',
+            'host' => $connection->host ?: '127.0.0.1',
+            'port' => $connection->port ?? 6379,
+            'username' => $connection->username ?: null,
+            'password' => $connection->password ?: null,
+            'timeout' => 3,
+            'read_write_timeout' => 3,
+        ]);
+    }
 
     public function get(string $key): ?string
     {
@@ -23,28 +37,26 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
 
     public function renameCollectorKeys(string $from, string $to): void
     {
-        // No collector runs while this script renames state. RENAME keeps each key's remaining TTL.
-        $script = <<<'LUA'
-            local cursor = '0'
-            local renamed = 0
-            repeat
-                local page = redis.call('SCAN', cursor, 'MATCH', ARGV[1] .. '*', 'COUNT', 100)
-                cursor = page[1]
-                for _, key in ipairs(page[2]) do
-                    local suffix = string.sub(key, string.len(ARGV[1]) + 1)
-                    if suffix == 'lock' then
-                        redis.call('DEL', key)
-                    elseif redis.call('EXISTS', key) == 1 then
-                        redis.call('RENAME', key, ARGV[2] .. suffix)
-                        renamed = renamed + 1
-                    end
-                end
-            until cursor == '0'
-            return renamed
-            LUA;
-        if (! is_int($this->command(['EVAL', $script, '0', $from, $to]))) {
-            throw new RuntimeException('Could not rename the collector cache.');
-        }
+        // The retired collector has stopped. RENAME keeps TTLs; a retry finishes a partial rename.
+        $cursor = '0';
+        do {
+            $page = $this->command(['SCAN', $cursor, 'MATCH', $from.'*', 'COUNT', '100']);
+            if (! is_array($page) || count($page) !== 2 || ! is_array($page[1])) {
+                throw new RuntimeException('Could not scan the collector cache.');
+            }
+            $cursor = (string) $page[0];
+            foreach ($page[1] as $key) {
+                if (! is_string($key) || ! str_starts_with($key, $from)) {
+                    throw new RuntimeException('Could not scan the collector cache.');
+                }
+                $suffix = substr($key, strlen($from));
+                if ($suffix === 'lock') {
+                    $this->command(['DEL', $key]);
+                } elseif ($this->command(['EXISTS', $key]) === 1) {
+                    $this->command(['RENAME', $key, $to.$suffix]);
+                }
+            }
+        } while ($cursor !== '0');
     }
 
     public function put(string $key, string $value, ?int $seconds = null): void
@@ -54,110 +66,18 @@ final readonly class ValkeyAiRouterCache implements AiRouterCache
             : $this->command(['SET', $key, $value, 'EX', (string) $seconds]);
     }
 
-    /**
-     * @param  list<string>  $arguments
-     */
+    /** @param list<string> $arguments */
     private function command(array $arguments): mixed
     {
-        $socket = @stream_socket_client(
-            'tcp://'.$this->host().':'.$this->port(),
-            $errorNumber,
-            $errorMessage,
-            3,
-        );
-
-        if (! is_resource($socket)) {
+        try {
+            $reply = $this->client->executeRaw($arguments, $error);
+        } catch (Throwable) {
             throw new RuntimeException('Could not reach shared Valkey.');
         }
-
-        stream_set_timeout($socket, 3);
-        $this->authenticate($socket);
-        fwrite($socket, $this->encode($arguments));
-        $reply = $this->decode($socket);
-        fclose($socket);
+        if ($error) {
+            throw new RuntimeException('Valkey command failed.');
+        }
 
         return $reply;
-    }
-
-    /**
-     * @param  resource  $socket
-     */
-    private function authenticate(mixed $socket): void
-    {
-        $password = $this->connection->password;
-
-        if (! is_string($password) || $password === '') {
-            return;
-        }
-
-        $username = $this->connection->username;
-        $arguments = is_string($username) && $username !== ''
-            ? ['AUTH', $username, $password]
-            : ['AUTH', $password];
-        fwrite($socket, $this->encode($arguments));
-        $this->decode($socket);
-    }
-
-    /**
-     * @param  list<string>  $arguments
-     */
-    private function encode(array $arguments): string
-    {
-        $parts = ['*'.count($arguments)."\r\n"];
-
-        foreach ($arguments as $argument) {
-            $parts[] = '$'.strlen($argument)."\r\n".$argument."\r\n";
-        }
-
-        return implode('', $parts);
-    }
-
-    /**
-     * @param  resource  $socket
-     */
-    private function decode(mixed $socket): mixed
-    {
-        $line = fgets($socket);
-
-        if (! is_string($line) || $line === '') {
-            return null;
-        }
-
-        $type = $line[0];
-        $payload = substr($line, 1, -2);
-
-        return match ($type) {
-            '+' => $payload,
-            '-' => throw new RuntimeException('Valkey error.'),
-            ':' => (int) $payload,
-            '$' => $this->bulk($socket, (int) $payload),
-            default => null,
-        };
-    }
-
-    /**
-     * @param  resource  $socket
-     */
-    private function bulk(mixed $socket, int $length): ?string
-    {
-        if ($length < 0) {
-            return null;
-        }
-
-        $value = stream_get_contents($socket, $length + 2);
-
-        return is_string($value) ? substr($value, 0, $length) : null;
-    }
-
-    private function host(): string
-    {
-        return is_string($this->connection->host) && $this->connection->host !== ''
-            ? $this->connection->host
-            : '127.0.0.1';
-    }
-
-    private function port(): int
-    {
-        return $this->connection->port ?? 6379;
     }
 }

@@ -55,10 +55,10 @@ final readonly class AiRouterCertificatePublisher
         );
     }
 
-    public function removeCommand(): RemoteCommand
+    public function removeCommand(string $directory = AiRouterFootprint::CertificateCurrentDirectory): RemoteCommand
     {
         return new RemoteCommand(
-            arguments: ['sudo', 'rm', '-rf', '--', AiRouterFootprint::CertificateCurrentDirectory],
+            arguments: ['sudo', 'rm', '-rf', '--', $directory],
         );
     }
 }

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
-use App\Domain\Processes\ProcessRuntimeLease;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\Fleet\NodeShell;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
@@ -18,9 +17,11 @@ use RuntimeException;
 final readonly class AiRouterRenameCutover
 {
     public function __construct(
-        private ProcessRuntimeLease $lease,
+        private DestroyProcessAction $processes,
         private AiRouterCache $cache,
-        private RemoteProgramRunner $programs,
+        private NodeShell $shell,
+        private AiRouterSourcePublisher $source,
+        private AiRouterCertificatePublisher $certificates,
     ) {}
 
     public function assertComplete(): void
@@ -30,36 +31,34 @@ final readonly class AiRouterRenameCutover
         }
     }
 
-    public function pending(?Process $process = null): bool
+    public function pending(?int $nodeId = null): bool
     {
         $query = DB::table('ai_router_cutovers');
 
-        return ($process === null ? $query : $query->where('process_id', $process->id))->exists();
+        return ($nodeId === null ? $query : $query->where('node_id', $nodeId))->exists();
     }
 
-    public function retire(Process $process): void
+    public function retire(Node $node): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
-            $this->run($fresh, 'retire');
-            $fresh->update(['status' => 'provisioning']);
-        });
+        $id = DB::table('ai_router_cutovers')->where('node_id', $node->id)->value('process_id');
+        $process = Process::query()->find($id);
+        if ($process !== null) {
+            if ($process->owner_type !== Node::class || $process->owner_id !== $node->id || $process->name !== 'cli-proxy-api-collector') {
+                throw new RuntimeException('The retired collector no longer matches its recorded owner.');
+            }
+            // Normal Process removal stops and deletes the owned unit under its existing runtime lease.
+            $this->processes->execute($process, removedByOwningRole: true);
+        }
         $this->cache->renameCollectorKeys('orbit:proxycli:', 'orbit:ai-router:');
     }
 
-    public function complete(Process $process): void
+    public function complete(Node $node): void
     {
-        $this->run($process, 'complete');
-        DB::table('ai_router_cutovers')->where('process_id', $process->id)->delete();
-    }
-
-    private function run(Process $process, string $phase): void
-    {
-        $node = Node::query()->findOrFail($process->owner_id);
-        $program = new RemoteProgramCatalog(base_path('extensions/ai-router/resources/remote'))
-            ->program('ai-router.retire-collector', user: 'root');
-        $result = $this->programs->run($node, $program, [(string) $process->id, $phase]);
-        if ($result->outcome !== 'succeeded') {
-            throw new RuntimeException('Could not finish collector cutover phase ['.$phase.'].');
+        foreach ([$this->source->removeCommand('/var/lib/orbit/proxycli'), $this->certificates->removeCommand('/etc/caddy/orbit-proxycli-cert-current')] as $command) {
+            if (! $this->shell->run($node, $command)->succeeded()) {
+                throw new RuntimeException('Could not remove the retired collector files.');
+            }
         }
+        DB::table('ai_router_cutovers')->where('node_id', $node->id)->delete();
     }
 }

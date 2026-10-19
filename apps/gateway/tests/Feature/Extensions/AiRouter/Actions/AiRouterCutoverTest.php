@@ -27,7 +27,7 @@ use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
 use Tests\Support\RecordedAiRouterState;
 
-it('defers a rollout visit during recorded cutover state and retries publication without losing model access', function (bool $failFirst, bool $switchOff): void {
+it('defers a rollout visit during recorded cutover state and retries publication without losing model access', function (bool $failFirst, bool $switchOff, bool $failCleanup): void {
     $node = Node::query()->forceCreate(['id' => 17, 'name' => 'services', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.17']);
     $connection = DatabaseConnection::query()->create(['name' => 'Valkey', 'slug' => 'cache', 'driver' => 'redis', 'host' => '127.0.0.1', 'port' => 6379]);
     $process = RecordedAiRouterState::seed($node, $connection);
@@ -42,14 +42,20 @@ it('defers a rollout visit during recorded cutover state and retries publication
     $cache->put('unrelated', 'keep');
     $cache->put('orbit:proxycli:backoff:limited', 'deadline', 300);
     $cache->put('orbit:proxycli:account:limited', 'scheduled', 600);
+    $expectedConverges = $failCleanup ? 3 : 2;
     $converged = [];
     $activated = [];
+    $removed = [];
     $runtime = Mockery::mock(ProcessRuntimeManager::class);
     $runtime->shouldReceive('assertCanStart')->andReturnNull();
+    $runtime->shouldReceive('remove')->andReturnUsing(function (Process $process) use (&$removed): void {
+        expect($process->name)->toBe('cli-proxy-api-collector');
+        $removed[] = $process->id;
+    });
     $runtime->shouldReceive('status')->andReturn('running');
     $runtime->shouldReceive('converge')->andReturnUsing(function (Process $process) use (&$converged, &$activated): void {
         $converged[] = $process->id;
-        if ($process->systemd_activation_pending) {
+        if ($process->systemd_activation_pending || ! in_array($process->id, $activated, true)) {
             $activated[] = $process->id;
         }
         $process->systemd_activation_pending = false;
@@ -60,8 +66,13 @@ it('defers a rollout visit during recorded cutover state and retries publication
     $ssh = Mockery::mock(SshExecutor::class);
     $commands = [];
     $published = false;
-    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use (&$commands, &$published): CommandResult {
+    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use (&$commands, &$published, &$failCleanup): CommandResult {
         $commands[] = $command;
+        if ($failCleanup && $command->arguments === ['sudo', 'rm', '-rf', '--', '/var/lib/orbit/proxycli']) {
+            $failCleanup = false;
+
+            return new CommandResult(1, '', 'fixture failure', 0, false);
+        }
 
         $output = '';
         if (in_array('sha256sum', $command->arguments, true)) {
@@ -94,17 +105,20 @@ it('defers a rollout visit during recorded cutover state and retries publication
         $publication->shouldReceive('converge')->once()->andThrow(new RuntimeException('Publication unavailable'));
         app()->instance(AiRouterPublicationManager::class, $publication);
         expect(fn () => app(ConvergeAiRouterAction::class)->execute())->toThrow(RuntimeException::class, 'Publication unavailable');
-        expect($process->refresh()->status->value)->toBe('provisioning')
+        expect(Process::query()->find(163))->toBeNull()
             ->and(app(ShowAiRouterStatusAction::class)->execute()->cutoverPending)->toBeTrue();
         $footprint->converge($node, force: true);
         expect($converged)->toBeEmpty();
         app()->instance(AiRouterPublicationManager::class, app(RecordingAiRouterPublicationManager::class));
     }
+    if ($failCleanup) {
+        expect(fn () => app(ConvergeAiRouterAction::class)->execute())->toThrow(RuntimeException::class, 'Could not remove the retired collector files');
+        expect(app(ShowAiRouterStatusAction::class)->execute()->cutoverPending)->toBeTrue();
+    }
     $this->artisan('orbit:ai-router-converge')->assertSuccessful();
-    expect($commands[0]->arguments)->toBe(['sudo', '-n', '-u', 'root', '-H', 'bash', '-seu', '--', '163', 'retire']);
-    expect($commands[0]->input)->toContain('cli-proxy-api-collector.service', 'X-Orbit-Process-ID=$id')
-        ->not->toContain('orbit-process-163-ai-router-collector.service');
-    expect($process->refresh()->runtime_config['command'])->toBe(['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'])
+    expect(Process::query()->find(163))->toBeNull()->and($removed)->toBe([163]);
+    $process = Process::query()->where('name', 'ai-router-collector')->sole();
+    expect($process->runtime_config['command'])->toBe(['/usr/bin/python3', '/var/lib/orbit/ai-router/collector.py'])
         ->and($process->runtime_config['environment'])->toHaveKeys(['AI_ROUTER_READ_TOKEN', 'AI_ROUTER_MANAGEMENT_KEY'])
         ->and($cache->get('orbit:proxycli:snapshot'))->toBeNull()->and($cache->get('orbit:proxycli:lock'))->toBeNull()
         ->and($cache->get('orbit:ai-router:lock'))->toBeNull()
@@ -118,9 +132,11 @@ it('defers a rollout visit during recorded cutover state and retries publication
         ->and(DB::table('task_vms')->where('id', $vm)->value('model_key'))->toBe('held-key-bytes')
         ->and(DB::table('task_vms')->where('id', $vm)->value('ai_router_origin'))->toBe('http://10.44.0.3:8317')
         ->and(app(ShowAiRouterStatusAction::class)->execute()->cutoverPending)->toBeFalse();
-    expect($converged)->toBe([163])->and($activated)->toBe([163]);
-    expect(collect($commands)->filter(fn (RemoteCommand $command): bool => $command->arguments[array_key_last($command->arguments)] === 'complete'))->toHaveCount(1);
+    expect(array_unique($converged))->toBe([$process->id])->and($activated)->toBe([$process->id]);
+    expect(collect($commands)->map(fn (RemoteCommand $command): array => $command->arguments)->all())
+        ->toContain(['sudo', 'rm', '-rf', '--', '/var/lib/orbit/proxycli'], ['sudo', 'rm', '-rf', '--', '/etc/caddy/orbit-proxycli-cert-current']);
     $footprint->converge($node, force: true);
     $this->artisan('orbit:ai-router-converge')->assertSuccessful();
-    expect($converged)->toBe([163, 163])->and($activated)->toBe([163]);
-})->with([[false, false], [true, false], [false, true]]);
+    expect($activated)->toBe([$process->id]);
+    expect($converged)->toHaveCount($expectedConverges);
+})->with([[false, false, false], [true, false, false], [false, true, false], [false, false, true]]);
