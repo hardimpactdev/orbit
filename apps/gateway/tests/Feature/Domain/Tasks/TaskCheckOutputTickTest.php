@@ -49,7 +49,7 @@ it('withholds check output and logs a sanitized error after a real PCRE failure'
         "password: do-not-store-password\nTOKEN=do-not-store-token\nFAILED last line",
     );
     $jit = ini_set('pcre.jit', '0');
-    $recursion = ini_set('pcre.recursion_limit', '1');
+    $recursion = ini_set('pcre.recursion_limit', '5');
 
     try {
         $runner->recordReading($check, $reading);
