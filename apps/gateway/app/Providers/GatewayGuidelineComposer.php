@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use Illuminate\Support\Collection;
 use Laravel\Boost\Install\GuidelineComposer;
+use Orbit\Boost\GuidelineSections;
 use RuntimeException;
 
 final class GatewayGuidelineComposer extends GuidelineComposer
@@ -35,24 +36,12 @@ final class GatewayGuidelineComposer extends GuidelineComposer
             [$optionalLocation, $permissiveFallback],
             [
                 'in `.ai/rules` as required repository state',
-                'The complete project guidance inventory is required repository state. Run `composer guidance:check` '
-                    .'before planning or editing. If it fails, make no product-code edits. Restore the exact affected '
-                    .'tracked guidance path, validate again, and then run `composer guidance:update`.',
+                'If guidance is missing or incomplete, follow Required Guidance Bootstrap above.',
             ],
             $guidelines,
         );
 
-        $guidelines = preg_replace(
-            pattern: '/\n## (?:Frontend Bundling|Vite Error)\n.*?(?=\n(?:## |=== )|\z)/s',
-            replacement: '',
-            subject: $guidelines,
-        );
-
-        if (! is_string($guidelines)) {
-            throw new RuntimeException('Could not remove unsupported UI guidance.');
-        }
-
-        return $guidelines;
+        return GuidelineSections::withoutRemoved($guidelines);
     }
 
     /**

@@ -150,11 +150,9 @@ final readonly class TaskReviewPacket
                 $rule .= ' $(git rev-parse --git-path orbit)/check.log holds the rest. '.TaskReviewContext::Path.' holds the full task context.';
             }
         }
-        $rule .= ' Run another command only when you need evidence the handoff result does not give, and say why in the approved or changes_requested summary.';
 
         return implode("\n\n", [
             'Review subtask #'.$this->subtaskId.': '.$this->subtaskTitle,
-            'The implementer works with a minimal toolset and has no web access. You do: when the diff uses a framework or library API you are not sure of, check it against the documentation for the version this Project uses.',
             'When the change adds or alters runtime behaviour, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume) before you analyse failure windows.',
             $rule,
         ]);

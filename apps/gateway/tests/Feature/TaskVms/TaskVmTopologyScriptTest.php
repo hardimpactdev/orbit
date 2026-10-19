@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\TaskVms\TaskVmScripts;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
@@ -24,7 +24,28 @@ function topology_script(array $arguments, array $environment = []): array
     }
     $stubs = [
         "{$work}/bin/sudo" => '[ "$1" = -n ] && shift; exec "$@"',
-        "{$work}/bin/systemctl" => 'exit "${SYSTEMCTL_EXIT:-3}"',
+        "{$work}/bin/systemctl" => <<<'SH'
+            echo "$*" >> "$WORK/systemctl.log"
+            case "$1" in
+                is-active) exit 3 ;;
+                stop) exit 0 ;;
+                list-units)
+                    case "$*" in
+                        *--state=active*) [ "${UNIT_ACTIVE:-inactive}" = active ] || exit 0 ;;
+                    esac
+                    printf '%b' "${UNIT_LIST:-}"
+                    exit 0 ;;
+                show)
+                    [ "${SYSTEMCTL_EXIT:-0}" = 0 ] || exit "$SYSTEMCTL_EXIT"
+                    if [ "${UNIT_NAME:-$2}" != "$2" ]; then
+                        printf 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nJob=\nControlGroup=\n'
+                    else
+                        printf 'LoadState=%s\nActiveState=%s\nSubState=%s\nJob=%s\nControlGroup=\n' "${UNIT_LOAD:-not-found}" "${UNIT_ACTIVE:-inactive}" "${UNIT_SUB:-dead}" "${UNIT_JOB:-}"
+                    fi ;;
+                *) exit 99 ;;
+            esac
+            SH,
+        "{$work}/bin/systemd-run" => 'echo "$*" >> "$WORK/systemd-run.log"; exit 0',
         "{$work}/checkout/bin/e2e-topology-host-setup" => 'echo "host-setup $*" >> "$WORK/harness.log"; printf "%b" "${HOST_SETUP_OUTPUT:-}"; exit "${HOST_SETUP_EXIT:-0}"',
         "{$work}/checkout/bin/e2e-topology" => <<<'SH'
             echo "acquire $*" >> "$WORK/harness.log"
@@ -37,8 +58,9 @@ function topology_script(array $arguments, array $environment = []): array
         chmod($path, 0755);
     }
     $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-    $process = new Process([$bash, TaskVmScripts::path('topology.sh'), ...str_replace('__CHECKOUT__', "{$work}/checkout", $arguments)]);
+    $process = new Process([$bash, '-c', TaskUnitProgram::read('task-vms/topology.sh'), 'topology', ...str_replace('__CHECKOUT__', "{$work}/checkout", $arguments)]);
     $process->setEnv(['PATH' => "{$work}/bin:".getenv('PATH'), 'HOME' => "{$work}/home", 'WORK' => $work, ...$environment]);
+    $process->setInput(TaskUnitProgram::read('task-vms/topology.sh'));
     $process->run();
 
     return [$process, $work];
@@ -119,6 +141,37 @@ describe('the topology run', function () use ($runArguments): void {
     });
 });
 
+describe('the topology start', function () use ($runArguments): void {
+    it('leaves a repeated queued start alone', function () use ($runArguments): void {
+        [$process, $work] = topology_script(['start', ...array_slice($runArguments, 1)], [
+            'UNIT_LOAD' => 'loaded', 'UNIT_ACTIVE' => 'inactive', 'UNIT_JOB' => '45809123',
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(is_file("{$work}/systemd-run.log"))->toBeFalse()
+            ->and(file_get_contents("{$work}/systemctl.log"))->not->toContain('stop');
+    });
+
+    it('stops an earlier queued run before starting a new run', function () use ($runArguments): void {
+        [$process, $work] = topology_script(['start', ...array_slice($runArguments, 1)], [
+            'UNIT_NAME' => 'orbit-task-topology-earlier1.service',
+            'UNIT_LOAD' => 'loaded', 'UNIT_ACTIVE' => 'inactive', 'UNIT_JOB' => '45809123',
+            'UNIT_LIST' => 'orbit-task-topology-earlier1.service loaded inactive dead\n',
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(file_get_contents("{$work}/systemctl.log"))->toContain('stop -- orbit-task-topology-earlier1.service')
+            ->and(file_get_contents("{$work}/systemd-run.log"))->toContain('--unit=orbit-task-topology-abcdef0123456789');
+    });
+
+    it('keeps an unreadable run pending without dispatching another start', function () use ($runArguments): void {
+        [$process, $work] = topology_script(['start', ...array_slice($runArguments, 1)], ['SYSTEMCTL_EXIT' => '1']);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(is_file("{$work}/systemd-run.log"))->toBeFalse();
+    });
+});
+
 describe('the topology status', function () use ($runArguments): void {
     it('reports a ready run of this boot, and a ready run of an earlier boot as stale', function () use ($runArguments): void {
         [, $work] = topology_script($runArguments);
@@ -133,11 +186,33 @@ describe('the topology status', function () use ($runArguments): void {
             ->and($stale->getOutput())->toBe("{\"state\":\"stale\"}\n");
     });
 
-    it('reports a run without a result as running while its unit is active, else as lost', function (): void {
-        [$running] = topology_script(['status', 'abcdef0123456789'], ['SYSTEMCTL_EXIT' => '0']);
+    it('reports a run without a result as running while its unit is active or queued, else as lost', function (array $unit): void {
+        [$running] = topology_script(['status', 'abcdef0123456789'], ['UNIT_LOAD' => 'loaded', ...$unit]);
         [$lost] = topology_script(['status', 'abcdef0123456789']);
 
         expect($running->getOutput())->toBe("{\"state\":\"running\"}\n")
             ->and($lost->getOutput())->toBe("{\"state\":\"lost\"}\n");
-    });
+    })->with([
+        'active unit' => [['UNIT_ACTIVE' => 'active', 'UNIT_SUB' => 'running']],
+        'queued start' => [['UNIT_ACTIVE' => 'inactive', 'UNIT_SUB' => 'dead', 'UNIT_JOB' => '45809123']],
+    ]);
 });
+
+it('keeps topology status running when the unit cannot be read', function (): void {
+    [$process] = topology_script(['status', 'abcdef0123456789'], ['SYSTEMCTL_EXIT' => '1']);
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        ->and($process->getOutput())->toBe("{\"state\":\"running\"}\n");
+});
+
+it('lints the exact assembled program that the Gateway sends', function (string $resource): void {
+    $probe = new Process(['python3', '-c', <<<'PYTHON'
+import importlib.machinery, importlib.util, pathlib, sys
+loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+loader.exec_module(check)
+sys.stdout.write(check.assemble(check.parts(pathlib.Path(sys.argv[2])))[0])
+PYTHON, base_path('../../bin/remote-programs-check'), resource_path($resource)]);
+
+    expect($probe->mustRun()->getOutput())->toBe(TaskUnitProgram::read($resource));
+})->with(['tasks/check', 'tasks/workspace-operation.py', 'task-vms/topology.sh']);

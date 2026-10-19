@@ -19,6 +19,18 @@ max_seconds=4500
 
 valid_run() { [[ $1 =~ ^[a-z0-9]{8,40}$ ]]; }
 
+# Keep unreadable evidence pending. Only a missing unit or positive terminal proof permits another start.
+unit_running() {
+    python3 - "$1" <<'PYTHON'
+# ORBIT_TASK_UNIT_STATE
+import sys
+
+state = unit_state(sys.argv[1])
+sys.exit(0 if state is None or (state.get('LoadState') != 'not-found'
+         and empty_terminal(sys.argv[1], state=state) is None) else 1)
+PYTHON
+}
+
 case ${1-} in
     start)
         [[ $# -eq 6 ]] && valid_run "$2" || exit 64
@@ -29,12 +41,15 @@ case ${1-} in
         chmod 0700 "$self.new"
         mv -f -- "$self.new" "$self"
         # A repeated start of a run that already runs leaves it alone.
-        if systemctl is-active --quiet "$unit_prefix$2.service"; then
+        if unit_running "$unit_prefix$2.service"; then
             exit 0
         fi
         # One preparation at a time: a unit of an earlier run, whose start the Gateway lost, stops first.
-        for unit in $(systemctl list-units --plain --no-legend --state=active "$unit_prefix*" | awk '{print $1}'); do
-            sudo -n systemctl stop -- "$unit"
+        units=$(systemctl list-units --all --plain --no-legend "$unit_prefix*" | awk '{print $1}')
+        for unit in $units; do
+            if unit_running "$unit"; then
+                sudo -n systemctl stop -- "$unit"
+            fi
         done
         rm -f -- "$state/$2.json" "$state/$2.log"
         exec sudo -n systemd-run --quiet --collect --unit="$unit_prefix$2" \
@@ -53,7 +68,7 @@ case ${1-} in
                 result='{"state":"stale"}'
             fi
             printf '%s\n' "$result"
-        elif systemctl is-active --quiet "$unit_prefix$2.service"; then
+        elif unit_running "$unit_prefix$2.service"; then
             echo '{"state":"running"}'
         else
             echo '{"state":"lost"}'

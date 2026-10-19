@@ -24,6 +24,8 @@ GATEWAY = ROOT / 'apps/gateway'
 RESOURCES = GATEWAY / 'resources'
 REMOTE = RESOURCES / 'remote'
 RUFF_VERSION = '0.17.0'
+UNIT_MARKER = '# ORBIT_TASK_UNIT_STATE'
+UNIT_LIBRARY = RESOURCES / 'tasks/unit-state.py'
 
 # Fragments that the Gateway appends to another program before it sends them, so they are checked after it.
 # RecipeImagePrograms appends build-image.py to the shared recipe library.
@@ -75,27 +77,56 @@ def parts(path):
 
 
 def assemble(files):
-    """The assembled text and, for each part, its file and first line in the assembly."""
+    """The sent text and offsets (assembled line, original file, original line)."""
     text = ''
     offsets = []
+
+    def append(content, file, original_line=1):
+        nonlocal text
+        if content:
+            offsets.append((text.count('\n') + 1, file, original_line))
+            text += content
+
     for file in files:
         content = file.read_text()
         content = content if content.endswith('\n') else content + '\n'
-        offsets.append((text.count('\n') + 1, file))
-        text += content
+        if UNIT_MARKER in content.splitlines():
+            if content.splitlines().count(UNIT_MARKER) != 1:
+                raise ValueError(f'{file}: expected exactly one task unit-state marker')
+            before, _, after = content.partition(UNIT_MARKER)
+            append(before, file)
+            append(UNIT_LIBRARY.read_text(), UNIT_LIBRARY)
+            append(after, file, before.count('\n') + 1)
+        else:
+            append(content, file)
     return text, offsets
 
 
-def locate(offsets, line):
-    start, file = offsets[0]
-    for candidate_start, candidate in offsets:
+def original_location(offsets, line):
+    start, file, original_line = offsets[0]
+    for candidate_start, candidate, candidate_line in offsets:
         if candidate_start <= line:
-            start, file = candidate_start, candidate
-    return file.relative_to(ROOT).as_posix(), line - start + 1
+            start, file, original_line = candidate_start, candidate, candidate_line
+    return file, original_line + line - start
 
 
-def ruff(path, files, options):
-    text, offsets = assemble(files)
+def locate(offsets, line):
+    file, original_line = original_location(offsets, line)
+    return file.relative_to(ROOT).as_posix(), original_line
+
+
+def python_heredocs(text, offsets):
+    """The topology's literal Python bodies, retaining template and embedded-library locations."""
+    for match in re.finditer(r"(?m)^.*<<'PYTHON'\n([\s\S]*?)^PYTHON$", text):
+        first = text[:match.start(1)].count('\n') + 1
+        last = first + match[1].count('\n')
+        file, original_line = original_location(offsets, first)
+        body_offsets = [(1, file, original_line)]
+        body_offsets += [(start - first + 1, path, line) for start, path, line in offsets if first < start < last]
+        yield match[1], body_offsets
+
+
+def ruff_source(path, text, offsets, options):
     completed = subprocess.run(
         ['ruff', 'check', '--no-cache', '--config', str(GATEWAY / 'ruff.toml'), '--output-format', 'json',
          *options, '--stdin-filename', str(path), '-'],
@@ -108,6 +139,10 @@ def ruff(path, files, options):
         file, line = locate(offsets, finding['location']['row'])
         findings.append(f"{file}:{line}:{finding['location']['column']}: {finding['code']} {finding['message']}")
     return findings
+
+
+def ruff(path, files, options):
+    return ruff_source(path, *assemble(files), options)
 
 
 def shellcheck(path, files):
@@ -146,15 +181,21 @@ def main():
     found = programs()
     assembled = {path: parts(path) for path, _ in found}
     used = {file for files in assembled.values() for file in files[:-1]}
-    partial = used | {path for path, files in assembled.items() if len(files) > 1}
+    partial = used | {path for path, files in assembled.items() if len(files) > 1 or UNIT_MARKER in path.read_text()}
     for path, kind in found:
         if kind == 'sh':
             findings += shellcheck(path, assembled[path])
+            if path == RESOURCES / 'task-vms/topology.sh':
+                bodies = list(python_heredocs(*assemble(assembled[path])))
+                if not bodies:
+                    findings.append(f'{path.relative_to(ROOT)}: topology Python body is missing')
+                for source, offsets in bodies:
+                    findings += ruff_source(path, source, offsets, ['--select', 'E9,F821'])
             continue
         # Each file alone, then each assembly for names that one file uses and another defines. A file that is only
         # one part of an assembly may use names it does not define.
-        findings += ruff(path, [path], ['--extend-ignore', 'F821'] if path in partial else [])
-        if len(assembled[path]) > 1:
+        findings += ruff_source(path, path.read_text(), [(1, path, 1)], ['--extend-ignore', 'F821'] if path in partial else [])
+        if len(assembled[path]) > 1 or UNIT_MARKER in path.read_text():
             findings += ruff(path, assembled[path], ['--select', 'E9,F821'])
     tests = sorted((GATEWAY / 'tests/Programs').glob('*.py'))
     for path in tests:

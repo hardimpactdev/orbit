@@ -21,7 +21,7 @@ For command changes, use [designing-cli-commands](../designing-cli-commands/SKIL
 
 To explore or check behavior on real Nodes, use the group's Incus topology with [using-incus-topologies](../using-incus-topologies/SKILL.md). Do not write proof scripts.
 
-In an Orbit task, run `composer test:affected` in each changed project. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Keep the documentation and ADRs aligned with the result and run the documentation checks.
+Run the checks that the root `AGENTS.md` names for task and non-task work, and confirm that the tests covering the feature ran. Keep the documentation and ADRs aligned with the result and run the documentation checks.
 
 ## Submit
 

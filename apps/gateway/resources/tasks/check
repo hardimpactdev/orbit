@@ -40,6 +40,8 @@ import tempfile
 import time
 import traceback
 
+# ORBIT_TASK_UNIT_STATE
+
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 RESULT = os.path.join(DIRECTORY, 'check.json')
 LOG = os.path.join(DIRECTORY, 'check.log')
@@ -923,28 +925,8 @@ def managed_run_finished(data):
         # An old boot proves termination, never the check result or causal after-tree.
         return True
     unit = 'orbit-task-check-' + data['run_id'] + '.service'
-    result = subprocess.run(['systemctl', 'show', unit, '--no-pager',
-                             '--property=LoadState,ActiveState,SubState,ControlGroup,Description'],
-                            capture_output=True, text=True)
-    state = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
-    if result.returncode != 0 or state.get('LoadState') != 'loaded' or state.get('Description') != 'Orbit task check ' + data['run_id']:
+    if empty_terminal(unit, 'Orbit task check ' + data['run_id']) is None:
         return False
-    if not ((state.get('ActiveState') == 'active' and state.get('SubState') == 'exited')
-            or state.get('ActiveState') in ('inactive', 'failed')):
-        return False
-    group = state.get('ControlGroup')
-    if group:
-        if not group.startswith('/') or '..' in group.split('/'):
-            return False
-        try:
-            with open('/sys/fs/cgroup' + group + '/cgroup.events') as source:
-                events = dict(line.split() for line in source)
-            if events.get('populated') != '0':
-                return False
-        except FileNotFoundError:
-            pass
-        except OSError:
-            return False
     lock, path, current = start_record(data['run_id'])
     current['state'] = 'finished'
     write_start_record(path, current)
