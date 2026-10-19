@@ -51,7 +51,11 @@ it('still withholds text and logs a sanitized error when PCRE fails', function (
     $stream = fopen('php://memory', 'w+');
     $handler = new StreamHandler($stream);
     $handler->setFormatter(new LineFormatter(dateFormat: 'Y-m-d H:i:s', allowInlineLineBreaks: true, includeStacktraces: true));
-    Log::swap(new Logger(new MonologLogger('testing', [$handler])));
+    $logger = new Logger(new MonologLogger('testing', [$handler]));
+    $errors = [];
+    Log::shouldReceive('error')->atLeast()->once()->andReturnUsing(static function (string $message, array $context) use (&$errors): void {
+        $errors[] = [$message, $context];
+    });
     $sanitizer = app(CommandActivityInputSanitizer::class);
     $limit = ini_set('pcre.backtrack_limit', '0');
 
@@ -62,6 +66,9 @@ it('still withholds text and logs a sanitized error when PCRE fails', function (
     }
 
     expect($output)->toBe('Output withheld: redaction failed.');
+    foreach ($errors as [$message, $context]) {
+        $logger->error($message, $context);
+    }
     rewind($stream);
     $record = stream_get_contents($stream);
     fclose($stream);
