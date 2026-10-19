@@ -13,7 +13,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
-/** Opens a date-only PR from main; repository rules still decide when it can merge. */
+/** Opens an authenticated snapshot and Ubuntu pin PR from main; repository rules still decide when it can merge. */
 final readonly class OpenNightlyRecipePullRequestAction
 {
     public const string Path = 'apps/gateway/resources/machine-software/recipe.json';
@@ -45,7 +45,7 @@ final readonly class OpenNightlyRecipePullRequestAction
         }
         $branch = 'nightly/recipe-'.substr($snapshot, 0, 8);
         $title = 'Bump machine recipe snapshot to '.$snapshot;
-        $draft = new GitHubPullRequestDraft($branch, 'main', $title, 'Advances only the Ubuntu snapshot date. Exact package versions and Sury artifact pins stay unchanged. The Gateway merges on green Required checks only after verifying its App authorship, one commit, and the exact date-only diff. After deployment, existing host image builds gate ordered fleet convergence.');
+        $draft = new GitHubPullRequestDraft($branch, 'main', $title, 'Advances the Ubuntu snapshot and every Ubuntu pin to the newest authenticated version on all recipe architectures. Artifact pins stay unchanged. The Gateway merges on green Required checks only after verifying its App authorship, one commit, and the exact regenerated snapshot and Ubuntu pin bump. After deployment, existing host image builds gate ordered fleet convergence.');
         $existing = $this->github->pullRequestsByHead($token, $repository, $branch);
         if ($existing !== []) {
             // A closed date PR is an operator decision too; never reopen or overwrite it.

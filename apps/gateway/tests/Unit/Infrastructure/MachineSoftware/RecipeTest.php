@@ -41,6 +41,11 @@ function machine_recipe_snapshot_probe(?string $failure = null): SnapshotAvailab
 
         public function __construct(private readonly ?string $failure) {}
 
+        public function latest(string $snapshot, array $architectures, array $packages): array
+        {
+            throw new RuntimeException('This probe only verifies recipes.');
+        }
+
         public function verify(MachineRecipe $recipe): void
         {
             $this->called = true;

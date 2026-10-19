@@ -7,10 +7,12 @@ use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\Fleet\FakeUbuntuSnapshot;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 
@@ -45,6 +47,7 @@ function nightlyRefreshEvidence(): array
 
 function nightlyRefreshHttp(array $evidence): void
 {
+    app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     GitHubTestSupport::storeApp();
