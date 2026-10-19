@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 
 final readonly class RepairNodeDnsAction
@@ -64,6 +65,14 @@ final readonly class RepairNodeDnsAction
                 'validation',
                 'node.dns_repair_identity_missing',
                 "Node [{$name}] has no complete managed peer identity.",
+            );
+        }
+
+        if (! app(PeerDnsPolicy::class)->manages($node)) {
+            throw $this->failure(
+                'validation',
+                'node.dns_repair_unmanaged',
+                "Node [{$name}] has separately managed resolver configuration.",
             );
         }
 

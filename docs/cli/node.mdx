@@ -71,7 +71,7 @@ orbit node:add <name> [host] [options]
 | `--wireguard-ip=IP` | generated | Stable WireGuard address. |
 | `--lan-ip=IP` | none | LAN IPv4 address that a Cluster Router uses to reach this Node. |
 | `--wireguard-endpoint=HOST:PORT` | generated | WireGuard endpoint override. See [WireGuard endpoints](/reference/wireguard-endpoints). |
-| `--dns-server=IP` | Orbit VPN DNS | DNS server override. See [Private DNS](/reference/private-dns). A [Node without roles](/reference/node-provisioning#nodes-without-roles) does not use it. |
+| `--dns-server=IP` | Orbit VPN DNS | A WireGuard-subnet DNS server for the complete Orbit private-name set. Public names keep the normal resolver. Existing overrides are cleared on upgrade. See [Private DNS](/reference/private-dns). A [Node without roles](/reference/node-provisioning#nodes-without-roles) does not use it. |
 | `--setting=PATH:VALUE` | none | Node setting. The only path is `apps.path`. |
 
 `--role` accepts `app-dev`, `app-prod`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. Add `ingress` and `analytics` with [`node:role:add`](#orbit-noderoleadd). A Cluster Router comes from [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset).

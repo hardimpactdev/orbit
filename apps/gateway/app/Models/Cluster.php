@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -23,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 final class Cluster extends Model
 {
+    use ValidatesPrivateDnsNamespace;
+
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [

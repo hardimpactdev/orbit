@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -47,6 +48,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  */
 final class Node extends Model
 {
+    use ValidatesPrivateDnsNamespace;
+
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [

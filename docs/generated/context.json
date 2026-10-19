@@ -1082,7 +1082,8 @@
                 "0211",
                 "0212",
                 "0218",
-                "0219"
+                "0219",
+                "0226"
             ]
         },
         {
@@ -1215,6 +1216,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0226-split-private-dns-on-managed-peers.md",
+            "title": "ADR 0226: Split private DNS on managed peers",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0219",
+                "0226"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1276,7 +1298,8 @@
                 "0221",
                 "0223",
                 "0224",
-                "0225"
+                "0225",
+                "0226"
             ]
         },
         {

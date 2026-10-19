@@ -70,6 +70,7 @@ return Application::configure(basePath: dirname(__DIR__))
         app(TaskSchedule::class)->register($schedule);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
         GatewaySchedule::command($schedule, 'orbit:auto-deploy', uniqueFor: 600, overlapMinutes: 10)->everyMinute();
+        GatewaySchedule::command($schedule, 'orbit:peer-dns-reconcile', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         // Operations run only on the queue, so their sweep has nothing to do without it.
