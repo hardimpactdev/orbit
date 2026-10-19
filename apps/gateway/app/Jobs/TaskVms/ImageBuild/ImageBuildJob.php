@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms\ImageBuild;
 
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
-use App\Domain\Releases\ReleaseIncident;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -147,7 +146,7 @@ abstract class ImageBuildJob implements ShouldQueue
                     app(RecipeMaintenanceAlerts::class)->halted(
                         "Image build [{$build->id}] failed on host [{$build->host_node_id}] during [{$phase}]. Inspect task-vms:image-builds, fix the build, then run task-vms:build-recipe --retry.",
                         $build->id,
-                        incident: new ReleaseIncident('recipe-image:'.$build->id, (string) $build->attempt, 'build_failed'),
+                        incident: RecipeMaintenanceAlerts::imageIncident($build),
                     );
                 });
             }

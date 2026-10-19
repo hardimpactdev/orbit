@@ -53,6 +53,11 @@ final readonly class RecipeMaintenanceAlerts
         return new ReleaseIncident('recipe-pr:'.$number, $head, $fault);
     }
 
+    public static function imageIncident(TaskVmImageBuild $build): ReleaseIncident
+    {
+        return new ReleaseIncident('recipe-image:'.$build->id, (string) $build->attempt, 'build_failed');
+    }
+
     public static function jobIncident(string $type, string $uuid): ReleaseIncident
     {
         return new ReleaseIncident('recipe-maintenance:'.$type, $uuid, 'job_failed');

@@ -1070,7 +1070,6 @@ it('resolves an image-build incident only after recovery or supersession', funct
 
     match ($recovery) {
         'success' => $build->update(['state' => TaskVmImageBuildState::Succeeded]),
-        'generation' => DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => 15]),
         'identity' => DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('e', 64)]),
         'gone' => $build->delete(),
     };
@@ -1080,7 +1079,29 @@ it('resolves an image-build incident only after recovery or supersession', funct
     expect($fingerprint->refresh()->evidence['resolution'])->toBe($reason);
 })->with([
     'later attempt succeeded' => ['success', 'verified_image_build'],
-    'generation superseded' => ['generation', 'recipe_generation_superseded'],
     'identity superseded' => ['identity', 'recipe_generation_superseded'],
     'build removed' => ['gone', 'resource_gone'],
 ]);
+
+it('keeps an image-build incident open when a recipe revert returns to the failed identity', function (): void {
+    problem_filer_project();
+    $recipe = 'sha256:'.str_repeat('d', 64);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => $recipe, 'generation' => 14]);
+    $host = Node::query()->create(['name' => 'image-host', 'status' => 'active', 'public_ssh_host' => 'image-host.test']);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => $recipe,
+        'recipe_generation' => 14, 'state' => TaskVmImageBuildState::Failed]);
+    app(ProblemCollector::class)->recordRelease('rollout_halted|recipe-image:'.$build->id.'|1|build_failed', [
+        'summary' => 'Image failed', 'release_kind' => 'rollout_halted', 'incident_resource' => 'recipe-image:'.$build->id,
+        'incident_attempt' => '1', 'incident_fault' => 'build_failed',
+    ]);
+    Artisan::call('problems:file');
+    $group = Task::topLevel()->sole();
+    $fingerprint = ProblemFingerprint::query()->sole();
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('e', 64), 'generation' => 15]);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => $recipe, 'generation' => 16]);
+
+    Artisan::call('problems:file');
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+    expect($fingerprint->refresh()->evidence)->not->toHaveKey('resolved_at');
+});
