@@ -51,7 +51,7 @@ def image_packages(payload):
     time.sleep(1)
 PYTHON;
             $probe = str_replace(['SCENARIO', 'SECONDS'], [$this->scenario.'-'.$this->runKey, (string) $seconds], $probe);
-            $input = str_replace("    sys.exit(image_main())", '    exec('.json_encode($probe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).")\n    sys.exit(image_main())", $input);
+            $input = str_replace('    sys.exit(image_main())', '    exec('.json_encode($probe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).")\n    sys.exit(image_main())", $input);
         }
         if ($command[0] === 'systemd-run' && $this->scenario === 'timeout') {
             $command = array_map(static fn (string $argument): string => match ($argument) {
