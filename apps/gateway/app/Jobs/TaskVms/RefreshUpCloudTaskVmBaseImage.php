@@ -32,7 +32,7 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 3600;
 
-    public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null, public ?int $generation = null, public bool $rebuild = false)
+    public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null, public ?int $generation = null, public ?bool $rebuild = null)
     {
         $this->onTaskVmQueue(GatewayQueue::OptionalBuilds);
     }
@@ -45,7 +45,7 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder, RecipeImageBuilds $builds): void
     {
         $recipe = $builds->currentRecipe();
-        // Jobs queued before the recipe fence have neither property in their serialized payload.
+        // Jobs queued before the recipe fences or cold rebuilds omit these fields from their serialized payload.
         $identity = $this->recipeIdentity ?? $recipe->identity;
         $afterAttemptId = $this->afterAttemptId ?? 0;
         $generation = $this->generation ?? null;
