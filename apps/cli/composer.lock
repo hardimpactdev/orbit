@@ -2556,7 +2556,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "a6d400ff49d827ad9ed38b1c6de1ead6ec9c22e6"
+                "reference": "ee064c1d35f655a6ab77893af20166381ca8fa25"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.13 || ^3.1",
@@ -2588,22 +2588,22 @@
             },
             "scripts": {
                 "test:affected": [
-                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never"
+                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never"
                 ],
                 "analyse": [
                     "vendor/bin/phpstan analyse --no-progress --memory-limit=1G"
                 ],
                 "check": [
                     "@guidance:check",
+                    "@analyse",
                     "@rector",
-                    "@format:check",
-                    "@analyse"
+                    "@format:check"
                 ],
                 "format": [
-                    "vendor/bin/pint"
+                    "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)"
                 ],
                 "format:check": [
-                    "vendor/bin/pint --test"
+                    "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)"
                 ],
                 "guidance:check": [
                     "../../bin/guidance-check"
@@ -2612,10 +2612,10 @@
                     "@format:check"
                 ],
                 "rector": [
-                    "vendor/bin/rector process --dry-run --no-progress-bar --clear-cache"
+                    "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache"
                 ],
                 "test": [
-                    "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"
+                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never"
                 ]
             },
             "license": [
@@ -7808,12 +7808,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "6d6000ac626dda698c6a41dadc947767374d418b"
+                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/6d6000ac626dda698c6a41dadc947767374d418b",
-                "reference": "6d6000ac626dda698c6a41dadc947767374d418b",
+                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
+                "reference": "0d9f643b1b656eb9a4d643e4be180ee3a6a3d2bf",
                 "shasum": ""
             },
             "require": {
@@ -7925,7 +7925,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-14T17:27:14+00:00"
+            "time": "2026-10-19T08:56:01+00:00"
         },
         {
             "name": "nikic/php-parser",

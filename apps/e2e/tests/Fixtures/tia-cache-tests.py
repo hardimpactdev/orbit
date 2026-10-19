@@ -1479,7 +1479,7 @@ fi
                     ('repository', ['bin/docs-nav'])]
         for project in cache.PROJECTS:
             expected.extend((project, command) for command in [
-                ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
+                ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected', '--', '--tia-base=graph']])
             expected.extend((project, ['vendor/bin/pest', path])
                             for path in architecture_tests.get(project, []))
         expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))

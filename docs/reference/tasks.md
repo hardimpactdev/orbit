@@ -975,7 +975,7 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
-For Orbit handoffs, affected tests use the latest passed handoff tree of that subtask, including after requested changes and in a final-review fixup. With no passed handoff, they use its start commit. Failed, changed, cancelled, and lost checks never advance that base. File deliverables and reproduction commands still use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base and checks the full branch.
+Every Project handoff receives the subtask start commit in `ORBIT_TASK_CHECK_BASE`, including rework and final-review fixups. A Project that does not read it is unaffected. Orbit's gate uses the [candidate gate's test-base rule](/reference/implementation-loop#the-candidate-gate). File deliverables and reproduction commands also use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base.
 
 ### Baseline check
 

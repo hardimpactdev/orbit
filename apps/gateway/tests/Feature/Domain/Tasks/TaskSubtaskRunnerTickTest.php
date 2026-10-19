@@ -360,7 +360,7 @@ describe('topology paths at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-            ->and($checks->deliverables)->toBe([['start' => null, 'commands' => [], 'topology' => true]]);
+            ->and($checks->deliverables)->toBe([['start' => str_repeat('5', 40), 'commands' => [], 'test_base' => str_repeat('5', 40), 'topology' => true]]);
     });
 
     it('refuses a handoff when its topology diff cannot be read', function (): void {
@@ -402,6 +402,7 @@ describe('subtask deliverables at handoff', function (): void {
                 ['id' => 'export-test', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
                 ['id' => 'web-tests', 'command' => 'bun test', 'directory' => 'apps/web'],
             ],
+            'test_base' => str_repeat('5', 40),
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
             ->and($task->comments()->sole()->deliverables)->toBe(tick_all_confirmations())
@@ -415,7 +416,7 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
 
-        expect($checks->deliverables)->toBe([null])
+        expect($checks->deliverables)->toBe([['start' => str_repeat('5', 40), 'commands' => [], 'test_base' => str_repeat('5', 40)]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
     });
 
@@ -529,6 +530,7 @@ describe('subtask deliverables at handoff', function (): void {
                     'fails_on_base' => true,
                     'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
                 ]],
+                'test_base' => str_repeat('5', 40),
             ]])
             ->and(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('also exited 0 on the start commit');
     });
@@ -1066,7 +1068,7 @@ it('waits visibly without a fixup when a branch update is refused without a merg
     'outage' => [503, 'Service Unavailable'],
 ]);
 
-it('scopes every Orbit handoff test run to the subtask start', function (int $position, bool $later, bool $orbit): void {
+it('scopes every Project handoff test run to the subtask start', function (int $position, bool $later, bool $orbit): void {
     [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
     $group->project->update(['slug' => $orbit ? 'orbit' : 'other']);
     $task->update(['position' => $position, 'subtask_start_commit' => str_repeat('a', 40)]);
@@ -1080,7 +1082,7 @@ it('scopes every Orbit handoff test run to the subtask start', function (int $po
     app(TaskScheduler::class)->tick();
 
     expect($checks->starts)->toBe(1)
-        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe($orbit ? str_repeat('a', 40) : null);
+        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe(str_repeat('a', 40));
 })->with([
     'intermediate Orbit subtask' => [1, true, true],
     'last Orbit subtask' => [2, false, true],
@@ -1089,7 +1091,7 @@ it('scopes every Orbit handoff test run to the subtask start', function (int $po
     'single-subtask non-Orbit group' => [1, false, false],
 ]);
 
-it('advances rework tests only to the latest passed handoff tree of the same subtask', function (bool $fixup): void {
+it('keeps rework tests at the subtask start despite passed handoff trees', function (bool $fixup): void {
     [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
     $group->project->update(['slug' => 'orbit']);
     $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
@@ -1115,7 +1117,7 @@ it('advances rework tests only to the latest passed handoff tree of the same sub
     app(TaskScheduler::class)->tick();
 
     expect($checks->starts)->toBe(1)
-        ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('1', 40))
+        ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('a', 40))
         ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
 })->with(['requested changes' => false, 'final-review fixup' => true]);
 

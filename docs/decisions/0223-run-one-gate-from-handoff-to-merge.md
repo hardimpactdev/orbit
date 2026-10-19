@@ -106,7 +106,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 - `TaskTurnInstructions::implementer` no longer says "and `<check>` passes". It says that Orbit runs the Project check when the implementer hands off.
 - The engine stays generic. The Orbit repository's guidance tells a task implementer to run `composer test:affected` in each project it changed, and not to run `composer check` or `bin/review-check`. Work outside a task keeps the full checks, because no Gateway gate runs for it.
 - A failed handoff check returns to the implementer as a reminder with the end of the output, as today.
-- A failed handoff check gets its own budget: three failed handoff checks in a row for one subtask. The fourth asks for assistance. A passing check resets the count. Today one reminder per `completion_attempt` is allowed, so without this budget two failed handoffs in a row would stop the group.
+- A failed handoff check gets its own failed-check budget: three failed handoff checks in a row for one subtask. The fourth asks for assistance. A passing check resets the count. Today one reminder per `completion_attempt` is allowed, so without this failed-check budget two failed handoffs in a row would stop the group.
 - The `project-check` deliverable goes. Every settling fixup gets the `review` deliverable `fixup-review`, also when the Project has a task check. A final-review fixup and a GitHub-review fixup keep their `review` deliverable. Their handoff check runs the Project check, as every handoff does.
 
 ### 2. CI on the merge ref is the only integration gate
@@ -233,7 +233,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
 - The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, `budget_seconds`, a free `detail` text, and `selected_test_count` for test commands only.
+- A Project check may write a JSON list to that file: for each command, its name, directory relative to the Project, seconds, exit code, `budget_seconds`, a free `detail` text, and `selected_test_count` for test commands only.
 - Orbit records the name, seconds and exit code of each Project setup step in the baseline receipt.
 - Time budgets report overruns and can never block or stop work.
 - `tools/checks.json` owns both the command time budgets and the stage defaults in `stage_budgets`: baseline 600 seconds, handoff 1200 seconds and review 900 seconds.
@@ -242,9 +242,9 @@ The data does not show what a tree base saves. The only rework measured after #1
 - The Gateway stores each review turn’s elapsed seconds from dispatch to terminal observation on the review thread row, keyed by turn ID and separate from the check receipt.
 - A time budget overrun writes at most one Activity row per overrun per run with code `tasks.<stage>_over_budget`, where `<stage>` is `baseline`, `handoff`, `review` or `command`.
 - Baseline, handoff and review overrun rows use Activity `command: tasks:tick`.
-- Command overrun rows use Activity `command: <project directory>:<command name>`, with the Project slug instead of a directory for Project receipts and no task or run IDs, so `command|code` fingerprints stay stable.
+- Command overrun rows use Activity `command: <project-slug>:<project-directory>:<command-name>`, with a project-relative directory (`.` for a single-directory Project) and no task or run IDs, so distinct commands in one Project have stable, separate `command|code` fingerprints.
 - `ProblemCollector` treats `_over_budget` codes as server-class so the existing fingerprints and daily filing cap bound repeats without a new mechanism.
-- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets.
+- Setup `timeout_seconds` remain hard limits, separate from the report-only time budgets. Receipt entries for setup steps record seconds only and do not produce command overruns; their time is covered by the baseline stage time budget.
 - After step 7 is deployed and enough setup runs have recorded per-step timings for p90 values, propose exact Project 46 setup timeouts at about three times each p90 in a separate PR or note for Nick to apply, scaling them down to fit both the 540-second cap and the stored list total.
 - Orbit stores the list in a new JSON column of the check row.
 - Orbit's `bin/review-check` writes the list from `result.json`, including a selected test count for each test command.
@@ -263,9 +263,9 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the PHP copy of the rule.
    - Delete `ORBIT_TEST_PROCESSES` from `bin/test`, `implementation-loop.md`, and `environment-variables.md`, and the operator text for `ORBIT_CHECK_PROCESSES` in `implementation-loop.md` and `environment-variables.md`.
 3. **No local main-merge gate.** The enum casts on `TaskCheck::kind` and `TaskReviewedCommit::source` refuse an old value, so a migration removes every `base_merge` value:
-   - It refuses to run while any `base_merge` check is running. It cancels queued and held `main_merge` leases and leases for the checks it deletes, then deletes every `base_merge` check row, of open and ended groups.
+   - It refuses to run while any `base_merge` check is running or a retired held lease has `remote_uncertain` or a pending workspace operation. It cancels queued and held `main_merge` leases and leases for the checks it deletes, then deletes every `base_merge` check row, of open and ended groups.
    - It converts every `base_merge` reviewed commit to `orbit_push`. It records `inherited_approval_sha` only for converted rows whose review task has exactly one distinct approved commit in the group’s reviewed ledger. Only that stored approval can account for a converted head when the merged pull request returns. Native heads and ambiguous approval history still require exact approval.
-   - Once no converted reviewed-commit row belongs to an open group, delete `inherited_approval_sha` and the matching inherited-approval branch in `TaskPublication::checkReturningPullRequest`.
+   - Step 8 reads the converted rows and their group status; once none belongs to an open group, it deletes `inherited_approval_sha` and the matching inherited-approval branch in `TaskPublication::checkReturningPullRequest`.
    - It clears `base-merge-review` fixup identities so retired delta reviews no longer count against the group fixup limit. Deploy it when no `base_merge` check is running.
    - Add the strict-base refusal to `project:update`, with both rule reads. Add only `administration: read` to `GitHubAppManifestPage`, and document the protection read on the [GitHub App](/reference/github-app) page. Runner registration needs its own decision.
    - Add the assistance on a behind refusal to `mergeWhenReady`.
@@ -282,7 +282,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the `behind` branch of `mergeWhenReady`.
    - Rename the `main_merge` lease kind of `prepareResumedWorkspace`, which then only fast-forwards.
    - Delete the docs of the main-merge gate in these sections of [Tasks](/reference/tasks): Final review, Every push is reviewed, Records and status, Fix a settling pull request, Review fixup lifecycle, the opening rules of Review and merge, item 1 of Merge on green, and "Orbit merges only what it reviewed".
-4. **Start-commit test base.** First a release of the Pest fork with `--tia-base=COMMIT` and its tests, including one with a dirty branch baseline. Then bump the fork in each `composer.lock`, and pass the subtask start commit to every Project.
+4. **Start-commit test base.** First merge the Pest fork with `--tia-base=COMMIT` and its tests, including one with a dirty branch baseline. Then bump the fork in each `composer.lock`, and pass the subtask start commit to every Project.
    - Delete the tree case of `task_test_base`, `scope_tia_graph`, `scope_tree_baseline`, `comparison_tree_snapshot`, the `TREE_BASELINE_*` messages, and the embedded PHP program in `bin/review-check`.
    - Delete `keep_main_baseline`, because both forms of `--tia-base` ignore branch baselines.
    - Fill the handoff cache after a passed baseline too.
@@ -304,7 +304,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the terminal-result synthesis and the after-result tree check in `status()`.
    - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
    - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.
-8. **Close.** Absorb this ADR into the pages below and retire it.
+8. **Close.** Read the converted reviewed-commit rows joined to their task groups and prove that no converted row belongs to an open group; then delete `inherited_approval_sha` and its `TaskPublication` branch. Absorb this ADR into the pages below and retire it.
 
 ## Rejected alternatives
 
@@ -326,7 +326,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 - It removes the last main merge that Orbit makes in a workspace. The lease and #1297 to #1314 already fixed the incident in which groups 1632 and 1692 lost about 19 hours, so this saves no more of those hours.
 - A typical subtask costs one handoff gate and one review. CI adds 6 to 15 minutes once for each pushed head.
 - A rework costs about one first handoff.
-- A formatting or static-analysis failure now reaches the implementer as a reminder after the handoff check, not before. That can cost one more correction turn, inside the new budget.
+- A formatting or static-analysis failure now reaches the implementer as a reminder after the handoff check, not before. That can cost one more correction turn, inside the new failed-check budget.
 - A conflict fixup selects every main change since its start commit.
 - A semantic conflict between two pull requests that both passed CI can reach main. The `push` run of CI on main finds it.
 - Review and merge refuses to merge into a base branch that requires an up-to-date branch.

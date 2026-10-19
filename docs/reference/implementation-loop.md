@@ -347,21 +347,15 @@ The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it con
 
 ### The candidate gate
 
-Every Orbit task handoff selects affected tests from the subtask's latest passed handoff tree, or its start commit when none passed. This includes rework, final-review fixups, the last subtask, and a group with only one subtask. The Gateway supplies `ORBIT_TASK_CHECK_BASE`.
+Every task handoff selects affected tests from the subtask start commit, including rework, final-review fixups and the last subtask. The Gateway supplies `ORBIT_TASK_CHECK_BASE` for every Project. Projects that do not read it are unaffected.
 
-CI ignores that base when `CI` or `GITHUB_ACTIONS` is set and selects the full branch. The gate accepts a stored tree or an ancestor commit, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the test base. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
+The gate passes `--tia-base=COMMIT` only with the graph copied from a passed handoff-cache run on that commit's tree. It never pairs COMMIT with a graph warmed by the implementer. Without that matching graph, including in a baseline or a local run, it passes `--tia-base=graph` and tests from the graph's default-branch commit. Both forms include dirty and untracked files, ignore branch baselines and run selected tests without replaying results. The gate copies graphs without changing their contents.
 
-A handoff tree is not Pest's recorded commit. Pest accepts a baseline SHA only when that SHA is a commit and an ancestor of `HEAD`. The gate must not store the tree object in that field. Pest would report the recorded commit as unreachable and rebuild the project graph, which reruns the whole suite.
+A passed baseline fills the handoff cache too. A baseline whose graph is older than its candidate tests those intervening changes; a graph at the candidate selects no tests. A missing graph runs the full suite. A dependency fingerprint change, including a `composer.lock` change after the start commit, still runs the full suite even after the implementer warms its own graph.
 
-The gate keeps the cached dependency edges, sets the recorded SHA to `HEAD`, and stores a snapshot of the comparison tree in Pest's working-tree baseline. Those snapshot values are Pest's own content hashes of the blobs in that tree. A path the tree does not contain is an empty string, which is Pest's mark for an absent file. The gate clears cached results. A pass or failure from another tree is not evidence for this one.
+CI ignores `ORBIT_TASK_CHECK_BASE` when `CI` or `GITHUB_ACTIONS` is set and uses `--tia-base=graph`. Documentation and topology checks keep their branch scope. The receipt records the supplied test base and the executed commands.
 
-The snapshot is what narrows the suite. A file that still matches the comparison tree is not selected, including uncommitted work already checked at that tree. A file that differs from the tree stays selected. That includes a later edit on top of uncommitted work and a file restored to the `HEAD` commit.
-
-An absent path must stay in the snapshot. Omitting it hides a later restore: the restored bytes can match `HEAD`, so Pest's commit diff never lists the file. The empty mark puts that file back into the affected set. A deletion that is still absent does not by itself select tests the graph does not already connect to that path. Setting the SHA to `HEAD` and leaving the whole snapshot empty does not do this. Every dirty file would look changed, and a revert to `HEAD` would disappear.
-
-When the copied graph is missing, cannot be read, has no dependency edges, or the snapshot cannot be hashed, the gate deletes that run copy and says why. Pest then records a new graph by running the full suite. The reason is part of the gate output. A structural fingerprint change, such as a different `composer.lock`, still makes Pest discard the graph itself. `CI` and `GITHUB_ACTIONS` never apply this retarget. They still select every change on the branch.
-
-A warm docs-only change against that tree baseline should not rebuild the graph or run tests for unchanged code. On one worker it should finish within two minutes. A later change that breaks an affected test should still fail the gate.
+A warm docs-only change against that start-commit baseline should not rebuild the graph or run tests for unchanged code. On one worker it should finish within two minutes. A later change that breaks an affected test should still fail the gate.
 
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
@@ -636,21 +630,9 @@ A change to the web app or the Pi server could pass the gate and then fail a req
 
 A green gate must mean that every selected check ran. Skipping a check when its tool is absent would pass a workspace that happens to lack `bun` or `git`.
 
-### The gate selects against main
+### A gate needs its own test selection
 
-A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests.
-
-The gate keeps only the `main` baseline in its run copy. Without a handoff base, that baseline stays `main`, so the gate selects every change since `main`. With a handoff base, the same entry is retargeted as [The candidate gate](#the-candidate-gate) describes. Local runs are unchanged and still write the project's own graph.
-
-### A handoff tree is not a Pest commit
-
-Pest rebuilds its graph when the recorded SHA is not an ancestor commit. Writing the handoff tree into that field is a rejected alternative, because every later handoff would run the whole suite. Using `HEAD` with an empty snapshot is also rejected. Uncommitted files that the comparison tree already checked would be tested again, and a file restored to `HEAD` would be skipped.
-
-Omitting a path the comparison tree does not contain is rejected as well. Pest stores that absence as an empty string. Without the mark, a later restore that matches `HEAD` never enters the affected set, even when another file in the project is selected.
-
-Keeping the previous run's pass results is rejected too. Those results belong to another tree. Deleting the edges and inventing a new cache is rejected as well. The existing edges stay, and an unusable graph falls back to Pest's own full recording with an explicit reason.
-
-Passing on a warning is a rejected alternative when a change selects no tests. The gate runs the project's full suite with `--no-tia` instead. Changed source files with no selected tests take this path.
+An implementer's run can warm the branch baseline. The gate uses Pest's explicit base option so that run cannot erase the gate's selection. COMMIT needs graph edges and a fingerprint from that commit's tree; a matching passed handoff cache proves that provenance. Otherwise the graph's default-branch commit is the test base. Changing Pest's private graph fields is a rejected alternative because Pest owns those fields.
 
 ### A changed test must run
 

@@ -303,9 +303,8 @@ final readonly class TaskSubtaskRunner
     {
         $check = $this->deliverableCheck($task);
         $group = $task->parent;
-        $start = TaskReviewBase::testBase($task);
-        if ($group->project->slug === 'orbit'
-            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
+        $start = TaskReviewBase::commit($task);
+        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
             $check = [...($check ?? ['start' => TaskReviewBase::commit($task), 'commands' => []]), 'test_base' => $start];
         }
 
