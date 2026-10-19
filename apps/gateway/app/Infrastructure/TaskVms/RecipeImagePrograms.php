@@ -14,7 +14,9 @@ use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use Closure;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
@@ -32,33 +34,75 @@ final readonly class RecipeImagePrograms
 
     public function apply(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
     {
-        $started = microtime(true);
-        do {
-            try {
-                if ($this->poll($shell, $recipe, $profile, $phase, 'upcloud')) {
-                    return;
-                }
-            } catch (TaskVmException $error) {
-                if ($error->errorCode !== TaskVmError::ImageChannelLost->value) {
-                    throw $error;
-                }
-                Log::warning($error->getMessage(), ['phase' => $profile.':'.$phase]);
-                if (microtime(true) - $started > self::PhaseSeconds + self::ObservationGraceSeconds) {
-                    throw $error;
-                }
-            }
-            sleep(5);
-        } while (microtime(true) - $started <= self::PhaseSeconds + self::ObservationGraceSeconds);
-
-        throw new TaskVmException('task_vm.image_build_failed', "Recipe image phase [{$profile}:{$phase}] could not be observed within its runtime bound.");
+        $state = [];
+        while (! $this->poll($shell, $recipe, $profile, $phase, 'upcloud', $state)) {
+            Sleep::for(5)->seconds();
+        }
     }
 
-    /** Start once, then observe the same guest service across SSH loss and queue redelivery. */
-    public function poll(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase, string $execution): bool
+    /**
+     * One observation bound and reboot fence for both providers. Persist before issuing any start.
+     *
+     * @param  array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}  $state
+     * @param  (Closure(array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}): void)|null  $save
+     */
+    public function poll(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase, string $execution, array &$state, ?Closure $save = null, int $attempt = 1): bool
     {
+        if (! isset($state['observed_at'])) {
+            $state['observed_at'] = microtime(true);
+            $save?->__invoke($state);
+        }
+        $observedAt = $state['observed_at'];
+        $unknown = null;
+        try {
+            if ($this->observe($shell, $recipe, $profile, $phase, $execution, $state, $save, $attempt)) {
+                return true;
+            }
+        } catch (TaskVmException $error) {
+            if ($error->errorCode !== TaskVmError::ImageChannelLost->value) {
+                throw $error;
+            }
+            $unknown = $error;
+            Log::warning($error->getMessage(), ['phase' => $profile.':'.$phase]);
+        }
+        if (microtime(true) - $observedAt > self::PhaseSeconds + self::ObservationGraceSeconds) {
+            throw $unknown ?? new TaskVmException(TaskVmError::ImageChannelLost, "Recipe image phase [{$profile}:{$phase}] could not be observed within its runtime bound. The guest phase outcome is unknown.");
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}  $state
+     * @param  (Closure(array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}): void)|null  $save
+     */
+    private function observe(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase, string $execution, array &$state, ?Closure $save, int $attempt): bool
+    {
+        $boot = $this->control($shell, ['cat', '/proc/sys/kernel/random/boot_id'], required: false, observation: true);
+        $bootId = trim($boot->stdout);
+        if (! $boot->succeeded() || preg_match('/\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/D', $bootId) !== 1) {
+            throw $this->unknown('The builder returned no readable boot ID.', $boot);
+        }
+        if (isset($state['boot_id']) && $state['boot_id'] !== $bootId) {
+            throw new TaskVmException('task_vm.image_build_failed', "The builder rebooted during phase [{$profile}:{$phase}]. Start a new build from stock.");
+        }
         $unit = 'orbit-recipe-image-'.substr(hash('sha256', $recipe->identity.':'.$profile.':'.$phase.':'.$execution), 0, 32).'.service';
         $status = $this->status($shell, $unit);
-        if (($status['LoadState'] ?? null) === 'not-found') {
+        if ($status['LoadState'] === 'loaded' && (isset($state['restart_from']) || (($status['ActiveState'] ?? null) === 'failed' && ($state['attempt'] ?? $attempt) < $attempt))) {
+            $state['restart_from'] ??= $status['InvocationID'];
+            $save?->__invoke($state);
+            if ($status['InvocationID'] === $state['restart_from']) {
+                $restart = $this->control($shell, ['systemctl', 'restart', '--', $unit], required: false);
+                $status = $this->status($shell, $unit);
+                if (($status['InvocationID'] ?? null) === $state['restart_from']) {
+                    throw $this->unknown('The phase restart has not been observed.', $restart);
+                }
+            }
+            unset($state['restart_from']);
+            $state['attempt'] = $attempt;
+            $save?->__invoke($state);
+        }
+        if ($status['LoadState'] === 'not-found') {
             $payload = $this->payload($shell, $recipe, $profile);
             if ($phase === 'pi' && ! isset($payload['tools']['pi'])) {
                 return true;
@@ -75,8 +119,12 @@ final readonly class RecipeImagePrograms
                 if (! is_file($file) || hash_file($pin->algorithm, $file) !== $pin->digest) {
                     throw new TaskVmException('task_vm.image_build_failed', 'The recipe Pi artifact is missing or has the wrong digest.');
                 }
-                $input = '/run/'.$unit.'.input';
-                $this->stage($shell, $input, ProtectedInput::fromFile($file, '', TaskVmRuntime::ArtifactMaxBytes));
+                $directory = '/var/tmp/'.$unit.'.artifact';
+                $this->control($shell, ['install', '-d', '-m', '0700', '--', $directory]);
+                // Reuse the Pi installer's digest, disk staging, cleanup and atomic publication.
+                $this->control($shell, ['env', 'HOME='.$directory, 'bash', '-ceu', TaskVmRuntime::InstallPi, '--', $pin->digest],
+                    ProtectedInput::fromFile($file, '', TaskVmRuntime::ArtifactMaxBytes), timeout: 900);
+                $input = $directory.'/.local/bin/pi-server';
                 $this->stage($shell, $program, TaskVmRuntime::InstallPi);
                 $this->control($shell, ['chmod', '0644', $program]);
                 $command = ['runuser', '-u', TaskVmCloudInit::User, '--', 'env', 'HOME='.TaskVmCloudInit::Home, 'bash', '-eu', $program, $pin->digest];
@@ -88,6 +136,12 @@ final readonly class RecipeImagePrograms
             $this->control($shell, ['install', '-d', '-m', '0700', '/var/log/orbit/recipe-images']);
             $this->control($shell, ['touch', '--', $log]);
             $this->control($shell, ['chmod', '0600', $log]);
+            if (! isset($state['boot_id'])) {
+                $state['observed_at'] = microtime(true);
+            }
+            $state['boot_id'] = $bootId;
+            $state['attempt'] = $attempt;
+            $save?->__invoke($state);
             $start = $this->control($shell, [
                 'systemd-run', '--quiet', '--unit='.$unit,
                 '--property=Type=exec', '--property=RemainAfterExit=yes', '--property=ExitType=cgroup',
@@ -112,22 +166,25 @@ final readonly class RecipeImagePrograms
             && ($status['Result'] ?? '') === 'success' && ($status['ExecMainStatus'] ?? '') === '0') {
             return true;
         }
+        $exitCode = ($status['Result'] ?? '') === 'exit-code' && ($status['ExecMainCode'] ?? '') === '1'
+            ? (int) $status['ExecMainStatus'] : null;
         $reason = match (true) {
             ($status['Result'] ?? '') === 'timeout' => 'timed out after '.self::PhaseSeconds.' seconds',
-            ($status['ExecMainStatus'] ?? '') === '75' => 'could not start because another image phase holds the builder lock',
-            default => 'failed (systemd result '.($status['Result'] ?? 'unknown').', exit '.($status['ExecMainStatus'] ?? 'unknown').')',
+            $exitCode === 75 => 'could not start because another image phase holds the builder lock',
+            in_array($status['ExecMainCode'] ?? '', ['2', '3'], true) => 'failed (systemd result '.$status['Result'].', signal '.$status['ExecMainStatus'].')',
+            default => 'failed (systemd result '.$status['Result'].($exitCode === null ? '' : ', exit '.$exitCode).')',
         };
         $tail = $this->control($shell, ['tail', '-n', '40', '--', IncusGuestShell::recipeLog($profile, $phase)], required: false);
         $detail = mb_substr(new CommandActivityInputSanitizer()->redactText($tail->stdout), -12000);
         throw new TaskVmException('task_vm.image_build_failed', "Recipe image phase [{$profile}:{$phase}] {$reason}. Unit: {$unit}\n".mb_substr($detail, -2000),
-            imageFailure: ['phase' => $profile.':'.$phase, 'exit_code' => isset($status['ExecMainStatus']) ? (int) $status['ExecMainStatus'] : null, 'stderr' => $detail]);
+            imageFailure: ['phase' => $profile.':'.$phase, 'exit_code' => $exitCode, 'stderr' => $detail]);
     }
 
     /** @return array<string, string> */
     private function status(TaskVmGuestShell $shell, string $unit): array
     {
         $result = $this->control($shell, ['systemctl', 'show', '--no-pager',
-            '--property=LoadState,ActiveState,SubState,Result,ExecMainStatus', '--', $unit], required: false);
+            '--property=LoadState,ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,InvocationID', '--', $unit], required: false, observation: true);
         $status = [];
         foreach (explode("\n", trim($result->stdout)) as $line) {
             $parts = explode('=', $line, 2);
@@ -135,8 +192,12 @@ final readonly class RecipeImagePrograms
                 $status[$parts[0]] = $parts[1];
             }
         }
-        if (! isset($status['LoadState'])) {
-            throw new TaskVmException('task_vm.image_build_failed', 'The builder returned no systemd phase status.');
+        if (($status['LoadState'] ?? null) !== 'not-found'
+            && (! $result->succeeded() || ($status['LoadState'] ?? null) !== 'loaded'
+                || ! isset($status['ActiveState'], $status['SubState'], $status['Result'], $status['ExecMainCode'], $status['ExecMainStatus'], $status['InvocationID'])
+                || preg_match('/\A[0-9a-f]{32}\z/D', $status['InvocationID']) !== 1
+                || ! ctype_digit($status['ExecMainCode']) || ! ctype_digit($status['ExecMainStatus']))) {
+            throw $this->unknown('The builder returned no readable systemd phase status.', $result);
         }
 
         return $status;
@@ -149,14 +210,23 @@ final readonly class RecipeImagePrograms
         if (preg_match('~\A/run/orbit-recipe-image\.[A-Za-z0-9]{8}\z~D', $temporary) !== 1) {
             throw new TaskVmException('task_vm.image_build_failed', 'The builder returned an invalid staging path.');
         }
-        $this->control($shell, ['install', '-m', '0600', '/dev/stdin', $temporary.'/input'], $input);
-        $this->control($shell, ['mv', '--no-clobber', '--', $temporary.'/input', $path]);
-        $this->control($shell, ['rm', '-f', '--', $temporary.'/input']);
-        $this->control($shell, ['rmdir', '--', $temporary]);
+        try {
+            $this->control($shell, ['install', '-m', '0600', '/dev/stdin', $temporary.'/input'], $input, timeout: 900);
+            $this->control($shell, ['mv', '--no-clobber', '--', $temporary.'/input', $path]);
+        } finally {
+            $this->control($shell, ['rm', '-rf', '--', $temporary]);
+        }
+    }
+
+    private function unknown(string $reason, CommandResult $result): TaskVmException
+    {
+        $detail = new CommandActivityInputSanitizer()->redactText(trim($result->stderr));
+
+        return new TaskVmException(TaskVmError::ImageChannelLost, $reason.' The guest phase outcome is unknown. Control exit '.$result->exitCode.'.'.($detail === '' ? '' : "\n".mb_substr($detail, -2000)));
     }
 
     /** @param list<string> $command */
-    private function control(TaskVmGuestShell $shell, array $command, string|ProtectedInput|null $input = null, bool $required = true, int $timeout = self::ControlSeconds): CommandResult
+    private function control(TaskVmGuestShell $shell, array $command, string|ProtectedInput|null $input = null, bool $required = true, int $timeout = self::ControlSeconds, bool $observation = false): CommandResult
     {
         try {
             $result = $shell->asRoot($command, $input, timeout: $timeout);
@@ -166,6 +236,9 @@ final readonly class RecipeImagePrograms
         $detail = mb_substr(new CommandActivityInputSanitizer()->redactText(trim($result->stderr)), -2000);
         if ($result->exitCode === 255) {
             throw new TaskVmException(TaskVmError::ImageChannelLost, 'The image SSH channel closed (exit 255). The guest phase outcome is unknown.'.($detail === '' ? ' SSH returned no stderr.' : "\n{$detail}"));
+        }
+        if ($observation && $result->truncated) {
+            throw $this->unknown('The status reply exceeded the capture limit.', $result);
         }
         if ($result->truncated || ($required && ! $result->succeeded())) {
             $reason = $result->truncated ? 'output exceeded the capture limit' : 'exit '.$result->exitCode;
@@ -186,7 +259,8 @@ final readonly class RecipeImagePrograms
     private function failure(string $profile, string $phase, CommandResult $result): TaskVmException
     {
         $sanitizer = new CommandActivityInputSanitizer;
-        $stderr = mb_substr($sanitizer->redactText($result->stderr), -12000);
+        $output = implode("\n", array_slice(explode("\n", trim($result->stdout."\n".$result->stderr)), -40));
+        $stderr = mb_substr($sanitizer->redactText($output), -12000);
 
         return new TaskVmException('task_vm.image_build_failed', "Recipe image phase [{$profile}:{$phase}] failed (exit {$result->exitCode}).".($stderr === '' ? '' : "\n".mb_substr($stderr, -2000)),
             imageFailure: ['phase' => $profile.':'.$phase, 'exit_code' => $result->exitCode, 'stderr' => $stderr]);

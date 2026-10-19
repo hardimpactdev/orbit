@@ -102,6 +102,7 @@ final readonly class TaskVmImageBuildChain
             $steps = $build->steps;
             foreach ($steps as &$entry) {
                 if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
+                    unset($entry['phase_state']['observed_at']);
                     $entry['started_at'] = null;
                     $entry['seconds'] = null;
                     $entry['error'] = null;

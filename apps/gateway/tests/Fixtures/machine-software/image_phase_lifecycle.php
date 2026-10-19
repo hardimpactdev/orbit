@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Disposable Linux guest acceptance, never a production Node.
- * php tests/Fixtures/machine-software/image_phase_lifecycle.php survive|timeout start|poll <address> <key> <known-hosts> <run-key>
+ * php tests/Fixtures/machine-software/image_phase_lifecycle.php survive|timeout|reboot start|poll <address> <key> <known-hosts> <run-key>
  * Start deliberately SIGKILLs this caller after systemd accepts the phase. Poll runs in a fresh PHP process.
  */
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -21,8 +21,8 @@ $app = require dirname(__DIR__, 3).'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 [$script, $scenario, $action, $address, $key, $knownHosts] = $argv;
 $runKey = $argv[6] ?? 'lifecycle';
-if (! in_array($scenario, ['survive', 'timeout'], true) || ! in_array($action, ['start', 'poll'], true)) {
-    throw new InvalidArgumentException('Use survive|timeout and start|poll, with a disposable guest address and SSH identity.');
+if (! in_array($scenario, ['survive', 'timeout', 'reboot'], true) || ! in_array($action, ['start', 'poll'], true)) {
+    throw new InvalidArgumentException('Use survive|timeout|reboot and start|poll, with a disposable guest address and SSH identity.');
 }
 if (preg_match('/\A[a-z0-9-]{1,32}\z/D', $runKey) !== 1) {
     throw new InvalidArgumentException('The acceptance run key must be a short lowercase identifier.');
@@ -43,10 +43,12 @@ $shell = new class($scenario, $action, $address, $key, $knownHosts, $runKey) imp
             $seconds = $this->scenario === 'survive' ? 4 : 60;
             $probe = <<<'PYTHON'
 def image_packages(payload):
-    import time
-    marker = Path('/run/orbit-image-lifecycle-SCENARIO')
+    import os, time
+    marker = Path('/var/tmp/orbit-image-lifecycle-SCENARIO')
     with marker.open('a') as counter:
         counter.write('start\n')
+        counter.flush()
+        os.fsync(counter.fileno())
     child = subprocess.Popen(['bash', '-c', 'trap "" TERM; echo $$ > /run/orbit-image-child-SCENARIO; exec sleep SECONDS'], start_new_session=True)
     time.sleep(1)
 PYTHON;
@@ -80,7 +82,12 @@ PYTHON;
     }
 };
 try {
-    $completed = app(RecipeImagePrograms::class)->poll($shell, new RecipeLoader()->load(), 'base', 'packages', $runKey.'-'.$scenario);
+    $stateFile = sys_get_temp_dir().'/orbit-image-phase-'.$runKey.'-'.$scenario.'.json';
+    $state = is_file($stateFile) ? json_decode(file_get_contents($stateFile), true, flags: JSON_THROW_ON_ERROR) : [];
+    $completed = app(RecipeImagePrograms::class)->poll($shell, new RecipeLoader()->load(), 'base', 'packages', $runKey.'-'.$scenario, $state,
+        static function (array $state) use ($stateFile): void {
+            file_put_contents($stateFile, json_encode($state, JSON_THROW_ON_ERROR));
+        });
     echo json_encode(['completed' => $completed], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $error) {
     fwrite(STDERR, $error->getMessage()."\n");

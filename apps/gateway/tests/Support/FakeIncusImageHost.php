@@ -64,6 +64,9 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<IncusGuestCall> what ran in a guest, in order */
     public array $guest = [];
 
@@ -109,6 +112,7 @@ final class FakeIncusImageHost implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $result = $this->executeCommand($command);
         if ($this->afterExecute !== null) {
             ($this->afterExecute)($command);

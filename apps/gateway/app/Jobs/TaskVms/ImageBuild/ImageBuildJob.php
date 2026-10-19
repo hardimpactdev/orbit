@@ -71,7 +71,7 @@ abstract class ImageBuildJob implements ShouldQueue
             }
         }
         $index ??= count($steps);
-        $steps[$index] = ['step' => $this->step()->value, 'program' => $this->program(), 'started_at' => $steps[$index]['started_at'] ?? now()->toISOString(), 'seconds' => null, 'error' => null];
+        $steps[$index] = [...($steps[$index] ?? []), 'step' => $this->step()->value, 'program' => $this->program(), 'started_at' => $steps[$index]['started_at'] ?? now()->toISOString(), 'seconds' => null, 'error' => null];
         $build->forceFill(['current_step' => $this->step(), 'current_program' => $this->program(), 'steps' => $steps])->save();
         try {
             if (! $work->run($build, $this->step(), $this->program())) {
@@ -85,6 +85,7 @@ abstract class ImageBuildJob implements ShouldQueue
             $this->fail($error);
             throw $error;
         }
+        $steps[$index] = $build->steps[$index] ?? throw new \LogicException('The completed image phase has no persisted build step.');
         $steps[$index]['seconds'] = max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($steps[$index]['started_at'])->getTimestampMs() / 1000);
         $build->steps = $steps;
         if ($this->step() === TaskVmImageBuildStep::Prune) {
@@ -133,7 +134,7 @@ abstract class ImageBuildJob implements ShouldQueue
             }
             $index ??= count($steps);
             $started = $steps[$index]['started_at'] ?? now()->toISOString();
-            $steps[$index] = ['step' => $step->value, 'program' => $program, 'started_at' => $started,
+            $steps[$index] = [...($steps[$index] ?? []), 'step' => $step->value, 'program' => $program, 'started_at' => $started,
                 'seconds' => max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($started)->getTimestampMs() / 1000),
                 'error' => mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 4000)];
             $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed, 'current_step' => $step, 'current_program' => $program])->save();
