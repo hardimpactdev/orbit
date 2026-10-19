@@ -325,7 +325,7 @@ def shard_plan(arguments):
     if output:
         # The Gateway job runs shard 1; the shard jobs run the others, numbered from 2.
         with open(output, 'a') as file:
-            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\n'
+            file.write(f'commit={plan["commit"]}\n'
                        f'matrix={json.dumps(list(range(2, plan["shards"] + 1)))}\n')
 
 

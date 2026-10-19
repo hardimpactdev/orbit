@@ -338,7 +338,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual('4', outputs['shards'])
+        self.assertEqual('4', str(plan['shards']))
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
         for test in tests:
             self.assertEqual(1, sum(bool(re.search(pattern, test)) for pattern in plan['filters']))
@@ -361,7 +361,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', '[2, 3, 4]'), (outputs['shards'], outputs['matrix']))
+        self.assertEqual(('4', '[2, 3, 4]'), (str(plan['shards']), outputs['matrix']))
         self.assertEqual((4, 300, 4), (plan['shards'], plan['classes'], len(plan['filters'])))
         self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
         # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
@@ -387,7 +387,7 @@ class CiTiaTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(200, plan['classes'])
-        self.assertEqual('4', outputs['shards'])
+        self.assertEqual('4', str(plan['shards']))
         self.assertIn('4 shards: 200 full-suite test classes.', result.stdout)
 
     def test_keeps_the_other_tests_of_a_class_with_some_privileged_tests(self):
@@ -399,7 +399,7 @@ class CiTiaTest(unittest.TestCase):
             privileged_tests=f' - P\\{classes[0]}::__pest_evaluable_it_fails_loudly\n')
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', 299), (outputs['shards'], plan['classes']))
+        self.assertEqual(('4', 299), (str(plan['shards']), plan['classes']))
         shards = [test_filter for test_filter in plan['filters']
                   if re.search(test_filter, f'P\\{classes[0]}::__pest_evaluable_it_works', re.I)]
         self.assertEqual(1, len(shards))
@@ -427,7 +427,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', '[2, 3, 4]'), (outputs['shards'], outputs['matrix']))
+        self.assertEqual(('4', '[2, 3, 4]'), (str(plan['shards']), outputs['matrix']))
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertTrue(all(shards))

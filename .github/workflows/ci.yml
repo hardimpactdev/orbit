@@ -432,7 +432,6 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       commit: ${{ steps.plan.outputs.commit }}
-      shards: ${{ steps.plan.outputs.shards }}
       matrix: ${{ steps.plan.outputs.matrix }}
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
