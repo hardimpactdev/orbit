@@ -137,6 +137,28 @@ class ConvergenceTest(unittest.TestCase):
             self.apply(command, active_units=lambda: {'dependency.service', 'consumer.service'})
 
         self.assertIn(['systemctl', 'restart', 'consumer.service', 'dependency.service'], self.commands)
+        fences = [c for c in self.commands if c[0] == 'systemd-run']
+        self.assertEqual(len(fences), 1)
+        self.assertIn('--wait', fences[0])
+        self.assertIn('--collect', fences[0])
+        self.assertIn('--property=After=consumer.service dependency.service', fences[0])
+        self.assertIn('--property=JobTimeoutSec=600', fences[0])
+        self.assertTrue(any(c.startswith('--unit=orbit-recipe-health-') and c.endswith('.service') for c in fences[0]))
+        self.assertLess(self.commands.index(fences[0]), self.commands.index(['systemctl', 'is-active', '--quiet', 'consumer.service']))
+
+    def test_restart_fence_failure_stops_before_health_without_retry(self):
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv[0] == 'systemd-run':
+                return subprocess.CompletedProcess(argv, 1, '', 'ordering fence failed')
+            return result
+
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^restart:curl.service,php8.5-fpm.service$'):
+            self.apply(command)
+
+        self.assertEqual(sum(c[:2] == ['systemctl', 'restart'] for c in self.commands), 1)
+        self.assertEqual(sum(c[0] == 'systemd-run' for c in self.commands), 1)
+        self.assertFalse(any(c[:2] == ['systemctl', 'is-active'] for c in self.commands))
 
     def test_health_failure_never_retries_or_rolls_back(self):
         def command(argv, **kwargs):

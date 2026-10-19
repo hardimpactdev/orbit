@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import uuid
 import zipfile
 from urllib.parse import urlsplit
 
@@ -1050,6 +1051,11 @@ def apply_recipe(payload, snapshots):
             if restarted:
                 stage = 'restart:' + ','.join(restarted)
                 run(['systemctl', 'restart', *restarted])
+                # systemctl submits separate jobs; a later dependency can restart an already-completed dependent.
+                fence = 'orbit-recipe-health-' + uuid.uuid4().hex + '.service'
+                run(['systemd-run', '--quiet', '--wait', '--collect', '--unit=' + fence,
+                     '--property=Type=oneshot', '--property=JobTimeoutSec=600',
+                     '--property=After=' + ' '.join(restarted), '/usr/bin/true'])
             stage = 'health'
             # Check package services and every active unit their restart propagates to; Doctor checks role requirements.
             for service in sorted(health_services | set(restarted)):
