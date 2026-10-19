@@ -125,7 +125,9 @@ Vite+ keeps its existing global store. The pinned CLI receives its initializatio
 
 The command then checks service health, existing managed Tool intent, and the Node and role Doctor families. Service health covers non-transient services active before convergence that belong to selected recipe packages, including unchanged recipe packages, and services restarted for changed dependencies. It excludes unrelated services and transient task or operation services, whose runners check their completion.
 
-A checked service with no unit file does not fail convergence only when it is inactive, has no cgroup, and has no pending job. Convergence uses the shared task-unit proof for this state. A failed state read, any other non-loaded state, or a checked service that remains loaded but becomes inactive or failed stops convergence. The fleet verifier checks Node and role requirements with no tolerated preexisting issues. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
+If a service fails the active check, convergence accepts it only when the shared task-unit proof shows it is not loaded, is inactive, has no cgroup, and has no pending job. A failed state read, any other non-loaded state, or a loaded service that becomes inactive or failed stops convergence.
+
+The fleet verifier checks Node and role requirements with no tolerated preexisting issues. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
 
 A failed command reports its recipe stage, exit code, and bounded, redacted output in the convergence error. A failure during package installation also reports the attempted packages. APT source validation reports the source or backup path and the reason, including malformed fields, mixed provider entries, and symlinks. These reasons use the same bounded, redacted diagnostic envelope. No automatic retry or rollback runs.
 
