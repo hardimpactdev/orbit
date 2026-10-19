@@ -11,6 +11,12 @@ def unit_state(unit_name):
     return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
 
 
+def vanished(state):
+    # No unit file, inactive, no cgroup and no queued transition together prove no processes remain.
+    return (state is not None and state.get('LoadState') == 'not-found' and state.get('ActiveState') == 'inactive'
+            and state.get('ControlGroup') == '' and state.get('Job') == '')
+
+
 def empty_terminal(unit_name, expected_description=None, state=None):
     state = unit_state(unit_name) if state is None else state
     if state is None:

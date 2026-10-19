@@ -65,6 +65,8 @@ def all_managed_units_terminal(operations, check_runs):
                 return False
             name = item['unit']
             state = unit_state(name)
+            if vanished(state):
+                continue
             if state is None or state.get('LoadState') != 'loaded':
                 return False
             operation_match = re.fullmatch(r'orbit-workspace-operation-([a-f0-9]{32})\.service', name)
