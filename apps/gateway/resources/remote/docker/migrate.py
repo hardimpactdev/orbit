@@ -77,6 +77,10 @@ def daemon_bytes():
     return DAEMON.read_bytes() if DAEMON.exists() else None
 
 
+def daemon_unchanged(state):
+    return daemon_bytes() == (None if state['daemon'] is None else bytes.fromhex(state['daemon']))
+
+
 # Supported fields: moby/moby docker-v29.1.3/api/swagger.yaml (Ubuntu engine API 1.52).
 CONFIG_FIELDS = set(('Hostname Domainname User AttachStdin AttachStdout AttachStderr ExposedPorts Tty OpenStdin '
                      'StdinOnce Env Cmd Healthcheck ArgsEscaped Image Volumes WorkingDir Entrypoint NetworkDisabled '
@@ -227,6 +231,10 @@ def storage_root(value, failure):
     if root == Path('/') or not root.is_dir():
         raise RecipeFailure(failure)
     return root
+
+
+def same_docker_root(info, state, failure):
+    return str(storage_root(info.get('DockerRootDir'), failure)) == state['metadata_roots']['docker']
 
 
 def daemon_defaults(info):
@@ -467,7 +475,7 @@ def readable(state):
     try:
         start_daemon()
         info = api('GET', '/info')
-        if (str(storage_root(info.get('DockerRootDir'), 'storage-root')) != state['metadata_roots']['docker']
+        if (not same_docker_root(info, state, 'storage-root')
                 or info.get('Driver') != state.get('driver') or daemon_defaults(info) != state.get('defaults', {})):
             return False
         if any(inspect_container(c['Id'], missing=True) is None for c in state['containers']):
@@ -614,8 +622,8 @@ def public_report(state):
 
 def restore_policies(state):
     if ('docker-ce' not in packages() or DROPIN.exists()
-            or daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon']))
-            or str(storage_root(api('GET', '/info').get('DockerRootDir'), 'restore-engine')) != state['metadata_roots']['docker']):
+            or not daemon_unchanged(state)
+            or not same_docker_root(api('GET', '/info'), state, 'restore-engine')):
         raise RecipeFailure('restore-engine')
     current = [inspect_container(old['Id'], missing=True) for old in state['containers']]
     if any(not actual or actual['Name'] != old['Name'] for old, actual in zip(state['containers'], current, strict=True)):
@@ -672,7 +680,7 @@ def migrate(payload, mode):
                 'changed_layers': [c['Name'].lstrip('/') for c in state['containers']
                                    if (c['Config'].get('Labels') or {}).get('orbit.managed') != 'true'
                                    and api('GET', '/containers/' + c['Id'] + '/changes')]}
-    if daemon_bytes() != (None if state['daemon'] is None else bytes.fromhex(state['daemon'])):
+    if not daemon_unchanged(state):
         raise RecipeFailure('daemon-changed')
     if not path.exists():
         record('inventory.json', state)
