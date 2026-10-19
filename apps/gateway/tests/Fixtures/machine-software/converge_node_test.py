@@ -50,7 +50,7 @@ class ConvergenceTest(unittest.TestCase):
         if path == self.policy:
             self.policy.write_bytes(content)
 
-    def apply(self, command=None, active_units=None):
+    def apply(self, command=None, active_units=None, versions=None):
         def execute(argv, **kwargs):
             result = (command or self.command)(argv, **kwargs)
             if result.returncode != 0 and kwargs.get('required', True):
@@ -58,7 +58,7 @@ class ConvergenceTest(unittest.TestCase):
             return result
         with patch.object(recipe, 'POLICY', self.policy), \
              patch.object(recipe, 'packages', side_effect=[self.before, self.after]), \
-             patch.object(recipe, 'inspect', side_effect=[
+             patch.object(recipe, 'inspect', side_effect=versions or [
                  {name: '1.0' for name in self.payload['tools']},
                  {name: '2.0' if name == 'curl' else '1.0' for name in self.payload['tools']}]), \
              patch.object(recipe, 'active_units', side_effect=active_units,
@@ -116,9 +116,13 @@ class ConvergenceTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 3, '', '')
             return result
 
-        result = self.apply(command, active_units=lambda: {'curl.service', 'consumer.service'})
+        result = self.apply(command, active_units=lambda: {'curl.service', 'consumer.service'},
+                            versions=[{'curl': '2.0'}, {'curl': '2.0'}])
 
         self.assertTrue(result['healthy'])
+        self.assertEqual(result['changed_packages'], [])
+        self.assertEqual(result['changed_tools'], [])
+        self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
         self.assertFalse(any(c[:2] in (['systemctl', 'show'], ['systemctl', 'is-active']) and c[-1] == 'consumer.service'
                              for c in self.commands))
         self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
