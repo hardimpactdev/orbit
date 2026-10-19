@@ -169,7 +169,7 @@ The data does not show what a tree base saves. The only rework measured after #1
 
 ### 4. One definition of the checks
 
-- One file, `tools/checks.json`, lists each check: its project directory, its commands, its architecture tests, the paths that select it, and where it runs.
+- One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs.
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
 - For a PHP project, the file holds `composer validate --strict`, `composer check`, and the architecture tests, which both gates run. It also holds `composer test:affected`, which only the local gate runs.
 - The test step of a PHP project in CI stays in `ci.yml`, because CI runs sharded Pest with its own TIA plan.
@@ -232,9 +232,19 @@ The data does not show what a tree base saves. The only rework measured after #1
 - `status()` only reads results.
 - Every check start has a run ID. The path without a run ID goes, and `RemoteTaskCheckRunner::start` requires the run ID.
 - The check exports `ORBIT_CHECK_RECEIPT`, a file path.
-- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, selected test count, `budget_seconds`, and a free `detail` text. Each Project setup step records its name, seconds and exit code in that same receipt.
-- Budgets report overruns; they never stop work. Use baseline 600 seconds, handoff 1200 seconds, Gateway `test:affected` 600 seconds, other commands 300 seconds, and reviews 900 seconds. `tools/checks.json` owns command budgets. Each overrun writes one Activity row `tasks.<stage>_over_budget`; `ProblemCollector` treats `_over_budget` codes as server-class so existing fingerprints and filing apply. Add no separate mechanism.
-- After setup timings are stored, propose each Project 46 setup timeout at about three times its p90. List exact values in the receipt PR; Nick applies the Project settings.
+- A Project check may write a JSON list to that file: for each command, its name, seconds, exit code, `budget_seconds`, a free `detail` text, and a selected test count for test commands only.
+- Each Project setup step records its name, seconds and exit code in the baseline receipt.
+- Budgets report overruns and can never block or stop work.
+- `tools/checks.json` owns both the command budgets and the stage defaults in `stage_budgets`: baseline 600 seconds, handoff 1200 seconds and review 900 seconds.
+- The command budgets are Gateway `test:affected` 600 seconds and every other command 300 seconds.
+- A Project receipt command without `budget_seconds` uses the default of its baseline or handoff stage.
+- In step 7, the Gateway records each review turn's elapsed seconds from dispatch to terminal observation, separately from the check receipt.
+- An overrun writes at most one Activity row per overrun per run with code `tasks.<stage>_over_budget`, where `<stage>` is `baseline`, `handoff`, `review` or `command`.
+- Baseline, handoff and review overrun rows use Activity `command: tasks:tick`.
+- Command overrun rows use Activity `command: <project directory>:<command name>`, with `.` for a Project root and no task or run IDs, so `command|code` fingerprints stay stable.
+- `ProblemCollector` treats `_over_budget` codes as server-class so the existing fingerprints and daily filing cap bound repeats without a new mechanism.
+- Setup `timeout_seconds` remain hard limits, separate from the report-only budgets.
+- After step 7 is deployed and enough setup runs have recorded per-step timings for p90 values, propose exact Project 46 setup timeouts at about three times each p90 in a separate PR or note for Nick to apply.
 - Orbit stores the list in a new JSON column of the check row.
 - Orbit's `bin/review-check` writes the list from `result.json`, including a selected test count for each test command.
 - The 16 KiB output tail stays.
@@ -288,7 +298,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Change the tests that call `bin/tia-cache`: `WorktreeLifecycleTest.php:30`, `TestDatabaseGateTest.php:36`, `BuilderGateSelectionTest.php:105`, `ComposerConfigurationTest.php:371`, and the Gateway tests `CiCacheSetupTest.php` and `TiaBaselineSetupTest.php`.
    - Delete the `bin/tia-cache` comment in `bin/tooling-baseline:18`.
    - Delete [Refresh from CI](/reference/implementation-loop#refresh-from-ci), "Only main CI publishes", "Maintenance runs in the background", "Clones find the store through a registration", and the worker text of [Failures on main](/reference/implementation-loop#failures-on-main), with the text on legacy failure records. Failures on main keeps one line: GitHub's CI status is the record.
-7. **Check results.** The supervisor writes its result and checks the final tree. `status()` reads a proven-terminated run as a terminal `lost`, and `TaskWorkspaceLease` releases on it. The check row stores the receipt list with per-command seconds, selected test counts and budgets, plus each Project setup step's seconds. Report overruns through one Activity row and the existing problem filing rule above. Propose the exact Project 46 setup timeouts from recorded p90 values; Nick applies them.
+7. **Check results.** Implement [§8: Check results and evidence](#8-check-results-and-evidence), including receipt storage, review-turn timing and report-only overruns.
    - Delete the terminal-result synthesis and the after-result tree check in `status()`.
    - Delete the start and status path without a run ID and the "Legacy check process identity" match in `managed_run`.
    - Delete the optional `$runId` of `RemoteTaskCheckRunner::start`, of the `TaskCheckRunner` interface (`TaskCheckRunner.php:35`), and of `FakeTaskCheckRunner`.
@@ -324,7 +334,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
 - ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision because a user-owned repository has no narrower runner permission
-- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Environment variables](/reference/environment-variables)
+- Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Tasks: Outer loop](/reference/tasks#outer-loop). [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Instance setup: Project 46](/reference/instance-setup#project-46). [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
