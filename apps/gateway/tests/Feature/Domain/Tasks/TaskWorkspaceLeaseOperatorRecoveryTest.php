@@ -171,7 +171,13 @@ it('scopes operator quiescence to its lease and fails closed on ambiguous manage
     } elseif ($condition === 'unreadable unit') {
         $unit['unreadable'] = true;
     } elseif ($condition === 'vanished unit') {
-        $unit = ['unit' => $unit['unit'], 'LoadState' => 'not-found', 'ActiveState' => 'inactive', 'ControlGroup' => ''];
+        $unit = ['unit' => $unit['unit'], 'LoadState' => 'not-found', 'ActiveState' => 'inactive', 'SubState' => 'dead',
+            'ControlGroup' => '', 'Job' => '', 'Description' => $unit['unit']];
+    } elseif ($condition === 'running unit without a file') {
+        $unit['LoadState'] = 'not-found';
+        $unit['ControlGroup'] = '/system.slice/'.$unit['unit'];
+        $unit['Job'] = '';
+        $unit['Description'] = $unit['unit'];
     } elseif ($condition === 'unloaded unit') {
         $unit['LoadState'] = 'error';
     }
@@ -198,6 +204,7 @@ it('scopes operator quiescence to its lease and fails closed on ambiguous manage
     'missing description' => ['missing description', false],
     'unreadable unit' => ['unreadable unit', false],
     'vanished unit' => ['vanished unit', true],
+    'running unit without a file' => ['running unit without a file', false],
     'unloaded unit' => ['unloaded unit', false],
 ]);
 

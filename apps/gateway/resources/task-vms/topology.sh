@@ -19,14 +19,14 @@ max_seconds=4500
 
 valid_run() { [[ $1 =~ ^[a-z0-9]{8,40}$ ]]; }
 
-# Keep unreadable evidence pending. Only a missing unit or positive terminal proof permits another start.
+# Keep unreadable evidence pending. Only a vanished unit or positive terminal proof permits another start.
 unit_running() {
     python3 - "$1" <<'PYTHON'
 # ORBIT_TASK_UNIT_STATE
 import sys
 
 state = unit_state(sys.argv[1])
-sys.exit(0 if state is None or (state.get('LoadState') != 'not-found'
+sys.exit(0 if state is None or (not vanished(state)
          and empty_terminal(sys.argv[1], state=state) is None) else 1)
 PYTHON
 }
