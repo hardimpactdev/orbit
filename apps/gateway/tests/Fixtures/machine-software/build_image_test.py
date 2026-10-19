@@ -54,7 +54,7 @@ class ImageRecipeTest(unittest.TestCase):
         install = next(c for c in self.commands if c[:2] == ['apt-get', 'install'])
         self.assertIn('curl=2.0', install)
         config = next(content for path, content in self.files.items() if path.endswith('/apt.conf'))
-        self.assertIn(b'Dir::Etc::sourceparts "-";', config)
+        self.assertIn(b'Dir::Etc::sourceparts "";', config)
         self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
         self.assertEqual(self.commands.count(['apt-get', 'update']), 1)
         self.assertFalse(self.policy.exists())
@@ -68,8 +68,8 @@ from pathlib import Path
 config = subprocess.run(['apt-config', 'dump'], capture_output=True, text=True, check=True).stdout
 root = Path(os.environ['APT_CONFIG']).parent
 assert f'Dir::Etc::sourcelist "{root}/ubuntu.sources";' in config
-assert 'Dir::Etc::sourceparts "-";' in config
-assert 'Dir::Etc::parts "-";' in config
+assert 'Dir::Etc::sourceparts "";' in config
+assert 'Dir::Etc::parts "";' in config
 assert 'Dir::State::lists "lists/";' in config
 assert 'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/' in (root / 'ubuntu.sources').read_text()
 print(json.dumps({'outcome': 'current'}))
@@ -142,7 +142,7 @@ print(json.dumps({'outcome': 'current'}))
         self.payload['identity'] = 'sha256:current'
         def assessment(selected, observed, *args, **kwargs):
             config = Path(os.environ['APT_CONFIG'])
-            self.assertIn('Dir::Etc::parts "-";', config.read_text())
+            self.assertIn('Dir::Etc::parts "";', config.read_text())
             self.assertIn(self.payload['snapshot'], (config.parent / 'ubuntu.sources').read_text())
             self.assertEqual(args, ())
             return {'curl': {'status': 'current'}}
