@@ -13,8 +13,16 @@ return new class extends Migration
     public function up(): void
     {
         DB::transaction(function (): void {
-            if (DB::table('task_checks')->where('kind', 'base_merge')->where('status', 'running')->exists()) {
-                throw new RuntimeException('A base_merge check is running. Let it finish before deploying.');
+            $retiredLeases = DB::table('task_workspace_leases')
+                ->where(static fn (Builder $lease): Builder => $lease->where('kind', 'main_merge')
+                    ->orWhereIn('check_id', DB::table('task_checks')->where('kind', 'base_merge')->select('id')));
+            $unsettledHolder = (clone $retiredLeases)->where('status', 'held')
+                ->where(static fn (Builder $lease): Builder => $lease->where('remote_uncertain', true)
+                    ->orWhereExists(static fn (Builder $operation): Builder => $operation->selectRaw('1')
+                        ->from('task_workspace_operations')->whereColumn('lease_id', 'task_workspace_leases.id')->where('status', 'pending')))
+                ->exists();
+            if (DB::table('task_checks')->where('kind', 'base_merge')->where('status', 'running')->exists() || $unsettledHolder) {
+                throw new RuntimeException('A base_merge check is running or a retired workspace holder has unsettled remote work. Let it finish before deploying.');
             }
 
             if (! Schema::hasColumn('task_reviewed_commits', 'inherited_approval_sha')) {
@@ -23,9 +31,7 @@ return new class extends Migration
                 });
             }
 
-            DB::table('task_workspace_leases')->whereIn('status', ['queued', 'held'])
-                ->where(static fn (Builder $lease): Builder => $lease->where('kind', 'main_merge')
-                    ->orWhereIn('check_id', DB::table('task_checks')->where('kind', 'base_merge')->select('id')))
+            $retiredLeases->whereIn('status', ['queued', 'held'])
                 ->update(['status' => 'cancelled', 'active_instance_id' => null, 'released_at' => now(), 'updated_at' => now()]);
             DB::table('task_checks')->where('kind', 'base_merge')->delete();
 

@@ -90,6 +90,36 @@ it('refuses a running retired check before changing any checks, reviews or lease
     }
 });
 
+it('refuses retired holders with unsettled remote work before changing any rows', function (string $kind, bool $uncertain, bool $pending): void {
+    $group = retired_gate_group();
+    $check = retired_gate_check($group);
+    $lease = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => 123, 'active_instance_id' => 123, 'group_id' => $group->id,
+        'kind' => $kind, 'owner' => 'old-actor', 'status' => 'held', 'remote_uncertain' => $uncertain,
+        'check_id' => $kind === 'check' ? $check : null]);
+    if ($pending) {
+        DB::table('task_workspace_operations')->insert(['lease_id' => $lease->id, 'operation' => 'pending-command',
+            'binding' => 'stored', 'connection' => '{}', 'status' => 'pending']);
+    }
+    DB::table('task_reviewed_commits')->insert(['task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => 'base_merge']);
+    $tables = ['task_checks', 'task_reviewed_commits', 'task_workspace_leases', 'task_workspace_operations'];
+    $before = [];
+    foreach ($tables as $table) {
+        $before[$table] = DB::table($table)->get()->toJson();
+    }
+    $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
+
+    expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'unsettled remote work');
+
+    foreach ($tables as $table) {
+        expect(DB::table($table)->get()->toJson())->toBe($before[$table]);
+    }
+})->with([
+    'uncertain main merge holder' => ['main_merge', true, false],
+    'uncertain deleted check holder' => ['check', true, false],
+    'main merge holder with pending operation' => ['main_merge', false, true],
+    'deleted check holder with pending operation' => ['check', false, true],
+]);
+
 it('cancels retired holders and waiters so the next workspace actor can acquire', function (string $kind, string $status): void {
     $group = retired_gate_group();
     $node = Node::query()->create(['name' => 'migration-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.1']);
@@ -100,6 +130,8 @@ it('cancels retired holders and waiters so the next workspace actor can acquire'
     $lease = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $instance->id, 'group_id' => $group->id,
         'active_instance_id' => $status === 'held' ? $instance->id : null, 'kind' => $kind, 'owner' => 'old-actor', 'status' => $status,
         'check_id' => $kind === 'check' ? $check : null]);
+    DB::table('task_workspace_operations')->insert(['lease_id' => $lease->id, 'operation' => 'finished-command',
+        'binding' => 'stored', 'connection' => '{}', 'status' => 'finished']);
     $preserved = DB::table('task_workspace_leases')->insertGetId(['instance_id' => 999, 'active_instance_id' => 999, 'group_id' => $group->id,
         'kind' => 'handoff', 'owner' => 'unrelated', 'status' => 'held']);
     $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
