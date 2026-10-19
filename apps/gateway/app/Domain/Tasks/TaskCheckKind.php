@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\Project;
-
 enum TaskCheckKind: string
 {
     /** The Project's setup steps and check on the fresh workspace, before the first implementer starts. */
@@ -13,6 +11,4 @@ enum TaskCheckKind: string
 
     /** The check after an implementer's ready_for_review receipt. */
     case Handoff = 'handoff';
-
-    /** The gate on a mechanical default-branch merge; no implementer or deliverable commands. */
 }

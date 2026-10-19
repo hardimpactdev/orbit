@@ -671,23 +671,6 @@ function tick_assistance_reasons(): array
         ->orderBy('id')->get()->map(static fn (Activity $activity): mixed => $activity->properties?->get('reason'))->all();
 }
 
-/** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
-function tick_base_tip(string $head, string $tip, string $mergeBase, string $conclusion): void
-{
-    Http::fake([
-        'https://api.github.com/repos/acme/orbit/commits?*' => Http::response([['sha' => $tip, 'parents' => [['sha' => $mergeBase]]]]),
-        'https://api.github.com/repos/acme/orbit/compare/'.$head.'...'.$tip.'*' => Http::response([
-            'status' => $mergeBase === $tip ? 'ahead' : 'diverged',
-            'base_commit' => ['sha' => $head],
-            'merge_base_commit' => ['sha' => $mergeBase],
-        ]),
-        'https://api.github.com/repos/acme/orbit/commits/'.$tip.'/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [[
-            'id' => 7, 'name' => 'Required checks', 'head_sha' => $tip, 'status' => 'completed', 'conclusion' => $conclusion,
-            'html_url' => 'https://github.com/acme/orbit/runs/7', 'app' => ['slug' => 'github-actions'],
-        ]]]),
-    ]);
-}
-
 /** @return array{review_workspace_head: string, review_workspace_tree: string} */
 function tick_review_baseline(): array
 {
