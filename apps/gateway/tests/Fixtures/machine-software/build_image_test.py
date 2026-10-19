@@ -32,7 +32,8 @@ class ImageRecipeTest(unittest.TestCase):
 
     def run_command(self, argv, **kwargs):
         self.commands.append(argv)
-        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, '', '')
+        output = 'PHP 8.5.11' if argv[-2:] == ['/usr/bin/php8.5', '--version'] else ''
+        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, output, '')
 
     def publish(self, path, content, *args):
         self.files[str(path)] = content
@@ -134,7 +135,8 @@ print(json.dumps({'outcome': 'current'}))
             return original_exists(path)
         with patch.object(recipe.Path, 'read_text', read_text), \
              patch.object(recipe.Path, 'exists', exists), \
-             patch.object(recipe, 'publish', side_effect=self.publish):
+             patch.object(recipe, 'publish', side_effect=self.publish), \
+             patch.object(recipe, 'image_guest_cache'):
             yield
 
     def test_verify_after_cleanup_gives_assessment_and_php_the_same_snapshot_without_refresh(self):
@@ -293,6 +295,45 @@ print(json.dumps({'outcome': 'current'}))
             with self.assertRaises(recipe.RecipeFailure):
                 recipe.image_verify(self.payload)
         self.assertEqual(command.call_args.args[0][-2:], ['/usr/local/bin/pnpm', '--version'])
+
+    def test_verification_rejects_tools_that_root_can_run_but_the_guest_cannot(self):
+        for name, binary in [('bun', '/opt/orbit/bun/bin/bun'), ('node', '/usr/local/bin/node'),
+                             ('cargo', '/home/orbit/.cargo/bin/cargo'), ('rust', '/home/orbit/.cargo/bin/rustc'),
+                             ('composer', '/usr/bin/composer'), ('git', '/usr/bin/git'), ('php8.5-cli', '/usr/bin/php8.5')]:
+            with self.subTest(tool=name):
+                self.payload.update({'identity': 'sha256:current', 'tools': {name: {'source': 'artifact', 'version': '1.2.3',
+                                     'artifacts': {'amd64': {'sha256': 'a' * 64}}}}})
+                def command(argv, **kwargs):
+                    if argv[-2:] == [binary, '--version'] and argv[:4] == ['sudo', '-u', 'orbit', '-H']:
+                        raise recipe.RecipeFailure('guest permission denied')
+                    return subprocess.CompletedProcess(argv, 0, '1.2.3', '')
+                with self.verification(), \
+                     patch.object(recipe, 'inspect', return_value={name: '1.2.3'}), \
+                     patch.object(recipe, 'assess', return_value={name: {'status': 'current'}}), \
+                     patch.object(recipe, 'json_file', return_value={name: {'sha256': 'a' * 64}}), \
+                     patch.object(recipe, 'binary_version', return_value='1.2.3'), \
+                     patch.object(recipe, 'run', side_effect=command):
+                    with self.assertRaisesRegex(recipe.RecipeFailure, 'guest permission denied'):
+                        recipe.image_verify(self.payload)
+
+    def test_guest_cache_probe_reads_the_marker_and_removes_it_on_failure(self):
+        real_temporary = tempfile.TemporaryDirectory
+        def temporary(**kwargs):
+            self.assertEqual(kwargs['dir'], '/opt/orbit')
+            return real_temporary(dir=self.work.name, prefix=kwargs['prefix'])
+        def command(argv, **kwargs):
+            if argv[0] == 'install':
+                Path(argv[-1]).touch(mode=0o444)
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            self.assertEqual(argv[:7], ['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit'])
+            self.assertEqual(argv[7:9], ['cat', '--'])
+            self.assertEqual(Path(argv[-1]).parent.stat().st_mode & 0o777, 0o755)
+            raise recipe.RecipeFailure('guest cache read failed')
+        with patch.object(recipe.tempfile, 'TemporaryDirectory', side_effect=temporary), \
+             patch.object(recipe, 'run', side_effect=command):
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'guest cache read failed'):
+                recipe.image_guest_cache()
+        self.assertEqual(list(Path(self.work.name).iterdir()), [])
 
     def test_puts_orbit_in_incus_admin_after_the_packages_only_when_the_profile_installs_incus(self):
         self.packages()

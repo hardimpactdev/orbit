@@ -15,14 +15,16 @@ final class TaskVmRecipeImages
     public static function ready(int $hostId, string $fingerprint = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'): TaskVmImageBuild
     {
         $recipe = app(RecipeLoader::class)->load();
+        $build = TaskVmImageBuild::query()->firstOrCreate(['host_node_id' => $hostId, 'recipe_identity' => $recipe->identity], ['state' => TaskVmImageBuildState::Succeeded]);
         $images = [];
         foreach (['base'] as $profile) {
-            $images[$profile] = ['project' => 'orbit-tasks', 'alias' => RecipeImageBuilds::alias(TaskVmHost::BaseImage, $recipe->identity, $profile),
+            $images[$profile] = ['project' => 'orbit-tasks', 'alias' => RecipeImageBuilds::alias(TaskVmHost::BaseImage, $recipe->identity, $profile, $build->id),
                 'fingerprint' => $profile === 'base' ? $fingerprint : hash('sha256', $profile), 'type' => 'virtual-machine'];
         }
 
-        return TaskVmImageBuild::query()->updateOrCreate(['host_node_id' => $hostId, 'recipe_identity' => $recipe->identity],
-            ['recipe_json' => $recipe->json, 'recipe_generation' => 1, 'images' => $images, 'state' => TaskVmImageBuildState::Succeeded,
-                'image_fingerprint' => $fingerprint, 'promoted_at' => now()]);
+        $build->update(['recipe_json' => $recipe->json, 'recipe_generation' => 1, 'images' => $images, 'state' => TaskVmImageBuildState::Succeeded,
+            'image_fingerprint' => $fingerprint, 'promoted_at' => now()]);
+
+        return $build;
     }
 }

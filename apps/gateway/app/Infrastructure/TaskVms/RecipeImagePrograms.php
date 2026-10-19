@@ -161,7 +161,7 @@ final readonly class RecipeImagePrograms
                 'systemd-run', '--quiet', '--unit='.$unit,
                 '--property=Type=exec', '--property=RemainAfterExit=yes', '--property=ExitType=cgroup',
                 '--property=RuntimeMaxSec='.self::PhaseSeconds, '--property=TimeoutStopSec=30',
-                '--property=KillMode=control-group', '--property=UMask=0077',
+                '--property=KillMode=control-group', '--property=UMask=0022',
                 '--property=StandardOutput=append:'.$log, '--property=StandardError=append:'.$log,
                 ...($input === null ? [] : ['--property=StandardInput=file:'.$input]),
                 'flock', '--nonblock', '--conflict-exit-code=75', '/run/orbit-recipe-image.lock', ...$command,

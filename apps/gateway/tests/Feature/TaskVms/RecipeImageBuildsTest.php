@@ -134,9 +134,9 @@ it('keeps aliases for base and every role within the Incus name limit', function
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
     $aliases = [];
     foreach (['base', 'gateway', 'app-dev', 'app-prod', 'operator'] as $profile) {
-        $alias = RecipeImageBuilds::alias($prefix, $identity, $profile);
+        $alias = RecipeImageBuilds::alias($prefix, $identity, $profile, 42);
         expect(strlen($alias))->toBeLessThanOrEqual(64);
-        expect($alias)->toEndWith('-recipe-0bd780fc6472-'.$profile);
+        expect($alias)->toEndWith('-recipe-0bd780fc6472-42-'.$profile);
         $aliases[] = $alias;
     }
     expect(array_unique($aliases))->toHaveCount(5);
@@ -217,7 +217,7 @@ it('reconnects to the same phase after losing its start acknowledgement without 
         ->and($guest->starts)->toBe(1);
     $start = collect($incus->guest)->first(static fn ($call): bool => $call->argv[0] === 'systemd-run');
     expect($start->argv)->toContain('--property=RuntimeMaxSec='.RecipeImagePrograms::PhaseSeconds,
-        '--property=ExitType=cgroup', '--property=KillMode=control-group');
+        '--property=ExitType=cgroup', '--property=KillMode=control-group', '--property=UMask=0022');
     expect(implode(' ', $start->argv))->not->toContain('--wait', '--pipe');
 });
 
@@ -845,7 +845,7 @@ function recipeImageLegacyRoles(TaskVmImageBuild $build, FakeIncusImageHost $inc
 {
     $images = $build->images;
     foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $profile) {
-        $alias = RecipeImageBuilds::alias(TaskVmHost::BaseImage, $build->recipe_identity, $profile);
+        $alias = RecipeImageBuilds::alias(TaskVmHost::BaseImage, $build->recipe_identity, $profile, $build->id);
         $fingerprint = hash('sha256', $alias);
         $incus->images[$fingerprint] = [$alias];
         $images[$profile] = ['alias' => $alias, 'fingerprint' => $fingerprint, 'project' => 'orbit-tasks', 'type' => 'virtual-machine'];
@@ -1049,7 +1049,7 @@ it('prunes superseded failed recipes but keeps images without host-local ownersh
     $foreign = Node::query()->create(['name' => 'recipe-shark', 'status' => 'active', 'public_ssh_host' => '192.0.2.8']);
     $identity = 'sha256:'.str_repeat('f', 64);
     TaskVmImageBuild::query()->create(['host_node_id' => $foreign->id, 'recipe_identity' => $identity, 'state' => 'succeeded']);
-    $incus->images[IMAGE_USED] = [RecipeImageBuilds::alias(TaskVmHost::BaseImage, $identity, 'base')];
+    $incus->images[IMAGE_USED] = [RecipeImageBuilds::alias(TaskVmHost::BaseImage, $identity, 'base', 999)];
     foreach (['20261015T000000Z', '20261016T000000Z'] as $snapshot) {
         recipeImageCurrent(recipeImageDocument($snapshot));
         $current = app(RecipeImageBuilds::class)->reconcile($host->id)[0];
@@ -1092,4 +1092,106 @@ it('retires current recipe role aliases without deleting its base or another run
     $reactivated = app(RecipeImageBuilds::class)->reconcile()[0];
     expect($reactivated->current_step)->toBe(TaskVmImageBuildStep::Promote)
         ->and($reactivated->image_fingerprint)->toBe($current->image_fingerprint);
+});
+
+it('cold rebuilds the same recipe from stock and swaps its image only after the candidate passes', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $builds = app(RecipeImageBuilds::class);
+    $old = $builds->reconcile()[0];
+    runRecipeImageBuild($old);
+    $previous = $old->images['base'];
+
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->assertSuccessful();
+    $candidate = TaskVmImageBuild::query()->latest('id')->firstOrFail();
+    expect($candidate->id)->not->toBe($old->id)
+        ->and($candidate->recipe_identity)->toBe($old->recipe_identity)
+        ->and($candidate->recipe_generation)->toBe($old->recipe_generation + 1)
+        ->and($candidate->from_stock)->toBeTrue()
+        ->and($candidate->images)->toBe([])
+        ->and($candidate->steps)->toBe([])
+        ->and($incus->images[$previous['fingerprint']])->toContain(TaskVmHost::BaseImage);
+    expect($builds->reconcile()[0]->id)->toBe($candidate->id);
+    $incus->fail = 'recipe base:verify';
+    expect(fn () => runRecipeImageBuild($candidate))->toThrow(TaskVmException::class);
+    expect($candidate->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($candidate->promoted_at)->toBeNull()
+        ->and($old->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($incus->images[$previous['fingerprint']])->toContain(TaskVmHost::BaseImage)
+        ->and($candidate->images['base']['alias'])->not->toBe($previous['alias']);
+    $incus->fail = null;
+    $replacement = $builds->reconcile(rebuild: true)[0];
+    runRecipeImageBuild($replacement);
+    expect($replacement->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($replacement->source_fingerprint)->toBe(IMAGE_STOCK)
+        ->and($incus->images[$replacement->image_fingerprint])->toContain(TaskVmHost::BaseImage)
+        ->and($incus->images[$previous['fingerprint']])->toContain($previous['alias']);
+    expect($incus->images[$previous['fingerprint']])->not->toContain(TaskVmHost::BaseImage);
+});
+
+it('refuses cold rebuilds atomically while a recipe or configured host is building', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $generation = DB::table('task_vm_image_recipe')->value('generation');
+
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('running')->assertFailed();
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true, '--retry' => true])->expectsOutputToContain('cannot be combined')->assertFailed();
+    expect(DB::table('task_vm_image_recipe')->value('generation'))->toBe($generation);
+    $this->assertDatabaseCount('task_vm_image_builds', 1);
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+});
+
+it('collects an owned cold candidate after publish succeeded but its reply was lost', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $builds = app(RecipeImageBuilds::class);
+    $old = $builds->reconcile()[0];
+    runRecipeImageBuild($old);
+    $interrupted = $builds->reconcile(rebuild: true)[0];
+    $incus->afterExecute = static function ($command): void {
+        if (($command->arguments[5] ?? null) === 'publish') {
+            throw new RuntimeException('The publish reply was lost.');
+        }
+    };
+
+    expect(fn () => runRecipeImageBuild($interrupted))->toThrow(TaskVmException::class);
+    $alias = RecipeImageBuilds::alias(TaskVmHost::BaseImage, $old->recipe_identity, 'base', $interrupted->id);
+    $orphan = hash('sha256', $alias);
+    expect($interrupted->refresh()->images)->toBe([])
+        ->and($incus->images)->toHaveKey($orphan);
+    $incus->afterExecute = null;
+    $replacement = $builds->reconcile(rebuild: true)[0];
+    runRecipeImageBuild($replacement);
+
+    expect($incus->images)->not->toHaveKey($orphan);
+    expect($incus->images)->toHaveKey($old->image_fingerprint)->toHaveKey($replacement->refresh()->image_fingerprint);
+});
+
+it('keeps the last admissible image when intervening cold rebuilds fail after promotion', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $builds = app(RecipeImageBuilds::class);
+    $old = $builds->reconcile()[0];
+    runRecipeImageBuild($old);
+    $middle = $builds->reconcile(rebuild: true)[0];
+    $incus->afterExecute = static function ($command) use ($incus): void {
+        if (($command->arguments[3] ?? null) === 'query') {
+            $incus->fail = 'image list';
+        }
+    };
+    expect(fn () => runRecipeImageBuild($middle))->toThrow(TaskVmException::class);
+    expect($middle->refresh()->promoted_at)->not->toBeNull();
+    $incus->afterExecute = null;
+    $incus->fail = null;
+    $candidate = $builds->reconcile(rebuild: true)[0];
+    runRecipeImageBuild($candidate);
+
+    expect($incus->images)->toHaveKey($old->image_fingerprint)
+        ->and($old->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
+    expect($incus->images)->not->toHaveKey($middle->image_fingerprint);
 });

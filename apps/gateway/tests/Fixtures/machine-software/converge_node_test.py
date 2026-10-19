@@ -219,10 +219,10 @@ class ConvergenceTest(unittest.TestCase):
         account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name='test-user')
         real_safe_directory = recipe.safe_directory
         real_publish = recipe.publish
-        def safe_directory(path, uid=0, gid=0, **options):
+        def safe_directory(path, uid=0, gid=0):
             if str(path) == '/opt/orbit':
                 return home
-            return real_safe_directory(path, uid, gid, **options)
+            return real_safe_directory(path, uid, gid)
         def publish(path, content, *args, **kwargs):
             if str(path).startswith('/usr/local/bin/'):
                 self.published[str(path)] = content
@@ -256,10 +256,10 @@ class ConvergenceTest(unittest.TestCase):
         account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name='test-user')
         real_safe_directory = recipe.safe_directory
         real_publish = recipe.publish
-        def safe_directory(path, uid=0, gid=0, **options):
+        def safe_directory(path, uid=0, gid=0):
             if str(path) == '/opt/orbit':
                 return home
-            return real_safe_directory(path, uid, gid, **options)
+            return real_safe_directory(path, uid, gid)
         def publish(path, content, *args, **kwargs):
             if str(path).startswith('/usr/local/bin/'):
                 return
@@ -287,8 +287,8 @@ class ConvergenceTest(unittest.TestCase):
         account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name='test-user')
         real_safe = recipe.safe_directory
         real_publish = recipe.publish
-        def safe(path, uid=0, gid=0, **options):
-            return home if str(path) == '/opt/orbit' else real_safe(path, uid, gid, **options)
+        def safe(path, uid=0, gid=0):
+            return home if str(path) == '/opt/orbit' else real_safe(path, uid, gid)
         def publish(path, content, *args, **kwargs):
             if not str(path).startswith('/usr/local/bin/'):
                 real_publish(path, content, *args, **kwargs)

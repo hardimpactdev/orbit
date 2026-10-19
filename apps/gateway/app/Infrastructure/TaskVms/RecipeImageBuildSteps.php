@@ -66,7 +66,7 @@ final readonly class RecipeImageBuildSteps
         if ($recipe->identity !== $build->recipe_identity || $profile !== 'base') {
             throw new TaskVmException('task_vm.image_build_failed', 'The stored image recipe is invalid.');
         }
-        $alias = RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, $profile);
+        $alias = $build->images[$profile]['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, $profile, $build->id);
         $shell = $this->image->shell($host, $node, $name)->forRecipePhase($profile, $phase);
         if (isset($build->images[$profile]) && ! in_array($phase, ['reset', 'smoke', 'publish', 'topology-seed'], true)) {
             return true;
@@ -235,7 +235,7 @@ final readonly class RecipeImageBuildSteps
         }
         [$profile, $phase] = explode(':', (string) $build->current_program, 2) + ['', ''];
         $host = $this->settings->host($build->host_node_id);
-        $published = $this->incus->aliasTarget($host, $build->hostNode, RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, $profile));
+        $published = $this->incus->aliasTarget($host, $build->hostNode, $build->images[$profile]['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, (string) $build->recipe_identity, $profile, $build->id));
         if (in_array($phase, ['publish', 'smoke', 'topology-seed'], true) && $published !== null) {
             return null;
         }

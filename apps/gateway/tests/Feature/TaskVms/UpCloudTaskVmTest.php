@@ -1250,3 +1250,41 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         expect($refresh)->toBeNull();
     });
 });
+
+it('cold rebuilds an unchanged verified UpCloud template and preserves it until promotion', function (bool $fails): void {
+    Queue::fake();
+    $builds = app(RecipeImageBuilds::class);
+    $identity = $builds->currentRecipe()->identity;
+    $previous = $this->upcloud->template('orbit-task-base-20261011000000', $identity);
+    $builds->reconcile();
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('UpCloud cold rebuild requested')->assertSuccessful();
+    $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
+    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('pending')->assertFailed();
+    expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
+    if ($fails) {
+        $this->ssh->cloudInit = '{"status":"error","errors":["candidate failed"]}';
+        expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class);
+        expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
+    } else {
+        app()->call([$job, 'handle']);
+        expect(app(UpCloudServers::class)->currentTemplate($identity))->not->toBe($previous);
+    }
+    expect($this->upcloud->storages)->toHaveKey($previous);
+    app()->call([$job, 'handle']);
+    $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
+})->with([false, true]);
+
+it('fences a queued cold UpCloud rebuild when a newer generation has been requested', function (): void {
+    Queue::fake();
+    $builds = app(RecipeImageBuilds::class);
+    $this->upcloud->template('orbit-task-base-20261011000000', $builds->currentRecipe()->identity);
+    $builds->reconcile();
+    $builds->reconcile(rebuild: true);
+    $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
+    DB::table('task_vm_image_recipe')->update(['generation' => DB::raw('generation + 1')]);
+
+    app()->call([$job, 'handle']);
+
+    expect($this->upcloud->created)->toBe([]);
+    $this->assertDatabaseCount('upcloud_task_vm_image_builds', 0);
+});

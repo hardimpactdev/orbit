@@ -11,6 +11,7 @@ use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -31,9 +32,20 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 3600;
 
-    public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null)
+    public ?int $generation = null;
+
+    public bool $rebuild = false;
+
+    public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null, ?int $generation = null, bool $rebuild = false)
     {
+        $this->generation = $generation;
+        $this->rebuild = $rebuild;
         $this->onTaskVmQueue(GatewayQueue::OptionalBuilds);
+    }
+
+    public function uniqueId(): string
+    {
+        return ($this->recipeIdentity ?? '').':'.($this->generation ?? 0).':'.($this->afterAttemptId ?? 0);
     }
 
     public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder, RecipeImageBuilds $builds): void
@@ -42,15 +54,17 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
         // Jobs queued before the recipe fence have neither property in their serialized payload.
         $identity = $this->recipeIdentity ?? $recipe->identity;
         $afterAttemptId = $this->afterAttemptId ?? 0;
-        if ($settings->upcloud === null || $identity !== $recipe->identity
+        $desired = DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail();
+        if (($this->generation !== null && ($desired->identity !== $identity || (int) $desired->generation !== $this->generation))
+            || $settings->upcloud === null || $identity !== $recipe->identity
             || UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity) !== $afterAttemptId
-            || $servers->currentTemplate($recipe->identity) !== null) {
+            || (! $this->rebuild && $servers->currentTemplate($recipe->identity) !== null)) {
             return;
         }
 
         $template = $builder->build(static function (string $stage, float $seconds): void {
             Log::info('UpCloud task VM template build stage done.', ['stage' => $stage, 'seconds' => $seconds]);
-        }, $recipe, $afterAttemptId);
+        }, $recipe, $afterAttemptId, $this->generation);
         Log::info('UpCloud task VM template refreshed.', ['template' => $template]);
     }
 }

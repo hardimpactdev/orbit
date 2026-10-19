@@ -14,49 +14,6 @@ from test_recipe_versions import recipe, image
 
 
 class RecipeJavascriptTest(unittest.TestCase):
-    def test_directory_mode_changes_refuse_links_files_and_another_owner(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            target = root / 'target'
-            target.mkdir(mode=0o700)
-            link = root / 'link'
-            link.symlink_to(target)
-            regular = root / 'file'
-            regular.write_text('keep')
-            regular.chmod(0o600)
-            for path, uid in ((link, os.getuid()), (regular, os.getuid()), (target, os.getuid() + 1)):
-                with self.subTest(path=path), self.assertRaises(recipe.RecipeFailure):
-                    recipe.safe_directory(path, uid, os.getgid(), mode=0o711)
-            self.assertEqual(target.stat().st_mode & 0o777, 0o700)
-            self.assertEqual(regular.stat().st_mode & 0o777, 0o600)
-
-    def test_orbit_parent_allows_only_traversal_even_with_a_private_umask_or_existing_directory(self):
-        for module in (recipe, image):
-            for existing in (False, True):
-                with self.subTest(module=module.__name__, existing=existing), tempfile.TemporaryDirectory() as directory:
-                    root = Path(directory)
-                    home = root / 'home'
-                    home.mkdir()
-                    parent = root / 'opt-orbit'
-                    if existing:
-                        parent.mkdir(mode=0o700)
-                    account = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home))
-                    safe = module.safe_directory
-
-                    def managed(path, uid=0, gid=0, safe=safe, parent=parent, **options):
-                        if str(path) == '/opt/orbit':
-                            return safe(parent, os.getuid(), os.getgid(), **options)
-                        return safe(path, uid, gid, **options)
-
-                    previous = os.umask(0o077)
-                    try:
-                        with patch.object(module, 'safe_directory', side_effect=managed), patch.object(module, 'publish'):
-                            module.install_javascript({}, {}, root, account)
-                    finally:
-                        os.umask(previous)
-
-                    self.assertEqual(parent.stat().st_mode & 0o777, 0o711)
-
     def test_old_dependency_tree_does_not_block_locked_runtime_upgrade(self):
         for module in (recipe, image):
             with self.subTest(module=module.__name__), tempfile.TemporaryDirectory() as directory:
@@ -81,8 +38,8 @@ class RecipeJavascriptTest(unittest.TestCase):
                 safe, publish = module.safe_directory, module.publish
                 commands = []
 
-                def directory(path, uid=0, gid=0, home=home, safe=safe, **options):
-                    return home if str(path) == '/opt/orbit' else safe(path, uid, gid, **options)
+                def directory(path, uid=0, gid=0, home=home, safe=safe):
+                    return home if str(path) == '/opt/orbit' else safe(path, uid, gid)
 
                 def write(path, *args, publish=publish, **kwargs):
                     if not str(path).startswith('/usr/local/bin/'):
@@ -187,8 +144,8 @@ class RealRecipeJavascriptTest(unittest.TestCase):
             account = types.SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name=pwd.getpwuid(os.getuid()).pw_name)
             safe, publish, run = recipe.safe_directory, recipe.publish, recipe.run
 
-            def directory(path, uid=0, gid=0, **options):
-                return home if str(path) == '/opt/orbit' else safe(path, uid, gid, **options)
+            def directory(path, uid=0, gid=0):
+                return home if str(path) == '/opt/orbit' else safe(path, uid, gid)
 
             def write(path, *args, **kwargs):
                 if not str(path).startswith('/usr/local/bin/'):

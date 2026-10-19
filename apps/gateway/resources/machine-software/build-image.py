@@ -208,6 +208,20 @@ def php_install(payload):
         raise RecipeFailure()
 
 
+def image_guest_run(argv):
+    return run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit', *argv])
+
+
+def image_guest_cache():
+    # A read-only mount supplies its own modes, but cannot make an inaccessible parent traversable.
+    # This private probe supplies the mount's public marker without baking a package cache into the image.
+    with tempfile.TemporaryDirectory(prefix='.package-cache-verify-', dir='/opt/orbit') as directory:
+        os.chmod(directory, 0o755)
+        marker = str(Path(directory) / '.orbit-owned')
+        run(['install', '-m', '0444', '/dev/null', marker])
+        image_guest_run(['cat', '--', marker])
+
+
 def image_verify(payload):
     marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
     if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
@@ -224,17 +238,14 @@ def image_verify(payload):
             assessment = assess(selected, observed, git_names=git_packages(payload))
             if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
                 raise RecipeFailure()
-            if 'pnpm' in selected:
-                result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
-                              '/usr/local/bin/pnpm', '--version'])
-                if result.stdout.strip() != selected['pnpm']['version']:
-                    raise RecipeFailure()
             if 'incus' in payload['tools'] and 'incus-admin' not in run(['id', '-nG', 'orbit']).stdout.split():
                 raise RecipeFailure()
             for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
                 if name in payload['tools']:
                     artifact = payload['tools'][name]['artifacts'][payload['architecture']]
                     algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+                    image_guest_run(['test', '-x', path])
+                    image_guest_run([algorithm + 'sum', path])
                     with open(path, 'rb') as stream:
                         if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
                             raise RecipeFailure()
@@ -245,9 +256,20 @@ def image_verify(payload):
                          for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
             if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:
                 raise RecipeFailure()
-            for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
-                if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
-                    raise RecipeFailure()
+            guest_tools = [('node', '/usr/local/bin/node'), ('bun', '/opt/orbit/bun/bin/bun'),
+                           ('pnpm', '/usr/local/bin/pnpm'), ('vp-cli', '/usr/local/bin/vp'),
+                           ('rust', '/home/orbit/.cargo/bin/rustc'), ('cargo', '/home/orbit/.cargo/bin/cargo'),
+                           ('composer', '/usr/bin/composer'), ('git', '/usr/bin/git')]
+            guest_tools += [(name, '/usr/bin/' + name.removesuffix('-cli')) for name in payload['tools']
+                            if re.fullmatch(r'php[0-9]+\.[0-9]+-cli', name)]
+            for name, binary in guest_tools:
+                if name in payload['tools']:
+                    result = image_guest_run([binary, '--version'])
+                    match = re.search(r'(?:^|[\s v])([0-9]+\.[0-9]+\.[0-9]+)\b', result.stdout)
+                    expected = re.search(r'(?:^|:)([0-9]+\.[0-9]+\.[0-9]+)', payload['tools'][name]['version'])
+                    if not match or not expected or match.group(1) != expected.group(1):
+                        raise RecipeFailure('verify', detail='Guest tool version failed: ' + name)
+            image_guest_cache()
             for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
                 if Path(path).exists():
                     raise RecipeFailure()
