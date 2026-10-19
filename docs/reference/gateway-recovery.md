@@ -1105,6 +1105,8 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
 
+A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. Deployment repairs stored halts caused by image builds without a manual database edit. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
+
 A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
 
 If migration returns `node.docker_migration_failed`, preserve the root-only journal and original data directories. Resolve the named stage and resume the same command with the same recipe. Do not delete the journal to force a new inventory.
