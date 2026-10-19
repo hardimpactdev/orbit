@@ -531,8 +531,8 @@ function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 
     }
 
     $fake = [
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn (Request $request) => Http::response(['token' => 'ghs_watch', 'permissions' => $request->data()['permissions']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => $sequence,
         'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => $updateMessage], $updateStatus),
     ];

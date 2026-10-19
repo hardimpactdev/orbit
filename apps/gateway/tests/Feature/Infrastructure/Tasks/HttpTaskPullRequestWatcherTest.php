@@ -687,3 +687,22 @@ describe('malformed watcher cache values', function (): void {
             ->and($health?->checksPending)->toBeFalse();
     })->with(['missing both lists' => [[]], 'missing failed list' => [['pending' => []]], 'missing pending list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
 });
+
+it('preserves failed check evidence through cached health reads', function (): void {
+    GitHubTestSupport::storeApp();
+    watcher_fake_health([], [[
+        'id' => 79, 'name' => 'Scanner', 'conclusion' => 'failure', 'app' => ['slug' => 'scanner'],
+        'output' => ['title' => 'Security issue', 'summary' => 'Update the package.'],
+    ]]);
+    $group = watcher_group();
+    $watcher = app(HttpTaskPullRequestWatcher::class);
+
+    foreach (range(1, 2) as $read) {
+        $check = $watcher->health($group)?->failedChecks[0];
+        expect($check?->id)->toBe(79)
+            ->and($check?->appSlug)->toBe('scanner')
+            ->and($check?->outputTitle)->toBe('Security issue')
+            ->and($check?->outputSummary)->toBe('Update the package.');
+    }
+    expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/check-runs?')))->toHaveCount(1);
+});

@@ -49,6 +49,7 @@ final readonly class TaskSubtaskRunner
         private RetryTaskBaselineAction $retryBaseline,
         private ResumeDeliverableCorrectionAction $correctionResume,
         private TaskObservationAvailability $availability,
+        private TaskCheckOutputBuilder $outputBuilder,
     ) {}
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -158,8 +159,8 @@ final readonly class TaskSubtaskRunner
         $status = $check?->status;
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Passed) {
             $evidence = TaskDeliverableEvidence::fromArray($check->deliverable_evidence);
-            $failures = TaskDeliverableVerifier::failures($task->deliverableList(), $evidence);
-            $items = $failures === [] ? [] : [new TaskRubricItem('deliverables', false, "Orbit could not verify these deliverables:\n".implode("\n", array_map(static fn (string $failure): string => '- '.$failure, $failures))."\n")];
+            $failures = TaskDeliverableVerifier::failures($task->deliverableList(), $evidence, $this->outputBuilder);
+            $items = $failures === [] ? [] : [new TaskRubricItem('deliverables', false, "Orbit could not verify these deliverables:\n".implode("\n", array_map(static fn (string $failure): string => '- '.$failure, $failures))."\n", 'Deliverable verification failed; see check #'.$check->id.' for its evidence.')];
             $required = $scheduler->topologyRequiredItem($group, $evidence);
             if ($required instanceof TaskRubricItem) {
                 $items[] = $required;
@@ -183,11 +184,11 @@ final readonly class TaskSubtaskRunner
         }
         // The implementer cannot change deliverables, so an invalid project or file asks for assistance with no reminder.
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::INVALID_DELIVERABLE_STEP) {
-            $reason = trim((string) $check->output);
+            $reason = 'Command deliverable validation failed in check #'.$check->id.'; see its output for the invalid directory or overlay path.';
             $scheduler->requestAssistance(
                 $task,
                 $group,
-                $reason !== '' ? $reason : 'A command deliverable names an invalid directory or overlay path.',
+                $reason,
                 $observation,
                 handled: ['completion_handoff_comment_id' => $receipt->id],
             );
@@ -201,7 +202,7 @@ final readonly class TaskSubtaskRunner
         $name = $command ?? 'the task check';
         $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n".$this->outputBuilder->build((string) $check->output)."\n"),
             $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
             default => null,
@@ -249,7 +250,7 @@ final readonly class TaskSubtaskRunner
     {
         $changed = $reading->headAfter !== $check->head_before || $reading->treeAfter !== ($reading->treeBefore ?? $check->tree_before);
         $values = $reading->state === 'lost'
-            ? ['status' => TaskCheckStatus::Lost->value, 'output' => $reading->output]
+            ? ['status' => TaskCheckStatus::Lost->value, 'output' => $this->outputBuilder->tail($reading->output)]
             : [
                 'status' => match (true) {
                     // A changed tree must not hide these. The task would retry as changed and drop the cause.
@@ -263,8 +264,8 @@ final readonly class TaskSubtaskRunner
                 'exit_code' => $reading->exitCode,
                 'changed_paths' => json_encode($reading->changedPaths, JSON_THROW_ON_ERROR),
                 'failed_step' => $reading->failedStep,
-                'output' => $reading->output,
-                'deliverable_evidence' => $reading->deliverables === null ? null : json_encode($reading->deliverables, JSON_THROW_ON_ERROR),
+                'output' => $this->outputBuilder->tail($reading->output),
+                'deliverable_evidence' => $this->redactedEvidence($reading),
             ];
 
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
@@ -276,6 +277,26 @@ final readonly class TaskSubtaskRunner
         if ($updated === 1 && is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);
         }
+    }
+
+    private function redactedEvidence(TaskCheckReading $reading): ?string
+    {
+        $evidence = TaskDeliverableEvidence::fromArray($reading->deliverables);
+        if ($evidence === null) {
+            return null;
+        }
+        $commands = $evidence->commands;
+        foreach ($commands as &$command) {
+            $command['output'] = $this->outputBuilder->tail($command['output']);
+            if (isset($command['base_output'])) {
+                $command['base_output'] = $this->outputBuilder->tail($command['base_output']);
+            }
+        }
+
+        $data = $reading->deliverables;
+        $data['commands'] = $commands;
+
+        return json_encode($data, JSON_THROW_ON_ERROR);
     }
 
     /** @return list<TaskRubricItem> */

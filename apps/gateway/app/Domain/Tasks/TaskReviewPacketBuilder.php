@@ -15,7 +15,7 @@ use App\Models\TaskQuestion;
  */
 final readonly class TaskReviewPacketBuilder
 {
-    public function __construct(private TaskReviewDiff $diffs) {}
+    public function __construct(private TaskReviewDiff $diffs, private TaskCheckOutputBuilder $outputBuilder) {}
 
     public function build(Task $task, bool $continued, ?int $threadId = null): string
     {
@@ -32,6 +32,7 @@ final readonly class TaskReviewPacketBuilder
         $handoff = $this->handoff($task);
 
         return new TaskReviewPacket(
+            outputBuilder: $this->outputBuilder,
             groupBrief: $group->brief,
             subtaskId: $task->id,
             subtaskTitle: $task->title,

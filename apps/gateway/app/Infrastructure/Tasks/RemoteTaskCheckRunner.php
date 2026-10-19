@@ -31,7 +31,7 @@ use Throwable;
  */
 final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
-    /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
+    /** Eleven 100 KiB records fit below 8 MiB even with sixfold JSON escaping; PHP redacts the raw windows before storing tails. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
     public function __construct(

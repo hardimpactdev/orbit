@@ -145,7 +145,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         foreach ($stale as $run) {
             $problems[] = 'Check '.$run->name.' is still pending'.($run->url !== null ? ': '.$run->url : '').'.';
         }
-        $check = static fn (GitHubCheckRun $run): TaskPullRequestCheck => new TaskPullRequestCheck($run->name, $run->url);
+        $check = static fn (GitHubCheckRun $run): TaskPullRequestCheck => new TaskPullRequestCheck($run->name, $run->url, $run->id, $run->appSlug, $run->outputTitle, $run->outputSummary);
         $infrastructure = array_values(array_map($check, array_filter($failed, static fn (GitHubCheckRun $run): bool => $run->infrastructure())));
         foreach ($stale as $run) {
             $infrastructure[] = $check($run);
@@ -357,7 +357,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
      */
     private static function withoutExplainedRollups(array $failed): array
     {
-        $rollup = static fn (GitHubCheckRun $run): bool => new TaskPullRequestCheck($run->name, $run->url)->rollup();
+        $rollup = static fn (GitHubCheckRun $run): bool => in_array($run->name, TaskPullRequestCheck::ROLLUP_NAMES, true);
         $explained = array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run)) !== [];
 
         return $explained ? array_values(array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run))) : $failed;
@@ -377,7 +377,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         if ($pullRequest->headSha === null) {
             return ['failed' => [], 'pending' => []];
         }
-        $key = 'tasks:pull-request-checks:v3:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
+        $key = 'tasks:pull-request-checks:v4:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
         $read = function () use ($repository, $pullRequest): ?array {
             $token = $this->access->checksToken($repository);
             if ($token === null) {
@@ -388,7 +388,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
 
             return [
                 'failed' => array_values(array_map(
-                    static fn (GitHubCheckRun $run): array => ['name' => $run->name, 'conclusion' => (string) $run->conclusion, 'url' => $run->url],
+                    static fn (GitHubCheckRun $run): array => ['name' => $run->name, 'conclusion' => (string) $run->conclusion, 'url' => $run->url, 'id' => $run->id, 'app_slug' => $run->appSlug, 'output_title' => $run->outputTitle, 'output_summary' => $run->outputSummary],
                     array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->failed()),
                 )),
                 'pending' => array_values(array_map(
@@ -436,7 +436,13 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             if (! is_string($name) || ! is_string($conclusion) || ($url !== null && ! is_string($url))) {
                 continue;
             }
-            $checks[] = new GitHubCheckRun($name, $conclusion, $url);
+            $checks[] = new GitHubCheckRun(
+                name: $name, conclusion: $conclusion, url: $url,
+                id: is_int($run['id'] ?? null) ? $run['id'] : null,
+                appSlug: is_string($run['app_slug'] ?? null) ? $run['app_slug'] : null,
+                outputTitle: is_string($run['output_title'] ?? null) ? $run['output_title'] : null,
+                outputSummary: is_string($run['output_summary'] ?? null) ? $run['output_summary'] : null,
+            );
         }
 
         return $checks;

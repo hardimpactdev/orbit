@@ -21,6 +21,14 @@ final class TaskUnitProgram
             throw new RuntimeException('The task unit supervision program is unavailable.');
         }
 
+        if ($resource === 'tasks/check') {
+            $policy = file_get_contents(resource_path('tasks/check-output.json'));
+            if (! is_string($policy) || $policy === '' || substr_count($program, '__ORBIT_TASK_CHECK_OUTPUT_POLICY__') !== 1) {
+                throw new RuntimeException('The task check output policy is unavailable.');
+            }
+            $program = str_replace('__ORBIT_TASK_CHECK_OUTPUT_POLICY__', trim($policy), $program);
+        }
+
         return str_replace('# ORBIT_TASK_UNIT_STATE', $library, $program);
     }
 }

@@ -32,6 +32,8 @@ final readonly class GitHubCheckRun
         public ?string $status = null,
         public ?string $headSha = null,
         public ?string $appSlug = null,
+        public ?string $outputTitle = null,
+        public ?string $outputSummary = null,
     ) {}
 
     /** Whether the run completed with conclusion `success` for exactly this commit. */

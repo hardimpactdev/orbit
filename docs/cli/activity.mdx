@@ -138,7 +138,7 @@ The Gateway redacts `properties` before it stores a record, for every command:
 - Inside other text values, the Gateway redacts secret assignments such as `MANAGEMENT_KEY=value`, `PASSWORD_HASH=value`, and `SECRET_KEY_BASE=value`, URL user information, `Authorization` headers, bearer tokens, and PEM blocks. Prose with a bare key, such as `Missing key: APP_NAME`, stays.
 - Every other input field stays, so a record still shows the target, the Node, and the non-secret options the caller supplied.
 
-These rules apply when an Activity is stored. They do not rewrite records that are already stored.
+If a text-redaction pass fails, the Gateway replaces that text with `Output withheld: redaction failed.` and logs the PCRE error code without the input. These rules apply when an Activity is stored. They do not rewrite records that are already stored.
 
 Doctor writes one ordinary Activity for each run and stores no findings in it.
 
