@@ -762,7 +762,7 @@ DEPENDENT_PROPERTIES = ('RequiredBy', 'BoundBy', 'ConsistsOf')
 
 
 def service_state(service):
-    properties = 'LoadState,ActiveState,ControlGroup,Job,' + ','.join(DEPENDENT_PROPERTIES)
+    properties = 'LoadState,ActiveState,Result,ControlGroup,Job,' + ','.join(DEPENDENT_PROPERTIES)
     output = run(['systemctl', 'show', '--no-pager', '--property=' + properties, service]).stdout
     return dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
 
@@ -772,7 +772,7 @@ def active_units():
     return {line.split()[0] for line in output.splitlines() if line.strip()}
 
 
-def affected_units(candidates, before_active):
+def affected_units(candidates, active):
     selected, visited = set(), set()
     pending = set(candidates)
     while pending:
@@ -781,14 +781,14 @@ def affected_units(candidates, before_active):
         try:
             state = service_state(unit)
         except RecipeFailure as error:
-            raise RecipeFailure('preflight:' + unit, result=error.result) from error
+            raise RecipeFailure('restart:' + unit, result=error.result) from error
         if vanished(state):
             continue
-        if state.get('LoadState') != 'loaded' or any(name not in state for name in DEPENDENT_PROPERTIES):
-            raise RecipeFailure('preflight:' + unit)
+        if state.get('LoadState') != 'loaded':
+            raise RecipeFailure('restart:' + unit)
         selected.add(unit)
         dependents = {name for property_name in DEPENDENT_PROPERTIES for name in state[property_name].split()}
-        pending.update((dependents & before_active) - visited)
+        pending.update((dependents & active) - visited)
     return selected
 
 
@@ -996,7 +996,7 @@ def apply_recipe(payload, snapshots):
         recipe_packages = {pin['package'] for pin in tools.values() if pin['source'] == 'ubuntu'}
         recipe_packages.update(name for name, pin in tools.items() if pin['source'] != 'ubuntu'
                                and pin['artifacts'][payload['architecture']]['url'].endswith('.deb'))
-        health_services = affected_units(services_for(recipe_packages, active), active)
+        health_services = set(services_for(recipe_packages, active))
         js = set(tools) & {'node', 'vp', 'vp-cli', 'pnpm', 'bun'}
         if js:
             vite_scope(account)
@@ -1047,31 +1047,30 @@ def apply_recipe(payload, snapshots):
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
             stage = 'restart'
-            restarted = sorted(affected_units(services_for(changed, active), active))
+            package_services = set(services_for(changed, active))
+            affected = affected_units(package_services, active_units()) if package_services else set()
+            restarted = sorted(package_services & affected)
             if restarted:
                 stage = 'restart:' + ','.join(restarted)
                 run(['systemctl', 'restart', *restarted])
-                # systemctl submits separate jobs; a later dependency can restart an already-completed dependent.
                 fence = 'orbit-recipe-health-' + uuid.uuid4().hex + '.service'
                 try:
                     run(['systemd-run', '--quiet', '--wait', '--collect', '--unit=' + fence,
                          '--property=Type=oneshot', '--property=DefaultDependencies=no',
-                         '--property=After=' + ' '.join(restarted), '/usr/bin/true'])
-                finally:
-                    # Cancel only our fence if its bounded client wait timed out; it may already be collected.
-                    try:
-                        run(['systemctl', 'stop', '--no-block', fence], required=False)
-                    except RecipeInterrupted:
-                        raise
-                    except RecipeFailure:
-                        pass
+                         '--property=After=' + ' '.join(sorted(affected)), '/usr/bin/true'])
+                except RecipeFailure as error:
+                    if isinstance(error.__cause__, subprocess.TimeoutExpired):
+                        run(['systemctl', 'stop', '--no-block', fence])
+                    raise
             stage = 'health'
             # Check package services and every active unit their restart propagates to; Doctor checks role requirements.
-            for service in sorted(health_services | set(restarted)):
+            for service in sorted(health_services | affected):
                 stage = 'health:' + service
                 result = run(['systemctl', 'is-active', '--quiet', service], required=False)
                 if result.returncode != 0:
-                    if vanished(service_state(service)):
+                    state = service_state(service)
+                    if vanished(state) or (state.get('LoadState') == 'loaded' and state.get('ActiveState') == 'inactive'
+                                          and state.get('Result') == 'success'):
                         continue
                     raise RecipeFailure(result=result)
             record_git(payload, after_versions)
