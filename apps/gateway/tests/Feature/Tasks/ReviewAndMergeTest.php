@@ -1292,7 +1292,6 @@ it('does not hide a real orphan when a native reviewed head and a later approval
         ->and($group->fresh()->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix);
 });
 
-
 it('does not infer an inherited approval from ambiguous converted history', function (): void {
     $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
     $final = $group->tasks->sole();

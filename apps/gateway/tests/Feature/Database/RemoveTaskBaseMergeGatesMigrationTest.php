@@ -134,7 +134,7 @@ it('clears retired delta-review identities without changing other fixup budgets'
     $migration->up();
 
     expect($group->tasks()->where('type', 'final_review')->whereNotNull('fixup_problem')->count())->toBe(0)
-        ->and($group->tasks()->get()->filter(fn (Task $task): bool => $task->isSettlingFixup())->modelKeys())->toBe([$fixup->id]);
+        ->and($group->tasks()->get()->filter(fn (Task $task): bool => $task->isSettlingFixup())->values()->modelKeys())->toBe([$fixup->id]);
 });
 
 it('records inherited approval only for converted heads with unambiguous reviewed evidence', function (array $approvals, bool $reviewedApproval, ?string $expected): void {
