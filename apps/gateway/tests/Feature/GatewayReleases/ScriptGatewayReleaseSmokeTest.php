@@ -28,7 +28,13 @@ function smoke_release(string $base, string $id): string
             pass) printf '{"schema":1,"passed":true,"expected_sha":"%s","summary":{"passed":7,"failed":0,"timeout":0,"skipped":1},"checks":{"web":{"status":"passed","error":null}}}\n' "$2" ;;
             fail) printf '{"schema":1,"passed":false,"error":"checks_failed","failed_checks":["web"],"message":"1 of 7 checks did not pass: web.","checks":{"web":{"status":"failed","error":"web_release_mismatch"}}}\n'; exit 1 ;;
             garbage) echo 'Traceback (most recent call last)' >&2; exit 1 ;;
-            hang) sleep 60 & echo $! > "$root/smoke-child"; wait ;;
+            hang)
+                # Reap the child before exiting: kill(pid, 0) also sees an orphaned zombie.
+                trap 'wait "$child"; exit 143' TERM
+                sleep 60 & child=$!
+                echo "$child" > "$root/smoke-child"
+                wait "$child"
+                ;;
             killed) kill -9 $$ ;;
             terminated) trap 'printf "{\"schema\":1,\"passed\":false,\"error\":\"terminated\"}\n"; exit 143' TERM; sleep 60 & wait ;;
         esac
@@ -127,7 +133,6 @@ describe('release smoke', function (): void {
 
         $exception = release_failure(fn () => smoke_runner($this->layout, timeout: 1, grace: 0)->run($this->id, $this->sha));
         $child = (int) trim((string) @file_get_contents($this->release.'/smoke-child'));
-        usleep(200_000);
 
         expect($exception->step)->toBe('smoke')
             ->and($exception->errorCode)->toBe('gateway.release_smoke_timeout')
