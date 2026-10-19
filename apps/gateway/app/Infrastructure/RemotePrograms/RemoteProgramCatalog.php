@@ -6,6 +6,7 @@ namespace App\Infrastructure\RemotePrograms;
 
 use App\Domain\RemotePrograms\RemoteProgram;
 use App\Domain\RemotePrograms\RemoteProgramLanguage;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use LogicException;
 
 /**
@@ -84,6 +85,10 @@ final readonly class RemoteProgramCatalog
 
         if (! is_string($contents) || $contents === '') {
             throw new LogicException("Remote program file [{$path}] is missing.");
+        }
+
+        if (str_contains($contents, '# ORBIT_TASK_UNIT_STATE')) {
+            $contents = TaskUnitProgram::embed($contents);
         }
 
         return str_ends_with($contents, "\n") ? $contents : $contents."\n";

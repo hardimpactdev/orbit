@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\RemotePrograms\RemoteProgramLanguage;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 
 function remote_program_fixture(string $directory, string $path, string $contents): void
 {
@@ -41,6 +42,17 @@ describe('RemoteProgramCatalog', function (): void {
 
         expect($program->language)->toBe(RemoteProgramLanguage::Bash)
             ->and($program->outcomes)->toBe(['succeeded', 'failed']);
+    });
+
+    it('embeds the shared unit proof inside a named library', function (): void {
+        remote_program_fixture($this->directory, 'lib/first.py', "# ORBIT_TASK_UNIT_STATE\n");
+        remote_program_fixture($this->directory, 'demo/run.py', "# Program: demo.run\n# Uses: lib/first.py\n# Outcomes: done\n# Timeout: 30\nprint(vanished({'LoadState': 'not-found', 'ActiveState': 'inactive', 'ControlGroup': '', 'Job': ''}))\n");
+        $process = new Process(['python3', '-']);
+        $process->setInput($this->catalog->program('demo.run')->source);
+
+        $process->mustRun();
+
+        expect($process->getOutput())->toBe("True\n");
     });
 
     it('refuses a program whose file does not match its contract', function (string $path, string $contents, string $name): void {
