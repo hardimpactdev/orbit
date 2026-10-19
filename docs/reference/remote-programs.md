@@ -99,6 +99,8 @@ A program that reads a private repository receives the [Git read environment](/r
 
 Assembly includes the recipe image builder and the shared recipe library used by `docker.migrate`.
 
+The existing task monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which inserts it at `# ORBIT_TASK_UNIT_STATE` before transport. `# Uses:` only prepends same-language libraries; it cannot insert Python into the existing Bash topology script. The check lints these programs exactly as sent, including the Python heredoc inside `task-vms/topology.sh`, and maps findings to the original template or library line. This preserves the existing scripts while they await the agent migration in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands); it adds no script or contract.
+
 The Docker migration has an opt-in test against a real engine: `sudo env ORBIT_DOCKER_NETWORK_TEST=1 python3 apps/gateway/tests/Programs/test_docker_migration_network.py -v`. Run it only in a disposable task environment with Docker API 1.52, iproute2, ping and util-linux. It creates private network, mount and PID namespaces, sockets and data roots. It checks packet reachability through a surviving custom bridge after fallback and resume. It never uses the host's Docker socket or networks. The normal unprivileged suite skips this test.
 
 A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job installs shellcheck and ruff and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.

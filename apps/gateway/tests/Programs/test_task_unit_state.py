@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import tempfile
 import types
@@ -148,6 +149,38 @@ if (home / 'finish').exists():
         result = subprocess.run(['bash', '-c', program('task-vms/topology.sh'), 'topology', 'status', 'test1234'],
                                 env=self.environment, capture_output=True, text=True, timeout=10, check=True)
         self.assertEqual(json.loads(result.stdout), {'state': 'running'})
+
+
+class TaskUnitLintTest(unittest.TestCase):
+    def setUp(self):
+        self.check = runpy.run_path(str(RESOURCES.parents[2] / 'bin/remote-programs-check'))
+        self.temporary = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.template = self.directory / 'topology.sh'
+        self.template.write_text("#!/bin/bash\npython3 - <<'PYTHON'\n# ORBIT_TASK_UNIT_STATE\nunknown_template_name\nPYTHON\n")
+
+    def lint(self):
+        source, offsets = self.check['assemble']([self.template])
+        bodies = list(self.check['python_heredocs'](source, offsets))
+        self.assertEqual(len(bodies), 1)
+        return self.check['ruff_source'](self.template, *bodies[0], ['--select', 'E9,F821'])
+
+    def test_embedded_python_error_names_the_original_template_line(self):
+        findings = self.lint()
+        location = self.template.relative_to(RESOURCES.parents[2]).as_posix()
+        self.assertEqual(len(findings), 1)
+        self.assertTrue(findings[0].startswith(location + ':4:1: F821'), findings)
+
+    def test_embedded_library_error_names_the_original_library_line(self):
+        library = self.directory / 'unit-state.py'
+        library.write_text('unknown_library_name\n')
+        self.template.write_text(self.template.read_text().replace('unknown_template_name', 'pass'))
+        with patch.dict(self.check['assemble'].__globals__, {'UNIT_LIBRARY': library}):
+            findings = self.lint()
+        location = library.relative_to(RESOURCES.parents[2]).as_posix()
+        self.assertEqual(len(findings), 1)
+        self.assertTrue(findings[0].startswith(location + ':1:1: F821'), findings)
 
 
 if __name__ == '__main__':

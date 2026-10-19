@@ -418,7 +418,8 @@ SH);
         $process->start();
         $ready = $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready'));
         if ($queued) {
-            expect(file_get_contents($this->receiptHome.'/queued-state'))->toContain('LoadState=loaded', 'ActiveState=inactive', 'SubState=dead', 'ExecMainCode=0', 'ExecMainStatus=0');
+            expect(file_get_contents($this->receiptHome.'/queued-state'))->toContain('LoadState=loaded', 'ActiveState=inactive', 'SubState=dead', 'ExecMainCode=0', 'ExecMainStatus=0')
+                ->toMatch('/^Job=[1-9][0-9]*$/m');
         }
         expect($ready)->toBeTrue();
         $probe = new Process(['python3', '-c', $program, 'seal', str_repeat('0', 32), $binding, '0', json_encode([$operation], JSON_THROW_ON_ERROR)],
