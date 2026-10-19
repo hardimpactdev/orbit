@@ -528,7 +528,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $transactionMode,
                 ...$domains,
             ],
-            input: str_replace(
+            input: PeerDnsProgram::source().PHP_EOL.str_replace(
                 '__FINALIZE__',
                 $cleanup,
                 <<<'BASH_WRAP'
@@ -825,6 +825,10 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         fi
                         restore_previous || return 1
                     }
+                    if [ "$dns_mode" = wireguard ] && { [ -z "$old_dns_link" ] || [ "$old_dns_link" = orbit ]; } && ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
+                        echo 'No non-Orbit per-link or global DNS server is configured.' >&2
+                        exit 43
+                    fi
                     if [ "$dns_mode" = wireguard ] && [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
                         network_state=$(timeout --kill-after=5s 10s networkctl --no-legend --no-pager --full list "$old_dns_link") || exit 43
                         read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
@@ -834,6 +838,37 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                         exit 1
                     fi
                     published=1
+                    if [ "$dns_mode" = wireguard ]; then
+                        dns_link=orbit
+                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
+                            if ! resolvectl dns "$old_dns_link" '' \
+                                || ! resolvectl domain "$old_dns_link" ''; then
+                                restore_after_failure || exit 1
+                                exit 43
+                            fi
+                        fi
+                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
+                            if ! timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link"; then
+                                restore_after_failure || exit 1
+                                exit 43
+                            fi
+                            provider_usable=0
+                            provider_deadline=$((SECONDS + 15))
+                            while [ "$SECONDS" -lt "$provider_deadline" ]; do
+                                network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
+                                read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
+                                if peer_dns_has_uplink "$dns_server" "${old_dns_server:-}" && [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
+                                    provider_usable=1
+                                fi
+                                [ "$provider_usable" = 0 ] || break
+                                sleep 0.25
+                            done
+                            if [ "$provider_usable" != 1 ] || ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
+                                restore_after_failure || exit 1
+                                exit 43
+                            fi
+                        fi
+                    fi
                     case "$enabled_state" in
                         masked)
                             if ! systemctl unmask wg-quick@orbit; then
@@ -872,40 +907,6 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     fi
 
                     if [ "$dns_mode" != operator ]; then
-                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
-                            if ! resolvectl dns "$old_dns_link" '' \
-                                || ! resolvectl domain "$old_dns_link" ''; then
-                                restore_after_failure || exit 1
-                                exit 1
-                            fi
-                        fi
-                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
-                            if ! timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link"; then
-                                restore_after_failure || exit 1
-                                exit 1
-                            fi
-                            provider_usable=0
-                            provider_deadline=$((SECONDS + 15))
-                            while [ "$SECONDS" -lt "$provider_deadline" ]; do
-                                network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
-                                read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
-                                provider_dns=$(timeout --kill-after=2s 2s resolvectl dns "$old_dns_link") || provider_dns=
-                                provider_dns=${provider_dns#*: }
-                                if [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
-                                    for provider_server in $provider_dns; do
-                                        if [[ "$provider_server" =~ ^[A-Fa-f0-9:.]+$ ]] && [ "$provider_server" != "$old_dns_server" ] && [ "$provider_server" != "$dns_server" ]; then
-                                            case "$provider_server" in 127.*|::1) ;; *) provider_usable=1 ;; esac
-                                        fi
-                                    done
-                                fi
-                                [ "$provider_usable" = 0 ] || break
-                                sleep 0.25
-                            done
-                            if [ "$provider_usable" != 1 ]; then
-                                restore_after_failure || exit 1
-                                exit 1
-                            fi
-                        fi
                         if ! printf '%s\n' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"; then
                             restore_after_failure || exit 1
                             exit 1

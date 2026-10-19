@@ -44,11 +44,11 @@ final class CheckNodeDnsCommand extends Command
             $this->line($kind.': '.($result[$kind] ?? 'query failed'));
         }
         if (! $result['valid']) {
-            $this->error('Expected private DNS on orbit and public DNS on an uplink.');
+            $this->error('Expected private DNS on orbit and public DNS through an uplink or global resolver.');
 
             return self::FAILURE;
         }
-        $this->info('Private and public names resolve on separate links.');
+        $this->info('Private and public names resolve through the expected resolvers.');
 
         return self::SUCCESS;
     }

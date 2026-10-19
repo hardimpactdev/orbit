@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Doctor\NodeDoctorProbe;
 use App\Actions\Nodes\ReconcilePeerDnsAction;
 use App\Actions\Nodes\RepairNodeDnsAction;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -27,6 +28,8 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 it('renders every private namespace and changes it when records change', function (): void {
     Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
@@ -49,10 +52,10 @@ it('renders every private namespace and changes it when records change', functio
 });
 
 it('refuses malformed stored names before peer work', function (string $tld): void {
-    Node::query()->create(['name' => 'bad', 'public_ssh_host' => '192.0.2.3', 'tld' => $tld]);
+    DB::table('nodes')->insert(['name' => 'bad', 'public_ssh_host' => '192.0.2.3', 'tld' => $tld]);
 
     expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
-})->with(['.', 'bad;command', 'bad..test', '-bad.test', str_repeat('a', 64).'.test']);
+})->with(['.', 'bad;command', 'bad..test', 'bad.test..', '-bad.test', str_repeat('a', 64).'.test']);
 
 it('accepts the Orbit domain limit and refuses one more without truncating', function (): void {
     $rows = [];
@@ -61,7 +64,7 @@ it('accepts the Orbit domain limit and refuses one more without truncating', fun
     }
     Cluster::query()->insert($rows);
     expect(app(PeerDnsPolicy::class)->domains())->toHaveCount(512);
-    Cluster::query()->create(['name' => 'overflow', 'tld' => 'overflow']);
+    DB::table('clusters')->insert(['name' => 'overflow', 'tld' => 'overflow']);
 
     expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
 });
@@ -81,7 +84,7 @@ it('reports live and persisted resolver drift and failed private answers', funct
     [$node, $ssh] = peer_dns_inspection_fixture();
     $ssh->fault = $fault;
 
-    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => $policy, 'answers' => $answers]);
+    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => $policy]);
 
     $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
     $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
@@ -152,7 +155,7 @@ it('verifies uncached private and public lookups on separate resolver links', fu
     $ssh->fault = $fault;
 
     $this->artisan('orbit:node-dns-check', ['name' => $node->name, 'private-domain' => 'ai-cli-proxy.test', '--public-domain' => 'example.com'])->assertExitCode($exit);
-})->with(['split' => ['', 0], 'public over VPN' => ['public-over-vpn', 1], 'private query fails' => ['private-fails', 1]]);
+})->with(['split' => ['', 0], 'public over VPN' => ['public-over-vpn', 1], 'private query fails' => ['private-fails', 1], 'global public DNS' => ['global', 0], 'public query fails' => ['public-fails', 1]]);
 
 it('refuses a global underlay DNS server before inspecting a peer', function (): void {
     [$node] = peer_dns_inspection_fixture();
@@ -182,26 +185,166 @@ function peer_dns_inspection_fixture(): array
     {
         public string $fault = '';
 
+        /** @var list<string> */
+        public array $domains = ['orbit'];
+
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $args = $command->arguments;
-            $output = match (true) {
-                in_array('/etc/wireguard/orbit.dns-link', $args, true) => "orbit\n10.44.0.1\n".($this->fault === 'saved' ? '.' : 'orbit'),
-                in_array('/etc/wireguard/orbit.conf', $args, true) => 'PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~'.($this->fault === 'hook' ? '.' : 'orbit'),
-                ($args[1] ?? '') === 'query' => ($args[array_key_last($args)] === 'example.com'
-                    ? 'example.com: 93.184.215.14 -- link: '.($this->fault === 'public-over-vpn' ? 'orbit' : 'eth0')
-                    : ($this->fault === 'private-fails' ? '' : 'ai-cli-proxy.test: 10.44.0.7 -- link: orbit')),
-                ($args[0] ?? '') === 'dig' => $this->fault === 'answer' ? '' : ($this->fault === 'wrong-answer' ? '192.0.2.99' : '10.44.0.1'),
-                ($args[1] ?? '') === 'dns' => 'Link 7 (orbit): '.($this->fault === 'server' ? '10.0.0.2' : '10.44.0.1'),
-                ($args[1] ?? '') === 'domain' => 'Link 7 (orbit): '.($this->fault === 'domains' ? '~.' : '~orbit'),
-                ($args[1] ?? '') === 'default-route' => 'Link 7 (orbit): '.($this->fault === 'default' ? 'yes' : 'no'),
-                default => '',
-            };
+            if ($this->fault === 'ssh' || ($this->fault === 'query-ssh' && ($args[1] ?? '') === 'query')) {
+                return new CommandResult(255, '', 'SSH unavailable', 0, false);
+            }
+            $this->commands[] = $command;
+            if (($args[0] ?? '') === 'sudo') {
+                $values = [
+                    "orbit\n10.44.0.1\n".($this->fault === 'saved' ? '.' : implode("\n", $this->domains)),
+                    'PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i '.($this->fault === 'hook' ? '\\~.' : implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $this->domains))),
+                    'Link 7 (orbit): '.($this->fault === 'server' ? '10.0.0.2' : '10.44.0.1'),
+                    'Link 7 (orbit): '.($this->fault === 'domains' ? '~.' : implode(' ', array_map(static fn (string $domain): string => '~'.$domain, $this->domains))),
+                    'Link 7 (orbit): '.($this->fault === 'default' ? 'yes' : 'no'),
+                ];
+                $output = implode("\n", array_map(base64_encode(...), $values));
+            } else {
+                $name = $args[array_key_last($args)];
+                $output = str_starts_with($name, 'example.')
+                    ? ($this->fault === 'public-fails' ? '' : 'example.com: 93.184.215.14'.($this->fault === 'global' ? '' : ' -- link: '.($this->fault === 'public-over-vpn' ? 'orbit' : 'eth0')))
+                    : (in_array($this->fault, ['private-fails', 'answer'], true) ? '' : $name.': '.($this->fault === 'wrong-answer' ? '192.0.2.99' : ($name === 'gateway.orbit' ? '10.44.0.1' : '10.44.0.7')).' -- link: orbit');
+            }
 
-            return new CommandResult(0, $output."\n", '', 0, false);
+            $truncated = strlen($output) > ($command->maxOutputBytes ?? 65_536);
+
+            return new CommandResult(0, $truncated ? substr($output, -($command->maxOutputBytes ?? 65_536)) : $output."\n", '', 0, $truncated);
         }
     };
     app()->instance(SshExecutor::class, $ssh);
 
     return [$node->refresh()->load('roles'), $ssh];
 }
+
+it('excludes the Gateway after VPN moves to another Node', function (): void {
+    [$node] = peer_dns_inspection_fixture();
+    $node->roles()->create(['role' => RoleName::Gateway]);
+    $node->refresh()->load('roles');
+
+    expect(app(PeerDnsPolicy::class)->manages($node))->toBeFalse()
+        ->and(app(PeerDnsFootprintArtifact::class)->applies($node))->toBeFalse();
+});
+
+it('takes one locked snapshot without sending DNS queries during reconcile', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+
+    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([]);
+    expect($ssh->commands)->toHaveCount(1);
+    expect($ssh->commands[0]->input)->toContain('flock -s', 'orbit-wireguard-peer.lock')->not->toContain('dig ', 'resolvectl query');
+});
+
+it('reports SSH inspection failure as unverifiable without attempting repair', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    $ssh->fault = 'ssh';
+    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->message, 'DNS')));
+
+    expect($dnsIssues)->toHaveCount(1)
+        ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
+        ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
+    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name]);
+});
+
+it('checks public resolution in Doctor including global DNS answers', function (string $fault, bool $failed): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    $ssh->fault = $fault;
+
+    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+    $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
+    expect(in_array('node.public_dns_unreachable', $codes, true))->toBe($failed);
+})->with([['public-fails', true], ['public-over-vpn', true], ['global', false], ['', false]]);
+
+it('clears unusable global DNS overrides before any peer operation', function (?string $server, ?string $expected): void {
+    [$node] = peer_dns_inspection_fixture();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: $server);
+    $migration = require database_path('migrations/2026_10_19_120215_reset_invalid_global_vpn_dns_server.php');
+    $migration->up();
+    $migration->up();
+
+    expect(app(VpnSettings::class)->dnsServer())->toBe($expected)
+        ->and(app(PeerDnsPolicy::class)->server($node))->toBe($expected ?? '10.44.0.1');
+})->with([[null, null], ['10.0.0.2', null], ['bad', null], ['10.44.0.0', null], ['10.44.0.255', null], ['10.44.0.53', '10.44.0.53']]);
+
+it('refuses invalid names and overflow at each namespace write boundary without saving', function (string $kind): void {
+    $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3']);
+    $candidate = match ($kind) {
+        'node' => $node->fill(['tld' => 'bad;name']),
+        'cluster' => new Cluster(['name' => 'dev', 'tld' => 'bad;name']),
+        'route' => new Route(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'bad;name', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]),
+    };
+    expect(fn () => $candidate->save())->toThrow(ValidationException::class);
+    expect(app(PeerDnsPolicy::class)->domains())->toBe(['orbit']);
+    $rows = [];
+    for ($i = 0; $i < 511; $i++) {
+        $rows[] = ['name' => 'c'.$i, 'tld' => 't'.$i];
+    }
+    Cluster::query()->insert($rows);
+    $candidate->setAttribute($kind === 'route' ? 'domain' : 'tld', 'overflow.example');
+    expect(fn () => $candidate->save())->toThrow(ValidationException::class);
+    expect(app(PeerDnsPolicy::class)->domains())->toHaveCount(512);
+    $candidate->setAttribute($kind === 'route' ? 'domain' : 'tld', 'covered.t0');
+    expect($candidate->save())->toBeTrue();
+    expect(app(PeerDnsPolicy::class)->domains())->toHaveCount(512);
+})->with(['node', 'cluster', 'route']);
+
+it('refuses removal of a covering namespace when its descendants exceed the cap', function (string $kind): void {
+    $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3']);
+    $cover = match ($kind) {
+        'node' => $node->fill(['tld' => 'example.test']),
+        'cluster' => new Cluster(['name' => 'dev', 'tld' => 'example.test']),
+        'route' => new Route(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'example.test', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]),
+    };
+    $cover->save();
+    $rows = [];
+    for ($i = 0; $i < 512; $i++) {
+        $rows[] = ['name' => 'c'.$i, 'tld' => 't'.$i.'.example.test'];
+    }
+    Cluster::query()->insert($rows);
+
+    expect(fn () => $cover->delete())->toThrow(ValidationException::class);
+    $this->assertModelExists($cover);
+    expect(app(PeerDnsPolicy::class)->domains())->toBe(['example.test', 'orbit']);
+})->with(['node', 'cluster', 'route']);
+
+it('chooses a public Doctor probe outside private Route suffixes', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    Route::query()->create(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'example.com', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]);
+
+    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+    $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
+    expect($codes)->not->toContain('node.private_dns_unreachable', 'node.public_dns_unreachable', 'node.inspection_failed');
+    expect($ssh->commands[array_key_last($ssh->commands)]->arguments)->toContain('example.net');
+});
+
+it('reports a lookup transport failure as unverifiable', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    $ssh->fault = 'query-ssh';
+
+    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
+    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->message, 'DNS')));
+    expect($dnsIssues)->toHaveCount(1)
+        ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
+        ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
+});
+
+it('inspects the complete maximum namespace without truncating the snapshot', function (): void {
+    [$node, $ssh] = peer_dns_inspection_fixture();
+    $rows = [];
+    for ($i = 0; $i < 511; $i++) {
+        $domain = str_repeat('a', 63).'.'.str_repeat('b', 63).'.'.str_repeat('c', 63).'.'.str_pad((string) $i, 61, 'x', STR_PAD_LEFT);
+        $rows[] = ['name' => 'c'.$i, 'tld' => $domain];
+        $ssh->domains[] = $domain;
+    }
+    Cluster::query()->insert($rows);
+    sort($ssh->domains, SORT_STRING);
+
+    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true]);
+});

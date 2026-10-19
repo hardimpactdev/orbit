@@ -235,6 +235,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.architecture_mismatch',
             'node.private_dns_policy_mismatch',
             'node.private_dns_unreachable',
+            'node.public_dns_unreachable',
             'node.wireguard_ip_mismatch',
             'node.agent_missing',
             'node.agent_binary_mismatch',

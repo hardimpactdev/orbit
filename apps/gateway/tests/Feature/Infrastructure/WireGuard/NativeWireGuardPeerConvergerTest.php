@@ -37,7 +37,8 @@ it('rejects invalid stored DNS names before generating keys or projecting the hu
     $processes = new AppDevFakeProcessRunner;
     $ssh = new AppDevFakeSshExecutor;
     [$converger, $peer, $connection, $home] = wireguard_peer_harness($processes, $ssh);
-    $peer->update(['tld' => 'bad;name']);
+    Node::query()->whereKey($peer->id)->toBase()->update(['tld' => 'bad;name']);
+    $peer->refresh();
     try {
         expect(fn () => $recoverable
             ? $converger->convergeRecoverably($peer, $connection, static function (): void {})
@@ -2426,6 +2427,7 @@ function remote_wireguard_peer_install_harness(
             'nta' => 'underlay.example',
         ],
     );
+    file_put_contents("{$root}/state/resolver/eth0/dns", "198.51.100.53\n");
     file_put_contents("{$root}/state/active", $activeState);
     file_put_contents("{$root}/state/enabled", $enabledState);
     file_put_contents("{$root}/wireguard/orbit.key", str_repeat(string: 'S', times: 43).'=');
@@ -2591,6 +2593,13 @@ function remote_wireguard_peer_install_harness(
         name: 'resolvectl',
         body: <<<SH
             printf '%s\n' "resolvectl \$*" >> "{$root}/commands.log"
+            if [ "\$*" = dns ]; then
+                printf 'Global: %s\n' "\$(cat "{$root}/state/global-dns" 2>/dev/null || true)"
+                for dir in "{$root}/state/resolver/"*; do
+                    printf 'Link 7 (%s): %s\n' "\${dir##*/}" "\$(cat "\$dir/dns")"
+                done
+                exit 0
+            fi
             operation=\$1
             link=\$2
             shift 2
@@ -3022,3 +3031,36 @@ it('keeps automatic WireGuard port selection for an ordinary fleet peer', functi
         $harness->cleanup();
     }
 });
+
+it('requires public DNS before both new and root-to-split peer convergence', function (bool $existing, bool $recoverable, string $link, string $global, bool $allowed): void {
+    $harness = remote_wireguard_peer_install_harness($existing, $existing ? 'active' : 'inactive', 'enabled');
+    try {
+        $root = $harness->root();
+        if ($existing) {
+            file_put_contents($root.'/wireguard/orbit.dns-link', "orbit\n10.43.0.53\n.\n");
+        }
+        file_put_contents($root.'/state/resolver/eth0/dns', $link);
+        file_put_contents($root.'/state/global-dns', $global);
+        $before = $harness->state();
+        $result = $recoverable ? $harness->convergeRecoverably() : $harness->converge(false);
+        if ($allowed) {
+            expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '');
+        } else {
+            expect($result['exception']?->result?->exitCode)->toBe(43)
+                ->and($result['live'])->toBe($before['live'])
+                ->and($result['dns'])->toBe($before['dns'])
+                ->and($result['resolver'])->toBe($before['resolver']);
+        }
+    } finally {
+        $harness->cleanup();
+    }
+})->with([
+    [false, false, '', '', false],
+    [false, true, '', '', false],
+    [true, false, '', '', false],
+    [true, true, '', '', false],
+    [true, false, '', '198.51.100.53', true],
+    [true, true, '', '198.51.100.53', true],
+    [true, false, '198.51.100.53', '', true],
+    [true, true, '198.51.100.53', '', true],
+]);

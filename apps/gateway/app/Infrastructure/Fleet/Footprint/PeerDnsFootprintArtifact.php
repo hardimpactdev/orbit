@@ -27,7 +27,7 @@ final readonly class PeerDnsFootprintArtifact implements NodeFootprintArtifact
     public function digest(Node $node): string
     {
         return hash('sha256', json_encode([$this->policy->domains($node), $this->policy->server($node),
-            SourceDigest::of(['app/Infrastructure/WireGuard/PeerDnsPolicy.php', 'app/Infrastructure/WireGuard/NativeWireGuardPeerDnsRepairer.php']),
+            SourceDigest::of(['app/Infrastructure/WireGuard/PeerDnsPolicy.php', 'app/Infrastructure/WireGuard/NativeWireGuardPeerDnsRepairer.php', 'app/Infrastructure/WireGuard/PeerDnsProgram.php']),
         ], JSON_THROW_ON_ERROR));
     }
 

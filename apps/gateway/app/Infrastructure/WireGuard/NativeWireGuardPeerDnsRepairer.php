@@ -102,7 +102,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                 $publicKey,
                 ...$domains,
             ],
-            input: str_replace(
+            input: PeerDnsProgram::source().PHP_EOL.str_replace(
                 '__TRANSACTION_OWNER__',
                 'dns-repair-v2',
                 <<<'BASH_WRAP'
@@ -279,6 +279,11 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                     [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ] || exit 43
                 fi
 
+                if [ "$old_dns_link" = orbit ] && ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
+                    echo 'No non-Orbit per-link or global DNS server is configured.' >&2
+                    exit 43
+                fi
+
                 hook_pattern="~^PostUp = resolvectl dns %i [^;\\r\\n]+; resolvectl domain %i [^\\r\\n]+\\r?\\n(?:^PreDown = (?:resolvectl revert %i|resolvectl dns %i ''; resolvectl domain %i '')\\r?\\n?)?~m"
                 if ! php -r '
                     [$live, $candidate, $mode, $replacement, $pattern, $oldLink] = array_slice($argv, 1);
@@ -335,6 +340,7 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                     exit 46
                 fi
 
+                uplink_failed=0
                 apply_failed=0
                 if [ "$old_dns_link" != "$dns_link" ]; then
                     resolvectl dns "$old_dns_link" '' || apply_failed=1
@@ -346,20 +352,21 @@ final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsR
                         while [ "$apply_failed" = 0 ] && [ "$SECONDS" -lt "$provider_deadline" ]; do
                             network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
                             read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
-                            provider_dns=$(timeout --kill-after=2s 2s resolvectl dns "$old_dns_link") || provider_dns=
-                            provider_dns=${provider_dns#*: }
-                            if [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
-                                for provider_server in $provider_dns; do
-                                    if [[ "$provider_server" =~ ^[A-Fa-f0-9:.]+$ ]] && [ "$provider_server" != "$old_dns_server" ] && [ "$provider_server" != "$dns_server" ]; then
-                                        case "$provider_server" in 127.*|::1) ;; *) provider_usable=1 ;; esac
-                                    fi
-                                done
+                            if peer_dns_has_uplink "$dns_server" "${old_dns_server:-}" && [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
+                                provider_usable=1
                             fi
                             [ "$provider_usable" = 0 ] || break
                             sleep 0.25
                         done
-                        [ "$provider_usable" = 1 ] || apply_failed=1
+                        if [ "$provider_usable" != 1 ] || ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
+                            uplink_failed=1
+                            apply_failed=1
+                        fi
                     fi
+                fi
+                if [ "$uplink_failed" != 0 ]; then
+                    recover_transaction || exit 46
+                    exit 43
                 fi
                 resolvectl dns "$dns_link" "$dns_server" || apply_failed=1
                 resolvectl domain "$dns_link" "${resolvectl_domains[@]}" || apply_failed=1

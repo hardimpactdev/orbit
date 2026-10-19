@@ -134,7 +134,7 @@ it('waits for asynchronous networkd and resolved updates during override migrati
         $result = $harness->repair();
         expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '')
             ->and($result['resolver']['eth0']['dns'])->toBe(['198.51.100.53'])
-            ->and(array_count_values($result['commands'])['resolvectl dns eth0'] ?? 0)->toBeGreaterThanOrEqual(2);
+            ->and(array_count_values($result['commands'])['resolvectl dns'] ?? 0)->toBeGreaterThanOrEqual(2);
     } finally {
         $harness->cleanup();
     }
@@ -146,7 +146,7 @@ it('restores old DNS and the orbit default-route flag if provider restoration fa
         $before = $harness->state();
         $harness->failProviderRestore();
         $result = $harness->repair();
-        expect($result['exception']?->errorCode)->toBe('vpn.peer_dns_apply_failed')
+        expect($result['exception']?->result?->exitCode)->toBe(43)
             ->and($result['live'])->toBe($before['live'])
             ->and($result['dns'])->toBe($before['dns'])
             ->and($result['resolver'])->toBe($before['resolver'])
@@ -497,6 +497,20 @@ function wireguard_peer_dns_repair_harness(
         if [ -f "$ORBIT_TEST_ROOT/state/apply-failure" ] && [ "$*" = 'domain orbit ~custom.internal ~orbit' ]; then exit 1; fi
         if [ -f "$ORBIT_TEST_ROOT/state/recovery-failure" ] && [ "$*" = 'domain orbit ~orbit' ]; then exit 1; fi
 
+        if [ "$*" = dns ]; then
+            if [ -f "$ORBIT_TEST_ROOT/state/provider-pending" ]; then
+                rm -f "$ORBIT_TEST_ROOT/state/provider-pending"
+                printf '198.51.100.53\n' > "$ORBIT_TEST_ROOT/state/resolver/eth0/dns"
+                printf '~underlay.example\n' > "$ORBIT_TEST_ROOT/state/resolver/eth0/domain"
+                printf 'Global: \nLink 7 (eth0): \n'
+                exit 0
+            fi
+            printf 'Global: %s\n' "$(cat "$ORBIT_TEST_ROOT/state/global-dns" 2>/dev/null || true)"
+            for dir in "$ORBIT_TEST_ROOT/state/resolver/"*; do
+                printf 'Link 7 (%s): %s\n' "${dir##*/}" "$(cat "$dir/dns")"
+            done
+            exit 0
+        fi
         operation=$1
         link=$2
         shift 2
@@ -754,6 +768,21 @@ function wireguard_peer_dns_repair_harness(
             return array_values(array_filter(explode("\n", trim((string) file_get_contents($path)))));
         }
 
+        public function setRootPolicy(): void
+        {
+            $live = (string) file_get_contents("{$this->root}/wireguard/orbit.conf");
+            file_put_contents("{$this->root}/wireguard/orbit.conf", str_replace('\\~orbit', '\\~.', $live));
+            file_put_contents("{$this->root}/wireguard/orbit.dns-link", "orbit\n10.43.0.53\n.\n");
+            file_put_contents("{$this->root}/state/resolver/orbit/domain", "~.\n");
+            file_put_contents("{$this->root}/state/resolver/orbit/default-route", "yes\n");
+        }
+
+        public function setPublicDns(string $linkDns, string $globalDns = ''): void
+        {
+            file_put_contents("{$this->root}/state/resolver/eth0/dns", $linkDns);
+            file_put_contents("{$this->root}/state/global-dns", $globalDns);
+        }
+
         public function failLock(): void
         {
             file_put_contents("{$this->root}/state/lock-failure", '1');
@@ -838,3 +867,24 @@ function wireguard_peer_dns_repair_write_resolver_state(
         file_put_contents("{$resolver}/{$setting}", "{$value}\n");
     }
 }
+
+it('refuses split repair without an uplink and accepts global or per-link DNS', function (string $link, string $global, bool $allowed): void {
+    $harness = wireguard_peer_dns_repair_harness();
+    try {
+        $harness->setRootPolicy();
+        $harness->setPublicDns($link, $global);
+        $before = $harness->state();
+        $result = $harness->repair();
+        if ($allowed) {
+            expect($result['exception'])->toBeNull($result['exception']?->result?->stderr ?? '');
+        } else {
+            expect($result['exception']?->result?->exitCode)->toBe(43)
+                ->and($result['live'])->toBe($before['live'])
+                ->and($result['dns'])->toBe($before['dns'])
+                ->and($result['resolver'])->toBe($before['resolver'])
+                ->and($result['artifacts'])->toBe([]);
+        }
+    } finally {
+        $harness->cleanup();
+    }
+})->with([['', '', false], ['10.43.0.53', '', false], ['127.0.0.53', '', false], ['', '198.51.100.53', true], ['198.51.100.53', '', true]]);

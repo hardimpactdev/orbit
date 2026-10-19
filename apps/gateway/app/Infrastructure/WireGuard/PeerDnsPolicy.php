@@ -26,6 +26,7 @@ final readonly class PeerDnsPolicy
             && $node->status === LifecycleStatus::Active
             && $node->roles->isNotEmpty()
             && ! $node->roles->contains('role', RoleName::Vpn)
+            && ! $node->roles->contains('role', RoleName::Gateway)
             && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
             && is_string($node->wireguard_public_key) && $node->wireguard_public_key !== ''
             && is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '';
@@ -46,18 +47,32 @@ final readonly class PeerDnsPolicy
     }
 
     /** @return non-empty-list<string> */
-    public function domains(?Node $pendingNode = null): array
+    public function domains(Node|Cluster|Route|null $pendingNode = null, bool $removing = false): array
     {
-        $names = [$this->settings->domain(), 'orbit', $pendingNode?->tld];
-        array_push($names, ...Cluster::query()->whereNotNull('tld')->pluck('tld')->all());
-        array_push($names, ...Node::query()->whereNotNull('tld')->pluck('tld')->all());
-        array_push($names, ...Route::query()->where('publication', RoutePublication::Private)->pluck('domain')->all());
+        $names = [$this->settings->domain(), 'orbit'];
+        foreach ([Cluster::class, Node::class, Route::class] as $model) {
+            $query = $model::query();
+            if ($pendingNode instanceof $model && $pendingNode->exists) {
+                $query->whereKeyNot($pendingNode->getKey());
+            }
+            if ($model === Route::class) {
+                $query->where('publication', RoutePublication::Private);
+            }
+            array_push($names, ...$query->whereNotNull($model === Route::class ? 'domain' : 'tld')->pluck($model === Route::class ? 'domain' : 'tld')->all());
+        }
+        if (! $removing && $pendingNode instanceof Route) {
+            if ($pendingNode->publication === RoutePublication::Private) {
+                $names[] = $pendingNode->domain;
+            }
+        } elseif (! $removing && $pendingNode !== null) {
+            $names[] = $pendingNode->tld;
+        }
         $domains = [];
         foreach ($names as $name) {
             if ($name === null) {
                 continue;
             }
-            if (! is_string($name)) {
+            if (! is_string($name) || str_ends_with($name, '..')) {
                 throw $this->invalid();
             }
             $domain = strtolower(rtrim($name, '.'));

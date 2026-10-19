@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
-use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -23,70 +22,80 @@ final readonly class PeerDnsInspector
         private CommandDeadline $deadline,
     ) {}
 
-    /** @return array{policy: bool, answers: bool} */
+    /** @return array{policy: bool} */
     public function inspect(Node $node): array
     {
-        $gateway = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway->value))->first();
         $address = $this->policy->server($node);
-        if (! is_string($gateway?->wireguard_ip)) {
-            return ['policy' => false, 'answers' => false];
-        }
         $domains = $this->policy->domains($node);
-        $link = 'orbit';
-        $state = $this->read($node, ['sudo', 'cat', '--', '/etc/wireguard/orbit.dns-link']);
-        $configuration = $this->read($node, ['sudo', 'cat', '--', '/etc/wireguard/orbit.conf']);
-        $serverMatches = $this->setting($node, 'dns', $link) === $address;
-        $liveDomains = explode(' ', $this->setting($node, 'domain', $link) ?? '');
+        $output = $this->execute($node, new RemoteCommand(
+            ['sudo', 'bash', '-seu', '--', 'inspect'],
+            input: PeerDnsProgram::source(),
+            maxOutputBytes: 1_048_576,
+        ));
+        if ($output === null) {
+            throw new \RuntimeException('Peer DNS inspection failed.');
+        }
+        $values = explode("\n", rtrim($output, "\n"));
+        if (count($values) !== 5) {
+            throw new \RuntimeException('Peer DNS inspection returned incomplete state.');
+        }
+        $decoded = array_map(static fn (string $value): string|false => base64_decode($value, true), $values);
+        if (in_array(false, $decoded, true)) {
+            throw new \RuntimeException('Peer DNS inspection returned invalid state.');
+        }
+        [$state, $hooks, $dns, $live, $default] = $decoded;
+        $liveDomains = explode(' ', $this->setting($live) ?? '');
         sort($liveDomains, SORT_STRING);
         $expectedDomains = array_map(static fn (string $domain): string => '~'.$domain, $domains);
         $hook = 'PostUp = resolvectl dns %i '.$address.'; resolvectl domain %i '.implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $domains));
-        preg_match_all('/^PostUp = resolvectl[^\r\n]*$/m', $configuration ?? '', $hooks);
-        $persistentMatches = $hooks[0] === [$hook];
-        $defaultRoute = $this->setting($node, 'default-route', $link);
-        $answer = $this->read($node, ['dig', '+time=2', '+tries=1', '+short', '@'.$address, 'gateway.orbit', 'A']);
 
-        return [
-            'policy' => $state === implode("\n", [$link, $address, ...$domains])
-                && $serverMatches && $liveDomains === $expectedDomains && $persistentMatches
-                && $defaultRoute === 'no',
-            'answers' => $answer !== null && in_array($gateway->wireguard_ip, explode("\n", $answer), true),
-        ];
+        return ['policy' => $state === implode("\n", ['orbit', $address, ...$domains])
+            && $this->setting($dns) === $address && $liveDomains === $expectedDomains
+            && $hooks === $hook && $this->setting($default) === 'no'];
     }
 
-    /** @return array{private: ?string, public: ?string, valid: bool} */
+    /** @return array{private: ?string, public: ?string, private_valid: bool, public_valid: bool, valid: bool} */
     public function queries(Node $node, string $privateDomain, string $publicDomain): array
     {
         $domains = $this->policy->domains($node);
         $isPrivate = static fn (string $name): bool => array_any($domains, static fn (string $domain): bool => $name === $domain || str_ends_with($name, '.'.$domain));
         if (! $isPrivate($privateDomain) || $isPrivate($publicDomain)) {
-            return ['private' => null, 'public' => null, 'valid' => false];
+            return ['private' => null, 'public' => null, 'private_valid' => false, 'public_valid' => false, 'valid' => false];
         }
         $private = $this->read($node, ['resolvectl', 'query', '--cache=no', '--type=A', $privateDomain]);
         $public = $this->read($node, ['resolvectl', 'query', '--cache=no', '--type=A', $publicDomain]);
         preg_match('/-- link: ([^\s]+)/', $private ?? '', $privateLink);
         preg_match('/-- link: ([^\s]+)/', $public ?? '', $publicLink);
 
-        return ['private' => $private, 'public' => $public, 'valid' => ($privateLink[1] ?? '') === 'orbit' && isset($publicLink[1]) && $publicLink[1] !== 'orbit'];
+        $privateValid = $private !== null && ($privateLink[1] ?? '') === 'orbit';
+        // Successful global DNS answers carry no link attribution.
+        $publicValid = $public !== null && $public !== '' && ($publicLink[1] ?? '') !== 'orbit';
+
+        return ['private' => $private, 'public' => $public, 'private_valid' => $privateValid, 'public_valid' => $publicValid, 'valid' => $privateValid && $publicValid];
     }
 
-    private function setting(Node $node, string $setting, string $link): ?string
+    private function setting(string $output): ?string
     {
-        $output = $this->read($node, ['resolvectl', $setting, $link]);
-        if ($output === null || ! str_contains($output, ':')) {
-            return null;
-        }
-
-        return trim(explode(':', $output, 2)[1]);
+        return str_contains($output, ':') ? trim(explode(':', $output, 2)[1]) : null;
     }
 
     /** @param non-empty-list<string> $arguments */
     private function read(Node $node, array $arguments): ?string
     {
+        return $this->execute($node, new RemoteCommand($arguments));
+    }
+
+    private function execute(Node $node, RemoteCommand $command): ?string
+    {
         $result = $this->ssh->execute(
             new SshConnection((string) $node->wireguard_ip, $node->user, 22, $this->keys->privateKeyPath(), $this->knownHosts->path(), commandTimeout: $this->deadline->cap(10.0)),
-            new RemoteCommand($arguments),
+            $command,
         );
 
-        return $result->succeeded() && ! $result->truncated ? trim($result->stdout) : null;
+        if ($result->exitCode === 255) {
+            throw new \RuntimeException('Peer DNS SSH inspection failed.');
+        }
+
+        return $result->succeeded() && ! $result->truncated ? rtrim($result->stdout, "\r\n") : null;
     }
 }
