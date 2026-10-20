@@ -40,7 +40,7 @@ use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -85,7 +85,7 @@ require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
 
-uses(TestCase::class, RefreshDatabase::class)
+uses(TestCase::class, LazilyRefreshDatabase::class)
     ->beforeEach(function (): void {
         $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
         // Direct-file staging must be isolated too, not just writes through the Storage facade.

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
+use Tests\Support\TemporaryPaths;
 
 pest()->group('subprocess');
 
@@ -45,7 +46,30 @@ function orb277_tia_directory(string $root, string|false $override): string
 /** @return array{root: string, path: string} */
 function orb277_gate_fixture(?string $candidatePath = null): array
 {
+    static $template = null;
+    $template ??= orb277_build_gate_template();
     $root = temporaryPath('orbit-builder-gate-', 6);
+    (new Process(['cp', '-a', $template.'/.', $root]))->mustRun();
+    $fixture = ['root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
+    $candidatePath ??= 'apps/gateway/app/Example.php';
+
+    if ($candidatePath === 'apps/gateway/app/Example.php') {
+        return $fixture;
+    }
+
+    (new Process(['git', 'checkout', '--quiet', 'main'], $root))->mustRun();
+    (new Process(['git', 'checkout', '--quiet', '-B', 'orb-277-candidate'], $root))->mustRun();
+    orb277_write_candidate($root, $candidatePath);
+    (new Process(['git', 'add', '.'], $root))->mustRun();
+    (new Process(['git', 'commit', '--quiet', '-m', 'candidate'], $root))->mustRun();
+
+    return $fixture;
+}
+
+function orb277_build_gate_template(): string
+{
+    // Keep only the immutable template until process shutdown; each test's writable copy is cleaned normally.
+    $root = TemporaryPaths::directory().'/builder-gate-template';
 
     mkdir($root.'/bin', 0o700, true);
     mkdir($root.'/tooling', 0o700, true);
@@ -126,7 +150,21 @@ SH);
         (new Process($arguments, $root))->mustRun();
     }
 
-    $candidatePath ??= 'apps/gateway/app/Example.php';
+    orb277_write_candidate($root, 'apps/gateway/app/Example.php');
+
+    foreach ([
+        ['git', 'checkout', '--quiet', '-b', 'orb-277-candidate'],
+        ['git', 'add', '.'],
+        ['git', 'commit', '--quiet', '-m', 'candidate'],
+    ] as $arguments) {
+        (new Process($arguments, $root))->mustRun();
+    }
+
+    return $root;
+}
+
+function orb277_write_candidate(string $root, string $candidatePath): void
+{
     if ($candidatePath === 'apps/gateway/app/Example.php') {
         mkdir($root.'/apps/gateway/app', 0o700, true);
         if (! is_dir($root.'/apps/gateway/tests')) {
@@ -143,19 +181,6 @@ SH);
         }
         file_put_contents($path, "candidate change\n");
     }
-
-    foreach ([
-        ['git', 'checkout', '--quiet', '-b', 'orb-277-candidate'],
-        ['git', 'add', '.'],
-        ['git', 'commit', '--quiet', '-m', 'candidate'],
-    ] as $arguments) {
-        (new Process($arguments, $root))->mustRun();
-    }
-
-    return [
-        'root' => $root,
-        'path' => $root.'/tooling:'.getenv('PATH'),
-    ];
 }
 
 /** @return array{process: Process, receipt: array<string, mixed>} */
@@ -185,6 +210,25 @@ function orb277_run_gate(array $fixture, string $failInstall = '', int $expected
 }
 
 describe('Builder gate', function (): void {
+    it('copies the common history without sharing writable fixture state', function (): void {
+        $first = orb277_gate_fixture();
+        file_put_contents($first['root'].'/tooling/composer', 'changed');
+        file_put_contents($first['root'].'/.git/config', "\n# changed only in this fixture\n", FILE_APPEND);
+        file_put_contents($first['root'].'/untracked', 'changed');
+        $second = orb277_gate_fixture();
+
+        expect($second['root'])->not->toBe($first['root']);
+        $history = ['git', 'rev-parse', 'main', 'HEAD'];
+        expect((new Process($history, $second['root']))->mustRun()->getOutput())
+            ->toBe((new Process($history, $first['root']))->mustRun()->getOutput());
+        expect(trim((new Process(['git', 'rev-list', '--count', 'HEAD'], $second['root']))->mustRun()->getOutput()))->toBe('2');
+        expect(file_get_contents($second['root'].'/tooling/composer'))->not->toBe('changed');
+        expect(is_executable($second['root'].'/tooling/composer'))->toBeTrue();
+        expect(file_get_contents($second['root'].'/.git/config'))->not->toContain('changed only in this fixture');
+        expect(file_exists($second['root'].'/untracked'))->toBeFalse();
+        expect((new Process(['git', 'status', '--porcelain'], $second['root']))->mustRun()->getOutput())->toBe('');
+    });
+
     it('removes its own reports older than a day from the shared Git directory before it writes a new one', function (): void {
         $fixture = orb277_gate_fixture();
         $checks = $fixture['root'].'/.git/orbit-checks';
@@ -358,7 +402,7 @@ SH);
 
         expect($composer['scripts']['guidance:check'])->toBe('../../bin/guidance-check');
         expect(orb277_tia_directory($root, 'vendor/.orbit-guidance-tia'))->toBe($guidance);
-        expect(orb277_tia_directory($root, false))->not->toStartWith($guidance);
+        expect(orb277_tia_directory($root, false))->toBe($root.'/.orbit-tia');
 
         $ignored = new Process(['git', 'check-ignore', '-q', $project.'/vendor/.orbit-guidance-tia/graph.json'], $repository);
         $ignored->run();

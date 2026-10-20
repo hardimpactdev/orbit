@@ -214,6 +214,57 @@ describe('Composer configuration', function (): void {
         }
     });
 
+    it('installs only dependencies without preparing development state', function (bool $optional): void {
+        $root = temporaryPath('orbit-bootstrap-dependencies-', 6);
+        mkdir($root.'/bin', 0700, true);
+        mkdir($root.'/tooling', 0700);
+        copy(base_path('../../bin/bootstrap'), $root.'/bin/bootstrap');
+        $log = $root.'/installs.log';
+        $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
+        foreach ($projects as $project) {
+            mkdir($root.'/'.$project, 0700, true);
+            file_put_contents($root.'/'.$project.'/.env.example', 'EXAMPLE=1');
+        }
+        foreach (['apps/web', 'apps/pi-server', 'apps/desktop/src-tauri', 'apps/agent'] as $project) {
+            mkdir($root.'/'.$project, 0700, true);
+        }
+        foreach (['composer', 'bun', 'cargo'] as $tool) {
+            file_put_contents($root.'/tooling/'.$tool, <<<'SH'
+#!/usr/bin/env bash
+printf '%s:%s:%s\n' "${PWD#"$FIXTURE_ROOT/"}" "${0##*/}" "$*" >> "$INSTALL_LOG"
+[[ "${1:-}" == install || "${1:-}" == fetch ]]
+SH);
+            chmod($root.'/tooling/'.$tool, 0700);
+        }
+        foreach (['generated-merge', 'worktree-cache', 'gateway-app-key', 'tia-cache'] as $helper) {
+            file_put_contents($root.'/bin/'.$helper, "#!/usr/bin/env sh\nexit 19\n");
+            chmod($root.'/bin/'.$helper, 0700);
+        }
+        $process = new Process(['bash', $root.'/bin/bootstrap', '--dependencies-only', ...($optional ? ['--with-bun', '--with-rust'] : [])], $root, [
+            'PATH' => $root.'/tooling:'.getenv('PATH'),
+            'FIXTURE_ROOT' => $root,
+            'INSTALL_LOG' => $log,
+            'ORBIT_HOME' => $root.'/home',
+        ]);
+        $process->mustRun();
+        $expected = array_map(static fn (string $project): string => $project.':composer:install --no-interaction --prefer-dist', $projects);
+        if ($optional) {
+            $expected = [...$expected,
+                'apps/web:bun:install --frozen-lockfile',
+                'apps/pi-server:bun:install --frozen-lockfile',
+                'apps/desktop:bun:install --frozen-lockfile',
+                'apps/agent:cargo:fetch --locked',
+                'apps/desktop/src-tauri:cargo:fetch --locked',
+            ];
+        }
+
+        expect(file($log, FILE_IGNORE_NEW_LINES))->toBe($expected);
+        foreach ($projects as $project) {
+            expect(file_get_contents($root.'/'.$project.'/.env'))->toBe('EXAMPLE=1');
+        }
+        expect(file_exists($root.'/home/gateway.app-key'))->toBeFalse();
+    })->with(['Composer only' => false, 'Bun and Rust too' => true]);
+
     it('installs E2E dependencies without running other projects checks in the E2E job', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $project = $workflow['jobs']['project'];
@@ -223,7 +274,7 @@ describe('Composer configuration', function (): void {
             ->toMatchArray([
                 'if' => "matrix.project.directory == 'apps/e2e'",
                 'working-directory' => '.',
-                'run' => 'bin/bootstrap --skip-checks',
+                'run' => 'bin/bootstrap --dependencies-only',
             ]);
         expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
         // bin/check-processes sizes the quality tools from the runner's own CPU and memory limits.
