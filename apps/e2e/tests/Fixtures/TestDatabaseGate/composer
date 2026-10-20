@@ -36,7 +36,8 @@ if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') ===
     exit($exitCode);
 }
 
-if ($gateway && $command === 'test:affected' && getenv('ORBIT_GATEWAY_GATE_REFUSAL') === '1') {
+// The Gateway guidance tests that composer check runs refuse an unsafe database connection.
+if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_GATE_REFUSAL') === '1') {
     fwrite(STDERR, "Gateway tests refused an unsafe database connection.\n");
 
     exit(23);

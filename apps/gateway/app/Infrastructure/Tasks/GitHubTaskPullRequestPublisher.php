@@ -78,7 +78,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $this->pushBranch($group, $instance, $branch, $token, $commit);
+            $this->pushBranch($group, $instance, $branch, $commit);
             $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
             $this->requestReviewers($token, $repository, $opened);
 
@@ -123,12 +123,26 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
     public function push(Task $group, string $commit): void
     {
-        [$repository, $instance, $branch] = $this->target($group);
+        [, $instance, $branch] = $this->target($group);
+        $this->pushBranch($group, $instance, $branch, $commit);
+    }
+
+    public function pushHandoff(Task $group, string $commit): void
+    {
+        [, $instance] = $this->target($group);
+        $this->pushBranch($group, $instance, TaskRemoteBranch::handoff($group), $commit);
+    }
+
+    public function deleteHandoffBranch(Task $group): void
+    {
+        $group->loadMissing('project');
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url)
+            ?? throw new TaskPullRequestException('The Project repository is not on github.com.');
 
         try {
-            $this->pushBranch($group, $instance, $branch, $this->access->token($repository), $commit);
+            $this->github->deleteBranch($this->access->token($repository), $repository, TaskRemoteBranch::handoff($group));
         } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
+            throw new TaskPullRequestException('The handoff branch could not be deleted: '.$exception->getMessage(), previous: $exception);
         }
     }
 
@@ -154,7 +168,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, TaskRemoteBranch::for($group)];
     }
 
-    private function pushBranch(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Task $group, Instance $instance, string $branch, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
@@ -234,7 +248,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         try {
             $group = $vm->group ?? throw new TaskPullRequestException('The task workspace is unavailable.');
             [$repository, $instance, $expected] = $this->target($group);
-            if ($expected !== $branch) {
+            if ($branch !== $expected && $branch !== TaskRemoteBranch::handoff($group)) {
                 throw new TaskPullRequestException('The task workspace is unavailable.');
             }
             $instance->loadMissing(['node', 'project']);
@@ -254,6 +268,9 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed', mutates: true),
                     'tasks.push_failed',
                     $deadline,
+                    // The handoff branch holds only commits for CI, and the workspace can leave its history, as when it
+                    // follows an incoming pull request's head. So a handoff replaces it, over the tip just fetched.
+                    replace: $branch === TaskRemoteBranch::handoff($group),
                 );
             } catch (RuntimeConvergenceException $exception) {
                 $this->failedPush($exception, $token);

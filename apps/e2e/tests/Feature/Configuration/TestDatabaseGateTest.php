@@ -16,10 +16,8 @@ function orb247_gate_fixture(): array
     mkdir($root.'/tooling', 0o700, true);
 
     foreach (['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'] as $project) {
-        mkdir($root.'/'.$project.'/vendor/bin', 0o700, true);
+        mkdir($root.'/'.$project, 0o700, true);
         file_put_contents($root.'/'.$project.'/.gitkeep', '');
-        file_put_contents($root.'/'.$project.'/vendor/bin/pest', "#!/usr/bin/env sh\nexit 0\n");
-        chmod($root.'/'.$project.'/vendor/bin/pest', 0o700);
     }
 
     mkdir($root.'/tools', 0700, true);
@@ -35,7 +33,6 @@ function orb247_gate_fixture(): array
         file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
         chmod($root.'/bin/'.$generator, 0o700);
     }
-    copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/check-processes', 0o700);
@@ -44,7 +41,6 @@ function orb247_gate_fixture(): array
     chmod($root.'/bin/env-docs', 0o700);
     chmod($root.'/bin/tooling-baseline', 0o700);
     chmod($root.'/bin/docs-nav', 0o700);
-    chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 
     foreach ([
@@ -113,7 +109,6 @@ it('keeps the root candidate check away from an inherited caller database', func
         'ORBIT_GATEWAY_SOURCE' => base_path('../../apps/gateway'),
         'ORBIT_REAL_COMPOSER' => $composer,
         'ORBIT_TEST_DATABASE' => false,
-        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $process->setTimeout(120);
@@ -132,7 +127,6 @@ it('records a database safety refusal as a failed gate and retains normal succes
     file_put_contents($fixture['root'].'/apps/gateway/app/GateFixture.php', "<?php\n\nfinal class GateFixture {}\n");
     $refusal = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '1',
-        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $refusal->setTimeout(30);
@@ -142,22 +136,21 @@ it('records a database safety refusal as a failed gate and retains normal succes
     expect($refusal->getExitCode())->not->toBe(0);
     expect($refusal->getOutput().$refusal->getErrorOutput())
         ->toContain(
-            '[apps/gateway] composer test:affected -- --tia-base=graph: FAILED',
+            '[apps/gateway] composer check: FAILED',
             'Gateway tests refused an unsafe database connection.',
             'Candidate gate FAILED',
         );
     expect($failedReceipts)->toHaveCount(1);
     expect($failedReceipts[0]['role'] ?? null)->toBe('builder');
     expect($failedReceipts[0]['passed'] ?? null)->toBeFalse();
-    $gatewayTest = collect($failedReceipts[0]['checks'] ?? [])->first(
+    $gatewayCheck = collect($failedReceipts[0]['checks'] ?? [])->first(
         static fn (array $check): bool => ($check['project'] ?? null) === 'apps/gateway'
-            && ($check['command'] ?? null) === ['composer', 'test:affected', '--', '--tia-base=graph'],
+            && ($check['command'] ?? null) === ['composer', 'check'],
     );
-    expect($gatewayTest['exit_code'] ?? null)->toBe(23);
+    expect($gatewayCheck['exit_code'] ?? null)->toBe(23);
 
     $success = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '0',
-        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $success->setTimeout(30);
@@ -179,7 +172,6 @@ it('checks a candidate with uncommitted changes as it is and records its working
 
     $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '0',
-        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $process->setTimeout(30);
@@ -195,7 +187,7 @@ it('checks a candidate with uncommitted changes as it is and records its working
         ->and($receipts[0]['tree'] ?? null)->toBe($expected)
         ->and($receipts[0]['changed_paths'] ?? null)->toBe(['apps/cli/.gitkeep', 'apps/cli/new-file.php'])
         ->and(collect($receipts[0]['checks'] ?? [])->pluck('command')->all())
-        ->toContain(['vendor/bin/pest', 'tests/Feature/CommandSurfaceTest.php'])
+        ->toContain(['composer', 'check'])
         ->and($receipts[0]['passed'] ?? null)->toBeTrue()
         ->and((new Process(['git', 'status', '--porcelain'], $fixture['root']))->mustRun()->getOutput())->toBe($status);
 });

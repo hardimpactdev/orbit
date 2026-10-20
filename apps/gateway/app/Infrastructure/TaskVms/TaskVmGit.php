@@ -327,10 +327,12 @@ final readonly class TaskVmGit
      * @param  list<string>  $haves  commits of the mirror, such as those {@see fetch()} returned for the default and task branches
      * @param  Closure(RemoteCommand): CommandResult  $run
      * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
+     * @param  bool  $replace  whether the commit may replace a branch whose history moved: only over the tip that the last
+     *                         {@see fetch()} of the branch saw, and never otherwise forced
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null): void
+    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
@@ -353,7 +355,10 @@ final readonly class TaskVmGit
                 throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
             }
             $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
-            $pushed = $this->git($mirror, ['push', '--quiet', '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
+            $lease = $replace
+                ? ['--force-with-lease=refs/heads/'.$branch.':'.trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout)]
+                : [];
+            $pushed = $this->git($mirror, ['push', '--quiet', ...$lease, '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
             if (! $pushed->succeeded()) {
                 throw new RuntimeConvergenceException('task-pull-request-push', $errorCode, 'The task branch could not be pushed.', result: $pushed);
             }

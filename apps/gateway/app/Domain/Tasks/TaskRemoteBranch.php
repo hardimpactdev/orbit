@@ -26,4 +26,14 @@ final readonly class TaskRemoteBranch
 
         return $branch;
     }
+
+    /**
+     * `task-{id}-handoff`, where every handoff commit goes so CI tests it on the push (/reference/tasks#handoff-ci).
+     * No pull request has it as head, so an unreviewed commit never reaches a pull request, nor an outside author's
+     * branch.
+     */
+    public static function handoff(Task $group): string
+    {
+        return 'task-'.$group->id.'-handoff';
+    }
 }

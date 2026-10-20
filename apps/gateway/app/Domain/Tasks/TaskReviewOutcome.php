@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubReviewEvent;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -221,7 +222,7 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
-        // The counted records go into the approval, and so into its commit, for a person to audit.
+        // The counted records go into the approval for a person to audit, and into its commit when the approval commits the work.
         if (is_string($evidenceSummary) && ! str_contains($receipt->body, $evidenceSummary)) {
             $receipt->update(['body' => rtrim($receipt->body)."\n\n".$evidenceSummary]);
         }
@@ -237,6 +238,12 @@ final readonly class TaskReviewOutcome
             $receipt->update(['commit_sha' => $head]);
             TaskFinalReview::log($group, 'final review approved', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'commit_sha' => $head]);
             $scheduler->publishApprovedCommit($group, $task, $receipt);
+
+            return true;
+        }
+        if ($group->project->handoffCheckName() !== null) {
+            // Handoff CI (/reference/tasks#handoff-ci): the approval binds to the commit CI passed and commits nothing.
+            $this->approveTestedHandoff($scheduler, $group, $task, $receipt);
 
             return true;
         }
@@ -260,6 +267,36 @@ final readonly class TaskReviewOutcome
         $scheduler->publishApprovedCommit($group, $task, $receipt);
 
         return true;
+    }
+
+    /**
+     * Stores the handoff commit that CI passed as the approved commit, while the workspace HEAD is exactly that
+     * commit. Any other HEAD reopens the handoff with its reason; the passed CI result stays as it is. The approval
+     * never commits new work.
+     */
+    private function approveTestedHandoff(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
+    {
+        $handoff = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Handoff)
+            ->where('task_comment_id', $task->completion_handoff_comment_id)->where('status', TaskCheckStatus::Passed)
+            ->latest('id')->first();
+        try {
+            $head = $this->workspaceSnapshot($group)->head;
+        } catch (TaskCheckException $exception) {
+            $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $tested = $handoff?->commit_sha;
+        if ($handoff === null || $tested !== $head) {
+            // A defensive guard: an owned HEAD change already reopens the handoff before a review.
+            $this->reopenHandoff($group, $task, $receipt, is_string($tested)
+                ? 'The workspace HEAD is '.$head.', not the commit '.$tested.' that CI passed on, so Orbit could not approve it. Hand off again, so the check and CI run on the current HEAD.'
+                : 'Your handoff has no commit that CI tested, so Orbit could not approve it. Hand off again, so the check and CI run on the current HEAD.');
+
+            return;
+        }
+        $receipt->update(['commit_sha' => $tested]);
+        $scheduler->publishApprovedCommit($group, $task, $receipt);
     }
 
     /**
@@ -603,6 +640,14 @@ final readonly class TaskReviewOutcome
             return 'wait';
         }
         if ($this->ownedWorkspaceChange($group, $task, $current)) {
+            if (! $task->isFinalReview() && $group->project->handoffCheckName() !== null) {
+                // Handoff CI (/reference/tasks#handoff-ci): CI passed on another commit, so the check and CI run on the new
+                // HEAD before any review of it.
+                $this->reopenHandoff($group, $task, $receipt, 'Orbit moved the workspace from '.$task->review_workspace_head.' to '.$current->head
+                    .' during the review, after CI passed on the handoff. Hand off again, so the check and CI run on the new HEAD before the review.');
+
+                return 'reopened';
+            }
             $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
 
             return 'reopened';
@@ -693,12 +738,16 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * A newer implementer turn changed the workspace during review. The reviewer outcome is not
-     * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
+     * Reopens the handoff: the reviewer outcome is not applied and the reviewer is not reminded. The subtask needs a
+     * new receipt and a passing check. A newer implementer turn that changed the workspace during review reopens it,
+     * and so does a HEAD that is not the commit CI passed on (/reference/tasks#handoff-ci).
+     *
+     * @param  string|null  $reason  why Orbit reopened it, which the implementer's next reminder names
      */
-    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt): void
+    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt, ?string $reason = null): void
     {
         $task->update([
+            'handoff_reopen_reason' => $reason,
             'status' => TaskStatus::Running,
             'review_handled_comment_id' => $receipt->id,
             'review_attempt' => $task->review_attempt + 1,

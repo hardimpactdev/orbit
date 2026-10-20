@@ -507,7 +507,7 @@ final class TaskWorkspaceLease
 
     /**
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
-     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool}|null  $deliverables
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, topology?: bool}|null  $deliverables
      *
      * @throws TaskCheckException
      */

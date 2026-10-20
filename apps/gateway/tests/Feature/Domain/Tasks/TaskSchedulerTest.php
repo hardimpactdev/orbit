@@ -2092,7 +2092,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
             $sha = str_repeat('c', 40);
@@ -2127,6 +2127,13 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -2720,7 +2727,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
 
@@ -2735,6 +2742,13 @@ function scheduler_review(array $receipts, bool $notified = true): array
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void {}
     });
@@ -3061,6 +3075,36 @@ function scheduler_record_fast_forward_lease(Task $group, FakeTaskCheckRunner $c
     ]);
 }
 
+it('reopens the handoff instead of the review on an Orbit HEAD change under handoff CI, and tells the implementer why', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Reviewed before the fast-forward.'),
+    ]);
+    $group->project->update(['merge_check' => 'Required checks', 'review_and_merge' => true]);
+    $checks->head = str_repeat('d', 40);
+    $checks->tree = str_repeat('e', 40);
+    $checks->commitTree = $checks->tree;
+    $passed = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'commit_sha' => str_repeat('a', 40),
+        'pid' => 0, 'process_started' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head_after' => str_repeat('a', 40), 'tree_after' => str_repeat('b', 40), 'exit_code' => 0, 'started_at' => now(), 'finished_at' => now(),
+    ]);
+    scheduler_record_fast_forward_lease($group, $checks);
+
+    app(TaskScheduler::class)->tick();
+
+    $reason = 'Orbit moved the workspace from '.str_repeat('a', 40).' to '.str_repeat('d', 40).' during the review';
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->handoff_reopen_reason)->toContain($reason)
+        ->and($passed->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and(app(AgentSpawner::class)->reviewBases)->toBe([])
+        ->and(Activity::query()->where('subject_id', $group->id)->where('description', 'workspace head changed during review')->exists())->toBeFalse()
+        ->and($signer->messages)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(collect($dispatcher->commands)->pluck('message.text')->implode("\n"))->toContain($reason);
+});
+
 it('re-requests a review on an Orbit workspace fast-forward with a fresh baseline and delta scope', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Reviewed before the fast-forward.'),
@@ -3342,7 +3386,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
     {
         public int $calls = 0;
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->calls++;
 
@@ -3360,6 +3404,13 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -3406,7 +3457,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
         public function __construct(private string $sha) {}
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->calls++;
             $leases = app(TaskWorkspaceLease::class);
@@ -3432,6 +3483,13 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {

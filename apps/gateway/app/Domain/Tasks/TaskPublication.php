@@ -249,12 +249,8 @@ final readonly class TaskPublication
 
             return;
         }
-        // One full evaluation per head and minute. The pull request read above already runs every tick.
-        if (! Cache::add('tasks.merge-gate.'.$group->id.'.'.$head, true, 60)) {
-            return;
-        }
         $check = $group->project->mergeCheckName() ?? '';
-        $state = $this->merger->requiredCheck($group, $head, $check);
+        $state = $this->merger->pullRequestCheck($group, $head, $check);
         if ($state !== RequiredCheckState::Passed) {
             $this->recordMerge($group, $state === RequiredCheckState::Failed ? TaskMergeStatus::Refused : TaskMergeStatus::Waiting, match ($state) {
                 RequiredCheckState::Pending => 'Check '.$check.' is still running on '.$head.'.',
@@ -269,6 +265,10 @@ final readonly class TaskPublication
         if ($blocked !== null) {
             $this->recordMerge($group, $reviews?->status === TaskReviewReadStatus::Complete ? TaskMergeStatus::Refused : TaskMergeStatus::Waiting, $blocked);
 
+            return;
+        }
+        // GitHub limits writes. A refused merge is written again at most once a minute for one head.
+        if (! Cache::add('tasks.merge-attempt.'.$group->id.'.'.$head, true, 60)) {
             return;
         }
         try {

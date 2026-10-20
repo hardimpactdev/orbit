@@ -4827,6 +4827,7 @@ export interface components {
             changed_paths?: string[];
             failed_step?: string | null;
             output?: string | null;
+            commit_sha?: string | null;
         };
         TaskReviewAndMerge: {
             enabled?: boolean;
