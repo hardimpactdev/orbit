@@ -630,21 +630,24 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-save",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
         const abortSettled = aborted.catch((error: unknown) => error);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
         const abortError = await abortSettled;
         expect(() => {
             throw abortError;
         }).toThrow(/not saved: .*\nCommand aborted$/);
         const timeout = await run(
             bash,
-            { command: "cat large.txt; sleep 30", timeout: 1 },
+            { command: "cat large.txt; sleep 30", timeout: 0.1 },
             "timeout-save",
         );
 
@@ -654,7 +657,7 @@ describe("read and bash tools", () => {
         expect(failed.text).not.toContain("SECRET");
         expect(timeout.isError).toBe(true);
         expect(timeout.text).toContain("not saved:");
-        expect(timeout.text.endsWith("Command timed out after 1 seconds")).toBe(true);
+        expect(timeout.text.endsWith("Command timed out after 0.1 seconds")).toBe(true);
         expect(timeout.text).not.toContain("Exit code:");
         expect(timeout.text).not.toContain("SECRET");
     });
@@ -667,23 +670,26 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-1",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
-
-        await expect(aborted).rejects.toThrow(/Command aborted$/);
+        const abortSettled = expect(aborted).rejects.toThrow(/Command aborted$/);
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
+        await abortSettled;
         const timeout = await run(
             bash,
-            { command: "cat large.txt; sleep 30", timeout: 1 },
+            { command: "cat large.txt; sleep 30", timeout: 0.1 },
             "timeout-1",
         );
 
         expect(timeout.isError).toBe(true);
-        expect(timeout.text.endsWith("Command timed out after 1 seconds")).toBe(true);
+        expect(timeout.text.endsWith("Command timed out after 0.1 seconds")).toBe(true);
         expect(timeout.text).not.toContain("Exit code:");
         const files = outputFiles(cwd);
         expect(files).toHaveLength(2);
