@@ -10,6 +10,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Project;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\StreamingLocalShellSshExecutor;
@@ -67,25 +68,29 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
             ->and(file_exists($this->root.'/vm/code'))->toBeFalse();
     });
 
-    it('chooses the newest cached main ancestor rather than a later publication or another branch', function (string $unbornBranch): void {
+    it('chooses the newest cached first-parent ancestor rather than a later publication or merged side branch', function (string $unbornBranch): void {
+        Log::spy();
         ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'cached main']);
         $cached = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
         ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'uncached head']);
-        $tip = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
         ci_ref_git($this->root.'/source', ['checkout', '--quiet', '-b', 'other', $this->sha]);
         ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'other branch']);
         $other = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
+        ci_ref_git($this->root.'/source', ['checkout', '--quiet', 'main']);
+        ci_ref_git($this->root.'/source', ['merge', '--quiet', '--no-ff', 'other', '-m', 'Merge side branch']);
+        $tip = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', 'main', 'other', $this->cacheCommit.':refs/orbit/ci-cache/'.$cached]);
-        // Publish the older and off-main refs last. Their completion order cannot choose the baseline.
+        // Publish the older and second-parent refs last. Their completion order cannot choose the baseline.
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef, $this->cacheCommit.':refs/orbit/ci-cache/'.$other]);
         $tips = $this->git->fetch($this->project, ['main', 'other'], $this->access, 'tasks.fetch_failed');
         ci_ref_git($this->root.'/vm', ['symbolic-ref', 'HEAD', 'refs/heads/'.$unbornBranch]);
 
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', warmStart: true);
+        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($cached)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'origin/main']))->toBe($tip)
             ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/']))->toBe('refs/orbit/ci-cache/'.$cached);
+        Log::shouldHaveReceived('info')->with('CI cache baseline selected.', ['project_id' => $this->project->id, 'tip' => $tip, 'baseline' => $cached, 'distance' => 2])->once();
     })->with(['unborn default branch' => 'main', 'unborn other branch' => 'master']);
 
     it('does not substitute another SHA and missing cache refs do not fail source transfer', function (): void {
@@ -114,17 +119,21 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
             ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/']))->toBe('');
     });
 
-    it('drops old mirror cache refs after a failed cache refresh without failing source fetch', function (): void {
+    it('logs a failed cache ref fetch and starts cold without failing source delivery', function (bool $throws): void {
+        Log::spy();
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
-        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+        $runner = new class(app(ProcessRunner::class), $throws) implements ProcessRunner
         {
-            public function __construct(private ProcessRunner $runner) {}
+            public function __construct(private ProcessRunner $runner, private bool $throws) {}
 
             public function run(ProcessInvocation $invocation): CommandResult
             {
                 if (in_array('+refs/orbit/ci-cache/*:refs/orbit/ci-cache/*', $invocation->arguments, true)) {
+                    if ($this->throws) {
+                        throw new RuntimeException('Cache namespace unavailable.');
+                    }
+
                     return new CommandResult(1, '', 'Cache namespace unavailable.', 0, false);
                 }
 
@@ -133,11 +142,16 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         };
         $git = new TaskVmGit($runner, $this->root.'/mirrors', ['https', 'file']);
         $tips = $git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
+        $git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
+        ci_ref_git($this->root.'/vm', ['checkout', '--quiet', '-b', 'task-cold', 'origin/main']);
 
-        expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($this->sha)
-            ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/']))->toBe('');
-    });
+        expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'HEAD']))->toBe($this->sha)
+            ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/', 'refs/worktree/orbit/ci-baseline']))->toBe('');
+        Log::shouldHaveReceived('warning')->with('CI cache ref fetch failed; setup continues cold.', [
+            'project_id' => $this->project->id,
+            ...($throws ? ['reason' => 'Cache namespace unavailable.'] : ['exit_code' => 1, 'stderr' => 'Cache namespace unavailable.']),
+        ])->once();
+    })->with(['nonzero exit' => false, 'process exception' => true]);
 
     it('keeps source refs available when the optional cache transfer fails', function (): void {
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);

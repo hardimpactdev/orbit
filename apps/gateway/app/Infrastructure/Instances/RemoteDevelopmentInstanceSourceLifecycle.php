@@ -133,7 +133,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
         $taskVm = $this->onTaskVm($instance);
-        $startingRef = $taskVm ? $this->sendToTaskVm($instance, $defaultBranch) : null;
+        if ($taskVm) {
+            $this->sendToTaskVm($instance, $defaultBranch);
+        }
         $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::fetchPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
@@ -144,8 +146,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     default_branch=$7
                     branch_override=$8
                     seed_commit=$9
-                    starting_ref=${10}
-                    network=${11}
+                    network=${10}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -166,8 +167,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         source_ref="refs/remotes/origin/$branch"
                     elif git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
                         source_ref="refs/heads/$branch"
-                    elif [ -n "$starting_ref" ]; then
-                        source_ref=$starting_ref
                     else
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
@@ -186,7 +185,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     $defaultBranch,
                     $instance->branch_override ?? '',
                     $instance->seed_commit ?? '',
-                    $startingRef ?? '',
                     $taskVm ? '0' : '1',
                 ],
                 input: $script->input,
@@ -343,7 +341,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
      * Sends the default branch and the Instance's branch, when the repository has it, to the checkout on the task VM
      * ([Git on a task VM](/reference/compute-drivers#send-branches-to-the-vm)).
      */
-    private function sendToTaskVm(Instance $instance, string $defaultBranch): ?string
+    private function sendToTaskVm(Instance $instance, string $defaultBranch): void
     {
         $project = $instance->project;
         $tips = $this->git->fetch($project, [$defaultBranch, $this->selectedBranch($instance)], $this->access->for($project->repository_url, $project->source_access), 'instance.branch_resolution_failed');
@@ -351,12 +349,10 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             throw new RuntimeConvergenceException('app-instance-source-resolve', 'instance.branch_resolution_failed', "The repository of Instance [{$instance->name}] has no default branch [{$defaultBranch}].");
         }
         $owner = Task::topLevel()->find($instance->task_workspace_owner_id);
-        $warmStart = $owner instanceof Task && ! $owner->reviewsIncomingPullRequest()
+        $selectBaseline = $owner instanceof Task && ! $owner->reviewsIncomingPullRequest()
             && $instance->seed_commit === null && $tips[$this->selectedBranch($instance)] === null
             && $this->importsCiCaches($instance);
-        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', warmStart: $warmStart);
-
-        return $warmStart ? 'refs/worktree/orbit/ci-baseline' : null;
+        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
     }
 
     private function defaultBranch(Instance $instance): string

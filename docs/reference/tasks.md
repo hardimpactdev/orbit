@@ -1625,7 +1625,7 @@ A new task workspace is a linked worktree of the Project's `default` repository 
 
 Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from the default checkout with reflinks, then runs its locked installs. A deployment of the default can change those folders during the copy. The seed path names the default's checkout, not a release directory. The workspace never writes back to the seed.
 
-When the Project's default has not deployed on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
+When the Project's default has not deployed on that Node, Orbit creates an independent clone at the fetched default branch tip. Task VMs select caches separately under the [workspace CI baseline rule](/reference/implementation-loop#ci-cache-refs), including on baseline retries. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
 
 ### Routing and cleanup
 

@@ -47,6 +47,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\HostKey;
@@ -67,6 +68,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -209,7 +211,8 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($network)->toBe(['0', '0']);
 });
 
-it('starts a new task workspace at the newest cached main commit and imports its caches', function (bool $cachedHead): void {
+it('starts a new task workspace at main tip and imports the newest cached ancestor', function (bool $cachedHead): void {
+    Log::spy();
     orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Warm start', 'brief' => 'Start warm.', 'status' => TaskGroupStatus::Running]);
@@ -247,8 +250,8 @@ it('starts a new task workspace at the newest cached main commit and imports its
         $this->source->prepare($instance, false);
         $resolution = $this->source->resolve($instance->refresh());
         $checkout = $instance->checkout_path;
-        expect($resolution->startingCommit)->toBe($selected)
-            ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout))->toBe($selected)
+        expect($resolution->startingCommit)->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout))->toBe($main)
             ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'refs/worktree/orbit/ci-baseline'])->stdout))->toBe($selected)
             ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'origin/main'])->stdout))->toBe($main)
             ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/'])->stdout))->toBe('refs/orbit/ci-cache/'.$selected);
@@ -262,15 +265,31 @@ it('starts a new task workspace at the newest cached main commit and imports its
             expect($graph['baselines']['main']['sha'])->toBe($selected)
                 ->and(file_get_contents($checkout.'/'.$project.'/vendor/pint.cache'))->toBe(json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => []], JSON_THROW_ON_ERROR));
         }
-        expect($this->source->resolve($instance)->startingCommit)->toBe($selected);
+        Log::shouldHaveReceived('info')->with('CI cache baseline selected.', ['project_id' => $this->orbitApp->id, 'tip' => $main, 'baseline' => $selected, 'distance' => $cachedHead ? 0 : 1])->once();
+        expect($this->source->resolve($instance)->startingCommit)->toBe($main);
     } finally {
         GitRemoteRedirect::clear();
     }
 })->with(['uncached head' => false, 'cached head' => true]);
 
-it('refuses a cache-enabled new task workspace when main has no published baseline', function (): void {
+it('starts a cache-enabled new task workspace cold at main tip when cache refs are unavailable', function (bool $fetchFails): void {
+    Log::spy();
     orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    if ($fetchFails) {
+        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+        {
+            public function __construct(private ProcessRunner $runner) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                return in_array('+refs/orbit/ci-cache/*:refs/orbit/ci-cache/*', $invocation->arguments, true)
+                    ? new CommandResult(128, '', 'Cache ref permission denied.', 0, false)
+                    : $this->runner->run($invocation);
+            }
+        };
+        $this->source = new RemoteDevelopmentInstanceSourceLifecycle($this->ssh, $this->accounts, $this->boundary, app(RepositoryReadAccess::class), new TaskVmGit($runner, $this->sandbox.'/mirror', ['https', 'file']));
+    }
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'No baseline', 'brief' => 'No cache.', 'status' => TaskGroupStatus::Running]);
     orb76_task_vm($this->node)->update(['group_id' => $group->id]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
@@ -279,12 +298,19 @@ it('refuses a cache-enabled new task workspace when main has no published baseli
         $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
         $this->source->prepare($instance, false);
 
-        expect(fn () => $this->source->resolve($instance))->toThrow(RuntimeConvergenceException::class, 'The default branch has no published CI cache baseline.');
-        expect(trim(orb76_run(['git', '-C', $instance->checkout_path, 'for-each-ref', '--format=%(refname)', 'refs/heads/'])->stdout))->toBe('');
+        $main = trim(orb76_run(['git', '-C', $this->sandbox.'/work', 'rev-parse', 'HEAD'])->stdout);
+
+        expect($this->source->resolve($instance)->startingCommit)->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout))->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'for-each-ref', '--format=%(refname)', 'refs/worktree/orbit/ci-baseline', 'refs/orbit/ci-cache/'])->stdout))->toBe('');
+        Log::shouldHaveReceived('notice')->with('CI caches cold; no cached first-parent ancestor is available in the mirror.', ['project_id' => $this->orbitApp->id, 'tip' => $main])->once();
+        if ($fetchFails) {
+            Log::shouldHaveReceived('warning')->with('CI cache ref fetch failed; setup continues cold.', ['project_id' => $this->orbitApp->id, 'exit_code' => 128, 'stderr' => 'Cache ref permission denied.'])->once();
+        }
     } finally {
         GitRemoteRedirect::clear();
     }
-});
+})->with(['no ancestor cache' => false, 'failed ref fetch' => true]);
 
 it('does not require a cached start for an existing task branch or an incoming pull request', function (bool $incoming): void {
     orb76_https_origin($this);
