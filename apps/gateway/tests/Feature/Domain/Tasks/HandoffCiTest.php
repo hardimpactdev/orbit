@@ -20,11 +20,14 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Support\Facades\Http;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
@@ -502,4 +505,53 @@ it('asks for assistance on the fifth tick that cannot push the commit or read it
     'a failed push' => ['pushFails', 'The task branch could not be pushed.'],
     'an unreadable GitHub' => ['unreadable', 'Orbit could not read the checks of '.CI_HANDOFF.': GitHub is unavailable.'],
     'no checks permission' => ['noChecksPermission', 'Orbit could not read the checks of '.CI_HANDOFF.': the GitHub App has no checks: read permission.'],
+]);
+
+it('judges only the newest workflow suite when GitHub supersedes a handoff run', function (string $status, ?string $conclusion, bool $mergeCheck, string $outcome): void {
+    ci_github();
+    app()->bind(TaskPullRequestMerger::class, GitHubTaskPullRequestMerger::class);
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+    $run = static fn (string $name, int $id, int $suite, ?string $result): array => [
+        'name' => $name, 'id' => $id, 'check_suite' => ['id' => $suite], 'head_sha' => CI_HANDOFF,
+        'app' => ['slug' => 'github-actions'], 'status' => $result === null ? 'in_progress' : 'completed', 'conclusion' => $result,
+    ];
+    $runs = [
+        $run('Gateway shards (1)', 1, 5, 'cancelled'), $run('Required checks', 2, 5, 'failure'),
+        $run('Gateway shards (1)', 3, 6, $conclusion),
+        ...($mergeCheck ? [$run('Required checks', 4, 6, $conclusion)] : []),
+    ];
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_read', 'permissions' => ['checks' => 'read', 'actions' => 'read']], 201),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 2, 'check_suites' => [
+            ['id' => 5, 'status' => 'completed', 'conclusion' => 'cancelled', 'app' => ['slug' => 'github-actions']],
+            ['id' => 6, 'status' => $status, 'conclusion' => $conclusion, 'app' => ['slug' => 'github-actions']],
+        ]]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => count($runs), 'check_runs' => $runs]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 2, 'workflow_runs' => [
+            ['id' => 20, 'workflow_id' => 10, 'event' => 'push', 'head_branch' => 'task-7-handoff', 'head_sha' => CI_HANDOFF, 'check_suite_id' => 6],
+            ['id' => 19, 'workflow_id' => 10, 'event' => 'push', 'head_branch' => 'task-7-handoff', 'head_sha' => CI_HANDOFF, 'check_suite_id' => 5],
+        ]]),
+    ]);
+    [, $task] = ci_handoff();
+
+    ci_ticks();
+
+    $fresh = $task->fresh();
+    $check = TaskCheck::query()->sole();
+    expect($fresh?->communication_failures)->toBe(0);
+    match ($outcome) {
+        'pending' => expect($fresh?->status)->toBe(TaskStatus::Running)->and($fresh?->assistance_requested)->toBeFalse()
+            ->and($check->status)->toBe(TaskCheckStatus::Passed)->and(app(AgentCommandDispatcher::class)->commands)->toBe([]),
+        'passed' => expect($fresh?->status)->toBe(TaskStatus::Reviewing)->and($fresh?->assistance_requested)->toBeFalse(),
+        'failed' => expect($check->failed_step)->toBe(TaskHandoffCi::FailedStep)->and(ci_reminder())->toContain('Gateway shards (1)'),
+        'infrastructure' => expect($fresh?->assistance_requested)->toBeTrue()->and($fresh?->assistance_reason)->toContain('check suite 6 (cancelled)'),
+    };
+})->with([
+    'newest suite has no merge-check job yet' => ['in_progress', null, false, 'pending'],
+    'newest merge check is running' => ['in_progress', null, true, 'pending'],
+    'newest merge check passed' => ['completed', 'success', true, 'passed'],
+    'newest merge check failed' => ['completed', 'failure', true, 'failed'],
+    'newest suite was cancelled too' => ['completed', 'cancelled', false, 'infrastructure'],
 ]);

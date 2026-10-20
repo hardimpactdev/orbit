@@ -121,7 +121,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
     public function commitChecks(Task $group, string $sha): ?array
     {
         $repository = $this->githubRepository($group);
-        $key = 'tasks:commit-checks:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        $key = 'tasks:commit-checks:v2:'.$repository->owner.'/'.$repository->name.'@'.$sha;
         $cached = Cache::get($key);
         if (is_array($cached)) {
             $runs = self::decoded($cached['runs'] ?? null, GitHubCheckRun::fromArray(...));
@@ -141,12 +141,63 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read the checks of '.$sha.': '.$exception->getMessage(), previous: $exception);
         }
+        $superseded = $this->supersededSuites($repository, $sha, $suites);
+        $snapshot = [
+            'runs' => array_values(array_filter($snapshot['runs'], static fn (GitHubCheckRun $run): bool => $run->appSlug !== RequiredCheckState::CheckApp || ! in_array($run->checkSuiteId, $superseded, true))),
+            'suites' => array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug !== RequiredCheckState::CheckApp || ! in_array($suite->id, $superseded, true))),
+        ];
         Cache::put($key, [
             'runs' => array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $snapshot['runs']),
             'suites' => array_map(static fn (GitHubCheckSuite $suite): array => $suite->toArray(), $snapshot['suites']),
         ], self::ReadSeconds);
 
         return $snapshot;
+    }
+
+    /**
+     * Older suites of the same workflow, event, and branch cannot decide a commit's checks. Read workflow identities
+     * only when Actions has more than one suite; check names alone cannot identify a workflow whose jobs changed.
+     *
+     * @param  list<GitHubCheckSuite>  $suites
+     * @return list<int>
+     */
+    private function supersededSuites(GitHubRepository $repository, string $sha, array $suites): array
+    {
+        if (count(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug === RequiredCheckState::CheckApp)) < 2) {
+            return [];
+        }
+        try {
+            $read = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/runs?'.http_build_query([
+                'head_sha' => $sha, 'per_page' => 100,
+            ]), $this->actions->token($repository));
+        } catch (GitHubActionsUnavailable $exception) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.', previous: $exception);
+        }
+        $rows = $read['workflow_runs'] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || ! is_int($read['total_count'] ?? null) || $read['total_count'] !== count($rows)) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
+        }
+        $latest = [];
+        $superseded = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || ($row['head_sha'] ?? null) !== $sha || ! is_int($row['id'] ?? null)
+                || ! is_int($row['workflow_id'] ?? null) || ! is_int($row['check_suite_id'] ?? null)
+                || ! is_string($row['event'] ?? null) || ! is_string($row['head_branch'] ?? null)) {
+                throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
+            }
+            $key = $row['workflow_id'].':'.$row['event'].':'.$row['head_branch'];
+            $prior = $latest[$key] ?? null;
+            if ($prior === null || $row['id'] > $prior['id']) {
+                if ($prior !== null && $prior['check_suite_id'] !== $row['check_suite_id']) {
+                    $superseded[] = $prior['check_suite_id'];
+                }
+                $latest[$key] = $row;
+            } elseif ($prior['check_suite_id'] !== $row['check_suite_id']) {
+                $superseded[] = $row['check_suite_id'];
+            }
+        }
+
+        return array_values(array_unique($superseded));
     }
 
     /** @throws TaskPullRequestException */

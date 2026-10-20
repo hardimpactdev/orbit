@@ -26,7 +26,7 @@ The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway s
 
 The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
-[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The [merge gate](/reference/tasks#merge-on-green) uses it to find the pull request's own `pull_request` workflow run.
+[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The [merge gate](/reference/tasks#merge-on-green) uses it to find the pull request's own `pull_request` workflow run. The shared commit-check read also uses it to identify superseded workflow suites when GitHub Actions reports more than one suite.
 
 The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) instead receives SHA-bound Git refs through the Gateway mirror. Its repository read uses `Contents: read`, not the Actions API. Only the successful main CI publisher needs `Contents: write`; the workspace receives cache objects without a GitHub token.
 
@@ -116,7 +116,7 @@ After the Gateway commits an approved subtask, it asks GitHub for a token with `
 
 A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
 
-It reads the check runs and check suites of the handoff commit with the `checks: read` token: every run on that commit, every suite with `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`, and a failed job's log as [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) does. The merge gate, the settling watch, and the handoff share the runs and suites of one commit for 60 seconds.
+It reads the check runs and check suites of the handoff commit with the `checks: read` token. Suites use `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`. When GitHub Actions reports more than one suite, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes. The merge gate, the settling watch, and the handoff share these runs and suites for 60 seconds.
 
 After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
@@ -146,13 +146,14 @@ The Gateway resolves the repository's installation id, caches it, and reuses tha
 
 ## How Orbit reviews and merges a pull request
 
-A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for four more calls. Each call asks GitHub for its own token, as the table shows.
+A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for these calls. Each call asks GitHub for its own token, as the table shows.
 
 | Call | Endpoint | Token |
 | --- | --- | --- |
 | List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
 | Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
 | Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}`, every page | `checks: read` |
+| Identify superseded suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 when Actions has multiple suites | `actions: read` |
 | Find the pull request's own runs | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}&event=pull_request`, one page of 100 | `actions: read` |
 | Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
 

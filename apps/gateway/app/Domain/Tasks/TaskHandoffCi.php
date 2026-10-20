@@ -123,12 +123,10 @@ final readonly class TaskHandoffCi
     }
 
     /**
-     * The commit has no merge-check run yet. The push to `task-{id}-handoff` starts one GitHub Actions suite per
-     * workflow on the commit, and GitHub creates the merge-check run only after the jobs it needs finish. No suite
-     * yet, or one not completed: pending. No suite {@see NoSuiteSeconds} after the push asks for assistance once,
-     * because nothing in Orbit can start CI. Orbit pushes the commit once, so no new suite comes after every suite
-     * completed. Then the merge-check run cannot come either, and {@see GitHubCheckSuite::faultWithoutMergeCheck()}
-     * decides who answers.
+     * The commit's current suites have no merge-check run yet. The shared read removes superseded suites and their
+     * jobs. No suite yet, or one not completed: pending. No suite {@see NoSuiteSeconds} after the push asks for
+     * assistance once, because nothing in Orbit can start CI. Once every current suite completed without the merge
+     * check, {@see GitHubCheckSuite::faultWithoutMergeCheck()} decides who answers.
      *
      * @param  list<GitHubCheckRun>  $runs
      * @param  list<GitHubCheckSuite>  $suites

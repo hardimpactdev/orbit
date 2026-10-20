@@ -121,3 +121,40 @@ it('counts for the pull request only a merge-check run of its own pull_request w
     'the pull request run is another suite' => [[['id' => 8, 'event' => 'pull_request', 'head_sha' => MERGER_SHA, 'check_suite_id' => 6]], RequiredCheckState::Missing],
     'the run is the pull request run' => [[['id' => 8, 'event' => 'pull_request', 'head_sha' => MERGER_SHA, 'check_suite_id' => 5]], RequiredCheckState::Passed],
 ]);
+
+it('keeps other workflows, events, and branches when it removes superseded suites', function (int $workflow, string $event, string $branch, array $expected): void {
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_read', 'permissions' => ['checks' => 'read', 'actions' => 'read']], 201),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 3, 'check_suites' => [
+            ['id' => 5, 'status' => 'completed', 'conclusion' => 'cancelled', 'app' => ['slug' => 'github-actions']],
+            ['id' => 6, 'status' => 'completed', 'conclusion' => 'success', 'app' => ['slug' => 'github-actions']],
+            ['id' => 7, 'status' => 'completed', 'conclusion' => 'failure', 'app' => ['slug' => 'github-actions']],
+        ]]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 3, 'check_runs' => [
+            // The obsolete job has no replacement of its name: the whole suite must be removed.
+            ['id' => 1, 'name' => 'Old job', 'status' => 'completed', 'conclusion' => 'cancelled', 'head_sha' => MERGER_SHA, 'app' => ['slug' => 'github-actions'], 'check_suite' => ['id' => 5]],
+            ['id' => 2, 'name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => MERGER_SHA, 'app' => ['slug' => 'github-actions'], 'check_suite' => ['id' => 6]],
+            ['id' => 3, 'name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'failure', 'head_sha' => MERGER_SHA, 'app' => ['slug' => 'github-actions'], 'check_suite' => ['id' => 7]],
+        ]]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 3, 'workflow_runs' => [
+            ['id' => 19, 'workflow_id' => $workflow, 'event' => $event, 'head_branch' => $branch, 'head_sha' => MERGER_SHA, 'check_suite_id' => 5],
+            ['id' => 21, 'workflow_id' => 11, 'event' => 'push', 'head_branch' => 'task-7-handoff', 'head_sha' => MERGER_SHA, 'check_suite_id' => 7],
+            ['id' => 20, 'workflow_id' => 10, 'event' => 'push', 'head_branch' => 'task-7-handoff', 'head_sha' => MERGER_SHA, 'check_suite_id' => 6],
+        ]]),
+    ]);
+    $merger = app(GitHubTaskPullRequestMerger::class);
+    $group = merger_group();
+
+    $checks = $merger->commitChecks($group, MERGER_SHA);
+
+    expect(array_map(static fn ($suite): int => $suite->id, $checks['suites'] ?? []))->toBe($expected)
+        ->and(array_map(static fn ($run): ?int => $run->checkSuiteId, $checks['runs'] ?? []))->toBe($expected)
+        ->and($merger->requiredCheck($group, MERGER_SHA, 'Required checks'))->toBe(RequiredCheckState::Failed);
+})->with([
+    'superseded run, API order differs from run id order' => [10, 'push', 'task-7-handoff', [6, 7]],
+    'another workflow' => [12, 'push', 'task-7-handoff', [5, 6, 7]],
+    'pull request workflow must remain' => [10, 'pull_request', 'task-7-handoff', [5, 6, 7]],
+    'another branch' => [10, 'push', 'main', [5, 6, 7]],
+]);
