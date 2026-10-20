@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadRole;
@@ -428,6 +429,50 @@ it('drops a cancelled subtasks queued baseline and admits its successor without 
     $leases->release($holder);
     $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group->fresh(), $next->fresh());
     expect($checks->starts)->toBe(1)->and($next->fresh()->communication_failures)->toBe(0);
+});
+
+it('refuses a check outside an admitted scope without creating a lease or starting a process', function (): void {
+    $group = tick_group();
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    expect(fn () => app(TaskWorkspaceLease::class)->startCheck($group, $group->tasks->first(), 'check'))
+        ->toThrow(TaskWorkspaceWaiting::class, 'A workspace check requires an admitted workspace scope.');
+
+    expect(TaskWorkspaceLeaseRecord::query()->exists())->toBeFalse()
+        ->and($group->tasks->first()->checks()->exists())->toBeFalse()->and($checks->starts)->toBe(0);
+});
+
+it('admits a handoff after a held verdict without queuing its check ahead of its receipt', function (): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    lease_stopped_driver();
+    $leases = app(TaskWorkspaceLease::class);
+    $scheduler = app(TaskScheduler::class);
+    $runner = app(TaskSubtaskRunner::class);
+    $scheduler->collectReceipt($group, $task, TaskThreadRole::Implementer);
+    $receipt = $scheduler->pendingReceipt($task, TaskThreadRole::Implementer);
+    $observation = app(TaskSessionObserver::class)->observe($group, $task);
+    $holder = $leases->acquire($group, 'verdict', 'review-outcome:'.$task->id, taskId: $task->id);
+
+    // A receipt is already stored, but its check request meets a still-held verdict.
+    $handoff = new ReflectionMethod(TaskSubtaskRunner::class, 'checkHandoff');
+    expect(fn () => $handoff->invoke($runner, $scheduler, $group, $task, $observation->thread(TaskThreadRole::Implementer), $receipt, $observation))
+        ->toThrow(TaskWorkspaceWaiting::class);
+    // The next scheduler pass reads the receipt before it can retry that check.
+    expect(fn () => $runner->handleImplementerCompletion($scheduler, $group, $task, $observation))
+        ->toThrow(TaskWorkspaceWaiting::class);
+    expect($holder->fresh()->status)->toBe('held')->and($checks->starts)->toBe(0)
+        ->and($task->checks()->count())->toBe(0);
+    $leases->release($holder);
+
+    $runner->handleImplementerCompletion($scheduler, $group, $task, $observation);
+
+    $check = $task->checks()->sole();
+    expect($checks->starts)->toBe(1)->and($check->task_comment_id)->toBe($receipt->id);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->exists())->toBeFalse();
+    $admitted = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+    expect($admitted->check_id)->toBe($check->id)
+        ->and($admitted->owner)->toBe('receipt:'.$task->id.':'.$task->implementer_agent_thread_id);
 });
 
 it('leases immutable deliverable validation and reuses an existing prepared actor on retry', function (bool $pending): void {
