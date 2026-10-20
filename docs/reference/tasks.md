@@ -1026,7 +1026,7 @@ A merge-check run that ended `skipped`, `neutral`, or `stale`, or a run of that 
 
 Every handoff reads the merge check on its own commit. A result on another commit never counts. A rework hands off a new commit, and CI must pass on that commit.
 
-GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, its GitHub Actions check suites decide. The push starts one suite per workflow, and Orbit pushes the commit once. So once every suite has completed, no new one comes, and every completed state is final. Suites and runs of other Apps, such as Mintlify, never count.
+GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, its GitHub Actions check suites decide. A newer run of the same workflow, event, and branch on that commit supersedes the older suite and all its jobs. A cancelled superseded run asks for no assistance, also while the newest run has no merge-check job yet. Suites and runs of other Apps, such as Mintlify, never count.
 
 | GitHub Actions suites on the commit | Result |
 | --- | --- |
@@ -1043,7 +1043,7 @@ When the commit has no GitHub Actions suite 10 minutes after Orbit recorded its 
 
 The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. The approval stores the commit that CI passed and commits nothing; the [reviewer outcomes](#reviewer-outcomes) describe how. A failed push or an unreadable check read is a communication failure; the fifth asks for assistance. A pending run waits until CI reports a result.
 
-Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check suites and check runs are read together, suites first, so a completed suite always comes with its final runs.
+Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check suites and check runs are read together, suites first, so a completed suite always comes with its final runs. This shared read removes superseded suites and their jobs before any reader judges them.
 
 In a review-and-merge Project, an Orbit-owned change of HEAD during a subtask review, such as a workspace fast-forward, reopens the handoff at once instead of restarting the review. The passed CI result stays as it is. The implementer's next reminder names the reason, and its new handoff runs the check and CI on the new HEAD before any review.
 
@@ -1527,7 +1527,7 @@ Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-m
 
 The green-commit rules need at least one run of that name. Every such run must be for that SHA, completed with `success`, and created by `github-actions`.
 
-The merge gate counts only merge-check runs of a `pull_request` workflow run for exactly the head. That run tests the pull request's merge ref, so the merge with the current base is tested before it lands. A `push` run on the same commit, such as the [handoff](#handoff-ci) push of the last handoff commit, never counts. Until the pull request's own run reports, the gate waits.
+The merge gate counts only merge-check runs of a `pull_request` workflow run for exactly the head. A run superseded by a newer run of the same workflow, event, and branch on that commit does not count. That run tests the pull request's merge ref, so the merge with the current base is tested before it lands. A `push` run on the same commit, such as the [handoff](#handoff-ci) push of the last handoff commit, never counts. Until the pull request's own run reports, the gate waits.
 
 The App merges with a merge commit and `sha` set to the head, so GitHub refuses when the head moved. The repository must allow merge commits. The merge is a push by the App, so GitHub runs the `push` workflows on the default branch. The next tick sees the merge and completes the task. The checks of one head come from the shared check-run read, at most once a minute. GitHub limits writes, so Orbit sends the merge of one head at most once a minute.
 
@@ -1809,7 +1809,7 @@ On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sh
 
 The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
 
-CI runs on the push of the handoff commit to `task-{id}-handoff`, not on a pull request. One push makes exactly one Actions suite per workflow for that commit, so the result is deterministic. A draft pull request per handoff was rejected. It needs draft conversions, conflict reads, a new push when its head moves, and timing rules for its suites. The merge gate checks the task's pull request against the latest base anyway.
+CI runs on the push of the handoff commit to `task-{id}-handoff`, not on a pull request. Orbit sends one push. GitHub can report more than one run of a workflow on the same commit, so only the newest run for each workflow, event, and branch counts. A draft pull request per handoff was rejected. It needs draft conversions, conflict reads, a new push when its head moves, and timing rules for its suites. The merge gate checks the task's pull request against the latest base anyway.
 
 Pushing handoffs to `task-{id}` itself was rejected. Once the task's pull request is open, `task-{id}` is its head, so an unreviewed handoff commit would become the pull request head, and its push would start a second CI run there. Orbit commits at the handoff, so the approval stores the commit CI tested. A side commit that leaves `HEAD` alone was rejected: the later approval commit would not descend from it, and the push would need force.
 
