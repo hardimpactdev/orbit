@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Http\Responses\ApiErrorResponse;
+use App\Infrastructure\Logging\GatewayExceptionStatus;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use RuntimeException;
 use Throwable;
 
@@ -47,5 +51,27 @@ final class ToolOperationException extends RuntimeException
                 ? $previous->__debugInfo()
                 : null,
         ];
+    }
+
+    /** The API error envelope, which the exception handler returns for this exception. */
+    public function render(Request $request): JsonResponse
+    {
+        $request->attributes->set('orbit.error_code', $this->errorCode);
+        $request->attributes->set('orbit.tool_exception', $this);
+
+        $details = [
+            'step' => $this->step,
+            'outcome' => $this->outcome->value,
+        ];
+
+        if ($this->toolId !== null) {
+            $details['id'] = $this->toolId;
+        }
+
+        if ($this->adoptionBlock !== null) {
+            $details['adoption_block'] = $this->adoptionBlock;
+        }
+
+        return ApiErrorResponse::make($request, $this->errorCode, $this->getMessage(), $details, GatewayExceptionStatus::for($this));
     }
 }
