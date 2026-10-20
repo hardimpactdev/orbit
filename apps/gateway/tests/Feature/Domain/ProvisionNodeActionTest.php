@@ -1561,7 +1561,10 @@ describe(ProvisionNodeAction::class, function (): void {
             public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
 
+        // Establish the lazy test transaction before checking the action preserves it.
+        DB::select('select 1');
         $ambientTransactionLevel = DB::transactionLevel();
+        expect($ambientTransactionLevel)->toBe(1);
         $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: 'app-dev',
             publicSshHost: '94.237.40.75',

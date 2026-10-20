@@ -3,15 +3,17 @@
 set -euo pipefail
 
 run_checks=1
+dependencies_only=0
 with_bun=0
 with_rust=0
 for argument in "$@"; do
     case "$argument" in
         --skip-checks) run_checks=0 ;;
+        --dependencies-only) dependencies_only=1 ;;
         --with-bun) with_bun=1 ;;
         --with-rust) with_rust=1 ;;
         *)
-            printf 'Usage: bin/bootstrap [--skip-checks] [--with-bun] [--with-rust]\n' >&2
+            printf 'Usage: bin/bootstrap [--skip-checks] [--dependencies-only] [--with-bun] [--with-rust]\n' >&2
             exit 2
             ;;
     esac
@@ -101,6 +103,10 @@ if ((with_rust)); then
         printf '\n[%s] cargo fetch\n' "$project"
         (cd "$repository_root/$project" && cargo fetch --locked)
     done
+fi
+
+if ((dependencies_only)); then
+    exit 0
 fi
 
 (cd "$repository_root" && bin/generated-merge --install)

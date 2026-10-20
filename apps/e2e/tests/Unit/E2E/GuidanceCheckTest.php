@@ -27,11 +27,14 @@ it('renders real guidance with unusable inherited cache paths', function (string
     }
 
     try {
-        $process = new Process(['composer', 'guidance:check'], $repository.'/apps/'.$app, $environment);
+        // One real render proves launcher isolation; the Gateway job owns the rest of its guidance suite.
+        $options = $app === 'gateway' ? ['--', '--filter=regenerates strict guidance'] : [];
+        $process = new Process(['composer', 'guidance:check', ...$options], $repository.'/apps/'.$app, $environment);
         $process->setTimeout(120);
         $process->run();
 
         expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
+        expect($process->getOutput())->toContain('passed')->not->toContain('No tests found');
         expect($files->get($fixture.'/unusable'))->toBe('not a directory');
         expect(glob($fixture.'/orbit-guidance.*'))->toBe([]);
     } finally {

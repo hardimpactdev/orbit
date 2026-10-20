@@ -18,8 +18,8 @@ it('copies pristine migrated databases with real commits without replacing the R
         DB::disconnect();
         File::deleteDirectory($home);
     });
-    $original = DB::connection('sqlite')->getPdo();
     $migrations = DB::table('migrations')->orderBy('migration')->pluck('migration')->all();
+    $original = DB::connection('sqlite')->getPdo();
 
     $this->useCommittedSqliteDatabase($home.'/first.sqlite');
 

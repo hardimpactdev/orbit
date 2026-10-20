@@ -39,7 +39,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Cache;
@@ -93,7 +93,7 @@ uses(WithCachedConfig::class, WithCachedRoutes::class)
         'Feature/Fleet/NightlyRecipeAutoMergeTest.php',
     );
 
-uses(TestCase::class, RefreshDatabase::class)
+uses(TestCase::class, LazilyRefreshDatabase::class)
     ->beforeEach(function (): void {
         $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
         // Direct-file staging must be isolated too, not just writes through the Storage facade.

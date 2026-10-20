@@ -111,26 +111,70 @@ it('puts every test that starts PHP in the subprocess group', function (string $
     expect($untagged)->toBe([], 'Add `pest()->group(\'subprocess\');` to these tests, so the subprocess coverage boundary stays explicit.');
 })->with(SUBPROCESS_GROUP_PROJECTS);
 
-it('includes every subprocess test class in the full suite without separate CI lanes', function (string $project): void {
-    $listing = function (array $options) use ($project): array {
+/** @return array{full: list<string>, subprocess: list<string>} */
+function subprocess_group_listing(string $project): array
+{
+    static $listings = [];
+    if (! isset($listings[$project])) {
+        $listing = temporaryPath('orbit-subprocess-list-').'.xml';
         $process = new Process([
-            'vendor/bin/pest', '--no-tia', '--list-tests', '--colors=never',
-            '--do-not-fail-on-empty-test-suite', ...$options,
-        ], base_path('../../'.$project));
+            PHP_BINARY, '-d', 'pcov.enabled=0', 'vendor/bin/pest', '--no-tia', '--list-tests-xml', $listing,
+            '--colors=never', '--do-not-fail-on-empty-test-suite',
+        ], dirname(__DIR__, 5).'/'.$project);
         $process->mustRun();
-        preg_match_all('/^ - ([^:\\r\\n]+)::/m', $process->getOutput(), $matches);
+        $xml = new SimpleXMLElement((string) file_get_contents($listing));
+        $xml->registerXPathNamespace('p', 'https://xml.phpunit.de/testSuite');
+        $listings[$project] = [
+            'full' => array_map(static fn (SimpleXMLElement $name): string => (string) $name, $xml->xpath('//p:testClass/@name') ?: []),
+            'subprocess' => array_values(array_unique(array_map(
+                static fn (SimpleXMLElement $id): string => explode('::', (string) $id)[0],
+                $xml->xpath('//p:group[@name="subprocess"]/p:test/@id') ?: [],
+            ))),
+        ];
+    }
 
-        return array_values(array_unique($matches[1]));
-    };
-    $full = $listing([]);
-    $subprocess = $listing(['--group=subprocess']);
+    return $listings[$project];
+}
 
-    expect($full)->not->toBeEmpty();
+beforeAll(function (): void {
+    foreach (SUBPROCESS_GROUP_PROJECTS as $project) {
+        subprocess_group_listing($project);
+    }
+});
+
+it('includes every subprocess test class in the full suite without separate CI lanes', function (string $project, array $directories): void {
+    ['full' => $full, 'subprocess' => $subprocess] = subprocess_group_listing($project);
+    $suiteClasses = array_filter($full, static fn (string $class): bool => array_any(
+        $directories,
+        static fn (string $directory): bool => str_starts_with($class, 'P\\'.str_replace('/', '\\', ucfirst($directory))),
+    ));
+
+    expect($suiteClasses)->not->toBeEmpty();
     if ($project !== 'packages/php-sdk') {
         expect($subprocess)->not->toBeEmpty();
     }
     expect(array_values(array_diff($subprocess, $full)))->toBe([]);
-})->with(SUBPROCESS_GROUP_PROJECTS);
+    foreach (subprocess_group_tests($project) as $path => $reason) {
+        if (array_any($directories, static fn (string $directory): bool => str_starts_with($path, $directory))) {
+            $class = 'P\\'.str_replace('/', '\\', ucfirst(substr($path, 0, -4)));
+            expect($full)->toContain($class);
+            expect($subprocess)->toContain($class);
+        }
+    }
+})->with(function (): array {
+    $datasets = [];
+    foreach (SUBPROCESS_GROUP_PROJECTS as $project) {
+        $root = dirname(__DIR__, 5).'/'.$project;
+        $config = new SimpleXMLElement((string) file_get_contents(is_file($root.'/phpunit.xml') ? $root.'/phpunit.xml' : $root.'/phpunit.xml.dist'));
+        foreach ($config->xpath('//testsuite') ?: [] as $suite) {
+            $name = (string) $suite['name'];
+            $directories = array_map(static fn (SimpleXMLElement $directory): string => trim(ltrim(trim((string) $directory), './'), '/').'/', $suite->xpath('directory') ?: []);
+            $datasets[$project.' '.$name] = [$project, $directories];
+        }
+    }
+
+    return $datasets;
+});
 
 it('detects PHP subprocesses started directly and through helpers', function (): void {
     expect(subprocess_group_reason('new Process([PHP_BINARY, base_path(\'artisan\')]);', []))->toBe('PHP_BINARY')
