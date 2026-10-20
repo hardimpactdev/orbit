@@ -18,7 +18,7 @@ use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
-use Symfony\Component\Console\Exception\RuntimeException as ConsoleRuntimeException;
+use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Process\Process;
@@ -107,11 +107,13 @@ function run_instance_source_consent(array $case, array $keys, bool $pty = true)
             $errors = new BufferedOutput;
             $output = Mockery::mock(BufferedOutput::class.'[getErrorOutput,setErrorOutput]', ConsoleOutputInterface::class, []);
             $output->shouldReceive('getErrorOutput')->andReturn($errors);
+            $input = new StringInput(implode(' ', array_map(escapeshellarg(...), $case['arguments'])));
+            $stream = fopen('php://memory', 'r+');
+            $input->setStream($stream);
             try {
-                $status = Artisan::call(implode(' ', array_map(escapeshellarg(...), $case['arguments'])), [], $output);
-            } catch (ConsoleRuntimeException $exception) {
-                expect($exception->getMessage())->toContain('option does not exist');
-                $status = 1;
+                $status = Artisan::handle($input, $output);
+            } finally {
+                fclose($stream);
             }
 
             return ['status' => $status, 'output' => $output->fetch(), 'stderr' => $errors->fetch(), 'requests' => $requests];
@@ -259,7 +261,8 @@ it('refuses the removed Project creation options before any request', function (
     $case = instance_source_consent_case('register');
     $case['arguments'] = [...$case['arguments'], $option, '--yes', '--json'];
     $result = run_instance_source_consent($case, [], pty: false);
-    expect($result['status'])->not->toBe(0)->and($result['requests'])->toBe([]);
+    expect($result['status'])->not->toBe(0)->and($result['requests'])->toBe([])
+        ->and($result['output'].$result['stderr'])->toContain('option does not exist');
 })->with(['--project-slug=source', '--project-name=Source', '--default-branch=main']);
 
 it('preserves the Gateway deployment-eligibility refusal before deploy-step consent', function (): void {

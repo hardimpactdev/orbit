@@ -135,6 +135,28 @@ describe('Gateway read retry', function (): void {
             ->and($attempts[1]['timeout'])->toBe(899.25);
     });
 
+    it('accounts for elapsed time with the production default clock', function (): void {
+        $attempts = gateway_read_retry_attempts($connector = gateway_read_retry_connector(), [
+            static function (RequestInterface $request): PromiseInterface {
+                usleep(10000);
+
+                return gateway_read_retry_failure(NetworkException::class, 56, 'Recv failure: Connection reset by peer')($request);
+            },
+            gateway_read_retry_ok(),
+        ]);
+        $startedAt = hrtime(true);
+
+        $response = $connector->send(gateway_read_retry_request(Method::GET));
+        $elapsed = (hrtime(true) - $startedAt) / 1_000_000_000;
+
+        expect($response->status())->toBe(200)
+            ->and($attempts->count())->toBe(2)
+            ->and($attempts[0]['timeout'])->toBe(900)
+            ->and($attempts[1]['delay'])->toBe(250)
+            ->and($attempts[1]['timeout'])->toBeGreaterThanOrEqual(899.75 - $elapsed)
+            ->toBeLessThanOrEqual(899.74);
+    });
+
     it('does not retry when the request timeout has no time left', function (float $elapsed): void {
         $now = 100.0;
         $connector = new GatewayConnector('https://10.70.0.1', timeout: 1);

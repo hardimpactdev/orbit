@@ -280,7 +280,7 @@ describe('dependency inventory payloads', function (): void {
         try {
             // The resolutions ceiling also exercises Saloon. Test the larger requirements
             // ceiling directly instead of parsing this 200,001-item body twice in transport.
-            DependencyInventoryDecoder::decode($body, 17, '11111111-1111-4111-8111-111111111111', false);
+            DependencyInventoryDecoder::decode($body, 17, null, false);
             $this->fail('Malformed inventory was accepted.');
         } catch (GatewayApiException $exception) {
             expect($exception->getMessage())->toBe('Gateway response contains invalid dependency inventory data.')

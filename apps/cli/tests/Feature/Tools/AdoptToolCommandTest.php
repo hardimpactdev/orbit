@@ -9,7 +9,6 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
@@ -162,14 +161,18 @@ it('includes the supplied constraint in the consent question and the request', f
 });
 
 it('does not prompt for consent when --yes is explicit', function (bool $json): void {
-    $reply = tool_adopt_consent_reply();
-    $mock = MockClient::global([AdoptToolRequest::class => MockResponse::make($reply['body'], $reply['status'])]);
-    $this->artisan('tool:adopt', [
-        'package' => 'jq', '--node' => '2', '--manager' => 'apt', '--yes' => true,
-        '--no-ansi' => true, '--json' => $json,
-    ])->doesntExpectOutputToContain('Take ownership of package')->assertSuccessful();
-    $mock->assertSentCount(1);
-    expect($mock->getLastRequest())->toBeInstanceOf(AdoptToolRequest::class);
+    $arguments = ['tool:adopt', 'jq', '--node=2', '--manager=apt', '--yes', '--no-ansi'];
+    if ($json) {
+        $arguments[] = '--json';
+    }
+    $result = run_tool_adopt_consent($arguments, [], [tool_adopt_consent_reply()]);
+
+    expect($result['status'])->toBe(0)
+        ->and($result['prompt_seen'])->toBeFalse()
+        ->and($result['output'])->not->toContain('Take ownership of package')
+        ->and($result['restored'])->toBeTrue()
+        ->and($result['requests'])->toHaveCount(1)
+        ->and($result['requests'][0]['class'])->toBe(AdoptToolRequest::class);
 })->with([
     'human' => [false],
     'json' => [true],

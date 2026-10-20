@@ -187,7 +187,7 @@ The command tests call the same `execute` dispatcher as the CLI to check argumen
 
 The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 500 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
 
-PNG generation and reuse are checked with WebKit on a phone and Chromium on desktop. The other device and engine pairings use `open` and real control clicks instead of writing duplicate PNGs. WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. Both engines remain installed and covered.
+PNG generation, first-use state, and viewport dimensions are checked for both phone and desktop on both engines. Repeated screenshots also check reuse with WebKit on a phone and Chromium on desktop. Real control clicks check the active page for each pairing. WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. Both engines remain installed and covered.
 
 ## Limits
 

@@ -38,7 +38,7 @@ describe('animation composition cadence', function (): void {
             ->and(animation_cadence_is_readable([0.0, 0.3, 1.0]))->toBeFalse();
     });
 
-    it('keeps outer ticks and the first inner phase readable across composition changes', function (string $transition): void {
+    it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
         expect(is_resource($process))->toBeTrue();
@@ -52,12 +52,13 @@ describe('animation composition cadence', function (): void {
         $changes = ['outer' => [], 'inner' => []];
         $glyphs = ['outer' => [], 'inner' => []];
         $buffer = '';
-        $admitted = $transition === 'resume';
+        $admitted = false;
         $resumed = false;
+        $resumeCount = 0;
 
         try {
             stream_set_blocking($pipes[1], false);
-            $send(['frames' => $transition === 'admission' ? $outerFrames : $nestedFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
+            $send(['frames' => $outerFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
             $deadline = microtime(true) + 4;
 
             while (microtime(true) < $deadline) {
@@ -68,9 +69,10 @@ describe('animation composition cadence', function (): void {
                     $admitted = true;
                 }
 
-                if ($transition === 'resume' && ! $resumed && $changes['inner'] !== [] && $now - $changes['inner'][0] >= 0.08) {
+                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= 0.08) {
                     $send(['frames' => $outerFrames]);
                     $resumed = true;
+                    $resumeCount = count($changes['outer']);
                 }
 
                 $read = [$pipes[1]];
@@ -99,22 +101,16 @@ describe('animation composition cadence', function (): void {
                     }
                 }
 
-                if (($transition === 'admission' && count($changes['inner']) >= 3)
-                    || ($transition === 'resume' && count($changes['outer']) >= 4)) {
+                if ($resumed && count($changes['outer']) >= $resumeCount + 3) {
                     break;
                 }
             }
 
-            expect($admitted)->toBeTrue()
-                ->and($resumed)->toBe($transition === 'resume')
-                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(4)
-                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue();
-            if ($transition === 'admission') {
-                expect(count($changes['inner']))->toBeGreaterThanOrEqual(3)
-                    ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
-            } else {
-                expect($changes['inner'])->toHaveCount(1);
-            }
+            expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
+                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
+                ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
+                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue()
+                ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
 
             foreach ($glyphs as $sequence) {
                 for ($index = 1; $index < count($sequence); $index++) {
@@ -128,7 +124,7 @@ describe('animation composition cadence', function (): void {
             stream_set_blocking($pipes[1], true);
             expect(stream_get_contents($pipes[1]))->toContain('Finished.', "\e[?25h");
             $receipts = array_filter(explode("\n", trim(stream_get_contents($pipes[3]))));
-            expect($receipts)->toHaveCount(2);
+            expect($receipts)->toHaveCount(3);
             expect(stream_get_contents($pipes[2]))->toBe('');
         } finally {
             foreach ($pipes as $pipe) {
@@ -145,7 +141,7 @@ describe('animation composition cadence', function (): void {
         }
 
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
-    })->with(['admission', 'resume']);
+    });
 
     it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (bool $reverse): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
@@ -200,12 +196,12 @@ describe('animation composition cadence', function (): void {
                     }
                 }
 
-                if ($linesSent >= 3 && count($changes) >= 3) {
+                if ($linesSent >= 3 && count($changes) >= 5) {
                     break;
                 }
             }
 
-            expect($linesSent)->toBe(3)->and(count($changes))->toBeGreaterThanOrEqual(3);
+            expect($linesSent)->toBe(3)->and(count($changes))->toBeGreaterThanOrEqual(5);
             $intervals = [];
 
             for ($i = 1; $i < count($changes); $i++) {

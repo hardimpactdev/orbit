@@ -16,6 +16,7 @@ use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Process\Process;
@@ -116,7 +117,14 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
             $errors = new BufferedOutput;
             $output = Mockery::mock(BufferedOutput::class.'[getErrorOutput,setErrorOutput]', ConsoleOutputInterface::class, []);
             $output->shouldReceive('getErrorOutput')->andReturn($errors);
-            $status = Artisan::call(implode(' ', array_map(escapeshellarg(...), $case['arguments'])), [], $output);
+            $input = new StringInput(implode(' ', array_map(escapeshellarg(...), $case['arguments'])));
+            $stream = fopen('php://memory', 'r+');
+            $input->setStream($stream);
+            try {
+                $status = Artisan::handle($input, $output);
+            } finally {
+                fclose($stream);
+            }
 
             return ['status' => $status, 'output' => $output->fetch(), 'stderr' => $errors->fetch(), 'requests' => $requests];
         }

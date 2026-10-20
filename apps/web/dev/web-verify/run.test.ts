@@ -156,8 +156,9 @@ it("stops a checkout that has no daemon", async () => {
     expect(extra.json.error).toBe("usage");
     expect(extra.json.command).toBe("stop");
 
-    const stopped = await run(fastHome, ["stop"]);
+    const stopped = runCLI(fastHome, ["stop"]);
     expect(stopped.status).toBe(0);
+    expect(stopped.stderr).toBe("");
     expect(stopped.json).toEqual({ ok: true, command: "stop" });
     expect(existsSync(join(fastHome, "session.json"))).toBe(false);
     expect(existsSync(join(fastHome, "server.log"))).toBe(false);
@@ -245,10 +246,8 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
             desktopClick.json.route?.startsWith("/activity?"),
     ).toBe(true);
 
-    // Check the other device/engine pairings without writing duplicate screenshots.
-    // The two PNGs above already exercise each engine's screenshot implementation.
     const phoneChromium = await run(browserHome, [
-        "open",
+        "screenshot",
         "/activity",
         "--device=iphone-15",
         "--engine=chromium",
@@ -256,10 +255,13 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
     expect(phoneChromium.status).toBe(0);
     expect(phoneChromium.json).toMatchObject({
         ok: true,
-        command: "open",
+        command: "screenshot",
         device: "iphone-15",
         engine: "chromium",
+        viewport: { width: 393, height: 659 },
+        reused: false,
     });
+    expectPng(repo, phoneChromium.json.file ?? "");
     expect((await run(browserHome, ["click", "[data-testid=nav-menu]"])).json).toMatchObject({
         ok: true,
         device: "iphone-15",
@@ -267,7 +269,7 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
     });
 
     const desktopWebkit = await run(browserHome, [
-        "open",
+        "screenshot",
         "/activity",
         "--device=desktop",
         "--engine=webkit",
@@ -275,10 +277,13 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
     expect(desktopWebkit.status).toBe(0);
     expect(desktopWebkit.json).toMatchObject({
         ok: true,
-        command: "open",
+        command: "screenshot",
         device: "desktop",
         engine: "webkit",
+        viewport: { width: 1280, height: 800 },
+        reused: false,
     });
+    expectPng(repo, desktopWebkit.json.file ?? "");
     expect(
         (await run(browserHome, ["click", "[data-testid=activity-filter-status]"])).json,
     ).toMatchObject({

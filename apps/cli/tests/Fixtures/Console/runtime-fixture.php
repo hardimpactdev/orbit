@@ -136,18 +136,6 @@ try {
                 });
             }
 
-            if ($case === 'nested-progress') {
-                $inner = new ProgressDisplay($mode, $output, 'Inner operation');
-                $inner->admit('inner', 'Read inner resource', 'Reading inner resource', 'Read inner resource');
-                $inner->during('inner', static function () use ($record, $firstPaint, $duration): void {
-                    $firstPaint('inner-progress');
-                    $record('inner-callback');
-                    usleep($duration ?? 1200000);
-                });
-                $inner->complete('inner', ProgressState::Success);
-                $inner->finish('Inner operation completed.');
-            }
-
             $events = (static function () use ($duration): Generator {
                 usleep($duration ?? 650000);
                 yield 'accepted';
