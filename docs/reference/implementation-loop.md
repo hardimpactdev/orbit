@@ -8,7 +8,7 @@ covers:
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
-  - .github/{workflows/*.yml,actions/php/action.yml}
+  - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
   - apps/gateway/{phpunit.xml,tests/Support/TestDatabase{Environment,Guard}.php}
 ---
 
@@ -85,7 +85,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On PRs, Gateway runs quality checks and the shard-union check here; its tests run in the four shard jobs |
 | Gateway shards (1), (2), (3), (4) | Every pull request: four stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
-| Gateway privileged (1)–(2) | Every CI event: stock Pest shards of the privileged group, with an exact union check |
+| Gateway privileged | Every CI event: the whole privileged group on one disposable GitHub-hosted runner |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, separate `bun run test:unit` and `bun run test:browser` steps, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
@@ -180,29 +180,27 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use th
 
 ### Gateway shards
 
-Each PR runs a static matrix `[1, 2, 3, 4]` with `vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=N/4`. The required Gateway privileged jobs run every privileged case. The Gateway quality job runs independently, so quality checks overlap all four shards. No planner, plan artifact, API polling or hand-built class filter is involved.
+Each PR runs a static matrix `[1, 2, 3, 4]` with `vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=N/4`. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all four shards. No planner, plan artifact, API polling or hand-built class filter is involved.
 
 #### Gateway tests and privilege
 
-A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged jobs.
+A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged job.
 
-Gateway's default `phpunit.xml` excludes that group, so full, affected, subprocess, and focused ordinary runs all leave it out. The XML exclusion keeps Pest TIA enabled and gives its saved graph the same selection and fingerprint in CI and local checks; a command-line exclusion would disable TIA. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. The shard coverage checks list each group separately with the same selection as its test command.
+Gateway's default `phpunit.xml` excludes that group, so full, affected, subprocess, and focused ordinary runs all leave it out. The XML exclusion keeps Pest TIA enabled and gives its saved graph the same selection and fingerprint in CI and local checks; a command-line exclusion would disable TIA. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. The ordinary shard coverage check uses the same selection as its test command.
 
 On macOS, `LinuxHost::delegate()` keeps the selected case's privilege group when it runs that case on `ORBIT_LINUX_TEST_HOST`. Ordinary delegation keeps the default exclusion. A deliberately selected privileged case adds `--group=privileged` for the child and needs a disposable Linux host with the case's privileged prerequisites. Delegation still requires exactly one passed case.
 
 Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
-Before ordinary Gateway checks or tests, after system setup, one CI step denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all four PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
+Before ordinary Gateway checks or tests, after system setup, the shared `.github/actions/no-sudo` action denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all four PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
 
-Stock PHPUnit `Before` and `After` fixture hooks also put a denying `sudo` shim first on PATH and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
+Stock PHPUnit `Before` and `After` fixture hooks also put a denying `sudo` shim first on PATH and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. This shim is a fast net, not a security boundary: it does not catch absolute `/usr/bin/sudo` calls or hand-pinned PATHs that omit it. The runner check that ordinary runners have no sudo is the boundary. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
 
 Composer supervisor and check-runner fixtures set `COMPOSER_ALLOW_SUPERUSER=1` so Composer does not run its unrelated `sudo -K` credential cleanup. The check-runner fixture sets it in its account's login profile, which loads after the real check program filters its environment, including for authenticated setup and nested Composer scripts. The guard regression runs failing fixture cases through Pest to prove that a new sudo call fails the suite.
 
-The privileged group runs on two disposable GitHub-hosted runners with passwordless sudo. Each matrix job uses stock Pest `--shard=N/2`, four parallel processes, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. The Gateway quality job runs `bin/check-pest-shards --group=privileged --shards=2`: it only lists the whole group and each stock shard, rejects empty shards, missing or extra tests, and overlapping selections, and reports the counts in the job summary. `Required checks` requires the whole matrix to pass. The managed-unit check-runner cases live in their own privileged file so their shard does not inherit the ordinary check-runner file's timing.
+The privileged group runs in one job on a disposable GitHub-hosted runner with passwordless sudo. It runs the whole group with four parallel processes, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. `Required checks` requires this job to pass.
 
-Privileged jobs install the recipe PHP build, Composer dependencies, ACL tools, and the `caddy` Unix account. They do not install Homebrew, Caddy, OpenSSL, WireGuard tools, or Node. The Valkey tests keep `ORBIT_TEST_DOCKER=1`; Docker pulls their image when their shard first starts a container. No other shard pulls it.
-
-Implementation review may use local evidence before Orbit publishes the approved commit. Before merge, the orchestrator reads every complete privileged job duration, including setup, and the Gateway shard durations from the same PR CI run. It records the run URL, tested commit, each duration, total runner-minutes and privileged runner-minutes on the PR, and verifies that every privileged shard finishes under the fastest Gateway shard. Local test timings do not establish the hosted-runner budget.
+The privileged job installs the recipe PHP build, Composer dependencies, ACL tools, and the `caddy` Unix account. It does not install Homebrew, Caddy, OpenSSL, WireGuard tools, or Node. The Valkey tests keep `ORBIT_TEST_DOCKER=1`; Docker pulls their image when a test first starts a container.
 
 Stock Pest reads the committed `apps/gateway/tests/.pest/shards.json` for time balancing. Refresh it with a real full run on a disposable Linux machine with the privileged prerequisites. In `apps/gateway`, copy `phpunit.xml` to `phpunit.shard-refresh.xml` and remove its `<groups>` element so the recording includes both ordinary and privileged cases. Run `ORBIT_TEST_DOCKER=1 php -d auto_prepend_file=tests/bootstrap.php vendor/bin/pest --configuration=phpunit.shard-refresh.xml --parallel --processes=4 --no-tia --update-shards`, remove the temporary configuration, and commit the changed timings in a PR.
 
@@ -210,7 +208,7 @@ Loading the test bootstrap first gives Pest's parent and workers the same tempor
 
 The Gateway quality job runs `bin/check-pest-shards`. It uses Pest's own `--list-tests` output for the full non-privileged suite and each of the four stock shards. It requires their union to equal the full listing and rejects duplicate assignments. A class that lands in no shard fails CI. Architecture and subprocess tests are part of this listing too.
 
-Ordinary runs on main never shard; the privileged matrix runs on every CI event. Each main run keeps one full non-privileged Gateway recording run, because Pest writes one whole TIA graph per run. That graph and the exported cache artifact must describe the tested commit.
+Ordinary runs on main never shard; the privileged job runs on every CI event. Each main run keeps one full non-privileged Gateway recording run, because Pest writes one whole TIA graph per run. That graph and the exported cache artifact must describe the tested commit.
 
 ### Self-hosted Gateway runner
 
@@ -224,9 +222,9 @@ A job never installs software on Sabre: the former PHP setup action made `/usr/l
 
 The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
 
-Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user must have no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
+Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege). The hand-made `/etc/sudoers.d/github-runner` grant is absent.
 
-When this change merges, the orchestrator removes the hand-made `/etc/sudoers.d/github-runner`; until then CI refuses Sabre. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
+Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. The rule covers only the runner user's traffic, which is another reason the user must not have sudo. The runner accepts only code from this repository.
 
@@ -544,7 +542,7 @@ The worker uses `git` and the GitHub CLI with the login of the user who runs it.
 4. finds the newest commit on which the project's jobs passed;
 5. downloads, checks, and publishes that commit's graph and quality caches.
 
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has `Gateway` and the two `Gateway privileged (N)` matrix jobs on main. E2E and the other Composer projects have one job each. Their full suites include the subprocess tests. A failure in any of a project's jobs counts as a failure of the project.
+The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has `Gateway` and `Gateway privileged` jobs on main. E2E and the other Composer projects have one job each. Their full suites include the subprocess tests. A failure in any of a project's jobs counts as a failure of the project.
 
 Before it publishes, the worker checks that:
 

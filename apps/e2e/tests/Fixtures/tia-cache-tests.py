@@ -928,17 +928,13 @@ class CiImportTest(CacheFixture):
         # The run passed for Docs but published no artifact, so the import fails without a correctness hold.
         self.assertEqual('maintenance_failure', self.state()['results'][self.project]['checks'][-1]['kind'])
         self.assertEqual(self.commit, cache.read_publication(self.store, self.project)['tested_commit'])
-        self.assertEqual(('failure', ['Gateway privileged (3)']), cache.job_result(
-            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged (1)', 'conclusion': 'success'},
-             {'name': 'Gateway privileged (3)', 'conclusion': 'failure'}], 'apps/gateway'))
-        self.assertEqual((None, []), cache.job_result([{'name': 'Gateway privileged (1)', 'conclusion': 'success'}],
-                                                      'apps/gateway'))
-        self.assertEqual((None, []), cache.job_result(
-            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged (2)', 'conclusion': None}],
+        self.assertEqual(('failure', ['Gateway privileged']), cache.job_result(
+            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged', 'conclusion': 'failure'}],
             'apps/gateway'))
+        self.assertEqual((None, []), cache.job_result([{'name': 'Gateway privileged', 'conclusion': 'success'}],
+                                                      'apps/gateway'))
         self.assertEqual(('success', []), cache.job_result(
-            [{'name': 'Gateway', 'conclusion': 'success'},
-             *({'name': f'Gateway privileged ({index})', 'conclusion': 'success'} for index in range(1, 5))],
+            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged', 'conclusion': 'success'}],
             'apps/gateway'))
         self.assertEqual(('failure', ['Gateway']), cache.job_result(
             [{'name': 'Gateway', 'conclusion': 'timed_out'}], 'apps/gateway'))

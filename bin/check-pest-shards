@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Require stock Pest shards to partition the ordinary suite or privileged group.
+"""Require stock Pest shards to partition the ordinary suite.
 
 Run from the project directory. Pest owns selection and time balancing; this
 check compares its actual listings, not a second implementation of sharding.
 """
-import argparse
 from collections import Counter
-import os
 import subprocess
 import sys
 
 
-def listed_tests(*options):
-    command = ['vendor/bin/pest', '--no-tia', *options, '--list-tests', '--colors=never']
+def listed_classes(*options):
+    command = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged', *options, '--list-tests', '--colors=never']
     result = subprocess.run(command, capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise ValueError(f'Pest listing failed ({" ".join(command)}):\n{result.stdout}{result.stderr}')
@@ -20,11 +18,6 @@ def listed_tests(*options):
     tests = [line[3:] for line in result.stdout.rstrip().removesuffix('.').splitlines() if line.startswith(' - ')]
     if not tests or any('::' not in test for test in tests):
         raise ValueError(f'Pest returned an empty or unreadable listing ({" ".join(command)}).')
-    return set(tests)
-
-
-def listed_classes(*options):
-    tests = listed_tests('--exclude-group=privileged', *options)
     # Pest can shorten method names differently when a class is filtered. The
     # stock shard filter selects whole classes, so compare that stable unit.
     return {test.split('::', 1)[0] for test in tests}
@@ -42,44 +35,8 @@ def check():
     print(f'All {len(full)} non-privileged test classes appear in exactly one of four stock Pest shards.')
 
 
-def privileged_shards(shards):
-    """Require the exact test union, including datasets, of the privileged matrix."""
-    if shards < 1:
-        raise ValueError('The privileged shard count must be positive.')
-    options = ('--group=privileged', '--fail-on-empty-test-suite')
-    whole = listed_tests(*options)
-    union = set()
-    rows = []
-    for index in range(1, shards + 1):
-        shard = f'{index}/{shards}'
-        selected = listed_tests(*options, f'--shard={shard}')
-        overlap = selected & union
-        if overlap:
-            raise ValueError(f'Privileged shard {shard} overlaps an earlier shard: {min(overlap)}')
-        union.update(selected)
-        rows.append(f'| {shard} | {len(selected)} |')
-    missing, extra = whole - union, union - whole
-    if missing or extra:
-        raise ValueError(f'Privileged shard union differs from the group: {len(missing)} missing, {len(extra)} extra.\n'
-                         + '\n'.join(sorted(missing | extra)))
-    report = ('## Privileged shard coverage\n\n| Shard | Tests |\n| --- | ---: |\n'
-              + '\n'.join(rows) + f'\n\nUnion: {len(union)} / {len(whole)} privileged tests, no overlap.\n')
-    print(report)
-    summary = os.environ.get('GITHUB_STEP_SUMMARY')
-    if summary:
-        with open(summary, 'a') as file:
-            file.write(report)
-
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--group', choices=('privileged',))
-    parser.add_argument('--shards', type=int, default=4, help='the privileged matrix size')
-    arguments = parser.parse_args()
     try:
-        if arguments.group == 'privileged':
-            privileged_shards(arguments.shards)
-        else:
-            check()
+        check()
     except ValueError as error:
         sys.exit(str(error))

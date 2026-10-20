@@ -183,24 +183,11 @@ jobs:
       - name: Require no sudo for ordinary Gateway tests
         id: gateway-no-sudo
         if: matrix.project.directory == 'apps/gateway'
-        env:
-          RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: |
-          if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
-            sudo sh -c 'printf "%s ALL=(ALL:ALL) !ALL\n" "$1" > /etc/sudoers.d/zz-orbit-no-sudo; chmod 0440 /etc/sudoers.d/zz-orbit-no-sudo' sh "$(id -un)"
-          fi
-          if sudo -n true; then
-            echo 'Ordinary Gateway tests require a runner without sudo.' >&2
-            exit 1
-          fi
+        uses: ./.github/actions/no-sudo
 
       - name: Verify Gateway shard coverage
         if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: ../../bin/check-pest-shards
-
-      - name: Verify privileged shard coverage
-        if: matrix.project.directory == 'apps/gateway'
-        run: ../../bin/check-pest-shards --group=privileged --shards=2
 
       - name: Run project quality checks
         run: composer check
@@ -376,32 +363,19 @@ jobs:
           cp .env.example .env
           composer install --no-interaction --prefer-dist
 
+      - name: Require no sudo for ordinary Gateway tests
+        uses: ./.github/actions/no-sudo
+
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       # Four workers per shard leave room for other jobs on these shared hosts.
-      - name: Require no sudo for ordinary Gateway tests
-        env:
-          RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: |
-          if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
-            sudo sh -c 'printf "%s ALL=(ALL:ALL) !ALL\n" "$1" > /etc/sudoers.d/zz-orbit-no-sudo; chmod 0440 /etc/sudoers.d/zz-orbit-no-sudo' sh "$(id -un)"
-          fi
-          if sudo -n true; then
-            echo 'Ordinary Gateway tests require a runner without sudo.' >&2
-            exit 1
-          fi
-
       - name: Run Gateway shard ${{ matrix.shard }}
         run: vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact
 
   privileged:
-    name: Gateway privileged (${{ matrix.shard }})
-    # Only disposable hosted runners may run this group: each has passwordless sudo, never fleet-host root.
+    name: Gateway privileged
+    # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
     defaults:
       run:
         working-directory: apps/gateway
@@ -424,11 +398,11 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      # Only the shard with Valkey tests pulls its image, on the first real docker run.
-      - name: Run privileged shard ${{ matrix.shard }}
+      # Valkey tests pull their image on the first real docker run.
+      - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --fail-on-empty-test-suite --compact --colors=never
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
