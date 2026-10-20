@@ -51,8 +51,6 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
-pest()->group('privileged');
-
 function check_runner_checkout(string $check): string
 {
     $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
@@ -74,10 +72,17 @@ function check_runner_instance(string $checkout, array $group = []): Instance
     return test_ready_task_workspace($project, $node, ['name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8'], $group);
 }
 
+function check_runner_shell(LocalShellSshExecutor $transport): LocalShellSshExecutor
+{
+    $transport->environment['HOME'] = test()->directory.'/home';
+
+    return $transport;
+}
+
 function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
 {
     if ($transport instanceof LocalShellSshExecutor) {
-        $transport->environment['HOME'] = test()->directory.'/home';
+        check_runner_shell($transport);
     }
     $vp = new VpToolManager(
         new RemoteToolCommandRunner(
@@ -348,6 +353,8 @@ beforeEach(function (): void {
     // Each test owns one directory, so a concurrent run on the same machine keeps its checkouts.
     $this->directory = sys_get_temp_dir().'/orbit-task-check-'.bin2hex(random_bytes(6));
     File::ensureDirectoryExists($this->directory.'/home');
+    // Login shells load this after the check program filters its environment.
+    File::put($this->directory.'/home/.profile', "export COMPOSER_ALLOW_SUPERUSER=1\n");
 });
 
 afterEach(function (): void {
@@ -1330,7 +1337,7 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         {
             $this->commands[] = $command;
 
-            return new LocalShellSshExecutor()->execute($connection, $command);
+            return check_runner_shell(new LocalShellSshExecutor)->execute($connection, $command);
         }
     };
     $runner = check_runner($transport);
@@ -1575,7 +1582,7 @@ it('recovers an exact managed run and never exposes a result before descendants 
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
-});
+})->group('privileged');
 
 it('tombstones a missing managed start and refuses a delayed original without executing it', function (): void {
     $checkout = check_runner_checkout('true');
@@ -1611,7 +1618,7 @@ it('keeps finished managed results bound to their run when a newer check complet
             (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
         }
     }
-});
+})->group('privileged');
 
 it('records a failed uncertain outcome after a managed check terminates without a result', function (bool $cancel): void {
     $checkout = check_runner_checkout('true');
@@ -1647,7 +1654,7 @@ it('records a failed uncertain outcome after a managed check terminates without 
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
-})->with(['cancel' => [true], 'killed supervisor and descendants' => [false]]);
+})->with(['cancel' => [true], 'killed supervisor and descendants' => [false]])->group('privileged');
 
 it('keeps a lost managed supervisor fenced until its surviving descendant terminates', function (): void {
     $checkout = check_runner_checkout('true');
@@ -1683,7 +1690,7 @@ it('keeps a lost managed supervisor fenced until its surviving descendant termin
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
-});
+})->group('privileged');
 
 it('keeps secret-bearing output records intact until the shared builder runs at the real transport boundary', function (string $source, int $secretBytes, string $format): void {
     $checkout = check_runner_checkout('true');

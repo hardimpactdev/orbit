@@ -55,6 +55,7 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\GuardsSudo;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\RealStorageGuard;
 use Tests\Support\SshGuardedProcessRunner;
@@ -84,6 +85,8 @@ require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
+
+uses(GuardsSudo::class)->in('Feature', 'Unit', 'Fixtures', 'Rehearsal');
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

@@ -199,6 +199,12 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
 
+A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged job. Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
+
+Stock PHPUnit `Before` and `After` fixture hooks put a denying `sudo` shim first on PATH for ordinary tests and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
+
+Composer supervisor and check-runner fixtures set `COMPOSER_ALLOW_SUPERUSER=1` so Composer does not run its unrelated `sudo -K` credential cleanup. The check-runner fixture sets it in its account's login profile, which loads after the real check program filters its environment, including for authenticated setup and nested Composer scripts. The guard regression runs failing fixture cases through Pest to prove that a new sudo call fails the suite.
+
 The plan assigns classes longest first using recorded timings plus 0.2 seconds per test for application boot. Unknown classes use the median class time. PR selection follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
 
 The shards run different numbers of Pest processes: 6 for the first shard on Sabre, 4 for each of the others. So the plan gives each class, longest first, to the shard that would end first: its process seconds divided by its processes.
@@ -375,6 +381,8 @@ When the candidate changes the project, the gate runs that project’s architect
 On every nonempty candidate diff, the gate runs the E2E topology catalog and the Composer, subprocess-group, and Docs merge-ref configuration contracts. These tests read files across projects. TIA cannot reliably link all those inputs to the tests. Architecture and artifact checks always use the full candidate diff, even at a task handoff.
 
 When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+
+Gateway fallback runs exclude `privileged` with Pest's group filter. For a changed Gateway test file, the gate first requires unfiltered discovery to find tests, then lists it with that filter. It runs the file only when ordinary cases remain. This keeps ordinary cases in mixed files covered without launching privileged-only files, including service rehearsals that require their own prepared disposable VM. The privileged CI job and explicit rehearsal runs remain responsible for those cases.
 
 #### Projects run at the same time
 

@@ -46,7 +46,7 @@ function composer_update_program_fixture(string $path, string $preUpdate): void
         '--no-interaction',
         '--no-ansi',
         '--no-audit',
-    ], timeout: 30);
+    ], env: ['COMPOSER_ALLOW_SUPERUSER' => '1'], timeout: 30);
     $lock->mustRun();
 }
 
@@ -61,6 +61,7 @@ function composer_update_program_run(string $path, string $deadline, ?Closure $c
             $deadline,
         ],
         timeout: $timeout,
+        environment: ['COMPOSER_ALLOW_SUPERUSER' => '1'],
         protectedInput: ProtectedInput::holdOpen(),
         cancelled: $cancelled,
     ));

@@ -410,6 +410,7 @@ def main():
     def run_entry(lane, order, project, project_commands):
         commands_run = []
         commands = list(project_commands)
+        excluded_groups = ('--exclude-group=privileged',) if project == 'apps/gateway' else ()
         triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
         if project_commands == PHP_COMMANDS and any(path.startswith(triggers) for path in paths):
             commands.extend(('vendor/bin/pest', architecture_path)
@@ -443,10 +444,14 @@ def main():
                     result = subprocess.CompletedProcess(command, 127)
             budget.release(lane)
             if len(command) > 1 and command[1] == '--list-tests' and result.returncode == 0:
-                if not re.search(r'^\s*-\s+\S+', log.read_text(errors='replace'), re.MULTILINE):
+                discovered = re.search(r'^\s*-\s+\S+', log.read_text(errors='replace'), re.MULTILINE)
+                filtered = bool(excluded_groups) and excluded_groups[0] in command
+                if not discovered and not filtered:
                     result = subprocess.CompletedProcess(command, 1)
                     with log.open('a') as output:
                         output.write('Pest did not discover any tests in the changed file.\n')
+                elif discovered and filtered:
+                    commands.append((*FULL_SUITE, *excluded_groups, command[-1]))
             check = {'project': project, 'command': list(executed_command), 'exit_code': result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
             warning = selection_warning(project, command, result.returncode, log, test_paths)
@@ -468,14 +473,17 @@ def main():
                 check['selection_evidence_current'] = has_current_evidence
                 check['selection_artifact'] = str(run_tia_directory / 'affected.json')
                 if warning is not None:
-                    commands.append(PARALLEL_FULL_SUITE)
+                    commands.append((*PARALLEL_FULL_SUITE, *excluded_groups))
                 for test in changed_php_tests(test_paths):
                     if not test.startswith(project + '/'):
                         continue
                     relative = test[len(project) + 1:]
                     if (root / test).is_file() and relative not in selected_tests:
-                        commands.extend((('vendor/bin/pest', '--list-tests', relative),
-                                         (*FULL_SUITE, relative)))
+                        commands.append(('vendor/bin/pest', '--list-tests', relative))
+                        if excluded_groups:
+                            commands.append(('vendor/bin/pest', '--list-tests', *excluded_groups, relative))
+                        else:
+                            commands.append((*FULL_SUITE, relative))
 
     def run_lane(entries):
         lane = lane_key(entries)
