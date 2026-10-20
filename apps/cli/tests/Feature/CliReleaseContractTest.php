@@ -405,9 +405,9 @@ describe('CLI release workflow', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
         expect($jobs['publish']['permissions'])->toBe(['contents' => 'write'])
-            ->and($jobs['publish']['steps'][0])->toBe([
+            ->and($jobs['publish']['steps'][0]['uses'])->toStartWith('actions/checkout@')
+            ->and($jobs['publish']['steps'][0])->toMatchArray([
                 'name' => 'Check out the release scripts',
-                'uses' => 'actions/checkout@v7',
                 'with' => ['persist-credentials' => false],
             ])
             ->and($jobs['build'])->not->toHaveKey('permissions')
@@ -435,7 +435,7 @@ function cli_binary_workflow(): array
 function cli_binary_step_uses(array $job): array
 {
     return array_values(array_filter(array_map(
-        static fn (array $step): ?string => $step['uses'] ?? null,
+        static fn (array $step): ?string => isset($step['uses']) ? explode('@', $step['uses'])[0] : null,
         $job['steps'],
     )));
 }
@@ -516,7 +516,7 @@ describe('CLI binary workflow', function (): void {
 
         expect($runMacos['runs-on'])->toBe('macos-26')
             ->and($runMacos['needs'])->toBe('build')
-            ->and(cli_binary_step_uses($runMacos))->toBe(['actions/download-artifact@v8'])
+            ->and(cli_binary_step_uses($runMacos))->toBe(['actions/download-artifact'])
             ->and($runMacos['steps'][0]['with'])->toBe(['name' => 'orbit-macos-arm64', 'path' => 'binary'])
             ->and($run['env'])->toBe(['VERSION' => '${{ needs.build.outputs.version }}'])
             ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin binary/mac-arm --version')
@@ -529,7 +529,7 @@ describe('CLI binary workflow', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
         // A local action exists only after checkout, which under workflow_call checks out the release commit.
-        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout@v7', './.github/actions/php']);
+        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout', './.github/actions/php']);
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];

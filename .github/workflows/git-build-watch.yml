@@ -20,24 +20,35 @@ concurrency:
 jobs:
   check:
     if: github.repository == 'nckrtl/orbit'
-    permissions:
-      contents: read
-      issues: write
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check published PPA builds and Ubuntu Git notices
         run: python3 bin/git-build-watch --output "$RUNNER_TEMP/git-build-watch.md"
       - name: Upload the review signal
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: git-build-watch
           path: ${{ runner.temp }}/git-build-watch.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish the Git update issue
+    needs: check
+    if: github.ref == 'refs/heads/main' && contains(fromJSON('["schedule", "workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-26.04
+    permissions:
+      issues: write
+    steps:
+      - name: Download the review signal
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: git-build-watch
+          path: ${{ runner.temp }}
       - name: Open or update the Git update issue
-        if: github.event_name != 'pull_request'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -52,4 +63,3 @@ jobs:
             } else {
               await github.rest.issues.create({owner, repo, title: 'Review Git recipe security updates', body, assignees: [owner]});
             }
-        # This job can only publish issues on trusted main/scheduled executions.

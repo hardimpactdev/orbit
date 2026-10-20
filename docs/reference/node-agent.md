@@ -374,7 +374,9 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
+A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
+
+The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
 
 ```bash
 gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
@@ -386,7 +388,7 @@ gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={com
 | `orbit-agent-{version}-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `SHA256SUMS` | The checksums of both binaries |
 
-The job refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
+The workflow refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
 
 Before merging an agent version bump, wait for its Rust tests and both static builds to pass, have the agent changes reviewed, and create the tag at that reviewed commit. Wait for the release workflow to publish all three assets. Then update `tools.orbit-agent` in `apps/gateway/resources/machine-software/recipe.json`: the version, both architecture URLs, and both SHA-256 digests from `SHA256SUMS`.
 

@@ -196,9 +196,9 @@ describe('Composer configuration', function (): void {
         $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
         expect($projectSteps['Export main caches']['if'])
             ->toBe("success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
+        expect($projectSteps['Publish main caches']['uses'])->toStartWith('actions/upload-artifact@');
         expect($projectSteps['Publish main caches'])->toMatchArray([
             'if' => $projectSteps['Export main caches']['if'],
-            'uses' => 'actions/upload-artifact@v7',
             'with' => [
                 'name' => 'sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}',
                 'path' => "\${{ matrix.project.directory }}/.orbit-tia/graph.json\n\${{ matrix.project.directory }}/.orbit-tia/manifest.json\n\${{ matrix.project.directory }}/.orbit-tia/quality/\n",
@@ -268,8 +268,8 @@ describe('Composer configuration', function (): void {
             ->toContain('ref: ${{ github.sha }}')
             ->toContain('repository: ${{ github.repository }}')
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
-            ->toContain('actions/cache/restore@v6')
-            ->toContain('actions/cache/save@v6')
+            ->toContain('actions/cache/restore@')
+            ->toContain('actions/cache/save@')
             ->toContain('path: ${{ matrix.project.directory }}/.orbit-tia')
             ->toContain("format('{0}/composer.lock', matrix.project.directory)")
             ->toContain("format('{0}/tests/Pest.php', matrix.project.directory)")
@@ -522,10 +522,10 @@ it('publishes the web build of each main push for the Gateway to install', funct
     $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
     $names = array_keys($steps);
 
-    expect($steps['Publish web build'])->toBe([
+    expect($steps['Publish web build']['uses'])->toStartWith('actions/upload-artifact@');
+    expect($steps['Publish web build'])->toMatchArray([
         'name' => 'Publish web build',
         'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
-        'uses' => 'actions/upload-artifact@v7',
         'with' => [
             'name' => 'web-dist-${{ github.sha }}',
             'path' => 'apps/web/dist',

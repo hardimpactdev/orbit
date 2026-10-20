@@ -12,9 +12,9 @@ it('caches Composer downloads through stock actions with main as the only writer
     $cache = $steps['Cache Composer downloads on main'];
 
     expect($locate['run'])->toContain('composer config cache-files-dir --global', 'composer --version');
-    expect($restore['uses'])->toBe('actions/cache/restore@v6');
+    expect($restore['uses'])->toStartWith('actions/cache/restore@');
     expect($restore['if'])->toBe("github.ref != 'refs/heads/main' || github.event_name == 'pull_request'");
-    expect($cache['uses'])->toBe('actions/cache@v6');
+    expect($cache['uses'])->toStartWith('actions/cache@');
     expect($cache['if'])->toBe("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
     expect($cache['with'])->toBe($restore['with'])->toBe([
         'path' => '${{ steps.composer-cache.outputs.path }}',
@@ -28,15 +28,15 @@ it('caches only Bun downloads before installs and only writes them on main', fun
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $steps = $workflow['jobs'][$name]['steps'];
     $byName = array_column($steps, null, 'name');
-    $setup = collect($steps)->firstWhere('uses', 'oven-sh/setup-bun@v2');
+    $setup = collect($steps)->first(fn (array $step): bool => str_starts_with($step['uses'] ?? '', 'oven-sh/setup-bun@'));
     $restore = $byName['Restore Bun downloads'];
     $cache = $byName['Cache Bun downloads on main'];
 
     expect($setup['id'])->toBe('bun');
-    expect($restore['uses'])->toBe('actions/cache/restore@v6');
+    expect($restore['uses'])->toStartWith('actions/cache/restore@');
     $restoreCondition = "github.ref != 'refs/heads/main' || github.event_name == 'pull_request'";
     expect($restore['if'])->toBe($guard.($guard === '' ? $restoreCondition : "({$restoreCondition})"));
-    expect($cache['uses'])->toBe('actions/cache@v6');
+    expect($cache['uses'])->toStartWith('actions/cache@');
     expect($cache['if'])->toBe($guard."github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
     expect($cache['with'])->toBe($restore['with'])->toBe([
         'path' => '~/.bun/install/cache',

@@ -63,9 +63,9 @@ it('provisions Gateway and web dependencies before the Docs merge proof can run'
         'if' => "matrix.project.directory != 'apps/e2e'",
         'run' => 'composer install --no-interaction --prefer-dist',
     ]);
+    expect($steps['Set up Bun for package cache and generated merge tests']['uses'])->toStartWith('oven-sh/setup-bun@');
     expect($steps['Set up Bun for package cache and generated merge tests'])->toMatchArray([
         'if' => "matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs'",
-        'uses' => 'oven-sh/setup-bun@v2',
         'with' => ['bun-version' => '1.4.2'],
     ]);
     expect($steps['Install generated merge proof dependencies'])->toBe([

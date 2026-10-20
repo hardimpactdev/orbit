@@ -6,26 +6,31 @@ on:
       - 'agent-v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: orbit-agent-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and publish agent release
+  build:
+    name: Build agent release
     runs-on: ubuntu-26.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     defaults:
       run:
         working-directory: apps/agent
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Validate tag version and release immutability
         id: version
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -34,7 +39,7 @@ jobs:
           echo "value=${RELEASE_TAG#agent-v}" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
@@ -56,11 +61,36 @@ jobs:
           cp target/aarch64-unknown-linux-musl/release/orbit-agent "orbit-agent-${VERSION}-linux-aarch64"
           sha256sum "orbit-agent-${VERSION}-linux-x86_64" "orbit-agent-${VERSION}-linux-aarch64" > SHA256SUMS
 
+      - name: Upload release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-release
+          path: |
+            apps/agent/orbit-agent-${{ steps.version.outputs.value }}-linux-x86_64
+            apps/agent/orbit-agent-${{ steps.version.outputs.value }}-linux-aarch64
+            apps/agent/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish agent release
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-release
+          path: ${{ runner.temp }}/agent-release
+
       - name: Publish GitHub release
+        working-directory: ${{ runner.temp }}/agent-release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ needs.build.outputs.version }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail

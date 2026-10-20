@@ -8,7 +8,7 @@ covers:
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
-  - .github/{workflows/ci.yml,actions/php/action.yml}
+  - .github/{workflows/*.yml,actions/php/action.yml}
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
 ---
 
@@ -85,7 +85,6 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On PRs, Gateway runs quality checks and the shard-union check here; its tests run in the four shard jobs |
 | Gateway shards (1), (2), (3), (4) | Every pull request: four stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
-| Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
@@ -97,6 +96,16 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 Gateway project and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
 The Docs project job also supplies Bun 1.4.2 and installs the Gateway's Composer dependencies and the web app's locked Bun dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including in each full suite.
+
+### Action pins and token permissions
+
+External actions use full commit SHAs, with the reviewed version in a trailing comment. Dependabot's `github-actions` entry updates these pins. Local actions and reusable workflows keep their repository paths.
+
+Workflows default to `contents: read`. Read-only jobs set `persist-credentials: false` on every checkout. Write permissions belong only to publishing jobs that never run pull-request code: the main CI cache publisher, the CLI release publisher, the recipe artifact mirror, the Git update issue publisher, and the agent release publisher.
+
+Git build watch checks and uploads its report with a read-only token. A separate job downloads that run's report and alone has `issues: write`; it runs only on main's scheduled or manual executions, never on pull requests. Agent compilation and tag validation also use a read-only token. The agent publish job alone has `contents: write`, downloads the build job's assets, and creates the release without checking out or executing the compiled code.
+
+GitHub's repository SHA-pinning policy and Dependabot security updates must be enabled separately by an operator. Workflow changes do not change repository settings.
 
 ### One PHP build in CI
 
@@ -128,7 +137,7 @@ Then the pull request's CI runs, and `main` stays green after the merge. After t
 
 [Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
-`Required checks` requires Docs (merge ref) and every Gateway shard to succeed on pull requests. These PR-only jobs must be skipped on main pushes, nightly runs and manual runs.
+`Required checks` requires the project matrix, including Docs, on every event. It also requires every Gateway shard to succeed on pull requests. The PR-only shard jobs must be skipped on main pushes, nightly runs and manual runs.
 
 The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among four shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
 
