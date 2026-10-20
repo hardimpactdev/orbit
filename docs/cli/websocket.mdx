@@ -36,7 +36,7 @@ orbit websocket:app:create <name> [--json]
 orbit websocket:app:create hauzer
 ```
 
-A taken name, `gateway`, or a name that is not a slug returns `validation.failed`. With an active `websocket` role, the Gateway converges the role again, so Reverb restarts and serves the new app. Without one, the next converge of the role serves it.
+The CLI refuses a name that is not a lowercase slug of at most 63 characters with `websocket.name_invalid`. The Gateway refuses a taken name or `gateway` with `validation.failed`. With an active `websocket` role, the Gateway converges the role again, so Reverb restarts and serves the new app. Without one, the next converge of the role serves it.
 
 ## orbit websocket:app:list
 
@@ -65,5 +65,7 @@ orbit websocket:app:destroy <name> [--force] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. |
+
+Decline, Ctrl-C, and EOF cancel with `input.cancelled`. The CLI sends no destroy request after cancellation.
 
 The Gateway refuses with `websocket.app_in_use` while an Instance uses the app, and with `websocket.app_reserved` for `gateway`. Remove the app from each Instance with [`instance:websocket:remove`](/cli/instance#orbit-instancewebsocketremove) first.

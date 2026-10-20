@@ -16,6 +16,8 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 `database:server:close` reports whether an adopted Valkey server now requires its admin password. A refusal keeps the clients' addresses and the reason visible in human output, and preserves `database.server_in_use` in JSON. See [Database servers](/reference/database-servers#close-an-adopted-server).
 
+`websocket:app:destroy` and `instance:websocket:remove` use `--force` for destructive consent, like their Database siblings. Their default-No prompts name the app and the effect. JSON and non-interactive calls without `--force` return `websocket.confirmation_required`. See [Reverb app commands](/cli/websocket).
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.

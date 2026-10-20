@@ -2,8 +2,9 @@
 title: "Reverb apps"
 description: "How the websocket role's Reverb server serves one Reverb app per record, and how an Instance gets an app's credentials without the Gateway's secret."
 covers:
-  - apps/gateway/app/Actions/WebSocket/**
-  - apps/gateway/app/Data/WebSocket/**
+  - apps/cli/app/Commands/{WebSocket/**,Instances/{Add,Remove}InstanceWebSocketCommand.php}
+  - packages/php-sdk/src/{Requests,Responses}/WebSocket/**
+  - apps/gateway/app/{Actions,Data}/WebSocket/**
   - apps/gateway/app/Domain/WebSocket/{WebSocketAppIssuer,WebSocketAppEnvProjection,WebSocketServerCredentials}.php
   - apps/gateway/app/Http/Controllers/Api/{WebSocketAppsController,WebSocketAppAttachmentsController}.php
   - apps/gateway/app/Http/Requests/WebSocket/**
@@ -45,6 +46,8 @@ orbit websocket:app:destroy hauzer
 
 The Gateway deletes the app and converges the active role, so Reverb stops serving it. It refuses the `gateway` app with `websocket.app_reserved` (409). It refuses an app that an Instance still holds with `websocket.app_in_use` (409). Remove the app from each Instance first.
 
+The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket#orbit-websocketappdestroy).
+
 When the converge fails, the record change stays. Fix the cause, then run `orbit node:role:add <node> websocket --converge-existing`.
 
 ## Add an app on an Instance
@@ -71,6 +74,8 @@ orbit env:sync <instance>
 An Instance holds at most one app. A second add replaces the first app's values. The result names the Instance, the app, the keys, whether stored configuration changed, and the key count. It never holds a value. So the secret reaches the app without passing through a terminal or a chat.
 
 `DELETE /api/v1/instances/{instance}/websocket-apps/{name}` removes the attachment and the seven keys. Other keys stay. An app that the Instance does not hold returns `websocket.attachment_missing` (404).
+
+The CLI command is `instance:websocket:remove <instance> <app>`. It asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode.
 
 Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
 

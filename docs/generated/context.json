@@ -3008,7 +3008,9 @@
             "title": "Reverb apps",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",
@@ -3136,6 +3138,7 @@
                 "Gateway",
                 "Node",
                 "Node agent",
+                "Project",
                 "Role",
                 "Route"
             ],
