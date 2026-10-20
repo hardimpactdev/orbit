@@ -508,9 +508,15 @@ final class TaskWorkspaceLease
      */
     public function startCheck(Task $group, Task $task, ?string $command, array $setup = [], ?array $deliverables = null, ?int $commentId = null): TaskCheckProcess
     {
-        $lease = $this->synchronized($group, function () use ($group, $task): TaskWorkspaceLeaseRecord {
-            $this->reconcile($group);
-            $lease = $this->acquire($group, 'check', 'check:'.$task->id, taskId: $task->id);
+        $lease = $this->synchronized($group, function () use ($group): TaskWorkspaceLeaseRecord {
+            $instance = $group->taskable;
+            if (! $instance instanceof Instance) {
+                throw new TaskCheckException('The task workspace is unavailable.');
+            }
+            $lease = $this->activeScope($instance->id);
+            if (! $lease instanceof TaskWorkspaceLeaseRecord) {
+                throw new TaskWorkspaceWaiting('A workspace check requires an admitted workspace scope.');
+            }
             if ($lease->pid !== null) {
                 throw new TaskWorkspaceWaiting('The admitted workspace check has not stopped.');
             }

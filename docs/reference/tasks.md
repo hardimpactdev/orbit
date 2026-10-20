@@ -550,6 +550,8 @@ A busy workspace queues the next actor. Waiters retain their order across Gatewa
 
 After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
 
+A handoff check starts inside its implementer's receipt scope and takes over that lease for its detached process. It never queues a separate check lease ahead of the receipt that must admit it. A baseline check starts inside its own admitted check scope.
+
 Agent turns keep ownership until Orbit observes that the turn stopped. Detached checks keep ownership until Orbit records their remote result. A timeout or an unavailable runtime never proves that a holder stopped. After authoritative completion, replaying the same keyed command acknowledges its durable result without opening another turn or lease.
 
 Before assistance can stop a tick, Orbit reconciles completed checks and stopped turns under the execution lock. A stale or unreachable holder stays visible and prevents another actor from entering the checkout. A missing check supervisor does not prove its child commands stopped, so a lost reading retains ownership.
