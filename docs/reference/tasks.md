@@ -149,8 +149,10 @@ A `todo` subtask appended to a `settling` task returns the task to `running` on 
 
 `tasks:subtask:cancel` cancels a `todo` or a `running` subtask.
 
-- A `todo` subtask in a `todo`, `running`, `reviewing`, or `settling` task becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
+- A `todo` subtask becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
 - A `running` subtask stops first. Orbit interrupts its implementer, then stops its running [task check](#project-check).
+
+Orbit accepts a `todo` subtask cancellation in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task. A task already `waiting_for_review` stays there without settling again or reading its workspace; its VM can stay parked.
 
 Orbit holds no database lock while it stops a `running` subtask. When a stop fails, the call returns HTTP 502 `tasks.subtask_interrupt_failed`. The subtask then stays `running`, so retry, or cancel the task.
 
@@ -501,7 +503,9 @@ Steps 1 and 2 run each task on its own. A failure in one task does not stop the 
 
 The subtask phase takes the group's execution hold in `tick()`, before advancing its subtasks, rather than taking separate holds for implementer completion, reviewer outcomes, and baseline results. Other entry points keep their admission holds. This split does not change the state machine, events, database writes, or tick interval.
 
-When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
+When the task fails on two ticks in a row, the task and its `running` or `reviewing` subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself.
+
+Fix the cause, then post a non-empty `resolution` on any subtask. This clears the task's tick-failure assistance even when no subtask asks for assistance, so the next tick retries. Other assistance requests keep their normal resolution rules. A tick in which the task succeeds resets the count.
 
 ### Claim and provision
 
@@ -907,7 +911,7 @@ Clearing the flag on send is keyed to the `resolution` comment and does not chan
 
 On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it.
 
-A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
+A non-empty resolution on any subtask clears group-level tick-failure assistance, even when that subtask is not asking. The next tick retries the group's work without sending the resolution to an agent unless the subtask also needs it. A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
 ### Retry a transient provider error
 

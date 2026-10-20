@@ -28,21 +28,16 @@ beforeEach(function (): void {
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
 });
 
-it('admits later checks and receipts after merge-ready is attempted while a review fix returns the group to running', function (): void {
+it('admits later checks and receipts after a review fix returns the group to running', function (): void {
     $group = tick_group();
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
-    $scheduler = app(TaskScheduler::class);
-    $health = new TaskPullRequestHealth('open');
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($group, 'check', 'prior-check');
-    $scheduler->mergeWhenReady($group, $health, null);
 
     $fixup = tick_appended_subtask($group);
     $fixup->update(['status' => TaskStatus::Running]);
     $group->update(['status' => TaskGroupStatus::Running]);
-    // The settling tick still calls merge-ready after healing has resumed a fixup.
-    $scheduler->mergeWhenReady($group->fresh(['taskable']), $health, null);
     $leases->release($holder);
     $leases = new TaskWorkspaceLease;
     app()->instance(TaskWorkspaceLease::class, $leases);
@@ -53,9 +48,6 @@ it('admits later checks and receipts after merge-ready is attempted while a revi
     expect($leases->withReceipt($group, $fixup->id, null, static fn (): bool => true))->toBeTrue();
 
     expect($leases->status($group))->toBe([]);
-    $this->assertDatabaseMissing('task_workspace_leases', [
-        'group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id, 'status' => 'queued',
-    ]);
 });
 
 it('evaluates merge-ready while the workspace is busy without joining its queue', function (): void {

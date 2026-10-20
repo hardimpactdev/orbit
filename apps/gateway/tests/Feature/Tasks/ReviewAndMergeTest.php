@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
@@ -685,7 +686,7 @@ describe('merge on green', function (): void {
     it('ticks a WaitingForReview group with a Parked VM without reading its workspace', function (RequiredCheckState $check, TaskMergeStatus $expectedStatus, array $expectedMerges): void {
         Queue::fake([ResumeTaskVm::class]);
         $group = rm_settled();
-        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview_enabled' => false]);
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false]);
         test_vm_group($group);
         $vm = TaskVm::forGroup($group);
         $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
@@ -698,7 +699,7 @@ describe('merge on green', function (): void {
         app(TaskScheduler::class)->tick();
 
         Exceptions::assertNothingReported();
-        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->preview->toBeFalse()
             ->assistance_requested->toBeFalse()->merge_status->toBe($expectedStatus);
         expect($runtime->merges)->toBe($expectedMerges);
         expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBeNull();
@@ -708,6 +709,93 @@ describe('merge on green', function (): void {
         'waiting for checks' => [RequiredCheckState::Pending, TaskMergeStatus::Waiting, []],
         'green reviewed head' => [RequiredCheckState::Passed, TaskMergeStatus::Merged, [RM_HEAD]],
     ]);
+
+    it('retries a group-level tick failure after a resolution on a subtask that is not asking', function (): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false]);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $gateway = $this->markAsGateway($group->taskable->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: TaskScheduler::TickFailedReason.'The task VM is parked.');
+        $task = $group->tasks->sole();
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        app(TaskScheduler::class)->tick();
+        expect($runtime->merges)->toBe([]);
+        expect($group->fresh()->assistance_requested)->toBeTrue();
+        expect($task->fresh()->assistance_requested)->toBeFalse();
+
+        $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", [
+            'type' => 'resolution', 'body' => 'The workspace-free merge-ready fix is deployed.', 'author' => 'operator',
+        ])->assertCreated();
+
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        expect($task->fresh())->assistance_requested->toBeFalse()->resolution_delivered_comment_id->toBeNull();
+        expect(rm_activity($group))->toContain('assistance cleared');
+
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->merge_status->toBe(TaskMergeStatus::Merged);
+        expect($runtime->merges)->toBe([RM_HEAD]);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        Queue::assertNotPushed(ResumeTaskVm::class);
+    });
+
+    it('keeps group assistance when a comment does not resolve a tick failure', function (AssistanceKind $kind, string $reason, string $type, string $body): void {
+        $group = rm_settled();
+        TaskAssistance::apply($group, $kind, question: $kind === AssistanceKind::Direction ? 'Which approach?' : null, reason: $reason);
+        $request = $group->only(TaskAssistance::Fields);
+
+        app(StoreTaskCommentAction::class)->execute($group->tasks->sole(), ['type' => $type, 'body' => $body, 'author' => 'operator']);
+
+        expect($group->fresh()->only(TaskAssistance::Fields))->toBe($request);
+    })->with([
+        'unrelated failure' => [AssistanceKind::Failure, 'The expected pull request closed without merging.', 'resolution', 'Fixed.'],
+        'direction request' => [AssistanceKind::Direction, TaskScheduler::TickFailedReason.'Operator direction.', 'resolution', 'Fixed.'],
+        'empty resolution' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'Error.', 'resolution', '  '],
+        'non-resolution comment' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'Error.', 'ready_for_review', 'Fixed.'],
+    ]);
+
+    it('cancels a todo subtask while waiting for review without reading the parked workspace', function (bool $anotherTodo): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $settledAt = now()->subHour()->startOfSecond();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false, 'settled_at' => $settledAt, 'line_diff' => 42]);
+        $todo = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 2, 'title' => 'Unstarted work', 'brief' => 'Not needed.', 'status' => TaskStatus::Todo,
+        ]);
+        if ($anotherTodo) {
+            Task::query()->create([
+                'parent_id' => $group->id, 'position' => 3, 'title' => 'Later work', 'brief' => 'Still waiting.', 'status' => TaskStatus::Todo,
+            ]);
+        }
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $gateway = $this->markAsGateway($group->taskable->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+        rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$todo->id}/cancel")->assertOk();
+
+        Exceptions::assertNothingReported();
+        expect($todo->fresh())->status->toBe(TaskStatus::Cancelled)->implementer_agent_thread_id->toBeNull();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->assistance_requested->toBeFalse()
+            ->line_diff->toBe(42)->settled_at->toEqual($settledAt);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        Queue::assertNotPushed(ResumeTaskVm::class);
+        $this->assertDatabaseMissing('task_workspace_leases', ['group_id' => $group->id, 'owner' => 'settle:'.$group->id]);
+    })->with(['last open subtask' => false, 'another todo remains' => true]);
 
     it('merges a reviewed, green, mergeable head through the App', function (): void {
         $group = rm_settled();

@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopologyFailedException;
@@ -75,6 +76,11 @@ final readonly class StoreTaskCommentAction
                 TaskAssistance::apply($task, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true, source: $comment);
                 TaskAssistance::apply($group, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true, source: $comment);
                 TaskQuestions::recordOperator($task, $comment);
+            }
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && ! $endedPullRequest
+                && $group->assistance_requested && $group->assistance_kind === AssistanceKind::Failure
+                && is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, TaskScheduler::TickFailedReason)) {
+                TaskAssistance::apply($group, source: $comment);
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
