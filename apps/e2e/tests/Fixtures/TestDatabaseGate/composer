@@ -31,8 +31,14 @@ if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') ===
     }
 
     chdir($source);
-    // Exercise the real bootstrap, database guard and renderer, not unrelated guidance cases a second time.
+    // Keep the real renderer, then trigger lazy migrations so the sentinel assertion exercises database isolation.
     passthru(escapeshellarg($composer).' guidance:check -- --filter='.escapeshellarg('regenerates strict guidance'), $exitCode);
+
+    if ($exitCode !== 0) {
+        exit($exitCode);
+    }
+
+    passthru(escapeshellarg(PHP_BINARY).' vendor/bin/pest --no-tia --colors=never tests/Feature/Configuration/FeatureDatabaseTest.php', $exitCode);
 
     exit($exitCode);
 }

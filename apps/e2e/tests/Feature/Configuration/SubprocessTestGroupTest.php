@@ -150,6 +150,9 @@ it('includes every subprocess test class in the full suite without separate CI l
     ));
 
     expect($suiteClasses)->not->toBeEmpty();
+    if ($project !== 'packages/php-sdk') {
+        expect($subprocess)->not->toBeEmpty();
+    }
     expect(array_values(array_diff($subprocess, $full)))->toBe([]);
     foreach (subprocess_group_tests($project) as $path => $reason) {
         if (array_any($directories, static fn (string $directory): bool => str_starts_with($path, $directory))) {

@@ -234,7 +234,7 @@ class SmokeWorld:
         if '--wait-for-tick' in arguments:
             command = [sys.executable, '-c',
                        'import runpy, sys; smoke = runpy.run_path(sys.argv.pop(1)); '
-                       'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.02; '
+                       'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.25; '
                        'sys.exit(smoke["main"]())', str(SMOKE)]
         return [*command, '--sha', SHA,
                 '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',

@@ -123,7 +123,7 @@ it('keeps the root candidate check away from an inherited caller database', func
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
     $checks = $receipts[0]['checks'] ?? [];
     $logs = implode("\n", array_map(static fn (array $check): string => (string) file_get_contents($check['log']), $checks));
-    expect($logs)->toContain('passed')->not->toContain('No tests found');
+    expect($logs)->toContain('passed', 'defers feature database setup')->not->toContain('No tests found');
     expect($receipts)->toHaveCount(1);
     expect($receipts[0]['passed'] ?? null)->toBeTrue();
     expect(orb247_gate_sentinel('inspect', $sentinel))->toBe($before);
