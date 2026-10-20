@@ -229,12 +229,13 @@ class SmokeWorld:
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def smoke_argv(self, *arguments):
-        # Only polling tests need a shorter interval. Keep the real CLI entry point for other cases.
+        # Scale the polling interval and read limit together. Keep the real CLI entry point for other cases.
         command = [str(SMOKE)]
         if '--wait-for-tick' in arguments:
             command = [sys.executable, '-c',
                        'import runpy, sys; smoke = runpy.run_path(sys.argv.pop(1)); '
                        'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.25; '
+                       'smoke["main"].__globals__["COMMAND_LIMIT"] = 1; '
                        'sys.exit(smoke["main"]())', str(SMOKE)]
         return [*command, '--sha', SHA,
                 '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
@@ -477,6 +478,16 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
         self.assertGreaterEqual(checks['tasks_tick']['detail']['reads'], 2)
+
+    def test_tasks_tick_reports_stale_instead_of_timing_out_with_a_slow_orbit(self):
+        self.world.orbit('tasks:status', self.world.tick(seconds_ago=None), sleep=0.5)
+
+        checks = self.assert_only_failed(self.world.smoke('--timeout', '1', '--wait-for-tick'), ['tasks_tick'])
+
+        self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
+        self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
+        self.assertEqual(checks['tasks_tick']['detail']['reads'], 1)
+        self.assertEqual(self.world.orbit_calls().count(['tasks:status', '--json']), 1)
 
     def test_tasks_tick_fails_on_a_gateway_without_the_tick_record(self):
         self.world.orbit('tasks:status', {'enabled': True, 'assistance': [], 'request_id': 'r'})

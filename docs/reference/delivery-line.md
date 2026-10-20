@@ -185,7 +185,7 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 
 ## bin/gateway-smoke
 
-The E2E smoke tests use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a short interval in the test process; the production interval and CLI defaults stay unchanged. Timeout cases still expire real deadlines, including the total run limit and stale-tick polling.
+The E2E smoke tests use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a short interval and command time limit in the test process; the production interval and CLI defaults stay unchanged. Timeout cases still expire real deadlines, including the total run limit. Tests for a stale tick poll until no full read fits.
 
 Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
 
@@ -207,6 +207,8 @@ Run it as the Gateway account from the release under test. It then uses that rel
 | `documents` | Creates one text file in the smoke Project, reads it back, renames it with its revision, and removes it. | Always, unless `--write-check` is set. |
 
 A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run.
+
+Before sleeping between tick reads, the smoke check reserves the poll interval plus one full command time limit for the next read. If that budget is not available, it reports `tick_stale` instead of starting a read with too little time.
 
 All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks#orbit-tasksstatus) tick record comes from the Gateway clock, so compare it on the Gateway host.
 
