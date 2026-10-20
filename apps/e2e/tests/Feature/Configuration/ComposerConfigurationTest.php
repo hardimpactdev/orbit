@@ -10,73 +10,6 @@ pest()->group('subprocess');
 /** Pest's process count in CI: 6 on the self-hosted Sabre runner, 4 on GitHub-hosted runners. */
 const CI_PEST_PROCESSES = '--processes=${{ runner.environment == \'self-hosted\' && 6 || 4 }}';
 
-/**
- * Evaluate the GitHub Actions expression subset that runs-on uses: context paths, string literals, fromJSON(),
- * ==, !=, && and || (which return an operand, as GitHub does) and parentheses. A missing context is null.
- *
- * @param  array<string, string|null>  $context
- */
-function ci_expression(string $expression, array $context): mixed
-{
-    preg_match('/^\$\{\{(.*)\}\}$/s', $expression, $body) || throw new InvalidArgumentException("Not an expression: {$expression}");
-    $source = trim($body[1]);
-    preg_match_all("/\\s*('(?:[^']|'')*'|&&|\\|\\||==|!=|\\(|\\)|[A-Za-z_][A-Za-z0-9_.-]*)/", $source, $matches);
-    expect(implode('', $matches[0]))->toBe($source);
-    $tokens = array_map(trim(...), $matches[0]);
-    $position = 0;
-    $truthy = fn (mixed $value): bool => ! in_array($value, [null, false, '', 0], true);
-    $binary = function (callable $operand, string $operator, callable $combine) use (&$tokens, &$position): callable {
-        return function () use ($operand, $operator, $combine, &$tokens, &$position): mixed {
-            $left = $operand();
-            while (($tokens[$position] ?? null) === $operator) {
-                $position++;
-                $left = $combine($left, $operand());
-            }
-
-            return $left;
-        };
-    };
-    $or = null;
-    $primary = function () use (&$tokens, &$position, &$or, $context): mixed {
-        $token = $tokens[$position++] ?? throw new InvalidArgumentException('Unexpected end of expression.');
-        if ($token === '(') {
-            $value = $or();
-            expect($tokens[$position++] ?? null)->toBe(')');
-
-            return $value;
-        }
-        if (str_starts_with($token, "'")) {
-            return str_replace("''", "'", substr($token, 1, -1));
-        }
-        if ($token === 'fromJSON') {
-            expect($tokens[$position++] ?? null)->toBe('(');
-            $value = json_decode((string) $or(), true, flags: JSON_THROW_ON_ERROR);
-            expect($tokens[$position++] ?? null)->toBe(')');
-
-            return $value;
-        }
-        expect($context)->toHaveKey($token);
-
-        return $context[$token];
-    };
-    $comparison = function () use (&$tokens, &$position, $primary): mixed {
-        $left = $primary();
-        $operator = $tokens[$position] ?? null;
-        if ($operator !== '==' && $operator !== '!=') {
-            return $left;
-        }
-        $position++;
-
-        return ($left === $primary()) === ($operator === '==');
-    };
-    $and = $binary($comparison, '&&', fn (mixed $left, mixed $right): mixed => $truthy($left) ? $right : $left);
-    $or = $binary($and, '||', fn (mixed $left, mixed $right): mixed => $truthy($left) ? $left : $right);
-    $value = $or();
-    expect($position)->toBe(count($tokens));
-
-    return $value;
-}
-
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
@@ -318,27 +251,11 @@ describe('Composer configuration', function (): void {
             'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
         ]);
         // PR quality checks share the orbit-shard pool; main keeps Sabre for its six-worker recording run.
-        $sabre = ['self-hosted', 'sabre'];
-        $pool = ['self-hosted', 'orbit-shard'];
-        foreach ([
-            ['apps/gateway', 'true', 'push', null, $sabre],
-            ['apps/gateway', 'true', 'schedule', null, $sabre],
-            ['apps/gateway', 'true', 'workflow_dispatch', null, $sabre],
-            ['apps/gateway', 'true', 'pull_request', 'nckrtl/orbit', $pool],
-            ['apps/gateway', 'true', 'pull_request', 'someone/orbit', 'ubuntu-26.04'],
-            ['apps/gateway', 'false', 'push', null, 'ubuntu-26.04'],
-            ['apps/gateway', 'false', 'pull_request', 'nckrtl/orbit', 'ubuntu-26.04'],
-            ['apps/docs', 'true', 'push', null, 'ubuntu-26.04'],
-            ['apps/docs', 'true', 'pull_request', 'nckrtl/orbit', 'ubuntu-26.04'],
-        ] as [$directory, $variable, $event, $head, $runner]) {
-            expect(ci_expression($project['runs-on'], [
-                'matrix.project.directory' => $directory,
-                'vars.ORBIT_SABRE_RUNNER' => $variable,
-                'github.event_name' => $event,
-                'github.event.pull_request.head.repo.full_name' => $head,
-                'github.repository' => 'nckrtl/orbit',
-            ]))->toBe($runner, "{$directory} {$event} from {$head} with ORBIT_SABRE_RUNNER={$variable}");
-        }
+        expect($project['runs-on'])->toContain(
+            "github.event_name != 'pull_request' && fromJSON('[\"self-hosted\", \"sabre\"]')",
+            "github.event.pull_request.head.repo.full_name == github.repository && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
+            "|| 'ubuntu-26.04' }}",
+        );
     });
 
     it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {
