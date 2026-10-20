@@ -14,18 +14,15 @@ use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
-use App\Domain\Nodes\NodeRoleValidationException;
-use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteDomain;
-use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleTargetType;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Http\Responses\RendersApiError;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
@@ -381,19 +378,8 @@ final readonly class RecordCommandActivity
             'status' => 'failed',
             'duration_ms' => $this->duration($startedAt),
             'error_code' => match (true) {
-                $exception instanceof ValidationException,
-                $exception instanceof NodeRoleValidationException, => 'validation.failed',
-                $exception instanceof NodeProvisioningException => $exception->errorCode,
-                $exception instanceof NodeRemovalException => $exception->errorCode,
-                $exception instanceof RuntimeConvergenceException => $exception->errorCode,
-                $exception instanceof InstanceRemovalException => $exception->errorCode,
-                $exception instanceof ProcessOperationException => $exception->errorCode,
-                $exception instanceof ScheduleOperationException => $exception->errorCode,
-                $exception instanceof FirewallOperationException => $exception->errorCode,
-                $exception instanceof ResourceOperationException => $exception->errorCode,
-                $exception instanceof NodeRoleOperationException => $exception->errorCode,
-                $exception instanceof RoleAssignmentException => 'node.role_conflict',
-                $exception instanceof ToolOperationException => $exception->errorCode,
+                $exception instanceof ValidationException => 'validation.failed',
+                $exception instanceof RendersApiError => $exception->apiErrorCode(),
                 $exception instanceof ModelNotFoundException, $exception instanceof NotFoundHttpException => 'http.404',
                 default => 'gateway.unhandled',
             },

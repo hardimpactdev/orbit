@@ -15,9 +15,11 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -337,7 +339,8 @@ it('does not run a fetch when the default branch name is invalid', function (): 
     expect($transport->commands)->toHaveCount(0);
 });
 
-it('resets an untouched baseline workspace to the fetched default branch tip without changing its branch', function (): void {
+it('retries at the default branch tip and reselects its newest cached first-parent ancestor', function (string $cache): void {
+    Log::spy();
     $root = TestOrbitHome::scratch('orbit-baseline-reset');
     $checkout = $root.'/checkout';
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
@@ -348,10 +351,20 @@ it('resets an untouched baseline workspace to the fetched default branch tip wit
     fetcher_git($checkout, ['add', 'tracked.txt']);
     fetcher_git($checkout, ['commit', '--quiet', '-m', 'Original baseline']);
     $original = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/worktree/orbit/ci-baseline', $original]);
+    ProjectLifecycleStep::query()->create(['project_id' => $group->project_id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
     file_put_contents($checkout.'/tracked.txt', 'Fixed baseline');
     fetcher_git($checkout, ['commit', '--quiet', '-am', 'Fix baseline']);
     $tip = fetcher_git($checkout, ['rev-parse', 'HEAD']);
     fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+    $baseline = match ($cache) {
+        'cached tip' => $tip,
+        'cached ancestor' => $original,
+        default => null,
+    };
+    if ($baseline !== null) {
+        fetcher_git($checkout, ['push', '--quiet', 'origin', $tip.':refs/orbit/ci-cache/'.$baseline]);
+    }
     fetcher_git($checkout, ['reset', '--quiet', '--hard', $original]);
     fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/main']);
     $bases = fetcher(new LocalShellSshExecutor);
@@ -364,7 +377,12 @@ it('resets an untouched baseline workspace to the fetched default branch tip wit
     expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($tip);
     expect(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
     expect(file_get_contents($checkout.'/tracked.txt'))->toBe('Fixed baseline');
-});
+    expect(fetcher_git($checkout, ['for-each-ref', '--format=%(objectname)', 'refs/worktree/orbit/ci-baseline']))->toBe($baseline ?? '');
+    if ($baseline !== null) {
+        Log::shouldHaveReceived('info')->with('CI cache baseline selected.', ['project_id' => $group->project_id, 'tip' => $tip, 'baseline' => $baseline, 'distance' => $cache === 'cached tip' ? 0 : 1])->once();
+        expect(fetcher_git($checkout, ['rev-parse', 'refs/orbit/ci-cache/'.$baseline]))->toBe($tip);
+    }
+})->with(['cached tip', 'cached ancestor', 'no cache']);
 
 it('refuses to reset a baseline workspace that holds manual work', function (string $work): void {
     $root = TestOrbitHome::scratch('orbit-baseline-manual-work');

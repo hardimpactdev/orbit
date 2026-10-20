@@ -126,7 +126,7 @@ describe('Instance environment requests', function (): void {
                 (string) json_encode($request, JSON_THROW_ON_ERROR),
                 $exception->getMessage(),
                 (string) $exception,
-                print_r($exception->getTrace(), return: true),
+                environment_request_sdk_trace($exception),
             ]);
 
             expect($diagnostics)->not->toContain($value);

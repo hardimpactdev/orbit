@@ -150,7 +150,7 @@ An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, 
 | `dependencies.update_cancelled` | The command was cancelled after it started. |
 | `dependencies.update_timeout` | The command passed its 600-second deadline. |
 
-The SDK rejects a whole response that breaks the shape. It accepts at most 32 MiB of JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 file hashes, and 16 KiB per text field.
+The SDK rejects a whole response that breaks the shape. It accepts at most 32 MiB of JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 file hashes, and 16 KiB per text field. It checks collection bounds before scanning the JSON for duplicate object keys, so oversized inventories do not pay for a full token scan. Accepted responses still require unique keys, including equivalent escaped names.
 
 ## Target resolution
 

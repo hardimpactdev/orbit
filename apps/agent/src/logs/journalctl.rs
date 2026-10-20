@@ -355,7 +355,22 @@ mod tests {
                 dir.join("journalctl"),
             )
             .unwrap();
+            assert!(std::process::Command::new("mkfifo")
+                .arg(dir.join("barrier"))
+                .status()
+                .unwrap()
+                .success());
             for (name, body) in [("cursor", cursor), ("history", history), ("follow", follow)] {
+                // A quiet assertion sends a barrier through the follower's stdout, after all
+                // journal entries. Reading it proves the source drained those entries.
+                let body = if name == "follow" {
+                    body.replace(
+                        "exec sleep 600",
+                        "exec 3<> \"$D/barrier\"; while IFS= read -r line <&3; do printf '%s\\n' \"$line\"; done",
+                    )
+                } else {
+                    body.to_owned()
+                };
                 std::fs::write(dir.join(name), body).unwrap();
             }
             Self(dir)
@@ -453,15 +468,30 @@ exec sleep 600
                 "{} of {count} lines",
                 lines.len()
             );
-            tokio::time::sleep(Duration::from_millis(300)).await;
             lines.extend(sent(&queue.flush("c", Instant::now()).unwrap()));
+            if lines.len() < count {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
         lines
     }
 
-    /// Asserts that nothing more is sent for a while: no line and no end.
-    async fn quiet(stream: &Stream) {
-        tokio::time::sleep(Duration::from_millis(700)).await;
+    /// A barrier follows every preceding entry through the real stdout pipe and LineSink.
+    /// Any duplicate line or end before it fails, without guessing how long startup takes.
+    async fn quiet(stream: &Stream, fake: &Fake) {
+        let barrier = entry(59, "quiet barrier");
+        let mut writer = tokio::process::Command::new("sh");
+        writer
+            .args(["-c", "printf '%s\\n' \"$2\" > \"$1\"", "barrier"])
+            .arg(fake.file("barrier"))
+            .arg(&barrier)
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(Duration::from_secs(10), writer.output())
+            .await
+            .expect("follower reads the barrier")
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(lines(&stream.queue, 1).await, [barrier]);
         let flush = stream.queue.flush("c", Instant::now()).unwrap();
         assert!(flush.frames.is_empty(), "{:?}", flush.frames);
         assert!(!stream.task.is_finished());
@@ -645,7 +675,7 @@ printf 'c4\t%s\n' "2026-09-25T10:15:04+00:00 beast queue[4242]: written during t
                 entry(4, "written during the handoff"),
             ]
         );
-        quiet(&stream).await;
+        quiet(&stream, &fake).await;
         let options = "--no-pager --quiet --unit=orbit-process-41-queue.service";
         assert_eq!(
             fake.calls(),
@@ -670,7 +700,7 @@ printf 'c4\t%s\n' "2026-09-25T10:15:04+00:00 beast queue[4242]: written during t
         write_journal(&fake, &[]);
         let stream = stream(&fake, 10);
         assert_eq!(lines(&stream.queue, 1).await, [entry(1, "first")]);
-        quiet(&stream).await;
+        quiet(&stream, &fake).await;
         let calls = fake.calls();
         assert_eq!(calls.len(), 2, "no first lines are read: {calls:?}");
         assert!(calls[1].ends_with(" --follow --lines=all --output=short-iso --utc"));
@@ -682,8 +712,8 @@ printf 'c4\t%s\n' "2026-09-25T10:15:04+00:00 beast queue[4242]: written during t
     async fn a_missing_unit_sends_nothing_and_keeps_following() {
         let fake = Fake::new(":", "exit 7", "exec sleep 600");
         let stream = stream(&fake, 10);
-        quiet(&stream).await;
-        quiet(&stream).await;
+        quiet(&stream, &fake).await;
+        quiet(&stream, &fake).await;
         assert!(fake.calls_after(2).await[1].contains(" --follow --lines=all "));
         stream.task.abort();
     }
@@ -767,7 +797,7 @@ while :; do i=$((i + 1)); echo "2026-09-25T10:15:02+00:00 beast queue[4242]: ent
     async fn first_lines_hold_at_most_256_kib_of_the_newest_entries() {
         let fake = Fake::new(
             "",
-            r#"awk 'BEGIN { x = sprintf("%20000s", ""); gsub(/ /, "x", x); for (i = 99; i >= 0; i--) printf "2026-09-25T10:15:02+00:00 beast queue[4242]: %03d %s\n", i, x }'"#,
+            r#"awk 'BEGIN { for (j = 0; j < 20000; j++) x = x "x"; for (i = 99; i >= 0; i--) printf "2026-09-25T10:15:02+00:00 beast queue[4242]: %03d %s\n", i, x }'"#,
             "",
         );
         let lines = first_lines(&fake.program(), UNIT, "c1", 1000)
@@ -845,8 +875,13 @@ exec sleep 600
             run("orbit-process-999999-none.service".into(), &mut sink).await
         });
         let stream = Stream { queue, task };
-        quiet(&stream).await;
-        quiet(&stream).await;
+        // Keep the real observation intervals: a real journal has no fixture barrier.
+        for _ in 0..2 {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            let flush = stream.queue.flush("c", Instant::now()).unwrap();
+            assert!(flush.frames.is_empty(), "{:?}", flush.frames);
+            assert!(!stream.task.is_finished());
+        }
         stream.task.abort();
     }
 

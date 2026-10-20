@@ -265,6 +265,8 @@ For a task VM, the Gateway fetches code and the cache namespace into its [Git mi
 
 For GitHub, it uses its [GitHub App](/reference/github-app) with `Contents: read` for this repository, using the existing credentialed Git protections. Reading cache refs needs no `Actions: read` permission. The cache transfer gives the workspace no GitHub credential. Task VMs do not fetch from GitHub themselves. Cache objects stay outside the source tree until the setup step imports them after dependency installation.
 
+[New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline before setup.
+
 The Gateway selects a code SHA before looking up its cache ref. For a checkout of `main`, that is the selected checkout commit. For a task branch, it is the recorded baseline commit from `main`, which must be an ancestor of the checkout's `HEAD`. Another branch with no recorded baseline whose `HEAD` is a `main` commit, such as a fresh agent branch, selects that `HEAD` commit; without one, it runs cold. It requests only `refs/orbit/ci-cache/<selected-sha>`: it never substitutes the newest cache ref, a different ancestor's ref, or a ref for a later main commit.
 
 The Gateway records the task baseline in `refs/worktree/orbit/ci-baseline`, a per-worktree ref that other linked workspaces cannot overwrite. Later main fetches preserve it while a task branch is checked out. The ref suffix, the manifest's tested commit, and every imported graph's main baseline SHA must agree exactly. The cache commit's own object ID is not the tested code SHA.

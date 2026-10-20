@@ -4,21 +4,8 @@ declare(strict_types=1);
 
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
-use App\Data\Instances\InstanceRemovalData;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Instances\Removal\InstanceRemovalException;
-use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeRemovalException;
-use App\Domain\Nodes\NodeRoleOperationException;
-use App\Domain\Nodes\NodeRoleValidationException;
-use App\Domain\Nodes\RoleAssignmentException;
-use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
 use App\Http\Middleware\GuardBrowserOrigins;
@@ -28,11 +15,10 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\ValidateRequestBodySize;
+use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
-use App\Infrastructure\Processes\CommandResult;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -122,253 +108,30 @@ $app = Application::configure(basePath: dirname(__DIR__))
                 return GatewayExceptionStatus::for($exception, request()->is('api/*')) >= 500;
             });
 
-            /** The request ID that EnsureRequestId assigned, or the one the client sent when the middleware did not run. */
-            $requestIdFor = static function (Request $request): string {
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
-
-                return $requestId;
-            };
-
-            $exceptions->render(function (InstanceRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-
-                // The Node output of the step that failed, such as a source finalization that refused with `cross-device:`.
-                for ($cause = $exception->getPrevious(); $cause instanceof Throwable; $cause = $cause->getPrevious()) {
-                    if ($cause instanceof RuntimeConvergenceException && $cause->result instanceof CommandResult) {
-                        $request->attributes->set('orbit.command_result', $cause->result);
-
-                        break;
-                    }
-                }
-
-                $removal = InstanceRemovalData::fromModel($exception->removal)->toArray();
-                $request->attributes->set('orbit.instance_removal', $removal);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['removal' => $removal],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-
-            $notFound = static function (Request $request) use ($requestIdFor): JsonResponse {
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => 'http.404',
-                            'message' => 'Resource not found.',
-                            'details' => [],
-                        ],
-                    ], 404)
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            };
-
-            $exceptions->render(function (ValidationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => 'validation.failed',
-                            'message' => 'The request data is invalid.',
-                            'details' => $exception->errors(),
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (NodeRoleValidationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', 'validation.failed');
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => 'validation.failed',
-                            'message' => $exception->getMessage(),
-                            'details' => $exception->details,
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (NodeRoleOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.error_message', $exception->getMessage());
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (NodeProvisioningException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (NodeRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception)],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (RuntimeConvergenceException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (ProcessOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (ScheduleOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-
-                $status = GatewayExceptionStatus::for($exception);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
-                        ],
-                    ], $status)
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (FirewallOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.command_result', $exception->result);
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => ['step' => $exception->step],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (ToolOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.tool_exception', $exception);
-
-                $details = [
-                    'step' => $exception->step,
-                    'outcome' => $exception->outcome->value,
-                ];
-
-                if ($exception->toolId !== null) {
-                    $details['id'] = $exception->toolId;
-                }
-
-                if ($exception->adoptionBlock !== null) {
-                    $details['adoption_block'] = $exception->adoptionBlock;
-                }
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => $details,
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (ResourceOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $request->attributes->set('orbit.error_message', $exception->getMessage());
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => $exception->errorCode,
-                            'message' => $exception->getMessage(),
-                            'details' => [...NodeCaddyBuildException::detailsIn($exception), ...$exception->details],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (RoleAssignmentException $exception, Request $request) use ($requestIdFor): JsonResponse {
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => 'node.role_conflict',
-                            'message' => $exception->getMessage(),
-                            'details' => [],
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
+            // Domain exceptions render themselves (RendersApiError). These closures render framework exceptions and the API catch-all.
+            $exceptions->render(function (ValidationException $exception, Request $request): JsonResponse {
+                return ApiErrorResponse::make($request, 'validation.failed', 'The request data is invalid.', $exception->errors(), GatewayExceptionStatus::for($exception));
             });
             $exceptions->render(
-                fn (ModelNotFoundException $exception, Request $request): JsonResponse => $notFound($request),
+                fn (ModelNotFoundException $exception, Request $request): JsonResponse => ApiErrorResponse::make($request, 'http.404', 'Resource not found.', [], 404),
             );
             $exceptions->render(
-                fn (NotFoundHttpException $exception, Request $request): JsonResponse => $notFound($request),
+                fn (NotFoundHttpException $exception, Request $request): JsonResponse => ApiErrorResponse::make($request, 'http.404', 'Resource not found.', [], 404),
             );
-            $exceptions->render(function (Throwable $exception, Request $request) use ($requestIdFor): ?JsonResponse {
+            $exceptions->render(function (Throwable $exception, Request $request): ?JsonResponse {
                 if (! $request->is('api/*')) {
                     return null;
                 }
 
                 $request->attributes->set('orbit.error_code', 'gateway.unhandled');
 
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => 'gateway.unhandled',
-                            'message' => 'The gateway could not complete the request.',
-                            'details' => [],
-                        ],
-                    ], GatewayExceptionStatus::for($exception, $request->is('api/*')))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
+                return ApiErrorResponse::make(
+                    $request,
+                    'gateway.unhandled',
+                    'The gateway could not complete the request.',
+                    [],
+                    GatewayExceptionStatus::for($exception, $request->is('api/*')),
+                );
             });
             $exceptions->shouldRenderJsonWhen(
                 fn (Request $request) => $request->is('api/*') || $request->expectsJson(),

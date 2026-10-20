@@ -2,11 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Commands\Firewall\RemoveFirewallRuleCommand;
+use App\Commands\Instances\DestroyDeployStepCommand;
+use App\Commands\Instances\DestroyInstanceCommand;
+use App\Commands\Instances\RegisterInstanceCommand;
+use App\Commands\Instances\TransferInstanceCommand;
+use App\Commands\Nodes\RemoveNodeAccessCommand;
+use App\Commands\Nodes\RemoveNodeCommand;
+use App\Commands\Nodes\RemoveNodeRoleCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use Illuminate\Contracts\Console\Kernel;
+use LaravelZero\Framework\Bootstrap\LoadConfiguration;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -14,10 +23,26 @@ use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\ConsoleOutput;
 
 require __DIR__.'/../../../vendor/autoload.php';
+$configuration = json_decode(file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
 $app = require __DIR__.'/../../../bootstrap/app.php';
+if ($configuration['isolate_command'] ?? false) {
+    $command = match ($configuration['arguments'][0]) {
+        'instance:destroy' => DestroyInstanceCommand::class,
+        'instance:deploy-step:destroy' => DestroyDeployStepCommand::class,
+        'instance:register' => RegisterInstanceCommand::class,
+        'instance:transfer' => TransferInstanceCommand::class,
+        'node:remove' => RemoveNodeCommand::class,
+        'node:access:remove' => RemoveNodeAccessCommand::class,
+        'node:role:remove' => RemoveNodeRoleCommand::class,
+        'firewall:remove' => RemoveFirewallRuleCommand::class,
+    };
+    $app->afterBootstrapping(LoadConfiguration::class, static function ($app) use ($command): void {
+        $app['config']->set('commands.paths', []);
+        $app['config']->set('commands.add', [$command]);
+    });
+}
 $kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
-$configuration = json_decode(file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
 config()->set('orbit.home', $configuration['home']);
 app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
 if (isset($configuration['registration_facts'])) {

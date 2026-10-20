@@ -12,6 +12,8 @@ use Throwable;
 /** Owns presentation only. The application callback always runs in this process. */
 final class Animation
 {
+    public const float FRAME_INTERVAL_SECONDS = 0.3;
+
     private static ?self $active = null;
 
     private static bool $shutdownRegistered = false;
@@ -41,6 +43,7 @@ final class Animation
     /**
      * @param  list<string>  $frames  At least two frames; the renderer cycles them at a fixed cadence.
      * @param  (Closure(): string)|null  $settled
+     * @param  float  $frameIntervalSeconds  Positive interval; nested animations inherit their owner's clock.
      */
     public function __construct(
         private readonly ConsoleMode $mode,
@@ -49,6 +52,7 @@ final class Animation
         private readonly ?string $plain = null,
         private readonly ?TerminalRegion $region = null,
         private readonly ?Closure $settled = null,
+        private float $frameIntervalSeconds = self::FRAME_INTERVAL_SECONDS,
     ) {}
 
     /**
@@ -73,6 +77,7 @@ final class Animation
         $previous = self::$active;
         $this->parent = $previous?->output === $this->output ? $previous : null;
         $this->epoch = $this->parent->epoch ?? 0;
+        $this->frameIntervalSeconds = $this->parent->frameIntervalSeconds ?? $this->frameIntervalSeconds;
 
         if ($this->parent === null) {
             $previous?->stop(clear: true);
@@ -267,7 +272,7 @@ final class Animation
 
         $frames = $this->presentationFrames();
         $clear = $this->region?->clearSequence() ?: ($this->parent?->region?->clearSequence() ?? '');
-        $payload = json_encode(['frames' => $frames, 'clear' => $clear, 'epoch' => $this->epoch], JSON_THROW_ON_ERROR)."\n";
+        $payload = json_encode(['frames' => $frames, 'clear' => $clear, 'epoch' => $this->epoch, 'interval' => $this->frameIntervalSeconds], JSON_THROW_ON_ERROR)."\n";
 
         if ($this->parent !== null && is_resource($this->parent->process)) {
             $this->takeRenderer($this->parent);

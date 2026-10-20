@@ -119,7 +119,7 @@ composer check
 
 The Gateway runs only on Linux. You can run its tests on macOS, as the next two paragraphs describe, but to run a Gateway, use a Linux machine and follow the [Quickstart](/quickstart).
 
-A change to a [remote program](/reference/remote-programs) also needs shellcheck and ruff 0.17.0 for `bin/remote-programs-check`, for example `brew install shellcheck` and `uv tool install ruff@0.17.0`.
+A change to a [remote program](/reference/remote-programs) also needs shellcheck and ruff 0.17.0 for `bin/remote-programs-check`, for example `brew install shellcheck` and `uv tool install ruff@0.17.0`. Install the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt` in a virtual environment and put its `bin` directory on `PATH`.
 
 Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. The test application reads the tracked `.env.example`, not your `.env`. Child processes that boot the Gateway, such as `artisan` calls, still read `.env` when it exists.
 
@@ -141,7 +141,19 @@ Keep tables and columns in `Schema::create` calls so Larastan reads them through
 
 Separate named test connections use the stock migrate command, with no schema-path override or SQLite CLI dependency. Point `queue.batching.database` at the same connection before migrating; Horizon's batch-metadata migration uses that setting. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the reference-row migration.
 
-Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+Keep non-Gateway suites fast with each ecosystem's stock test tools. PHP tests use controllable clocks and Laravel's `Sleep::fake()` for timeout budgets, and in-process Artisan calls with transport fakes for command behavior. Give in-process nonterminal commands an explicit nonterminal input stream; never inherit the test runner's stdin. Keep real PTY cases for raw input, echo, terminal-state restoration, and proving that explicit consent skips a terminal prompt.
+
+Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests accept short work and renderer intervals for process ownership and cleanup checks; terminal recordings and production-cadence assertions retain the 300 ms interval and their original tick counts across admission and resume. Keep cold nested-panel startup and settlement inside the outer callback.
+
+Consent matrices register only their command in the real application kernel. An affirmative case for each family retains full command discovery. Tests that validate prompt input deliver Backspace keys in one buffered read instead of rendering hundreds of unrelated frames. The prompt still processes every key. The real PTY driver polls readiness every 2 ms and drains queued output without waiting once the child has exited. Neither interval is a production-cadence assertion.
+
+When a test must observe native cURL options, inject its option-setting callable and use a stock mock that delegates to `curl_setopt`; checking a private timeout selector does not prove the transfer uses it.
+
+Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
+
+Docs tests build each file's Git template once and copy it for isolated cases. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+
+Tests for generated merges prepare artifacts without rebuilding each branch. Real Git merges exercise the driver and its generators in both orders, alongside independent preview commands in private checkouts. Keep unrelated suites and guides out of these fixtures. Check identical merge trees once with the read-only freshness gates, including a fresh web type comparison. Policy tests use small, valid corpora that exercise the rule under test; `composer docs-lint` checks the full corpus.
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 

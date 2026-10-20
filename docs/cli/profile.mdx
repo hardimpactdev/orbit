@@ -47,6 +47,8 @@ Without `url` and `--instance`, the command reads `APP_URL` from the nearest `.e
 
 The command sends one GET and does not follow redirects. It sends `X-REQUEST-ID` and `X-TOOLBAR-AUTH` (`guest`, `first-user`, or `user`), and `X-TOOLBAR-USER` with `--user`. TLS uses the system trust store. With `--instance`, TLS uses the active profile's pinned Orbit root certificate instead, because an Instance domain presents an Orbit CA certificate. An `--instance` request also carries `X-Orbit-Probe: 1`. A development Instance's site answers it without waking hibernated Processes and does not count it as activity.
 
+The request uses a local 30-second timeout and a 2-second connection timeout. The active Gateway profile's request timeout does not change either limit.
+
 A completed response is a success, whatever its HTTP status. When the response has a readable `X-Toolbar-Summary` header, the result has `source` `baseline+toolbar`, `instrumented` true, and the decoded summary. Otherwise `source` is `baseline` and `instrumented` is false.
 
 Human output is one request line and a timing list. JSON returns the request, timings, response headers, auth mode, request ID, `origin` `caller`, source, and instrumented flag.
