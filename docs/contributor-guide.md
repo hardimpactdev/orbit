@@ -131,7 +131,11 @@ Keep non-Gateway suites fast with each ecosystem's stock test tools. PHP tests u
 
 When a test must observe native cURL options, inject its option-setting callable and use a stock mock that delegates to `curl_setopt`; checking a private timeout selector does not prove the transfer uses it.
 
-Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
+
+Docs tests build each file's Git template once and copy it for isolated cases. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+
+Tests for generated merges prepare artifacts without rebuilding each branch. Real Git merges exercise the driver and its generators in both orders, alongside independent preview commands in private checkouts. Keep unrelated suites and guides out of these fixtures. Check identical merge trees once with the read-only freshness gates, including a fresh web type comparison. Policy tests use small, valid corpora that exercise the rule under test; `composer docs-lint` checks the full corpus.
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
