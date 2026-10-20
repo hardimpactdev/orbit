@@ -6,6 +6,7 @@ use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskReviewReadStatus;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\Project;
 use App\Models\Task;
@@ -685,14 +686,28 @@ describe('malformed watcher cache values', function (): void {
         watcher_fake_health([], [
             ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
         ]);
-        Cache::put('tasks:commit-checks:v1:acme/orbit@abc123', $value, 60);
+        $group = watcher_group();
+        $before = Cache::getStore()->all();
+        app(GitHubTaskPullRequestMerger::class)->commitChecks($group, 'abc123');
+        $written = array_diff_key(Cache::getStore()->all(), $before);
+        expect($written)->toHaveCount(1);
+        Cache::put(array_key_first($written), $value, 60);
 
-        $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+        $health = app(HttpTaskPullRequestWatcher::class)->health($group);
 
         expect($health?->state)->toBe('open')
             ->and($health?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.']);
-        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/check-runs'));
-    })->with(['a run without a name' => [[['conclusion' => 'failure']]], 'not a list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
+        expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/check-runs')))->toHaveCount(2);
+    })->with([
+        'a run without a name' => [['runs' => [['conclusion' => 'failure']], 'suites' => [], 'pull_request_suites' => []]],
+        'runs are not a list' => [['runs' => ['failed' => []], 'suites' => [], 'pull_request_suites' => []]],
+        'wrong container type' => ['invalid'],
+        'missing pull request suites' => [['runs' => [], 'suites' => []]],
+        'null pull request suites' => [['runs' => [], 'suites' => [], 'pull_request_suites' => null]],
+        'pull request suites have the wrong container type' => [['runs' => [], 'suites' => [], 'pull_request_suites' => 'invalid']],
+        'pull request suites are not a list' => [['runs' => [], 'suites' => [], 'pull_request_suites' => ['suite' => 5]]],
+        'pull request suite id is not an integer' => [['runs' => [], 'suites' => [], 'pull_request_suites' => [5, '6']]],
+    ]);
 });
 
 it('preserves failed check evidence through cached health reads', function (): void {

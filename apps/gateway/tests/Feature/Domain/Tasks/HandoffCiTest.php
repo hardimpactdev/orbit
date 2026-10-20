@@ -109,7 +109,7 @@ function ci_github(?string $commit = CI_HANDOFF): object
             }
             $this->reads++;
 
-            return ['runs' => $this->runs[$sha] ?? [], 'suites' => $this->suites[$sha] ?? []];
+            return ['runs' => $this->runs[$sha] ?? [], 'suites' => $this->suites[$sha] ?? [], 'pull_request_suites' => []];
         }
 
         public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState

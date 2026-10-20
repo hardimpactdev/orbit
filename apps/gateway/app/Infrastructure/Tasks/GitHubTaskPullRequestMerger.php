@@ -24,8 +24,8 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Reviews and merges through the Project's App installation (ADR 0203). The write token is the publishing
- * token: `contents`, `pull_requests`, and `workflows` write. Check runs use a `checks: read` token, and the
- * pull request list uses the cached `pull_requests: read` token. No new App permission is needed.
+ * token: `contents`, `pull_requests`, and `workflows` write. Uncached commit snapshots use separate `checks: read`
+ * and `actions: read` tokens. The pull request list uses the cached `pull_requests: read` token.
  */
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
@@ -110,8 +110,8 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         $workflows = $this->workflowSuites($repository, $sha);
         $superseded = $workflows['superseded'];
         $snapshot = [
-            'runs' => array_values(array_filter($snapshot['runs'], static fn (GitHubCheckRun $run): bool => $run->appSlug !== RequiredCheckState::CheckApp || ! in_array($run->checkSuiteId, $superseded, true))),
-            'suites' => array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug !== RequiredCheckState::CheckApp || ! in_array($suite->id, $superseded, true))),
+            'runs' => array_values(array_filter($snapshot['runs'], static fn (GitHubCheckRun $run): bool => ! in_array($run->checkSuiteId, $superseded, true))),
+            'suites' => array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => ! in_array($suite->id, $superseded, true))),
             'pull_request_suites' => $workflows['pull_request'],
         ];
         Cache::put($key, [
