@@ -18,7 +18,6 @@ declare(strict_types=1);
  * CamelCase appInstance and appId count, as do Laravel references to the apps
  * table: constrained(), on(), exists and unique rules, and Rule::exists().
  */
-
 const PROJECT_VOCABULARY_ROOTS = [
     'apps/gateway/app',
     'apps/gateway/bootstrap',
@@ -96,6 +95,12 @@ function project_vocabulary_app_id_allowed(string $relative, string $line): bool
     if (str_contains($relative, '/GitHub/')
         || str_contains($relative, '/Broadcasting/')
         || str_contains($relative, '/WebSocket/')
+        || in_array($relative, [
+            'apps/gateway/app/Models/WebSocketApp.php',
+            'apps/gateway/database/migrations/2026_12_07_000000_create_websocket_apps.php',
+            'apps/web/src/api/schema.d.ts',
+            'docs/reference/websocket-apps.md',
+        ], true)
         || $relative === 'apps/gateway/config/broadcasting.php') {
         return true;
     }

@@ -20,6 +20,8 @@ The [`websocket` role](/solutions/realtime-reverb) runs one Reverb server at `ws
 
 An app has a unique `name`, an `app_id`, a `key`, and a `secret`. The Gateway generates the three values. It stores the secret encrypted and never returns it.
 
+`app_id` is Reverb's own identifier. It does not name an Orbit Project or Instance.
+
 Reverb keeps each app's channels apart. A client connects with an app's key and sees only that app's channels. Reverb checks each publish request against the secret of the app in the request path. So an app's credentials cannot publish on another app's channels.
 
 The role's first converge creates the `gateway` app. That app's secret never leaves the Gateway: you cannot add it to an Instance or destroy it. Apps outlive the role. Removing or moving the role keeps every app and its keys.

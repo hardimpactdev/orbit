@@ -1395,6 +1395,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Pi server",
