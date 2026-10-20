@@ -38,7 +38,8 @@ interface TaskPullRequestPublisher
     public function pushHandoff(Task $group, string $commit): void;
 
     /**
-     * Deletes `task-{id}-handoff` on origin when the group ends. A branch that is already gone counts as deleted.
+     * Deletes `task-{id}-handoff` on origin when the group ends. A branch or repository that is already gone counts
+     * as deleted.
      *
      * @throws TaskPullRequestException
      */

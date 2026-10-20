@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $output
  * @property array<string, mixed>|null $deliverable_evidence
  * @property string|null $commit_sha the handoff commit that CI tests, once Orbit committed it ([Handoff CI](/reference/tasks#handoff-ci))
+ * @property Carbon|null $pushed_at when Orbit saw that commit pushed for CI
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
  */
@@ -42,7 +43,7 @@ final class TaskCheck extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
-        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'started_at', 'finished_at',
+        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -71,6 +72,7 @@ final class TaskCheck extends Model
             'deliverable_evidence' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
+            'pushed_at' => 'datetime',
         ];
     }
 }

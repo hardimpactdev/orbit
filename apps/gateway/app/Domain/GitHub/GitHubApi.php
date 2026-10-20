@@ -124,7 +124,7 @@ interface GitHubApi
     public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array;
 
     /**
-     * Deletes a branch on GitHub. A branch that is already gone counts as deleted.
+     * Deletes a branch on GitHub. A branch that is already gone, a 422 or a 404, counts as deleted.
      *
      * @throws GitHubApiException
      */

@@ -18,8 +18,8 @@ it('runs the shared Ubuntu snapshot check only for recipe changes in the Gateway
 ${{ github.event.pull_request.base.sha || github.event.before }}
 EXPRESSION);
     // A handoff push's event base is the previous handoff, so it compares with where its branch left main instead.
-    expect($step['env']['TASK_PUSH'])->toBe("\${{ startsWith(github.ref, 'refs/heads/task-') }}")
-        ->and($step['run'])->toContain('if [ "$TASK_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi');
+    expect($workflow['env'])->toHaveKey('HANDOFF_PUSH')
+        ->and($step['run'])->toContain('if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi');
     expect(array_search('Verify Ubuntu recipe pins against the named snapshot', array_keys($steps), true))->toBeLessThan(array_search('Run full test suite and refresh Pest TIA graph', array_keys($steps), true));
     expect($workflow['jobs']['required']['needs'])->toContain('project');
 

@@ -92,3 +92,32 @@ it('reads no check runs without the checks permission, and asks again on the nex
         ->and($merger->requiredCheck($group, MERGER_SHA, 'Required checks'))->toBe(RequiredCheckState::Unreadable)
         ->and(merger_check_run_reads())->toBe(0);
 });
+
+it('counts for the pull request only a merge-check run of its own pull_request workflow run', function (array $workflowRuns, RequiredCheckState $state): void {
+    GitHubTestSupport::storeApp();
+    // Closures, because the Actions reader streams a body, and one shared response can be read only once.
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_read', 'permissions' => ['checks' => 'read', 'actions' => 'read']], 201),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 1, 'check_suites' => [
+            ['id' => 5, 'status' => 'completed', 'conclusion' => 'success', 'app' => ['slug' => 'github-actions']],
+        ]]),
+        // The handoff push run of this commit passed, in check suite 5.
+        'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [
+            ['id' => 1, 'name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => MERGER_SHA,
+                'app' => ['slug' => 'github-actions'], 'check_suite' => ['id' => 5]],
+        ]]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => count($workflowRuns), 'workflow_runs' => $workflowRuns]),
+    ]);
+    $merger = app(GitHubTaskPullRequestMerger::class);
+    $group = merger_group();
+
+    expect($merger->pullRequestCheck($group, MERGER_SHA, 'Required checks'))->toBe($state)
+        ->and($merger->requiredCheck($group, MERGER_SHA, 'Required checks'))->toBe(RequiredCheckState::Passed);
+    Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/actions/runs?')
+        && str_contains($request->url(), 'event=pull_request') && str_contains($request->url(), 'head_sha='.MERGER_SHA));
+})->with([
+    'no pull request run yet' => [[], RequiredCheckState::Missing],
+    'the pull request run is another suite' => [[['id' => 8, 'event' => 'pull_request', 'head_sha' => MERGER_SHA, 'check_suite_id' => 6]], RequiredCheckState::Missing],
+    'the run is the pull request run' => [[['id' => 8, 'event' => 'pull_request', 'head_sha' => MERGER_SHA, 'check_suite_id' => 5]], RequiredCheckState::Passed],
+]);

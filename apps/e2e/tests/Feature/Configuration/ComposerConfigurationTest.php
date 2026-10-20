@@ -231,16 +231,16 @@ describe('Composer configuration', function (): void {
                 'run' => 'composer check',
                 'env' => ['ORBIT_CHECK_PROCESSES' => '${{ runner.environment == \'self-hosted\' && 6 || 4 }}'],
             ]);
-        // Every non-Gateway Composer suite runs in full on change runs: pull requests and task-* pushes.
+        // Every non-Gateway Composer suite runs in full on change runs: pull requests and task-*-handoff pushes.
         expect($steps['Run full PR test suite'])
             ->toMatchArray([
-                'if' => "matrix.project.directory != 'apps/gateway' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))",
+                'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
         expect($steps['Run full test suite and refresh Pest TIA graph'])->toMatchArray([
-            'if' => "\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) }}",
+            'if' => "env.CHANGE_RUN != 'true'",
             'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
         ]);
         $order = array_flip(array_keys($steps));
@@ -301,9 +301,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/pint.json', matrix.project.directory)")
             ->toContain("format('{0}/rector.php', matrix.project.directory)")
             ->toContain('orbit-lint-php8.5-${{ matrix.project.directory }}-')
-            ->toContain("\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-')
-            ->toContain("\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}");
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}");
 
         expect(strpos($workflow, 'Install dependencies'))
             ->toBeLessThan(strpos($workflow, 'Restore Pint cache'));
@@ -322,9 +322,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/composer.lock', matrix.project.directory)")
             ->toContain("format('{0}/phpstan.neon', matrix.project.directory)")
             ->toContain('orbit-phpstan-php8.5-${{ matrix.project.directory }}-')
-            ->toContain("\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
-            ->toContain("\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
             ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\s*$/m');
 
@@ -345,11 +345,11 @@ describe('Composer configuration', function (): void {
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
         foreach (['Save PHPStan result cache', 'Save Pint cache'] as $name) {
-            expect($steps[$name]['if'])->toBe("success() && !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))");
+            expect($steps[$name]['if'])->toBe("success() && env.CHANGE_RUN != 'true'");
         }
     });
 
-    it('requires the full Gateway suite in shards on every pull request and task-* push', function (): void {
+    it('requires the full Gateway suite in shards on every pull request and task-*-handoff push', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $jobs = $workflow['jobs'];
         $shardSteps = array_column($jobs['gateway-shards']['steps'], null, 'name');
@@ -359,7 +359,7 @@ describe('Composer configuration', function (): void {
         expect($jobs['project'])->not->toHaveKey('needs');
         expect($jobs['gateway-shards'])->not->toHaveKey('needs')
             ->toMatchArray([
-                'if' => "(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))",
+                'if' => "github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')",
                 'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => [1, 2, 3, 4]]],
             ]);
         expect($jobs['gateway-shards']['runs-on'])
@@ -367,7 +367,7 @@ describe('Composer configuration', function (): void {
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
             ->toBe('vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
-            'if' => "matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))",
+            'if' => "matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'",
             'run' => '../../bin/check-pest-shards',
         ]);
         expect($shardSteps['Keep exception arguments in traces']['run'])
@@ -403,7 +403,7 @@ describe('Composer configuration', function (): void {
         }
         // A push to main, a scheduled run, and a manual run test the Gateway in the project job instead.
         expect($verdict(['CHANGE_RUN' => 'false', 'GATEWAY_SHARDS_RESULT' => 'skipped']))->toBeTrue()
-            ->and($jobs['required']['steps'][0]['env']['CHANGE_RUN'])->toBe("\${{ (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) }}");
+            ->and($jobs['required']['steps'][0]['env'])->not->toHaveKey('CHANGE_RUN');
 
     });
 
@@ -491,15 +491,25 @@ it('builds the agent and desktop app on a handoff push only when it changes them
     $detect = array_column($steps, null, 'id')['changes'];
 
     // GitHub expressions treat 0 as false, so the depth is a string: a handoff push needs origin/main for the merge-base.
-    expect($steps[0]['with']['fetch-depth'])->toBe("\${{ startsWith(github.ref, 'refs/heads/task-') && '0' || '2' }}")
-        ->and($detect['env'])->toBe([
-            'CHANGE_RUN' => "\${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-') }}",
-            'TASK_PUSH' => "\${{ startsWith(github.ref, 'refs/heads/task-') }}",
-        ])
-        ->and($detect['run'])->toContain('if [ "$TASK_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi')
+    expect($steps[0]['with']['fetch-depth'])->toBe("\${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}")
+        ->and($detect)->not->toHaveKey('env')
+        ->and($detect['run'])->toContain('if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi')
         ->toContain('if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD')
         ->toContain('echo "'.$output.'=true"');
 })->with([['agent', 'agent'], ['desktop', 'desktop']]);
+
+it('defines a handoff push and a change run once, and spells out the same test only where GitHub allows no env', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $handoff = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')";
+    $change = "github.event_name == 'pull_request' || ".$handoff;
+
+    // A manual run or a push to another task-* branch is neither a handoff push nor a change run.
+    expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
+        ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
+        ->and($workflow['jobs']['gateway-shards']['if'])->toBe($change)
+        ->and($workflow['concurrency']['cancel-in-progress'])->toBe('${{ '.$change.' }}')
+        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), "startsWith(github.ref, 'refs/heads/task-')"))->toBe(5);
+});
 
 it('keeps a running main push, only the newest waiting one, and every full run', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
@@ -507,8 +517,8 @@ it('keeps a running main push, only the newest waiting one, and every full run',
     // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run.
     // Scheduled and manual full runs keep a group per commit, so a push never replaces one.
     expect($workflow['concurrency'])->toBe([
-        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}",
-        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-') }}",
+        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}",
+        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}",
     ]);
     // A task-*-handoff push is a handoff commit; a newer one on the same branch cancels it, and never a main or pull request run.
     expect($workflow['on']['push']['branches'])->toBe(['main', 'task-*-handoff']);

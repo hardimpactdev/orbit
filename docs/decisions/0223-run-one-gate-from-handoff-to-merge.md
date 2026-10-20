@@ -146,7 +146,10 @@ This item replaced, on 2026-10-20, the start-commit test base that it chose on 2
 
 - The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
 - After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
-- The workspace removal at the end of the task deletes `task-{id}-handoff`; a missing branch counts as deleted.
+- Handoff CI applies only to a review-and-merge Project, whose CI Orbit owns. Other Projects keep the task check alone, also with a `merge_check`.
+- Once the workspace removal at the end of the task succeeded, Orbit deletes `task-{id}-handoff`. A 404 or 422 counts as deleted; any other failure asks for assistance once and never holds the removal.
+- The handoff commit message holds no GitHub skip directive. A commit with no GitHub Actions suite 10 minutes after its push asks for assistance once.
+- The merge gate counts only merge-check runs of the pull request's own `pull_request` workflow run for the head, so CI on the merge ref stays the integration gate. A handoff push run on the same commit never counts.
 - The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
 - The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
 - The handoff stays blocking: the reviewer starts only after CI passed.
@@ -334,7 +337,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
-  - In apps/gateway, `HandoffCiTest`: green, red, pending, every final suite state, an unchanged handoff, and a passed result on an earlier handoff commit that must not count. `ReviewAndMergeTest`: a moved HEAD and one commit from handoff to merge. In apps/e2e, the gate runs no test suite, and `ci.yml` treats a `task-*` push as a change run.
+  - In apps/gateway, `HandoffCiTest`: green, red, pending, every final suite state, an unchanged handoff, and a passed result on an earlier handoff commit that must not count. `ReviewAndMergeTest`: a moved HEAD and one commit from handoff to merge. In apps/e2e, the gate runs no test suite, and `ci.yml` treats only a `task-*-handoff` push as a change run, besides a pull request.
   - In apps/gateway, the `project:update` preflight cases: a strict ruleset, strict classic protection, no protection, and an unreadable source.
   - On the live Gateway, after the build, no new `base_merge` check row appears.
   - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.

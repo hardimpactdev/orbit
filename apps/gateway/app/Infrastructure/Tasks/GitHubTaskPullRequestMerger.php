@@ -15,6 +15,8 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
+use App\Infrastructure\GitHub\GitHubActionsReader;
+use App\Infrastructure\GitHub\GitHubActionsUnavailable;
 use App\Models\Project;
 use App\Models\Task;
 use Closure;
@@ -37,6 +39,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
+        private GitHubActionsReader $actions,
     ) {}
 
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
@@ -48,6 +51,62 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         }
 
         return $runs === null ? RequiredCheckState::Unreadable : RequiredCheckState::of($runs, $sha, $checkName);
+    }
+
+    public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
+    {
+        try {
+            $runs = $this->checkRuns($group, $sha);
+            if ($runs === null) {
+                return RequiredCheckState::Unreadable;
+            }
+            $suites = $this->pullRequestSuites($group, $sha);
+        } catch (TaskPullRequestException) {
+            return RequiredCheckState::Unreadable;
+        }
+        // Another App's run of the name still disqualifies the commit, as the green-commit rules say.
+        $counted = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name !== $checkName
+            || $run->appSlug !== RequiredCheckState::CheckApp || in_array($run->checkSuiteId, $suites, true)));
+
+        return RequiredCheckState::of($counted, $sha, $checkName);
+    }
+
+    /**
+     * The check suites of the `pull_request` workflow runs for exactly this head, shared for a minute like the checks.
+     * It reads at most one page of 100 runs; more fails the read.
+     *
+     * @return list<int>
+     *
+     * @throws TaskPullRequestException
+     */
+    private function pullRequestSuites(Task $group, string $sha): array
+    {
+        $repository = $this->githubRepository($group);
+        $key = 'tasks:commit-checks:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha.':pull-request-suites';
+        $cached = Cache::get($key);
+        if (is_array($cached) && array_is_list($cached) && array_all($cached, is_int(...))) {
+            return $cached;
+        }
+        try {
+            $read = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/runs?'.http_build_query([
+                'head_sha' => $sha, 'event' => 'pull_request', 'per_page' => 100,
+            ]), $this->actions->token($repository));
+        } catch (GitHubActionsUnavailable $exception) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.', previous: $exception);
+        }
+        $rows = $read['workflow_runs'] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || ! is_int($read['total_count'] ?? null) || $read['total_count'] !== count($rows)) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
+        }
+        $suites = [];
+        foreach ($rows as $row) {
+            if (is_array($row) && ($row['event'] ?? null) === 'pull_request' && ($row['head_sha'] ?? null) === $sha && is_int($row['check_suite_id'] ?? null)) {
+                $suites[] = $row['check_suite_id'];
+            }
+        }
+        Cache::put($key, $suites, self::ReadSeconds);
+
+        return $suites;
     }
 
     public function checkRuns(Task $group, string $sha): ?array

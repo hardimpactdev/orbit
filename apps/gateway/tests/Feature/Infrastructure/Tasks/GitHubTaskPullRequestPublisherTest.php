@@ -277,7 +277,7 @@ it('pushes a handoff commit once to task-{id}-handoff, also for an incoming pull
     Http::assertNothingSent();
 })->with(['own branch' => [null], 'incoming pull request' => ['cursor/login-throttle']]);
 
-it('deletes the handoff branch on origin, and counts a branch that is already gone as deleted', function (int $status, ?string $failure): void {
+it('deletes the handoff branch on origin, and counts a branch or repository that is already gone as deleted', function (int $status, ?string $failure): void {
     GitHubTestSupport::storeApp();
     Http::fake([
         'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
@@ -293,6 +293,7 @@ it('deletes the handoff branch on origin, and counts a branch that is already go
 })->with([
     'deleted' => [204, null],
     'already gone' => [422, null],
+    'repository gone' => [404, null],
     'refused' => [403, 'The handoff branch could not be deleted: GitHub refused the request.'],
     'unavailable' => [502, 'The handoff branch could not be deleted: GitHub could not be reached or refused the Project credential.'],
 ]);

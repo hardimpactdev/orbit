@@ -25,6 +25,13 @@ interface TaskPullRequestMerger
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState;
 
     /**
+     * The merge check of the group's pull request on its head `$sha`, as {@see requiredCheck()} judges it, but only from
+     * the runs of a `pull_request` workflow run for exactly that head. Those test the pull request's merge ref. A run of
+     * a `push` on the same commit, such as a handoff push, never counts. A failed read is `Unreadable`, never `Passed`.
+     */
+    public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState;
+
+    /**
      * Every check run on exactly this commit. All callers share one read per repository and commit for a minute:
      * the merge gate, the handoff CI, and the settling watch. Null when the installation has not granted
      * `checks: read`.

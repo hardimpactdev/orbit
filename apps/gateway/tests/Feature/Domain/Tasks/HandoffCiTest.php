@@ -26,6 +26,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\FakeTaskTurnReceipts;
 
 const CI_START = '5555555555555555555555555555555555555555';
 const CI_HANDOFF = 'cccccccccccccccccccccccccccccccccccccccc';
@@ -112,6 +113,11 @@ function ci_github(?string $commit = CI_HANDOFF): object
             throw new LogicException('A handoff judges the snapshot itself.');
         }
 
+        public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
+        {
+            throw new LogicException('A handoff never reads a pull request.');
+        }
+
         public function pushHandoff(Task $group, string $commit): void
         {
             if ($this->pending) {
@@ -176,11 +182,11 @@ function ci_run(string $name, ?string $conclusion, string $sha, int $id = 1): Gi
         $conclusion === null ? 'in_progress' : 'completed', $sha, RequiredCheckState::CheckApp);
 }
 
-/** A handoff of a subtask in a Project whose merge check is `Required checks`, with a passing task check. @return array{Task, Task} */
-function ci_handoff(): array
+/** A handoff of a subtask in a review-and-merge Project whose merge check is `Required checks`, with a passing task check. @return array{Task, Task} */
+function ci_handoff(string $summary = 'Done.'): array
 {
-    [$group, $task] = tick_deliverables([], [], null);
-    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'merge_check' => 'Required checks']);
+    [$group, $task] = tick_deliverables([], [], null, receipts: [FakeTaskTurnReceipts::contents('ready_for_review', $summary)]);
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'merge_check' => 'Required checks', 'review_and_merge' => true]);
 
     return [$group->fresh() ?? $group, $task];
 }
@@ -385,7 +391,7 @@ it('decides a missing merge-check run from the commit\'s GitHub Actions suites',
         'infrastructure' => $waits()->and($fresh?->assistance_reason)->toBe(ci_assistance('CI did not run to completion on handoff commit '.CI_HANDOFF
             .': GitHub Actions cancelled check suite 5 (cancelled) before check Required checks ran. Re-run it.')),
         'unexplained' => $waits()->and($fresh?->assistance_reason)->toBe(ci_assistance('GitHub Actions completed every workflow on handoff commit '.CI_HANDOFF
-            .' without check Required checks: check suite 5 ('.$conclusion.'). A renamed or removed job, or a workflow that no longer runs on pushes to task-* branches, causes this. '
+            .' without check Required checks: check suite 5 ('.$conclusion.'). A renamed or removed job, or a workflow that no longer runs on pushes to task-*-handoff branches, causes this. '
             .'Fix the workflow or the Project merge check.')),
     };
     expect($fresh?->status)->toBe(TaskStatus::Running);
@@ -432,9 +438,11 @@ it('fails the handoff when the commit does not hold the tree the check passed on
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
 });
 
-it('commits nothing and reads no CI for a Project without a merge check', function (): void {
+it('commits nothing and reads no CI for a Project without review and merge', function (?string $mergeCheck): void {
     $github = ci_github();
-    [, $task] = tick_deliverables([], [], null);
+    [$group, $task] = tick_deliverables([], [], null);
+    // Such a Project's CI may not run on handoff branches, so it keeps the task check alone.
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'merge_check' => $mergeCheck]);
 
     ci_ticks();
 
@@ -442,6 +450,37 @@ it('commits nothing and reads no CI for a Project without a merge check', functi
         ->and($github->messages)->toBe([])
         ->and($github->reads)->toBe(0)
         ->and(TaskCheck::query()->sole()->commit_sha)->toBeNull();
+})->with(['no merge check' => [null], 'a merge check without review and merge' => ['Required checks']]);
+
+it('asks for assistance once when no GitHub Actions suite started ten minutes after the push', function (): void {
+    $github = ci_github();
+    [, $task] = ci_handoff();
+
+    ci_ticks();
+    $this->travel(TaskHandoffCi::NoSuiteSeconds - 1)->seconds();
+    ci_ticks(1);
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(TaskCheck::query()->sole()->pushed_at)->not->toBeNull();
+
+    $this->travel(2)->seconds();
+    ci_ticks(2);
+    expect($task->fresh()?->assistance_reason)->toBe(ci_assistance('GitHub Actions started no workflow on handoff commit '.CI_HANDOFF
+        .' in the 10 minutes since Orbit pushed it to task-'.$task->parent_id.'-handoff. A ci.yml on the task branch without the task-*-handoff push trigger, '
+        .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, or start CI on the commit.'))
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
+        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
+        ->and($github->handoffs)->toBe([CI_HANDOFF]);
+});
+
+it('removes every directive that would make GitHub skip CI from the handoff commit message', function (): void {
+    $github = ci_github();
+    $github->runs[CI_HANDOFF] = [ci_run('Required checks', 'success', CI_HANDOFF)];
+    [, $task] = ci_handoff("Done [skip ci] and [ci skip], [no ci], [Skip Actions], [actions skip].\n\nskip-checks: true");
+
+    ci_ticks();
+
+    expect($github->messages)->toBe(["Models\n\nDone  and , , , .\n\n"])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
 it('asks for assistance on the fifth tick that cannot push the commit or read its checks', function (string $flag, string $reason): void {

@@ -16,9 +16,9 @@ it('checks Docs quality and the full suite once in the project matrix on the imm
     expect($steps['Check out repository']['with']['ref'])->toBe('${{ github.sha }}');
     expect($steps['Run project quality checks']['run'])->toBe('composer check');
     expect($steps['Run full PR test suite'])->toMatchArray([
-        'if' => "matrix.project.directory != 'apps/gateway' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))",
+        'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
     ])->and($steps['Run full PR test suite']['run'])->toContain('--no-tia');
-    expect($steps['Run full test suite and refresh Pest TIA graph']['if'])->toBe("\${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) }}");
+    expect($steps['Run full test suite and refresh Pest TIA graph']['if'])->toBe("env.CHANGE_RUN != 'true'");
     expect($steps['Run full test suite and refresh Pest TIA graph']['run'])->toContain('--tia --fresh');
     expect(array_filter($job['steps'], fn (array $step): bool => ($step['run'] ?? '') === 'composer check'))->toHaveCount(1);
 });

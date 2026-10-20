@@ -205,6 +205,9 @@ function rm_runtime(array $receipts = []): object
 
         public RequiredCheckState $check = RequiredCheckState::Passed;
 
+        /** The merge check of the pull request's own workflow run; null means the same as {@see $check}. */
+        public ?RequiredCheckState $pullRequestCheck = null;
+
         public bool $mergeAccepted = true;
 
         public int $pushFailures = 0;
@@ -306,6 +309,11 @@ function rm_runtime(array $receipts = []): object
         public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
         {
             return $this->check;
+        }
+
+        public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
+        {
+            return $this->pullRequestCheck ?? $this->check;
         }
 
         public function commitChecks(Task $group, string $sha): ?array
@@ -769,6 +777,20 @@ describe('merge on green', function (): void {
             ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Waiting)
             ->and($group->fresh()?->merge_reason)->toBe('Check Required checks is still running on '.RM_HEAD.'.')
             ->and(array_count_values(rm_activity($group))['merge waiting'] ?? 0)->toBe(1);
+    });
+
+    it('waits for the pull request run while only a push run of the head passed', function (): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        // The handoff push run passed on the same commit; the pull request's run on its merge ref has not reported.
+        $runtime->pullRequestCheck = RequiredCheckState::Missing;
+        rm_watch(rm_open(RM_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->merges)->toBe([])
+            ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Waiting)
+            ->and($group->fresh()?->merge_reason)->toBe('Check Required checks has no run on '.RM_HEAD.' yet.');
     });
 
     it('refuses a head whose merge check failed', function (): void {

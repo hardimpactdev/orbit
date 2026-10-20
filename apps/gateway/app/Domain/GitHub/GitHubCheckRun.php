@@ -17,6 +17,7 @@ final readonly class GitHubCheckRun
      * @param  string|null  $status  `queued`, `in_progress`, `completed`, or another state GitHub reports
      * @param  string|null  $headSha  the commit the run checked, when GitHub sent `head_sha`
      * @param  string|null  $appSlug  the slug of the GitHub App that created the run, when GitHub sent `app.slug`
+     * @param  int|null  $checkSuiteId  the check suite the run belongs to, when GitHub sent `check_suite.id`
      */
     public function __construct(
         public string $name,
@@ -29,15 +30,17 @@ final readonly class GitHubCheckRun
         public ?string $appSlug = null,
         public ?string $outputTitle = null,
         public ?string $outputSummary = null,
+        public ?int $checkSuiteId = null,
     ) {}
 
-    /** @return array{name: string, conclusion: string|null, url: string|null, id: int|null, started_at: string|null, status: string|null, head_sha: string|null, app_slug: string|null, output_title: string|null, output_summary: string|null} */
+    /** @return array{name: string, conclusion: string|null, url: string|null, id: int|null, started_at: string|null, status: string|null, head_sha: string|null, app_slug: string|null, output_title: string|null, output_summary: string|null, check_suite_id: int|null} */
     public function toArray(): array
     {
         return [
             'name' => $this->name, 'conclusion' => $this->conclusion, 'url' => $this->url, 'id' => $this->id,
             'started_at' => $this->startedAt, 'status' => $this->status, 'head_sha' => $this->headSha,
             'app_slug' => $this->appSlug, 'output_title' => $this->outputTitle, 'output_summary' => $this->outputSummary,
+            'check_suite_id' => $this->checkSuiteId,
         ];
     }
 
@@ -50,7 +53,8 @@ final readonly class GitHubCheckRun
         $text = static fn (string $key): ?string => is_string($row[$key] ?? null) ? $row[$key] : null;
 
         return new self($row['name'], $text('conclusion'), $text('url'), is_int($row['id'] ?? null) ? $row['id'] : null,
-            $text('started_at'), $text('status'), $text('head_sha'), $text('app_slug'), $text('output_title'), $text('output_summary'));
+            $text('started_at'), $text('status'), $text('head_sha'), $text('app_slug'), $text('output_title'), $text('output_summary'),
+            is_int($row['check_suite_id'] ?? null) ? $row['check_suite_id'] : null);
     }
 
     /** Whether the run completed with conclusion `success` for exactly this commit. */

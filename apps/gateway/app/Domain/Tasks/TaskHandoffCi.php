@@ -25,6 +25,12 @@ final readonly class TaskHandoffCi
     /** The `failed_step` of a handoff check whose tests failed in CI. */
     public const string FailedStep = 'ci';
 
+    /** How long after the push a commit without a GitHub Actions suite waits before it asks for assistance. */
+    public const int NoSuiteSeconds = 600;
+
+    /** GitHub skips push workflows for a commit message with one of these, so the handoff message never holds one. */
+    private const string SkipDirectives = '/\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]|^[ \t]*skip-checks[ \t]*:[ \t]*true[ \t]*$/im';
+
     public function __construct(
         private TaskWorkspaceSigner $signer,
         private TaskCheckRunner $checks,
@@ -47,6 +53,10 @@ final readonly class TaskHandoffCi
         try {
             // The task VM row records the push, so later ticks push nothing again.
             $this->publisher->pushHandoff($group, $commit);
+            if ($check->pushed_at === null) {
+                TaskCheck::query()->whereKey($check->id)->whereNull('pushed_at')->update(['pushed_at' => now(), 'updated_at' => now()]);
+                $check->refresh();
+            }
             $checks = $this->merger->commitChecks($group, $commit);
         } catch (TaskPullRequestException $exception) {
             if ($exception->pending) {
@@ -86,7 +96,7 @@ final readonly class TaskHandoffCi
         try {
             $committed = app(TaskWorkspaceLease::class)->withReceipt($group, $task->id, $threadId, function () use ($instance, $task, $receipt): ?TaskWorkspaceSnapshot {
                 // Always a new commit, also when nothing changed, so every handoff is pushed and tested the same way.
-                $commit = $this->signer->commit($instance, $task->title."\n\n".$receipt->body, allowEmpty: true);
+                $commit = $this->signer->commit($instance, self::message($task, $receipt), allowEmpty: true);
 
                 return $commit === null ? null : $this->checks->snapshot($instance);
             });
@@ -115,7 +125,8 @@ final readonly class TaskHandoffCi
     /**
      * The commit has no merge-check run yet. The push to `task-{id}-handoff` starts one GitHub Actions suite per
      * workflow on the commit, and GitHub creates the merge-check run only after the jobs it needs finish. No suite
-     * yet, or one not completed: pending. Orbit pushes the commit once, so no new suite comes after every suite
+     * yet, or one not completed: pending. No suite {@see NoSuiteSeconds} after the push asks for assistance once,
+     * because nothing in Orbit can start CI. Orbit pushes the commit once, so no new suite comes after every suite
      * completed. Then the merge-check run cannot come either, and {@see GitHubCheckSuite::faultWithoutMergeCheck()}
      * decides who answers.
      *
@@ -125,7 +136,16 @@ final readonly class TaskHandoffCi
     private function missing(TaskScheduler $scheduler, Task $group, Task $task, TaskCheck $check, TaskComment $receipt, string $commit, string $checkName, array $runs, array $suites): RequiredCheckState
     {
         $suites = array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug === RequiredCheckState::CheckApp));
-        if ($suites === [] || ! array_all($suites, static fn (GitHubCheckSuite $suite): bool => $suite->completed())) {
+        if ($suites === []) {
+            if ($check->pushed_at?->isBefore(now()->subSeconds(self::NoSuiteSeconds)) === true) {
+                $this->assistance($scheduler, $group, $task, $receipt, 'GitHub Actions started no workflow on handoff commit '.$commit.' in the '.(self::NoSuiteSeconds / 60)
+                    .' minutes since Orbit pushed it to '.TaskRemoteBranch::handoff($group).'. A ci.yml on the task branch without the task-*-handoff push trigger, '
+                    .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, or start CI on the commit.');
+            }
+
+            return RequiredCheckState::Pending;
+        }
+        if (! array_all($suites, static fn (GitHubCheckSuite $suite): bool => $suite->completed())) {
             return RequiredCheckState::Pending;
         }
         $change = array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->faultWithoutMergeCheck() === GitHubCheckFault::Change);
@@ -146,7 +166,7 @@ final readonly class TaskHandoffCi
             return RequiredCheckState::Pending;
         }
         $this->assistance($scheduler, $group, $task, $receipt, 'GitHub Actions completed every workflow on handoff commit '.$commit.' without check '.$checkName.': '.self::named($suites)
-            .'. A renamed or removed job, or a workflow that no longer runs on pushes to task-* branches, causes this. Fix the workflow or the Project merge check.');
+            .'. A renamed or removed job, or a workflow that no longer runs on pushes to task-*-handoff branches, causes this. Fix the workflow or the Project merge check.');
 
         return RequiredCheckState::Pending;
     }
@@ -201,6 +221,12 @@ final readonly class TaskHandoffCi
 
             return 'Check '.$failure->name.' failed'.($failure->url !== null ? ' ('.$failure->url.')' : '').".\n\n".$this->checkOutput->read($group, $failure);
         }, $runs));
+    }
+
+    /** The subtask title and the implementer's summary, without a directive that would make GitHub skip CI. */
+    private static function message(Task $task, TaskComment $receipt): string
+    {
+        return (string) preg_replace(self::SkipDirectives, '', $task->title."\n\n".$receipt->body);
     }
 
     /** @param  array<GitHubCheckSuite>  $suites */

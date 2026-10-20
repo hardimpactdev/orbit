@@ -327,8 +327,8 @@ final readonly class HttpGitHubApi implements GitHubApi
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)
             ->delete($this->repositoryPath($repository).'/git/refs/heads/'.$branch));
-        // GitHub answers 422 "Reference does not exist" for a branch that is already gone.
-        if ($response->successful() || $response->status() === 422) {
+        // GitHub answers 422 "Reference does not exist" for a branch that is already gone, and 404 without the repository.
+        if ($response->successful() || in_array($response->status(), [404, 422], true)) {
             return;
         }
 
@@ -648,6 +648,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             appSlug: is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null,
             outputTitle: is_array($row['output'] ?? null) ? $this->text($row['output']['title'] ?? null) : null,
             outputSummary: is_array($row['output'] ?? null) ? $this->text($row['output']['summary'] ?? null) : null,
+            checkSuiteId: is_array($row['check_suite'] ?? null) && is_int($row['check_suite']['id'] ?? null) ? $row['check_suite']['id'] : null,
         );
     }
 

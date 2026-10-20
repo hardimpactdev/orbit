@@ -175,7 +175,7 @@ final readonly class TaskSubtaskRunner
 
                 return;
             }
-            $mergeCheck = $group->project->mergeCheckName();
+            $mergeCheck = $group->project->handoffCheckName();
             $ci = $mergeCheck === null ? RequiredCheckState::Passed
                 : $this->handoffCi->test($scheduler, $group, $task, $check, $receipt, $implementer->threadId, $mergeCheck);
             if ($ci === RequiredCheckState::Passed) {

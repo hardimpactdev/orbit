@@ -241,7 +241,7 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
-        if ($group->project->mergeCheckName() !== null) {
+        if ($group->project->handoffCheckName() !== null) {
             // Handoff CI (/reference/tasks#handoff-ci): the approval binds to the commit CI passed and commits nothing.
             $this->approveTestedHandoff($scheduler, $group, $task, $receipt);
 
@@ -640,7 +640,7 @@ final readonly class TaskReviewOutcome
             return 'wait';
         }
         if ($this->ownedWorkspaceChange($group, $task, $current)) {
-            if (! $task->isFinalReview() && $group->project->mergeCheckName() !== null) {
+            if (! $task->isFinalReview() && $group->project->handoffCheckName() !== null) {
                 // Handoff CI (/reference/tasks#handoff-ci): CI passed on another commit, so the check and CI run on the new
                 // HEAD before any review of it.
                 $this->reopenHandoff($group, $task, $receipt, 'Orbit moved the workspace from '.$task->review_workspace_head.' to '.$current->head

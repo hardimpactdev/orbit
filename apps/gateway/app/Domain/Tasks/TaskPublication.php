@@ -255,7 +255,7 @@ final readonly class TaskPublication
             return;
         }
         $check = $group->project->mergeCheckName() ?? '';
-        $state = $this->merger->requiredCheck($group, $head, $check);
+        $state = $this->merger->pullRequestCheck($group, $head, $check);
         if ($state !== RequiredCheckState::Passed) {
             $this->recordMerge($group, $state === RequiredCheckState::Failed ? TaskMergeStatus::Refused : TaskMergeStatus::Waiting, match ($state) {
                 RequiredCheckState::Pending => 'Check '.$check.' is still running on '.$head.'.',

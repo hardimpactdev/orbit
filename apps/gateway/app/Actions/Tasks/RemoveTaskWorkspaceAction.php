@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
@@ -54,6 +55,9 @@ final readonly class RemoveTaskWorkspaceAction
     public const string RemovalFailedPrefix = 'Workspace removal failed: ';
 
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
+
+    /** A leftover handoff branch, recorded after the workspace is gone, so a removal retry never clears it. */
+    public const string HandoffBranchLeftPrefix = 'Handoff branch not deleted: ';
 
     public function __construct(
         private InstanceRemover $remover,
@@ -113,10 +117,6 @@ final readonly class RemoveTaskWorkspaceAction
                 $this->publisher->push($group, $commit);
                 TaskFinalReview::recordRemovalPush($group, $commit);
             }
-            if (TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->whereNotNull('commit_sha')->exists()) {
-                // A handoff pushed to task-{id}-handoff for CI (/reference/tasks#handoff-ci). The group that ends deletes it.
-                $this->publisher->deleteHandoffBranch($group);
-            }
             $lease = $leases->remoteStarted($instance);
             try {
                 $this->removeWithLease($instance);
@@ -127,9 +127,30 @@ final readonly class RemoveTaskWorkspaceAction
                 }
                 throw $exception;
             }
+            $this->deleteHandoffBranch($group);
         });
 
         return $instance;
+    }
+
+    /**
+     * A handoff pushed `task-{id}-handoff` for CI (/reference/tasks#handoff-ci). Once the workspace is gone, the group
+     * deletes it. The branch holds nothing to keep, so a failed delete never holds the removal: it asks for
+     * assistance once, and someone deletes the branch by hand.
+     */
+    private function deleteHandoffBranch(Task $group): void
+    {
+        if (! TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->whereNotNull('commit_sha')->exists()) {
+            return;
+        }
+        try {
+            $this->publisher->deleteHandoffBranch($group);
+        } catch (TaskPullRequestException $exception) {
+            // The workspace is gone and the group ends, so this request replaces an earlier one, such as the removal
+            // failure that a retried cancel had recorded, which the caller would clear next.
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, self::HandoffBranchLeftPrefix.$exception->getMessage()
+                .' Delete '.TaskRemoteBranch::handoff($group).' on GitHub, then resolve this request.', replaceFailure: true, replaceDirection: true);
+        }
     }
 
     private function uncertainRemoteRemoval(Throwable $exception): bool
@@ -197,7 +218,8 @@ final readonly class RemoveTaskWorkspaceAction
     public function clearFailure(Task $group): void
     {
         $group->refresh();
-        if (! Task::topLevel()->whereKey($group->id)->removalFailure()->exists()) {
+        if (! Task::topLevel()->whereKey($group->id)->removalFailure()->exists()
+            || str_starts_with((string) $group->assistance_reason, self::HandoffBranchLeftPrefix)) {
             return;
         }
 

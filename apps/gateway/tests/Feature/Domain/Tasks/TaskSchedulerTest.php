@@ -3079,7 +3079,7 @@ it('reopens the handoff instead of the review on an Orbit HEAD change under hand
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Reviewed before the fast-forward.'),
     ]);
-    $group->project->update(['merge_check' => 'Required checks']);
+    $group->project->update(['merge_check' => 'Required checks', 'review_and_merge' => true]);
     $checks->head = str_repeat('d', 40);
     $checks->tree = str_repeat('e', 40);
     $checks->commitTree = $checks->tree;

@@ -14,17 +14,22 @@ on:
 permissions:
   contents: read
 
-# A change run is a pull request or a push to a task-*-handoff branch; every job treats both alike. Each change run
-# keeps only its newest run: a pull request per merge ref, a handoff branch per branch, so neither cancels the other. Pushes to
+# A change run, as env.CHANGE_RUN defines it below, keeps only its newest run: a pull request per merge ref, a handoff
+# branch per branch, so neither cancels the other. GitHub allows no env here, so the test is spelled out. Pushes to
 # main share one group: a running main run always finishes, and a newer push replaces only the waiting one, so after
 # a burst of merges the newest commit is tested next. Every main run tests every project in full. Scheduled and
 # manual runs get a group per commit, so a push never cancels a full run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-') }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
+  # A handoff push is Orbit's push of a task handoff commit to task-*-handoff, never a manual run.
+  HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  # A change run tests a change before it merges: a pull request or a handoff push. Every job treats both alike, and
+  # every step reads these two values. A job-level `if` cannot read env, so the shards job spells the test out.
+  CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
@@ -153,9 +158,9 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            ${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
 
       - name: Compute Pint cache prefix
         id: orbit-lint-key
@@ -169,12 +174,12 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            ${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
 
       - name: Verify Gateway shard coverage
-        if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))
+        if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
@@ -186,21 +191,21 @@ jobs:
         run: php ../../bin/check-classification-fakes tests
 
       - name: Save PHPStan result cache
-        if: success() && !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))
+        if: success() && env.CHANGE_RUN != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Save Pint cache
-        if: success() && !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))
+        if: success() && env.CHANGE_RUN != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Run full PR test suite
-        if: matrix.project.directory != 'apps/gateway' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))
+        if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
 
       # An unknown event base validates the recipe too.
@@ -208,17 +213,16 @@ jobs:
         if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')
         env:
           RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          TASK_PUSH: ${{ startsWith(github.ref, 'refs/heads/task-') }}
         run: |
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$TASK_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
+          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
           if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
             php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
           fi
 
       # Full mode records the graph without using it to select tests, on every event but a change run.
       - name: Run full test suite and refresh Pest TIA graph
-        if: ${{ !(github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) }}
+        if: env.CHANGE_RUN != 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
       - name: Run redaction cases without PCRE JIT
@@ -286,7 +290,8 @@ jobs:
   # Change runs use four stock shards. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
-    if: (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-'))
+    # A job-level `if` cannot read env: this is env.CHANGE_RUN.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
@@ -422,11 +427,10 @@ jobs:
       - name: Refuse Gateway script growth
         env:
           NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
-          TASK_PUSH: ${{ startsWith(github.ref, 'refs/heads/task-') }}
         run: |
           python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$TASK_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
+          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
@@ -616,19 +620,16 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ startsWith(github.ref, 'refs/heads/task-') && '0' || '2' }}
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
       # A change run that changes neither the agent nor this workflow cannot change the agent build.
       # Pushes to main and manual runs always build it.
       - name: Detect agent changes
         id: changes
         working-directory: .
-        env:
-          CHANGE_RUN: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-') }}
-          TASK_PUSH: ${{ startsWith(github.ref, 'refs/heads/task-') }}
         run: |
           # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
           base=HEAD^1
-          if [ "$TASK_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
           if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
             echo "agent=true" >> "$GITHUB_OUTPUT"
           else
@@ -688,19 +689,16 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ startsWith(github.ref, 'refs/heads/task-') && '0' || '2' }}
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
       # A change run that changes neither the desktop app nor this workflow cannot change its build.
       # Pushes to main and manual runs always check it.
       - name: Detect desktop changes
         id: changes
         working-directory: .
-        env:
-          CHANGE_RUN: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-') }}
-          TASK_PUSH: ${{ startsWith(github.ref, 'refs/heads/task-') }}
         run: |
           # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
           base=HEAD^1
-          if [ "$TASK_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
           if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
@@ -781,7 +779,6 @@ jobs:
     steps:
       - name: Require every project to pass
         env:
-          CHANGE_RUN: ${{ (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/task-')) }}
           PROJECT_RESULT: ${{ needs.project.result }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
