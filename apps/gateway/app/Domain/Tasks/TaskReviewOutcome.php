@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubReviewEvent;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,7 @@ final readonly class TaskReviewOutcome
         private TaskTurnFetcher $turnFetcher,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
+        private TaskHandoffCi $handoffCi,
     ) {}
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -240,6 +242,12 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
+        if ($group->project->mergeCheckName() !== null) {
+            // Handoff CI (/reference/tasks#handoff-ci): the approval binds to the commit CI passed and commits nothing.
+            $this->approveTestedHandoff($scheduler, $group, $task, $receipt);
+
+            return true;
+        }
         $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
         if ($commit === null && $instance instanceof Instance) {
             // Recover only after a completed mutation lease attributes the matching commit to Orbit.
@@ -260,6 +268,36 @@ final readonly class TaskReviewOutcome
         $scheduler->publishApprovedCommit($group, $task, $receipt);
 
         return true;
+    }
+
+    /**
+     * Stores the handoff commit that CI passed as the approved commit, while the workspace HEAD is exactly that
+     * commit. Any other HEAD reopens the handoff: a CI-tested commit that HEAD left fails its check, and a handoff
+     * without a tested commit runs handoff CI first. The approval never commits new work.
+     */
+    private function approveTestedHandoff(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
+    {
+        $handoff = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Handoff)
+            ->where('task_comment_id', $task->completion_handoff_comment_id)->where('status', TaskCheckStatus::Passed)
+            ->latest('id')->first();
+        try {
+            $head = $this->workspaceSnapshot($group)->head;
+        } catch (TaskCheckException $exception) {
+            $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $tested = $handoff?->commit_sha;
+        if ($handoff === null || $tested !== $head) {
+            if ($handoff instanceof TaskCheck && is_string($tested)) {
+                $this->handoffCi->moved($group, $handoff, $head);
+            }
+            $this->reopenHandoff($group, $task, $receipt);
+
+            return;
+        }
+        $receipt->update(['commit_sha' => $tested]);
+        $scheduler->publishApprovedCommit($group, $task, $receipt);
     }
 
     /**

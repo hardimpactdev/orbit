@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -863,7 +862,7 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+            public function publishHandoff(Task $group, string $commit): int
             {
                 throw new LogicException('This fake publishes no handoff.');
             }
@@ -903,7 +902,7 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+            public function publishHandoff(Task $group, string $commit): int
             {
                 throw new LogicException('This fake publishes no handoff.');
             }

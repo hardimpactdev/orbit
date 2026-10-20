@@ -29,6 +29,19 @@ final readonly class TaskPullRequestCheck
         return in_array($this->name, self::ROLLUP_NAMES, true);
     }
 
+    /**
+     * The failed runs of one check-run read, as settling and the handoff CI both judge them: completed without
+     * passing, with an explained rollup dropped. A failure whose run {@see GitHubCheckRun::infrastructure()}
+     * did not run to completion; it is not a result of the code.
+     *
+     * @param  list<GitHubCheckRun>  $runs
+     * @return list<GitHubCheckRun>
+     */
+    public static function failures(array $runs): array
+    {
+        return self::withoutExplainedRollups(array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->failed())));
+    }
+
     public static function fromRun(GitHubCheckRun $run): self
     {
         return new self($run->name, $run->url, $run->id, $run->appSlug, $run->outputTitle, $run->outputSummary);

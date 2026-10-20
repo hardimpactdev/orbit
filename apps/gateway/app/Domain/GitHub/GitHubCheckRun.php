@@ -36,6 +36,28 @@ final readonly class GitHubCheckRun
         public ?string $outputSummary = null,
     ) {}
 
+    /** @return array{name: string, conclusion: string|null, url: string|null, id: int|null, started_at: string|null, status: string|null, head_sha: string|null, app_slug: string|null, output_title: string|null, output_summary: string|null} */
+    public function toArray(): array
+    {
+        return [
+            'name' => $this->name, 'conclusion' => $this->conclusion, 'url' => $this->url, 'id' => $this->id,
+            'started_at' => $this->startedAt, 'status' => $this->status, 'head_sha' => $this->headSha,
+            'app_slug' => $this->appSlug, 'output_title' => $this->outputTitle, 'output_summary' => $this->outputSummary,
+        ];
+    }
+
+    /** The run that {@see toArray()} stored, or null for a value that is not one. */
+    public static function fromArray(mixed $row): ?self
+    {
+        if (! is_array($row) || ! is_string($row['name'] ?? null)) {
+            return null;
+        }
+        $text = static fn (string $key): ?string => is_string($row[$key] ?? null) ? $row[$key] : null;
+
+        return new self($row['name'], $text('conclusion'), $text('url'), is_int($row['id'] ?? null) ? $row['id'] : null,
+            $text('started_at'), $text('status'), $text('head_sha'), $text('app_slug'), $text('output_title'), $text('output_summary'));
+    }
+
     /** Whether the run completed with conclusion `success` for exactly this commit. */
     public function passedOn(string $sha): bool
     {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Models\Task;
 
 /**
@@ -24,28 +23,29 @@ interface TaskPullRequestPublisher
     public function publish(Task $group, string $body, string $commit): string;
 
     /**
-     * Pushes a handoff commit to the task branch so CI tests it ([Handoff CI](/reference/tasks#handoff-ci)), and
-     * makes sure a draft pull request runs that CI: the group's pull request, converted to a draft first, or else a
-     * draft that Orbit opens for the branch, or the open pull request the branch already has. A draft cannot merge
-     * unreviewed work. A merged or closed stored pull request is returned without a push.
+     * Pushes a handoff commit to Orbit's own branch `task-{id}` so CI tests it
+     * ([Handoff CI](/reference/tasks#handoff-ci)), and makes sure a draft pull request of that branch runs the CI:
+     * the group's own `pr_url`, converted to a draft first, or else a draft Orbit opens, or the open pull request the
+     * branch already has. An incoming pull request's branch and state are never touched. A merged or closed own
+     * pull request gets no push.
      *
-     * @return GitHubPullRequest that pull request as GitHub reports it now
+     * @return int the number of the pull request that runs CI on the commit
      *
      * @throws TaskPullRequestException pending while the push job waits or runs
      */
-    public function publishHandoff(Task $group, string $commit): GitHubPullRequest;
+    public function publishHandoff(Task $group, string $commit): int;
 
     /**
      * Pushes an approved `$commit` to the task branch without opening a pull request. When a handoff made the
-     * group's stored pull request a draft, the push marks it ready again: an approved commit is reviewed work.
+     * group's own pull request a draft, the push marks it ready again: an approved commit is reviewed work.
      *
      * @throws TaskPullRequestException
      */
     public function push(Task $group, string $commit): void;
 
     /**
-     * Gives back a pull request that a handoff made a draft, for reviewed work or a group that ends. A stored open
-     * draft is marked ready. Without a stored pull request, the draft that the handoffs opened is closed.
+     * Gives back the pull request that the handoffs used when the group ends. The group's own `pr_url`, if a handoff
+     * made it a draft, is marked ready. Otherwise the open drafts of `task-{id}` that the handoffs opened are closed.
      *
      * @throws TaskPullRequestException
      */

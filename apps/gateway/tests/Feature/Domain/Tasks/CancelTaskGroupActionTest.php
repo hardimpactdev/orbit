@@ -6,7 +6,6 @@ use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -118,7 +117,7 @@ function cancel_recording_publisher(int $failures = 0): object
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

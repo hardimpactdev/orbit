@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -742,7 +741,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -819,7 +818,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

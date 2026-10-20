@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
+use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Models\Project;
@@ -20,17 +21,26 @@ use App\Models\Task;
  */
 interface TaskPullRequestMerger
 {
-    /** The merge check on exactly this head. A failed read is `Unreadable`, never `Passed`. */
+    /** The merge check on exactly this commit, from {@see checkRuns()}. A failed read is `Unreadable`, never `Passed`. */
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState;
 
     /**
-     * Every check run on exactly this commit. A handoff reads its merge check and its failed runs from one read.
+     * Every check run on exactly this commit. All callers share one read per repository and commit for a minute:
+     * the merge gate, the handoff CI, and the settling watch. Null when the installation has not granted
+     * `checks: read`.
      *
-     * @return list<GitHubCheckRun>
+     * @return list<GitHubCheckRun>|null
      *
      * @throws TaskPullRequestException when the App or GitHub is unavailable
      */
-    public function checkRuns(Task $group, string $sha): array;
+    public function checkRuns(Task $group, string $sha): ?array;
+
+    /**
+     * One pull request of the Project repository as GitHub reports it now.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function pullRequest(Task $group, int $number): GitHubPullRequest;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.

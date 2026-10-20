@@ -675,17 +675,19 @@ describe('malformed watcher cache values', function (): void {
         Http::assertSentCount(3);
     })->with(['unknown outcome' => ['invalid'], 'wrong scalar type' => [false], 'wrong container type' => [[]]]);
 
-    it('reads incomplete check arrays safely and reloads a non-array cache value', function (mixed $value): void {
+    it('reads GitHub again when the shared check-run cache holds a value it did not write', function (mixed $value): void {
         GitHubTestSupport::storeApp();
-        watcher_fake_health([]);
-        Cache::put('tasks:pull-request-checks:v3:acme/orbit#42@abc123', $value, 60);
+        watcher_fake_health([], [
+            ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ]);
+        Cache::put('tasks:commit-check-runs:v1:acme/orbit@abc123', $value, 60);
 
         $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 
         expect($health?->state)->toBe('open')
-            ->and($health?->problems)->toBe([])
-            ->and($health?->checksPending)->toBeFalse();
-    })->with(['missing both lists' => [[]], 'missing failed list' => [['pending' => []]], 'missing pending list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
+            ->and($health?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.']);
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/check-runs'));
+    })->with(['a run without a name' => [[['conclusion' => 'failure']]], 'not a list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
 });
 
 it('preserves failed check evidence through cached health reads', function (): void {

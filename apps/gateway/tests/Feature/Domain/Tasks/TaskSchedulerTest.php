@@ -6,7 +6,6 @@ use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\UpdateTaskGroupData;
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
@@ -2129,7 +2128,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -2744,7 +2743,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -3376,7 +3375,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -3455,7 +3454,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

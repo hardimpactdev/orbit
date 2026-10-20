@@ -6,7 +6,9 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubMergeResult;
+use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
@@ -15,6 +17,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Models\Project;
 use App\Models\Task;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Reviews and merges through the Project's App installation (ADR 0203). The write token is the publishing
@@ -23,6 +26,12 @@ use App\Models\Task;
  */
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
+    /**
+     * Every caller of one commit's check runs shares one read for this long: the merge gate, the handoff, and the
+     * settling watch. The scheduler ticks every few seconds, and each read costs a checks token and a list call.
+     */
+    private const int CheckRunsSeconds = 60;
+
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
@@ -30,40 +39,71 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
 
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
     {
+        try {
+            $runs = $this->checkRuns($group, $sha);
+        } catch (TaskPullRequestException) {
+            return RequiredCheckState::Unreadable;
+        }
+
+        return $runs === null ? RequiredCheckState::Unreadable : RequiredCheckState::of($runs, $sha, $checkName);
+    }
+
+    public function checkRuns(Task $group, string $sha): ?array
+    {
         $repository = $this->repository($group->project);
         if (! $repository instanceof GitHubRepository) {
-            return RequiredCheckState::Unreadable;
+            throw new TaskPullRequestException('The Project repository is not on github.com.');
+        }
+        $key = 'tasks:commit-check-runs:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        $cached = Cache::get($key);
+        if (is_array($cached) && array_is_list($cached)) {
+            $runs = [];
+            foreach ($cached as $row) {
+                $run = GitHubCheckRun::fromArray($row);
+                if (! $run instanceof GitHubCheckRun) {
+                    // A value this read did not write: read GitHub again.
+                    $runs = null;
+                    break;
+                }
+                $runs[] = $run;
+            }
+            if ($runs !== null) {
+                return $runs;
+            }
         }
         $token = $this->access->checksToken($repository);
         if ($token === null) {
-            return RequiredCheckState::Unreadable;
+            // Not cached, so the permission is checked again on the next read.
+            return null;
         }
-
         try {
-            return RequiredCheckState::of($this->github->checkRuns($token, $repository, $sha, $checkName), $sha, $checkName);
-        } catch (GitHubApiException) {
-            return RequiredCheckState::Unreadable;
-        }
-    }
-
-    public function checkRuns(Task $group, string $sha): array
-    {
-        $repository = $this->repository($group->project);
-        $token = $repository instanceof GitHubRepository ? $this->access->checksToken($repository) : null;
-        if (! $repository instanceof GitHubRepository || $token === null) {
-            throw new TaskPullRequestException('Orbit cannot read the check runs of '.$sha.': the Project has no GitHub App access to checks.');
-        }
-
-        try {
-            return $this->github->checkRuns($token, $repository, $sha);
+            $runs = $this->github->checkRuns($token, $repository, $sha);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read the check runs of '.$sha.': '.$exception->getMessage(), previous: $exception);
+        }
+        // Only the runs are cached, never a token. A new push has a new commit, so it reads fresh.
+        Cache::put($key, array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $runs), self::CheckRunsSeconds);
+
+        return $runs;
+    }
+
+    public function pullRequest(Task $group, int $number): GitHubPullRequest
+    {
+        $repository = $this->repository($group->project);
+        if (! $repository instanceof GitHubRepository) {
+            throw new TaskPullRequestException('The Project repository is not on github.com.');
+        }
+
+        try {
+            return $this->github->pullRequest($this->access->token($repository), $repository, $number);
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('Orbit could not read pull request #'.$number.': '.$exception->getMessage(), previous: $exception);
         }
     }
 
     public function merge(Task $group, string $sha): GitHubMergeResult
     {
-        [$repository, $number] = $this->pullRequest($group);
+        [$repository, $number] = $this->storedPullRequest($group);
 
         try {
             return $this->github->mergePullRequest($this->access->token($repository), $repository, $number, $sha);
@@ -74,7 +114,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
 
     public function review(Task $group, string $sha, GitHubReviewEvent $event, string $body): int
     {
-        [$repository, $number] = $this->pullRequest($group);
+        [$repository, $number] = $this->storedPullRequest($group);
 
         try {
             return $this->github->submitReview($this->access->token($repository), $repository, $number, $sha, $event, $body);
@@ -123,7 +163,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
      *
      * @throws TaskPullRequestException
      */
-    private function pullRequest(Task $group): array
+    private function storedPullRequest(Task $group): array
     {
         $repository = $this->repository($group->project);
         $number = $repository instanceof GitHubRepository && is_string($group->pr_url) ? $repository->pullRequestNumber($group->pr_url) : null;

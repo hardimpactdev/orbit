@@ -145,10 +145,11 @@ When main moves after CI ran on a merge ref, the App can merge a head whose merg
 This item replaced, on 2026-10-20, the start-commit test base that it chose on 2026-10-18.
 
 - The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
-- After the local gate passes, Orbit commits the checked tree, pushes it to the group's branch, and keeps a draft pull request open on that branch, so CI runs on it.
-- The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. Pending waits, and each tick reads it again.
+- After the local gate passes, Orbit commits exactly the checked tree, publishes it once to its own branch `task-{id}`, and keeps a draft pull request open on that branch, so CI runs on it. An incoming pull request's branch and state are never touched.
+- The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
 - The handoff stays blocking: the reviewer starts only after CI passed.
 - The publishing approval reuses the draft: it sets the description and marks it ready.
+- The approval stores the commit CI passed and commits nothing. A HEAD that left that commit reopens the handoff.
 - The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
 - `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base. `composer test:affected` stays for the implementer.
 

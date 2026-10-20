@@ -27,6 +27,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHandoffCi;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -155,6 +156,13 @@ function rm_reviewing(Task $task, ?string $head = null, ?string $prHead = null):
     if ($checks instanceof FakeTaskCheckRunner) {
         $checks->head = $head ?? RM_HEAD;
     }
+    if (! $task->isFinalReview()) {
+        // The handoff whose commit CI passed: the approval stores it (/reference/tasks#handoff-ci).
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'commit_sha' => $head ?? RM_HEAD,
+            'pid' => 1, 'process_started' => 'handoff', 'head_before' => RM_BASE, 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+        ]);
+    }
 
     return $reviewer;
 }
@@ -279,11 +287,11 @@ function rm_runtime(array $receipts = []): object
         /** @var list<string> */
         public array $handoffs = [];
 
-        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        public function publishHandoff(Task $group, string $commit): int
         {
             $this->handoffs[] = $commit;
 
-            return new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', $commit, 'main');
+            return 43;
         }
 
         /** @var list<int> */
@@ -308,7 +316,12 @@ function rm_runtime(array $receipts = []): object
             return $this->check;
         }
 
-        public function checkRuns(Task $group, string $sha): array
+        public function pullRequest(Task $group, int $number): GitHubPullRequest
+        {
+            return new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', null, 'main');
+        }
+
+        public function checkRuns(Task $group, string $sha): ?array
         {
             return match ($this->check) {
                 RequiredCheckState::Missing => [],
@@ -352,6 +365,8 @@ function rm_runtime(array $receipts = []): object
             $checks = app(TaskCheckRunner::class);
             if ($checks instanceof FakeTaskCheckRunner) {
                 $checks->head = RM_COMMIT;
+                // The commit holds the tree the check passed on.
+                $checks->commitTree = $checks->tree;
             }
 
             return RM_COMMIT;
@@ -482,7 +497,25 @@ describe('final review before every push', function (): void {
             ->and(TaskFinalReview::brief($group))->toContain($rule);
     });
 
-    it('commits an approved subtask without pushing it and starts the next subtask', function (): void {
+    it('reopens the handoff instead of approving a HEAD that is not the commit CI passed', function (): void {
+        $group = rm_group([['Models', TaskStatus::Reviewing], ['Routes', TaskStatus::Todo]]);
+        $first = $group->tasks->firstWhere('title', 'Models');
+        rm_reviewing($first);
+        TaskCheck::query()->where('task_id', $first->id)->update(['commit_sha' => RM_BASE]);
+        $runtime = rm_runtime([rm_receipt('approved', deliverables: ['tests' => 'ModelsTest'])]);
+
+        app(TaskScheduler::class)->tick();
+
+        $check = TaskCheck::query()->where('task_id', $first->id)->sole();
+        expect($first->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($first->comments()->sole()->commit_sha)->toBeNull()
+            ->and($check->status)->toBe(TaskCheckStatus::Failed)
+            ->and($check->failed_step)->toBe(TaskHandoffCi::FailedStep)
+            ->and($check->output)->toContain('The workspace HEAD is '.RM_HEAD.', not the commit '.RM_BASE.' that CI passed on.')
+            ->and($runtime->pushes)->toBe([]);
+    });
+
+    it('stores the CI-tested handoff commit of an approved subtask without pushing it and starts the next subtask', function (): void {
         $group = rm_group([['Models', TaskStatus::Reviewing], ['Routes', TaskStatus::Todo]]);
         $first = $group->tasks->firstWhere('title', 'Models');
         rm_reviewing($first);
@@ -491,7 +524,7 @@ describe('final review before every push', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($first->fresh()?->status)->toBe(TaskStatus::Completed)
-            ->and($first->comments()->sole()->commit_sha)->toBe(RM_COMMIT)
+            ->and($first->comments()->sole()->commit_sha)->toBe(RM_HEAD)
             ->and($runtime->pushes)->toBe([])
             ->and($group->tasks->firstWhere('title', 'Routes')?->fresh()?->status)->toBe(TaskStatus::Running);
     });
@@ -512,7 +545,7 @@ describe('final review before every push', function (): void {
             ->and($final->status)->toBe(TaskStatus::Reviewing)
             ->and($final->title)->toBe(TaskFinalReview::Title)
             ->and($final->subtask_start_commit)->toBe(RM_BASE)
-            ->and($final->review_workspace_head)->toBe(RM_COMMIT)
+            ->and($final->review_workspace_head)->toBe(RM_HEAD)
             ->and($final->opensPullRequest())->toBeTrue()
             ->and($runtime->reviewers)->toBe([$final->id])
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
@@ -799,10 +832,16 @@ describe('merge on green', function (): void {
         rm_watch(rm_open(RM_HEAD));
 
         app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
 
         expect($runtime->merges)->toBe([RM_HEAD])
             ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Refused)
             ->and($group->fresh()?->merge_reason)->toContain('GitHub refused the merge');
+
+        // GitHub limits writes: a refused head is written again only after a minute.
+        $this->travel(61)->seconds();
+        app(TaskScheduler::class)->tick();
+        expect($runtime->merges)->toBe([RM_HEAD, RM_HEAD]);
     });
 
     it('asks for assistance and does not merge a head someone else pushed to an Orbit task branch', function (): void {
@@ -915,7 +954,6 @@ describe('incoming pull requests', function (): void {
 
         $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->sole();
         expect($runtime->pushes)->toBe([])
-            ->and($runtime->released)->toBe([$group->id])
             ->and($runtime->reviews)->toBe([[RM_PR_HEAD, 'APPROVE']])
             ->and($reviewed->source)->toBe(TaskReviewedCommitSource::PullRequestReview)
             ->and($reviewed->github_review_id)->toBe(7001)

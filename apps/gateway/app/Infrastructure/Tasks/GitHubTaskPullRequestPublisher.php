@@ -94,32 +94,32 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
     }
 
-    public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+    public function publishHandoff(Task $group, string $commit): int
     {
-        [$repository, $instance, $branch] = $this->target($group);
+        [$repository, $instance] = $this->target($group);
+        $branch = TaskRemoteBranch::handoff($group);
 
         try {
             $token = $this->access->token($repository);
-            $stored = $this->storedPullRequest($group, $repository, $token);
-            if ($stored instanceof GitHubPullRequest) {
-                if ($stored->state !== GitHubPullRequestState::Open) {
-                    // A merged or closed pull request never carries the commit. The branch and settling watches hold the group.
-                    return $stored;
+            $own = $this->ownPullRequest($group, $repository, $token);
+            if ($own instanceof GitHubPullRequest) {
+                if ($own->state !== GitHubPullRequestState::Open) {
+                    throw new TaskPullRequestException('The handoff commit was not pushed, because '.$group->pr_url.' is already '.$own->state->value.'.');
                 }
-                if (! $stored->draft && $stored->nodeId !== null) {
+                if (! $own->draft && $own->nodeId !== null) {
                     // Unreviewed work must not sit on a pull request that is ready to merge. An approved push makes it ready again.
-                    $this->github->setPullRequestDraft($token, $stored->nodeId, true);
+                    $this->github->setPullRequestDraft($token, $own->nodeId, true);
                 }
             }
             $this->pushBranch($group, $instance, $branch, $token, $commit);
-            $number = $stored instanceof GitHubPullRequest
+            $number = $own instanceof GitHubPullRequest
                 ? $repository->pullRequestNumber((string) $group->pr_url)
                 : $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $this->base($group), $group->title, self::HandoffDraftBody, draft: true))->number;
             if ($number === null) {
                 throw new TaskPullRequestException('The handoff commit was pushed, but Orbit could not resolve the number of its pull request.');
             }
 
-            return $this->github->pullRequest($token, $repository, $number);
+            return $number;
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The handoff commit could not be published for CI: '.$exception->getMessage(), previous: $exception);
         }
@@ -177,10 +177,10 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         try {
             $token = $this->access->token($repository);
             $this->pushBranch($group, $instance, $branch, $token, $commit);
-            $stored = $this->storedPullRequest($group, $repository, $token);
-            if ($stored instanceof GitHubPullRequest) {
-                // An approved commit is reviewed work.
-                $this->ready($token, $stored);
+            $own = $this->ownPullRequest($group, $repository, $token);
+            if ($own instanceof GitHubPullRequest) {
+                // A handoff made it a draft. An approved commit is reviewed work.
+                $this->ready($token, $own);
             }
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
@@ -197,13 +197,13 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $stored = $this->storedPullRequest($group, $repository, $token);
-            if ($stored instanceof GitHubPullRequest) {
-                $this->ready($token, $stored);
+            $own = $this->ownPullRequest($group, $repository, $token);
+            if ($own instanceof GitHubPullRequest) {
+                $this->ready($token, $own);
 
                 return;
             }
-            foreach ($this->github->pullRequestsByHead($token, $repository, TaskRemoteBranch::for($group)) as $listed) {
+            foreach ($this->github->pullRequestsByHead($token, $repository, TaskRemoteBranch::handoff($group)) as $listed) {
                 if ($listed->state === GitHubPullRequestState::Open && $this->github->pullRequest($token, $repository, $listed->number)->draft) {
                     $this->github->updatePullRequest($token, $repository, $listed->number, ['state' => 'closed']);
                 }
@@ -226,13 +226,15 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     }
 
     /**
-     * The group's stored pull request, `pr_url`, as GitHub reports it now, or null without one.
+     * The pull request Orbit opened for the group, `pr_url` on `task-{id}`, as GitHub reports it now. Null without one,
+     * and for an incoming pull request: Orbit never drafts or readies an outside author's pull request.
      *
      * @throws GitHubApiException
      */
-    private function storedPullRequest(Task $group, GitHubRepository $repository, #[SensitiveParameter] string $token): ?GitHubPullRequest
+    private function ownPullRequest(Task $group, GitHubRepository $repository, #[SensitiveParameter] string $token): ?GitHubPullRequest
     {
-        $number = is_string($group->pr_url) && $group->pr_url !== '' ? $repository->pullRequestNumber($group->pr_url) : null;
+        $number = ! $group->reviewsIncomingPullRequest() && is_string($group->pr_url) && $group->pr_url !== ''
+            ? $repository->pullRequestNumber($group->pr_url) : null;
 
         return $number === null ? null : $this->github->pullRequest($token, $repository, $number);
     }
@@ -339,7 +341,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         try {
             $group = $vm->group ?? throw new TaskPullRequestException('The task workspace is unavailable.');
             [$repository, $instance, $expected] = $this->target($group);
-            if ($expected !== $branch) {
+            if ($branch !== $expected && $branch !== TaskRemoteBranch::handoff($group)) {
                 throw new TaskPullRequestException('The task workspace is unavailable.');
             }
             $instance->loadMissing(['node', 'project']);
@@ -359,6 +361,9 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed', mutates: true),
                     'tasks.push_failed',
                     $deadline,
+                    // An incoming pull request's task-{id} holds only handoff commits for CI, and the workspace follows the
+                    // author's head. So a handoff replaces it, over the tip just fetched (/reference/tasks#handoff-ci).
+                    replace: $group->reviewsIncomingPullRequest() && $branch === TaskRemoteBranch::handoff($group),
                 );
             } catch (RuntimeConvergenceException $exception) {
                 $this->failedPush($exception, $token);
