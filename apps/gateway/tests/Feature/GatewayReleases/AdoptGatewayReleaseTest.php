@@ -23,6 +23,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
@@ -382,7 +383,7 @@ function adoption(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, fleet: $fleet),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep'), fleet: $fleet),
         $recorder,
         $guard,
         new GatewayReleaseRetry,

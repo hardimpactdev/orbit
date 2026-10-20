@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Data\Instances\InstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -36,6 +37,7 @@ use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -58,7 +60,7 @@ if (
     throw new RuntimeException('PHP must omit arguments from exception traces.');
 }
 
-return Application::configure(basePath: dirname(__DIR__))
+$app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         api: __DIR__.'/../routes/api.php',
         health: '/up',
@@ -95,7 +97,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 return $taskVms->enabled || $taskVms->upcloudConfigured;
             });
     })
-    ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->replace(ValidatePostSize::class, ValidateRequestBodySize::class);
         // The Gateway keeps no session, so the Horizon dashboard has no CSRF token: only Sec-Fetch-Site: same-origin passes.
@@ -375,3 +376,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->create();
+
+// Providers register their own commands, so Artisan does not discover app/Console/Commands at each boot.
+$app->singleton(ConsoleKernel::class, GatewayConsoleKernel::class);
+
+return $app;

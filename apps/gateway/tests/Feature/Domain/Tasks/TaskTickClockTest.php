@@ -42,10 +42,11 @@ it('records the version of the code that ran the tick beside its start', functio
 
     expect($clock->lastStarted())->toBe(['started_at' => '2026-10-07T06:00:00.000000Z', 'version' => str_repeat('a', 40)]);
 
+    // A checkout has no REVISION, so without APP_VERSION the Gateway reports `dev`.
     config(['app.version' => '']);
     $clock->record();
 
-    expect($clock->lastStarted())->toBe(['started_at' => '2026-10-07T06:00:00.000000Z', 'version' => null]);
+    expect($clock->lastStarted())->toBe(['started_at' => '2026-10-07T06:00:00.000000Z', 'version' => 'dev']);
 });
 
 it('reports a cache that cannot be written or read without failing the tick or the status', function (): void {

@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskType;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -56,7 +57,7 @@ final readonly class WatchIncomingPullRequestsAction
             if (! $repository instanceof GitHubRepository) {
                 continue;
             }
-            $authors = TaskReviewTrust::fromConfig($repository, config('orbit.tasks.pull_request_authors', []));
+            $authors = TaskReviewTrust::fromConfig($repository, Config::string('orbit.tasks.pull_request_authors'));
             if (! $authors->valid || $authors->accountIds === [] || ! Cache::add('tasks.incoming-pull-requests.'.$project->id, true, 60)) {
                 continue;
             }

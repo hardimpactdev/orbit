@@ -46,6 +46,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use DateTimeImmutable;
+use Illuminate\Support\Facades\Config;
 
 /**
  * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: real layout, Git, lock, and
@@ -410,6 +411,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $this,
             $recorder,
             $builder,
+            Config::integer('orbit.gateway_releases.keep'),
             ticks: $this->ticks(),
         );
     }
