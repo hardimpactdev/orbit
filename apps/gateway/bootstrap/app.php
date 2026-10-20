@@ -108,7 +108,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
                 return GatewayExceptionStatus::for($exception, request()->is('api/*')) >= 500;
             });
 
-            // Domain exceptions render themselves with render(). These are framework exceptions.
+            // Domain exceptions render themselves (RendersApiError). These closures render framework exceptions and the API catch-all.
             $exceptions->render(function (ValidationException $exception, Request $request): JsonResponse {
                 return ApiErrorResponse::make($request, 'validation.failed', 'The request data is invalid.', $exception->errors(), GatewayExceptionStatus::for($exception));
             });

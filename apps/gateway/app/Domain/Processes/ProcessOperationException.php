@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Http\Responses\ApiErrorResponse;
+use App\Http\Responses\RendersApiError;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Processes\CommandResult;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
 
-final class ProcessOperationException extends RuntimeException
+final class ProcessOperationException extends RuntimeException implements RendersApiError
 {
     public function __construct(
         public readonly string $step,
@@ -23,12 +24,19 @@ final class ProcessOperationException extends RuntimeException
         parent::__construct($message, previous: $previous);
     }
 
+    #[\Override]
+    public function apiErrorCode(): string
+    {
+        return $this->errorCode;
+    }
+
     /** The API error envelope, which the exception handler returns for this exception. */
+    #[\Override]
     public function render(Request $request): JsonResponse
     {
-        $request->attributes->set('orbit.error_code', $this->errorCode);
+        $request->attributes->set('orbit.error_code', $this->apiErrorCode());
         $request->attributes->set('orbit.command_result', $this->result);
 
-        return ApiErrorResponse::make($request, $this->errorCode, $this->getMessage(), ['step' => $this->step], GatewayExceptionStatus::for($this));
+        return ApiErrorResponse::make($request, $this->apiErrorCode(), $this->getMessage(), ['step' => $this->step], GatewayExceptionStatus::for($this));
     }
 }

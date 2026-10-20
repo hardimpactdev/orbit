@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use App\Http\Responses\ApiErrorResponse;
+use App\Http\Responses\RendersApiError;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
 use Throwable;
 
-final class ToolOperationException extends RuntimeException
+final class ToolOperationException extends RuntimeException implements RendersApiError
 {
     public function __construct(
         public readonly string $step,
@@ -53,10 +54,17 @@ final class ToolOperationException extends RuntimeException
         ];
     }
 
+    #[\Override]
+    public function apiErrorCode(): string
+    {
+        return $this->errorCode;
+    }
+
     /** The API error envelope, which the exception handler returns for this exception. */
+    #[\Override]
     public function render(Request $request): JsonResponse
     {
-        $request->attributes->set('orbit.error_code', $this->errorCode);
+        $request->attributes->set('orbit.error_code', $this->apiErrorCode());
         $request->attributes->set('orbit.tool_exception', $this);
 
         $details = [
@@ -72,6 +80,6 @@ final class ToolOperationException extends RuntimeException
             $details['adoption_block'] = $this->adoptionBlock;
         }
 
-        return ApiErrorResponse::make($request, $this->errorCode, $this->getMessage(), $details, GatewayExceptionStatus::for($this));
+        return ApiErrorResponse::make($request, $this->apiErrorCode(), $this->getMessage(), $details, GatewayExceptionStatus::for($this));
     }
 }

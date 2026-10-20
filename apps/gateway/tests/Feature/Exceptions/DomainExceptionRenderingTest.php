@@ -15,8 +15,10 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\InstanceRemoval;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -129,6 +131,24 @@ dataset('domain exception renderers', function (): array {
             ['code' => 'node.provision_failed', 'message' => 'Provisioning failed.', 'details' => ['step' => 'roles', 'error_code' => 'node_role.node_busy']],
             static fn (): array => ['orbit.error_code' => 'node.provision_failed', 'orbit.command_result' => $result],
         ],
+        'node provisioning with a Caddy build failure' => [
+            fn (): Throwable => new NodeProvisioningException('roles', 'node.provision_failed', 'Provisioning failed.', new NodeRoleOperationException(
+                'converge:app-prod-caddy-config',
+                'node_role.convergence_failed',
+                'app-prod.caddy_config_failed',
+                'Caddy did not load.',
+                previous: new NodeCaddyBuildException('app-prod', 'validate', 'Error: loading certificates'),
+            )),
+            502,
+            ['code' => 'node.provision_failed', 'message' => 'Provisioning failed.', 'details' => [
+                'step' => 'roles',
+                'error_code' => 'app-prod.caddy_config_failed',
+                'node' => 'app-prod',
+                'stage' => 'validate',
+                'message' => 'Error: loading certificates',
+            ]],
+            static fn (): array => ['orbit.error_code' => 'node.provision_failed', 'orbit.command_result' => null],
+        ],
         'node removal' => [
             fn (): Throwable => new NodeRemovalException('wireguard', 'node.remove_failed', 'Removal failed.', $result),
             502,
@@ -176,6 +196,12 @@ dataset('domain exception renderers', function (): array {
             409,
             ['code' => 'route.domain_taken', 'message' => 'The domain is taken.', 'details' => ['domain' => 'app.test']],
             static fn (): array => ['orbit.error_code' => 'route.domain_taken', 'orbit.error_message' => 'The domain is taken.'],
+        ],
+        'resource operation subclass' => [
+            fn (): Throwable => new TaskVmException('task_vm.capacity_exhausted', 'No host has room for the task VM.', 503),
+            503,
+            ['code' => 'task_vm.capacity_exhausted', 'message' => 'No host has room for the task VM.', 'details' => []],
+            static fn (): array => ['orbit.error_code' => 'task_vm.capacity_exhausted', 'orbit.error_message' => 'No host has room for the task VM.'],
         ],
         'role assignment' => [
             fn (): Throwable => new RoleAssignmentException('The role is assigned elsewhere.'),
