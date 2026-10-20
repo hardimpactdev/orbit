@@ -2736,6 +2736,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Task",
                 "Tool"
@@ -2951,6 +2952,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Project Documents",
                 "Route",

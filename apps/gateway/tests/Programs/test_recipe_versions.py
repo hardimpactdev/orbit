@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +40,11 @@ Check-Valid-Until: no
 
 class RecipeVersionsTest(unittest.TestCase):
     def setUp(self):
+        # The fixture's dpkg times are UTC. Restore both the environment and libc's
+        # timezone cache after each test, including on non-UTC runners.
+        self.addCleanup(time.tzset)
+        self.enterContext(patch.dict(os.environ, TZ='UTC'))
+        time.tzset()
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.apt = Path(directory.name)
@@ -223,8 +229,7 @@ class RecipeVersionsTest(unittest.TestCase):
         self.status_only_policy()
         self.install_log()
         self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
-        with patch.dict(os.environ, TZ='UTC'):
-            tool = self.assess(NEWER)
+        tool = self.assess(NEWER)
         self.assertEqual((tool['status'], tool['changed']), ('newer_than_recipe', False))
         updates = [c for c in self.commands if c[:2] == ['apt-get', 'update']]
         self.assertEqual(len(updates), 1)
@@ -240,14 +245,14 @@ class RecipeVersionsTest(unittest.TestCase):
         with (self.apt / 'dpkg.log').open('a') as stream:
             stream.write(f'2026-10-15 12:30:00 upgrade curl:amd64 {NEWER} {SUPERSEDED_BY}\n')
             stream.write(f'2026-10-16 12:30:00 status installed curl:amd64 {SUPERSEDED_BY}\n')
-        with patch.object(recipe, 'run', side_effect=self.command), patch.dict(os.environ, TZ='UTC'):
+        with patch.object(recipe, 'run', side_effect=self.command):
             self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261012T122900Z')
 
     def test_install_action_is_used_and_status_fallback_uses_earliest_native_or_all_record(self):
         self.install_log('dpkg.log.2.gz', '2026-10-12 12:30:00', package='curl:all')
         self.install_log('dpkg.log.1', '2026-10-13 12:30:00')
         self.install_log('dpkg.log', '2026-10-11 12:30:00', package='curl:arm64')
-        with patch.object(recipe, 'run', side_effect=self.command), patch.dict(os.environ, TZ='UTC'):
+        with patch.object(recipe, 'run', side_effect=self.command):
             self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261012T123000Z')
             with (self.apt / 'dpkg.log.1').open('a') as stream:
                 stream.write(f'2026-10-12 12:29:00 install curl:all <none> {NEWER}\n')
@@ -444,7 +449,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 self.assertEqual(config.read_text(), 'Dir::Etc::parts "-";\nDir::Etc::main "-";\n')
                 self.assertEqual(config.parent, source.parent)
             return self.command(argv, **kwargs)
-        with patch.object(recipe, 'run', side_effect=command), patch.dict(os.environ, TZ='UTC'):
+        with patch.object(recipe, 'run', side_effect=command):
             self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['status'], 'newer_than_recipe')
 
     def test_superseded_build_without_an_install_record_is_refused(self):

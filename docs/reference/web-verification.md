@@ -181,6 +181,14 @@ Exit 0 means `"ok": true`. Exit 1 means the command ran and failed. Exit 2 means
 
 `next` names the recovery. `usage` includes the allowed devices and engines. `unknown-route` and `ambiguous-route` tell the agent to run `bin/web-verify routes`. `no-page` tells the agent to run `open` first. `unresolved-parameter` tells the agent to replace each `$name` with one segment, such as `open /tasks/12` instead of `open /tasks/$id`. `selector-missing` tells the agent to use a `testid` from the map, or to add the missing `data-testid` on the control and in the map. `browser-missing` includes the install command above. `map-invalid` names the first broken field. `command-failed` points at `.orbit-artifacts/web/daemon.log`.
 
+## Automated tests
+
+The command tests call the same `execute` dispatcher as the CLI to check argument and route errors in-process. Real CLI cases still check JSON output, exit codes, a successful screenshot, a screenshot-write failure, and explicit stop.
+
+The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 500 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
+
+PNG generation and reuse are checked with WebKit on a phone and Chromium on desktop. The other device and engine pairings use `open` and real control clicks instead of writing duplicate PNGs. WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. Both engines remain installed and covered.
+
 ## Limits
 
 The phone PNG uses the Playwright layout viewport, not the device screen. iPhone 15 is 393 by 659 CSS pixels. Pixel 8 is 412 by 839. An installed app's web view is taller than that viewport.

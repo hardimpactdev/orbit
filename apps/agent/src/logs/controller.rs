@@ -513,7 +513,7 @@ mod tests {
         hub.flush("presence-node-logs.7", Instant::now()).unwrap()
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn laravel_stream_end_to_end_redacts_and_ends_on_a_link() {
         use std::io::Write;
         let root = std::env::temp_dir().join(format!("orbit-agent-e2e-{}", rand::random::<u64>()));

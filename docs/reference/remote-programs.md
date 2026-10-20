@@ -99,6 +99,8 @@ A program that reads a private repository receives the [Git read environment](/r
 - ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
 - `python3 -m unittest` runs the direct tests in `apps/gateway/tests/Programs`. They run programs with the same assembly and bootstrap against temporary directories.
 
+The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
+
 Assembly includes the recipe image builder and the shared recipe library used by `docker.migrate`.
 
 Task monitors and the recipe library share `tasks/unit-state.py` through `TaskUnitProgram`, which inserts it at `# ORBIT_TASK_UNIT_STATE` before transport. The remote program catalogue expands the same marker inside named libraries. `# Uses:` only prepends same-language libraries; it cannot insert Python into the existing Bash topology script.

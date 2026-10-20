@@ -220,6 +220,10 @@ Forced removal of a linked-worktree Instance, without a checkout in the removal'
 
 After deploying this fix, the operator checks Instances 298 and 302 on beast and their recorded removal progress, confirms that each source belongs to its Instance, and retries `orbit instance:destroy 298 --yes --force` and `orbit instance:destroy 302 --yes --force`. For each Instance, check that the operation completes, its quarantined directory and Git worktree entry are gone, and the common repository and sibling Instances remain. This is a live-resource operator step, not part of the disposable Incus proof.
 
+## Removal tests
+
+The source-removal tests in `apps/gateway/tests/Programs/test_source_removal.py` run the real remote programs and Git commands against temporary checkouts and worktrees. Each test class seeds a bare origin once. Each case copies that origin into its own directory and creates its own Git configuration, checkouts, and worktrees. Removal, refusal, and retry checks never share a writable repository with another case. [Remote programs](/reference/remote-programs#lint-and-direct-tests) describes how to run the suite.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
