@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GatewayReleases\GatewayVersion;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
@@ -61,10 +61,8 @@ final readonly class TaskTickClock
         return ['started_at' => $value['started_at'], 'version' => is_string($value['version'] ?? null) ? $value['version'] : null];
     }
 
-    private static function version(): ?string
+    private static function version(): string
     {
-        $version = Config::get('app.version');
-
-        return is_string($version) && $version !== '' ? $version : null;
+        return GatewayVersion::current();
     }
 }

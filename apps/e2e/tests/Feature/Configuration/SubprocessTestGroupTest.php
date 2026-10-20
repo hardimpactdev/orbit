@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Process\Process;
+
+pest()->group('subprocess');
+
 /*
  * Pest TIA records the code a test runs through PCOV in the test's own process. Code that a test runs in a PHP
- * subprocess is not linked to the test, so a change to that code does not select it. CI runs the `subprocess`
- * group on every affected run, and this contract keeps every such test in that group.
+ * subprocess is not linked to the test, so a change to that code does not select it. CI runs full suites,
+ * including the `subprocess` group; these contracts keep the limitation explicit and prove full-suite inclusion.
  */
 
 /** The projects whose Pest suites CI runs. */
@@ -104,7 +108,28 @@ it('puts every test that starts PHP in the subprocess group', function (string $
         }
     }
 
-    expect($untagged)->toBe([], 'Add `pest()->group(\'subprocess\');` to these tests, so CI runs them on every affected run.');
+    expect($untagged)->toBe([], 'Add `pest()->group(\'subprocess\');` to these tests, so the subprocess coverage boundary stays explicit.');
+})->with(SUBPROCESS_GROUP_PROJECTS);
+
+it('includes every subprocess test class in the full suite without separate CI lanes', function (string $project): void {
+    $listing = function (array $options) use ($project): array {
+        $process = new Process([
+            'vendor/bin/pest', '--no-tia', '--list-tests', '--colors=never',
+            '--do-not-fail-on-empty-test-suite', ...$options,
+        ], base_path('../../'.$project));
+        $process->mustRun();
+        preg_match_all('/^ - ([^:\\r\\n]+)::/m', $process->getOutput(), $matches);
+
+        return array_values(array_unique($matches[1]));
+    };
+    $full = $listing([]);
+    $subprocess = $listing(['--group=subprocess']);
+
+    expect($full)->not->toBeEmpty();
+    if ($project !== 'packages/php-sdk') {
+        expect($subprocess)->not->toBeEmpty();
+    }
+    expect(array_values(array_diff($subprocess, $full)))->toBe([]);
 })->with(SUBPROCESS_GROUP_PROJECTS);
 
 it('detects PHP subprocesses started directly and through helpers', function (): void {

@@ -27,6 +27,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
@@ -694,7 +695,7 @@ describe('gateway:release:deploy', function (): void {
             touch($this->fixture->layout->releasePath(end($ids)).'/REVISION', time() + $index);
         }
 
-        expect(GatewayReleasePromoter::KeptReleases)->toBe(3)
+        expect(Config::integer('orbit.gateway_releases.keep'))->toBe(3)
             ->and($this->fixture->layout->retainedReleaseIds())->toBe([$ids[4], $ids[3], $ids[2]])
             ->and($this->fixture->layout->currentReleaseId())->toBe($ids[4])
             ->and($order->pruned)->toEqualCanonicalizing([$ids[4], $ids[3], $ids[2]]);
@@ -1031,7 +1032,7 @@ function release_deployer(
     GatewayReleaseSmoke $smoke,
     ?GatewayReleaseSwitcher $switcher = null,
     ?GatewayReleaseLock $lock = null,
-    int $keptReleases = GatewayReleasePromoter::KeptReleases,
+    ?int $keptReleases = null,
     ?FleetConvergeUnits $fleet = null,
 ): DeployGatewayReleaseAction {
     $builder = $fixture->builder($web);
@@ -1050,7 +1051,7 @@ function release_deployer(
             $smoke,
             $recorder,
             $builder,
-            $keptReleases,
+            $keptReleases ?? Config::integer('orbit.gateway_releases.keep'),
             fleet: $fleet,
         ),
         $recorder,
@@ -1085,6 +1086,7 @@ function release_rollback(
             $smoke,
             $recorder,
             $builder,
+            Config::integer('orbit.gateway_releases.keep'),
         ),
         $recorder,
     );

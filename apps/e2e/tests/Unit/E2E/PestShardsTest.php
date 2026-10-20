@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('keeps main and privileged CI selections complete without disabling TIA', function (): void {
+it('keeps ordinary and privileged stock Pest shards complete', function (): void {
     $repository = dirname(__DIR__, 5);
     $process = new Process(
-        ['python3', dirname(__DIR__, 2).'/Fixtures/ci-tia-tests.py', $repository],
+        ['python3', dirname(__DIR__, 2).'/Fixtures/check-pest-shards-tests.py', $repository.'/bin/check-pest-shards'],
         $repository,
         ['PYTHONDONTWRITEBYTECODE' => '1', 'GITHUB_OUTPUT' => false, 'ORBIT_TIA_DIRECTORY' => false],
     );

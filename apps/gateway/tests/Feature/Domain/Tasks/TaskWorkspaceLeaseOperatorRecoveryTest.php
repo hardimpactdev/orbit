@@ -367,7 +367,7 @@ PYTHON;
 
 it('records a rebooted exact check as failed and releases only with uncertain attribution', function (): void {
     $leases = app(TaskWorkspaceLease::class);
-    $leases->startCheck($this->group, $this->group->tasks->first(), 'true');
+    $leases->run($this->group, 'check', 'test-check', fn () => $leases->startCheck($this->group, $this->group->tasks->first(), 'true'));
     $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
     $check = TaskCheck::query()->findOrFail($lease->check_id);
     expect($check->process()->runId)->toBe($lease->getAttribute('check_run_id'));
@@ -458,7 +458,7 @@ SH);
 
 it('does not let a stale historical check completion release a successor with reused pid and ticks', function (): void {
     $leases = app(TaskWorkspaceLease::class);
-    $leases->startCheck($this->group, $this->group->tasks->first(), 'true');
+    $leases->run($this->group, 'check', 'test-check', fn () => $leases->startCheck($this->group, $this->group->tasks->first(), 'true'));
     $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
     $current = TaskCheck::query()->findOrFail($lease->check_id);
     $historical = $current->replicate();

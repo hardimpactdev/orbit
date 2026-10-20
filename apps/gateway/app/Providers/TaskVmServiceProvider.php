@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\BuildTaskVmImageCommand;
+use App\Console\Commands\BuildTaskVmRecipeCommand;
+use App\Console\Commands\BuildUpCloudTaskVmImageCommand;
+use App\Console\Commands\ListTaskVmImageBuildsCommand;
+use App\Console\Commands\PackageCacheUsageCommand;
+use App\Console\Commands\PrepareTaskVmHostCommand;
+use App\Console\Commands\PrepareTaskVmHubCommand;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -23,5 +30,18 @@ final class TaskVmServiceProvider extends ServiceProvider
         $this->app->bind(TaskVmPackageCacheMount::class, TaskVmPackageCache::class);
         // Scoped, so each queued job starts with a stopped clock and no baked programs.
         $this->app->scoped(TaskVmStepClock::class);
+    }
+
+    public function boot(): void
+    {
+        $this->commands([
+            BuildTaskVmImageCommand::class,
+            BuildTaskVmRecipeCommand::class,
+            BuildUpCloudTaskVmImageCommand::class,
+            ListTaskVmImageBuildsCommand::class,
+            PackageCacheUsageCommand::class,
+            PrepareTaskVmHostCommand::class,
+            PrepareTaskVmHubCommand::class,
+        ]);
     }
 }

@@ -405,9 +405,9 @@ describe('CLI release workflow', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
         expect($jobs['publish']['permissions'])->toBe(['contents' => 'write'])
-            ->and($jobs['publish']['steps'][0])->toBe([
+            ->and($jobs['publish']['steps'][0]['uses'])->toStartWith('actions/checkout@')
+            ->and($jobs['publish']['steps'][0])->toMatchArray([
                 'name' => 'Check out the release scripts',
-                'uses' => 'actions/checkout@v7',
                 'with' => ['persist-credentials' => false],
             ])
             ->and($jobs['build'])->not->toHaveKey('permissions')
@@ -435,12 +435,57 @@ function cli_binary_workflow(): array
 function cli_binary_step_uses(array $job): array
 {
     return array_values(array_filter(array_map(
-        static fn (array $step): ?string => $step['uses'] ?? null,
+        static fn (array $step): ?string => isset($step['uses']) ? explode('@', $step['uses'])[0] : null,
         $job['steps'],
     )));
 }
 
 describe('CLI binary workflow', function (): void {
+    it('runs PR packaging only when a binary or its build inputs change', function (string $path, bool $expected): void {
+        $workflow = cli_binary_workflow();
+        $pullRequest = $workflow['on']['pull_request'];
+        $matches = array_any($pullRequest['paths'], fn (string $pattern): bool => fnmatch($pattern, $path));
+
+        expect($pullRequest['branches'])->toBe(['main']);
+        expect($matches)->toBe($expected);
+        expect($workflow['on'])->toHaveKeys(['workflow_dispatch', 'workflow_call']);
+        expect($workflow['on']['workflow_call']['inputs']['commit']['required'])->toBeTrue();
+        expect($workflow['jobs']['build']['steps'][0]['with']['ref'])->toBe('${{ inputs.commit || github.sha }}');
+    })->with([
+        'CLI source' => ['apps/cli/app/Commands/VersionCommand.php', true],
+        'CLI lockfile' => ['apps/cli/composer.lock', true],
+        'PHPacker' => ['apps/cli/phpacker/composer.lock', true],
+        'SDK' => ['packages/php-sdk/src/Orbit.php', true],
+        'recipe' => ['apps/gateway/resources/machine-software/recipe.json', true],
+        'PHP installer' => ['apps/gateway/resources/remote/php/install-build.py', true],
+        'PHP installer library' => ['apps/gateway/resources/remote/lib/artifacts.py', true],
+        'PHP bootstrap' => ['apps/gateway/resources/remote/bootstrap.py', true],
+        'PHP setup' => ['.github/actions/php/action.yml', true],
+        'PHP builder' => ['bin/php-build', true],
+        'binary builder' => ['bin/orbit-build-cli-binary', true],
+        'binary version' => ['bin/orbit-version', true],
+        'workflow' => ['.github/workflows/orbit-cli-binary.yml', true],
+        'docs' => ['docs/reference/cli-binaries.md', false],
+        'Gateway code' => ['apps/gateway/app/Models/Node.php', false],
+        'web' => ['apps/web/src/App.tsx', false],
+        'unrelated workflow' => ['.github/workflows/ci.yml', false],
+    ]);
+
+    it('cancels superseded PR builds without grouping release calls together', function (): void {
+        $concurrency = cli_binary_workflow()['concurrency'];
+
+        expect($concurrency)->toBe([
+            'group' => 'cli-binary-${{ github.event_name == \'pull_request\' && format(\'pr-{0}\', github.event.pull_request.number) || format(\'run-{0}\', github.run_id) }}',
+            'cancel-in-progress' => true,
+        ]);
+    });
+
+    it('retains PR binaries for seven days and release-transfer binaries for thirty', function (): void {
+        $upload = collect(cli_binary_workflow()['jobs']['build']['steps'])->firstWhere('name', 'Upload binary');
+
+        expect($upload['with']['retention-days'])->toBe('${{ github.event_name == \'pull_request\' && 7 || 30 }}');
+    });
+
     it('builds every target on Linux, including macOS', function (): void {
         $build = cli_binary_workflow()['jobs']['build'];
         $runners = array_column($build['strategy']['matrix']['include'], 'runner', 'target');
@@ -471,7 +516,7 @@ describe('CLI binary workflow', function (): void {
 
         expect($runMacos['runs-on'])->toBe('macos-26')
             ->and($runMacos['needs'])->toBe('build')
-            ->and(cli_binary_step_uses($runMacos))->toBe(['actions/download-artifact@v8'])
+            ->and(cli_binary_step_uses($runMacos))->toBe(['actions/download-artifact'])
             ->and($runMacos['steps'][0]['with'])->toBe(['name' => 'orbit-macos-arm64', 'path' => 'binary'])
             ->and($run['env'])->toBe(['VERSION' => '${{ needs.build.outputs.version }}'])
             ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin binary/mac-arm --version')
@@ -484,7 +529,7 @@ describe('CLI binary workflow', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
         // A local action exists only after checkout, which under workflow_call checks out the release commit.
-        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout@v7', './.github/actions/php']);
+        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout', './.github/actions/php']);
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];

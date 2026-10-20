@@ -292,7 +292,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 it('preserves unresolved review assistance while CI and conflict fixes activate and continue', function (bool $conflict): void {
     mock(TaskPullRequestUpdater::class)->shouldReceive('updateBranch')->andReturn(TaskBranchUpdate::Conflict);
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     $source->candidateStatus = TaskReviewReadStatus::Unreadable;
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
@@ -330,7 +330,7 @@ it('preserves unresolved review assistance while CI and conflict fixes activate 
 
 it('starts one feedback fixup after a workspace retry and preserves its consumption through restart', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
@@ -351,7 +351,7 @@ it('starts one feedback fixup after a workspace retry and preserves its consumpt
 
 it('recovers a crash after feedback activation without consuming or appending again', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
@@ -370,7 +370,7 @@ it('recovers a crash after feedback activation without consuming or appending ag
 
 it('retains consumption but skips feedback spawning when the PR closes after append', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(
@@ -391,7 +391,7 @@ it('publishes a consumed feedback fixup once to the same PR and requires fresh e
     ], last: true);
     $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'task_check' => null]);
     $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     $candidate = $source->reviewCandidate($group, 101)->candidate;

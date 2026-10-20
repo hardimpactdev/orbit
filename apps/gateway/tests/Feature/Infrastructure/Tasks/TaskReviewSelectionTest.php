@@ -19,7 +19,7 @@ function selection_review(int $id, GitHubReviewState $state, string $head = 'abc
 
 function selection_trust(): TaskReviewTrust
 {
-    return TaskReviewTrust::fromConfig(GitHubRepository::fromOrigin('https://github.com/acme/orbit.git'), ['acme/orbit' => [42, 7, 8]]);
+    return TaskReviewTrust::fromConfig(GitHubRepository::fromOrigin('https://github.com/acme/orbit.git'), 'acme/orbit:42,7,8');
 }
 
 it('selects the latest decisive record across heads regardless of list arrival order', function (bool $reverse, GitHubReviewState $latest, string $head, array $requests, array $approvals): void {

@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\GatewayReleases\GatewayVersion;
-
 $configuredHome = env('ORBIT_HOME');
 $userHome = getenv('HOME');
 $orbitHome = base_path('.orbit');
@@ -41,8 +39,8 @@ return [
 
     'name' => env(key: 'APP_NAME', default: 'Orbit Gateway'),
 
-    // A release reports the commit in its REVISION file, at the repository root, when APP_VERSION is unset.
-    'version' => GatewayVersion::resolve(env('APP_VERSION'), dirname(__DIR__, 3).'/REVISION'),
+    // Read through GatewayVersion::current(), which reports the release's REVISION commit when APP_VERSION is unset.
+    'version' => env('APP_VERSION'),
 
     /*
      |--------------------------------------------------------------------------

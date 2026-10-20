@@ -221,7 +221,9 @@ final readonly class TaskSubtaskRunner
         }
 
         try {
-            $process = app(TaskWorkspaceLease::class)->startCheck($group, $task, $command, [], $this->handoffCheck($task), commentId: $receipt->id);
+            $leases = app(TaskWorkspaceLease::class);
+            $process = $leases->withReceipt($group, $task->id, $implementer->threadId,
+                fn (): TaskCheckProcess => $leases->startCheck($group, $task, $command, [], $this->handoffCheck($task), commentId: $receipt->id));
         } catch (TaskCheckException $exception) {
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
