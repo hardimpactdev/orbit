@@ -1,0 +1,18 @@
+name: Require no sudo for ordinary Gateway tests
+description: Revoke sudo on a disposable hosted runner and reject any ordinary runner with working sudo.
+runs:
+  using: composite
+  steps:
+    # Runner policy, not PATH, is the sudo boundary. Never change a self-hosted runner's policy.
+    - name: Require no sudo
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |
+        if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
+          sudo sh -c 'printf "%s ALL=(ALL:ALL) !ALL\n" "$1" > /etc/sudoers.d/zz-orbit-no-sudo; chmod 0440 /etc/sudoers.d/zz-orbit-no-sudo' sh "$(id -un)"
+        fi
+        if sudo -n true; then
+          echo 'Ordinary Gateway tests require a runner without sudo.' >&2
+          exit 1
+        fi

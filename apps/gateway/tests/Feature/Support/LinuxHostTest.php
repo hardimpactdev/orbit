@@ -7,6 +7,8 @@ use PHPUnit\Framework\SkippedWithMessageException;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 
+pest()->group('subprocess');
+
 function linux_host_temporary_directory(): string
 {
     $directory = realpath(sys_get_temp_dir()).'/orbit-linux-host-test-'.bin2hex(random_bytes(6));
@@ -23,6 +25,53 @@ function linux_host_run(array $arguments, ?string $directory = null): Process
 
     return $process;
 }
+
+it('builds delegated commands with the toolchain from the copied Gateway', function (): void {
+    $directory = linux_host_temporary_directory();
+    $files = new Filesystem;
+
+    try {
+        $files->ensureDirectoryExists($directory.'/tests');
+        $files->ensureDirectoryExists($directory.'/remote-bin');
+        $files->put($directory.'/tests/bootstrap.php', <<<'PHP'
+            <?php
+            namespace Tests\Support;
+            final class TestToolchain
+            {
+                public static function path(string $path): string
+                {
+                    return getcwd().'/remote-bin:'.$path;
+                }
+            }
+            PHP);
+        $files->put($directory.'/remote-bin/timeout', "#!/bin/sh\nprintf '%s\\n' \"\$PATH\" \"\$@\"\n");
+        chmod($directory.'/remote-bin/timeout', 0o700);
+        $arguments = ['--filter', 'a case with spaces; $literal', 'tests/ExampleTest.php'];
+
+        $process = linux_host_run(['sh', '-c', LinuxHost::testCommand($arguments)], $directory);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(explode("\n", trim($process->getOutput())))->toBe([
+                $directory.'/remote-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                '--kill-after=10', (string) LinuxHost::timeoutSeconds(), 'php', 'vendor/bin/pest', ...$arguments,
+            ]);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
+it('preserves the selected case privilege when building a real Pest delegation', function (bool $privileged): void {
+    $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never'];
+
+    if ($privileged) {
+        $arguments[] = '--group=privileged';
+    }
+
+    $process = linux_host_run([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path());
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toMatch('/Tests:\s+1 passed/');
+})->with(['ordinary exclusion' => false, 'explicit privileged selection' => true]);
 
 describe('the Linux test host copy', function (): void {
     it('holds only the files Git would track and vendor', function (): void {

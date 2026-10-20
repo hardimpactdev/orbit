@@ -56,6 +56,7 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\GuardsSudo;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\RealStorageGuard;
 use Tests\Support\SshGuardedProcessRunner;
@@ -88,10 +89,13 @@ uses(WithCachedConfig::class, WithCachedRoutes::class)
     ->in(
         'Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
         'Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
+        'Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerPrivilegedTest.php',
         'Feature/Domain/Tasks/TaskSchedulerTest.php',
         'Feature/Domain/Tasks/TaskSettlingTickTest.php',
         'Feature/Fleet/NightlyRecipeAutoMergeTest.php',
     );
+
+uses(GuardsSudo::class)->in('Feature', 'Unit', 'Fixtures', 'Rehearsal');
 
 uses(TestCase::class, LazilyRefreshDatabase::class)
     ->beforeEach(function (): void {

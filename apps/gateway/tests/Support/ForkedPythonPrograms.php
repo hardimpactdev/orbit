@@ -30,6 +30,7 @@ final class ForkedPythonPrograms
     /** @param array<string, string> $environment */
     public function run(string $bootstrap, string $name, string $input, array $environment = []): CommandResult
     {
+        $environment['PATH'] = NoSudo::path($environment['PATH'] ?? (string) getenv('PATH'));
         $request = json_encode(['bootstrap' => $bootstrap, 'name' => $name, 'input' => base64_encode($input), 'cwd' => getcwd(), 'environment' => $environment, 'timeout' => $this->timeoutSeconds], JSON_THROW_ON_ERROR)."\n";
         while ($request !== '') {
             $written = fwrite($this->pipes[0], $request);

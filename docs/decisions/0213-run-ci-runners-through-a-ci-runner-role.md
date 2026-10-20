@@ -24,12 +24,12 @@ Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runn
 | `ci-beast-1`, `ci-beast-2` | Beast | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Online |
 | `ci-shark-1` | Shark | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Offline, its container stopped |
 
-- Sabre has no role. Its runners run on the host as `github-runner`, which has passwordless `sudo`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. A job that runs `sudo` bypasses that rule and can act as Sabre toward the Gateway. The implementation loop describes [the setup](/reference/implementation-loop#self-hosted-gateway-runner).
+- Sabre has no role. Its runners run on the host as `github-runner`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. The runner user has no sudo, so a job cannot use it to bypass that rule and act as Sabre toward the Gateway. The implementation loop describes [the runner setup](/reference/implementation-loop#self-hosted-gateway-runner).
 - Beast and Shark are `app-dev` Nodes. Their runners run in unprivileged Incus containers in the project `orbit-ci`, with a `runner` user that has no `sudo`. [`tools/ci-runners/setup.sh`](https://github.com/nckrtl/orbit/blob/main/tools/ci-runners/setup.sh) builds them by hand. Both Nodes list `orbit-ci/*` in `task_vms.operator_owned`, so the task VM stray report ignores those containers. The implementation loop describes [those runners](/reference/implementation-loop#self-hosted-shard-runners).
 
 Doctor sees none of this state, registration tokens pass through an operator's shell, and removal is a manual recipe.
 
-Every CI step that calls `sudo` runs only on GitHub-hosted runners. The `privileged` test group runs in its own job on a GitHub-hosted runner, and shards already leave it out. Only Sabre's unsharded Gateway job can still select a privileged test.
+[Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege) defines the test and runner boundary. The default XML selection excludes privileged cases from both the unsharded Gateway job and its PR shards. One disposable GitHub-hosted job runs the privileged group. Ordinary jobs reject a runner with working sudo. Sabre's runner user has no sudo.
 
 GitHub's repository registration-token endpoint needs the App permission `Administration: write`.
 
@@ -85,7 +85,7 @@ The existing runners are recreated, not adopted:
 4. On Sabre, remove the `github-runner` user, its runner services, the `github-runner-egress` unit, and its nftables rule.
 5. Remove `orbit-ci/*` from `task_vms.operator_owned` on Beast (Node 9) and Shark (Node 13).
 
-The pull request that builds this decision deletes `tools/ci-runners/`, rewrites the two runner sections of the implementation loop, and makes Sabre's unsharded Gateway job leave out the `privileged` group, as the shards do.
+The pull request that builds this decision deletes `tools/ci-runners/` and rewrites the two runner sections of the implementation loop. Sabre's unsharded Gateway job already leaves out the `privileged` group, as the shards do.
 
 ## Rejected alternatives
 
@@ -100,7 +100,7 @@ The pull request that builds this decision deletes `tools/ci-runners/`, rewrites
 ## Consequences
 
 - Runners become visible to Doctor, the API, and agents, and removal deregisters them.
-- Sabre's jobs lose `sudo` and run in a container, so a job no longer acts as Sabre.
+- Sabre's jobs move from the host to containers, keeping their runner user without sudo.
 - ADR 0223 needs `Administration: read` only for classic branch protection. The App never receives Administration write, which permits repository deletion. Runner registration needs its own decision because a user-owned repository has no narrower runner permission.
 - Privileged tests run only on the GitHub-hosted privileged job.
 - Persistent runners keep warm caches, and a job can still leave state for the next job.

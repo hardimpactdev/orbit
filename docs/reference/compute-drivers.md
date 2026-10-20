@@ -278,7 +278,7 @@ Add `--validate` to verify availability and integrity as well as structure. For 
 
 Online validation verifies that the exact snapshot exists for the release and architectures, and that every Ubuntu pin equals the newest version in its authenticated package indexes on all declared architectures. It also checks that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
 
-Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check only when `recipe.json` changes; a hand-edited snapshot date with stale pins fails Required checks.
+Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
 
 Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 

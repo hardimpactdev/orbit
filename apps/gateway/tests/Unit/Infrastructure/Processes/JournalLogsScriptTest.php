@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Logs\LogReadLimit;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 /**
  * Runs the one-shot journal read against a stand-in `journalctl` that checks its arguments and runs
@@ -24,7 +25,7 @@ function readJournal(string $body): string
     try {
         $process = new Process(
             ['sh', '-c', RemoteProcessRuntimeManager::JournalLogsScript, 'orbit-process-logs', 'orbit-process-7-web.service', '1000', (string) LogReadLimit::Bytes],
-            env: ['PATH' => $bin.':/usr/bin:/bin'],
+            env: ['PATH' => TestToolchain::path($bin.':/usr/bin:/bin')],
             timeout: 60,
         );
         $process->mustRun();

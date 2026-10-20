@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require four stock Pest shards to partition the full non-privileged suite.
+"""Require stock Pest shards to partition the ordinary suite.
 
 Run from the project directory. Pest owns selection and time balancing; this
 check compares its actual listings, not a second implementation of sharding.
@@ -10,12 +10,12 @@ import sys
 
 
 def listed_classes(*options):
-    command = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged',
-               *options, '--list-tests', '--colors=never']
+    command = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged', *options, '--list-tests', '--colors=never']
     result = subprocess.run(command, capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise ValueError(f'Pest listing failed ({" ".join(command)}):\n{result.stdout}{result.stderr}')
-    tests = [line[3:] for line in result.stdout.splitlines() if line.startswith(' - ')]
+    # Pest appends a sentence period to the final listed test, not to its identity.
+    tests = [line[3:] for line in result.stdout.rstrip().removesuffix('.').splitlines() if line.startswith(' - ')]
     if not tests or any('::' not in test for test in tests):
         raise ValueError(f'Pest returned an empty or unreadable listing ({" ".join(command)}).')
     # Pest can shorten method names differently when a class is filtered. The

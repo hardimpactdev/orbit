@@ -45,6 +45,8 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+pest()->group('privileged');
+
 // Explicitly invoked outside the normal suites. This exercises root-owned paths, systemd, SSH, Caddy,
 // DNS and Valkey. Only run in an owned disposable Incus VM, never on a fleet Node or developer host.
 it('rehearses the automatic rename with native services and continuous held-key requests', function (): void {

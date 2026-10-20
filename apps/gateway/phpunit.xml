@@ -16,6 +16,11 @@
             <directory>tests/Feature</directory>
         </testsuite>
     </testsuites>
+    <groups>
+        <exclude>
+            <group>privileged</group>
+        </exclude>
+    </groups>
     <source>
         <include>
             <directory>app</directory>
