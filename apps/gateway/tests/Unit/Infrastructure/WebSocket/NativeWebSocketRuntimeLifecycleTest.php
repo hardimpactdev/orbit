@@ -22,7 +22,7 @@ use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
 
-it('installs prerequisites, then clones, installs and starts Reverb with the resolved config', function (): void {
+it('installs prerequisites, then clones, installs and restarts Reverb on every converge', function (): void {
     $commands = [];
     $lifecycle = websocket_runtime_lifecycle($commands);
     $node = websocket_runtime_node();
@@ -64,9 +64,8 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
         ->toContain('fetch --quiet origin "$ref"')
         ->toContain('composer install')
         ->toContain('systemd-analyze verify "$verify_directory/orbit-websocket.service"')
-        ->toContain('systemctl enable --quiet orbit-websocket')
-        ->toContain('if cmp -s -- "$env_candidate" "$install_path/.env"; then')
-        ->toContain('systemctl restart orbit-websocket')
+        ->toContain("systemctl daemon-reload\nsystemctl enable --quiet orbit-websocket\nsystemctl restart orbit-websocket\nsystemctl is-active --quiet orbit-websocket")
+        ->not->toContain('env_changed', 'cmp ', 'systemctl start orbit-websocket')
         ->not
         ->toContain('app-secret')
         ->not

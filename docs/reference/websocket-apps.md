@@ -57,8 +57,8 @@ When the converge fails, the record change stays. Fix the cause, then run `orbit
 Add an app to give an Instance its credentials, then synchronize the Instance's `.env`.
 
 ```bash
-orbit instance:websocket:add <instance> hauzer
-orbit env:sync <instance>
+orbit instance:websocket:add hauzer --instance=<instance>
+orbit env:sync --instance=<instance>
 ```
 
 `PUT /api/v1/instances/{instance}/websocket-apps/{name}` writes the app into the Instance's [stored environment](/reference/environment-variables). `{instance}` is an Instance ID or an exact Route domain. The route needs an access grant to the Instance's Node. The keys are the names Laravel's own `reverb` broadcast connection reads:
@@ -77,7 +77,7 @@ An Instance holds at most one app. A second add replaces the first app's values.
 
 `DELETE /api/v1/instances/{instance}/websocket-apps/{name}` removes the attachment and the seven keys. Other keys stay. An app that the Instance does not hold returns `websocket.attachment_missing` (404).
 
-The CLI command is `instance:websocket:remove <instance> <app>`. It asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode.
+The CLI command is `instance:websocket:remove <app> --instance=<instance>`. It asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode.
 
 Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
 
@@ -93,7 +93,7 @@ REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
 
 [orbit-reverb](https://github.com/nckrtl/orbit-reverb)'s `config/reverb.php` makes one app of Reverb's `config` provider from each entry. Every app gets the same options: `allowed_origins` `*`, and client events from channel members.
 
-Reverb reads its apps once, when it starts. So when the rendered `.env` differs from the file on the Node, the converge restarts `orbit-websocket`. A restart closes every connection, and clients reconnect. When the file is the same, the converge only starts the service if it is stopped.
+Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
 
 `ORBIT_WEBSOCKET_REF` must name an orbit-reverb commit that reads `REVERB_APPS`. With an older commit, Reverb starts without a usable app.
 

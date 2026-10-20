@@ -42,7 +42,7 @@ The converge renders every app, ordered by name, into one value of the server's 
 REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
 ```
 
-orbit-reverb's `config/reverb.php` maps each entry to an app of Reverb's stock `config` provider, with the shared options it already has. The values are random letters and digits. Single quotes keep the JSON literal for phpdotenv. When the rendered `.env` differs from the file on the Node, the converge restarts `orbit-websocket`. Otherwise it only starts it. A restart closes every connection, and clients reconnect.
+orbit-reverb's `config/reverb.php` maps each entry to an app of Reverb's stock `config` provider, with the shared options it already has. The values are random letters and digits. Single quotes keep the JSON literal for phpdotenv. Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
 
 ### Commands
 
@@ -52,8 +52,8 @@ orbit-reverb's `config/reverb.php` maps each entry to an app of Reverb's stock `
 | `websocket:app:list` | `GET /api/v1/websocket-apps` | Lists the apps by name. |
 | `websocket:app:show <name>` | `GET /api/v1/websocket-apps/{name}` | Shows one app. |
 | `websocket:app:destroy <name>` | `DELETE /api/v1/websocket-apps/{name}` | Deletes an app and converges the active role. |
-| `instance:websocket:add <instance> <app>` | `PUT /api/v1/instances/{instance}/websocket-apps/{name}` | Writes the app into the Instance's stored environment. |
-| `instance:websocket:remove <instance> <app>` | `DELETE /api/v1/instances/{instance}/websocket-apps/{name}` | Removes the keys and the attachment. |
+| `instance:websocket:add <app> --instance=<instance>` | `PUT /api/v1/instances/{instance}/websocket-apps/{name}` | Writes the app into the Instance's stored environment. |
+| `instance:websocket:remove <app> --instance=<instance>` | `DELETE /api/v1/instances/{instance}/websocket-apps/{name}` | Removes the keys and the attachment. |
 
 The responses carry `id`, `name`, `app_id`, `key`, and the IDs of the Instances that hold the app. They never carry the secret. Without an active role, create and destroy only change the record, and the role's next converge renders it. A failed converge keeps the record change, and `node:role:add <node> websocket --converge-existing` applies it after the fix. Create and destroy run inside the request, as `analytics:update` does. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) lists them with the other commands that converge a role.
 
@@ -61,7 +61,8 @@ Add writes seven keys, the names Laravel's own `reverb` broadcast connection rea
 
 ### Refusals
 
-- `websocket.app_reserved` (409): destroying the `gateway` app, or adding it to an Instance. The create request refuses the name `gateway` too.
+- `websocket.app_reserved` (409): destroying the `gateway` app, or adding it to an Instance.
+- `validation.failed` (422): creating an app named `gateway`, a taken name, or a name that is not a lowercase slug of at most 63 characters.
 - `websocket.app_in_use` (409): destroying an app that an Instance still holds.
 - `websocket.attachment_missing` (404): removing an app that the Instance does not hold.
 
@@ -81,7 +82,8 @@ A production [clone](/reference/instance-cloning) does not copy the seven keys o
 
 - Each Project gets its own channels on `wss://reverb.orbit`. Its credentials cannot publish on another app's channels.
 - The Gateway's secret stays on the Gateway. A role move or removal no longer changes any app's keys.
-- Creating or destroying an app restarts Reverb, and every client reconnects.
+- Each converge restarts Reverb, so it loads the current code and every app, and clients reconnect.
+- The migration deletes the old Node settings. A Gateway code rollback does not run migrations back, so the old code finds no Reverb app and the Gateway stops broadcasting. Restore the pre-release database snapshot or roll forward to recover.
 - The orbit-reverb change must merge before this one. A Gateway that renders `REVERB_APPS` for an orbit-reverb that does not read it starts Reverb without a usable app.
 - The endpoint stays private to WireGuard. A public endpoint for production apps needs its own decision.
 

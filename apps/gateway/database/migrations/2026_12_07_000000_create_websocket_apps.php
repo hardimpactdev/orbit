@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Moves the one Reverb app the `websocket` role stored as Node settings into the `gateway` row of
- * `websocket_apps`, and deletes those settings (ADR 0227). The Laravel `APP_KEY` of the Reverb server
+ * `websocket_apps`, and deletes those settings (ADR 0228). The Laravel `APP_KEY` of the Reverb server
  * stays a Node setting, because it belongs to the server, not to an app.
  */
 return new class extends Migration

@@ -77,8 +77,8 @@ describe('websocket:app commands', function (): void {
         'show' => ['websocket:app:show', ['name' => 'hauzer_app']],
         'destroy' => ['websocket:app:destroy', ['name' => 'hauzer_app', '--force' => true]],
         'long name' => ['websocket:app:create', ['name' => str_repeat('a', 64)]],
-        'add' => ['instance:websocket:add', ['instance' => '12', 'app' => 'Hauzer']],
-        'remove' => ['instance:websocket:remove', ['instance' => '12', 'app' => 'Hauzer', '--force' => true]],
+        'add' => ['instance:websocket:add', ['--instance' => '12', 'app' => 'Hauzer']],
+        'remove' => ['instance:websocket:remove', ['--instance' => '12', 'app' => 'Hauzer', '--force' => true]],
     ]);
 
     it('refuses a JSON destroy without --force and destroys after it', function (): void {
@@ -125,9 +125,9 @@ it('preserves a Gateway refusal and request ID in clean JSON', function (string 
             'error' => ['code' => $code, 'message' => 'App request refused.', 'request_id' => $requestId],
         ]);
 })->with([
-    'reserved app' => ['instance:websocket:add', ['instance' => '12', 'app' => 'gateway'], AddInstanceWebSocketAppRequest::class, 'websocket.app_reserved', 409],
+    'reserved app' => ['instance:websocket:add', ['--instance' => '12', 'app' => 'gateway'], AddInstanceWebSocketAppRequest::class, 'websocket.app_reserved', 409],
     'app in use' => ['websocket:app:destroy', ['name' => 'hauzer', '--force' => true], DestroyWebSocketAppRequest::class, 'websocket.app_in_use', 409],
-    'missing attachment' => ['instance:websocket:remove', ['instance' => '12', 'app' => 'hauzer', '--force' => true], RemoveInstanceWebSocketAppRequest::class, 'websocket.attachment_missing', 404],
+    'missing attachment' => ['instance:websocket:remove', ['--instance' => '12', 'app' => 'hauzer', '--force' => true], RemoveInstanceWebSocketAppRequest::class, 'websocket.attachment_missing', 404],
 ]);
 
 it('requires consent in noninteractive human mode before sending a mutation', function (string $command, array $arguments): void {
@@ -139,28 +139,52 @@ it('requires consent in noninteractive human mode before sending a mutation', fu
         ->and($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'destroy' => ['websocket:app:destroy', ['name' => 'hauzer']],
-    'remove' => ['instance:websocket:remove', ['instance' => '12', 'app' => 'hauzer']],
+    'remove' => ['instance:websocket:remove', ['--instance' => '12', 'app' => 'hauzer']],
 ]);
 
 describe('instance:websocket commands', function (): void {
-    it('adds an app on an Instance selected by its Route domain', function (): void {
-        $mockClient = MockClient::global([AddInstanceWebSocketAppRequest::class => websocket_attachment_cli_response('attach')]);
+    it('passes an explicit Instance ID or Route domain to the Gateway', function (string $command, string $requestClass, string $operation, string $selector): void {
+        $mockClient = MockClient::global([$requestClass => websocket_attachment_cli_response($operation)]);
 
-        $this->artisan('instance:websocket:add', ['instance' => 'hauzer.test', 'app' => 'hauzer', '--json' => true])
+        $this->artisan($command, ['--instance' => $selector, 'app' => 'hauzer', '--json' => true, ...($operation === 'detach' ? ['--force' => true] : [])])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/instances/hauzer.test/websocket-apps/hauzer');
-    });
+        expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/instances/'.$selector.'/websocket-apps/hauzer');
+    })->with([
+        'add' => ['instance:websocket:add', AddInstanceWebSocketAppRequest::class, 'attach'],
+        'remove' => ['instance:websocket:remove', RemoveInstanceWebSocketAppRequest::class, 'detach'],
+    ])->with(['ID' => '12', 'domain' => 'hauzer.test']);
+
+    it('refuses an omitted or empty Instance option before sending', function (string $command, ?string $selector, bool $json): void {
+        $mockClient = MockClient::global([]);
+        $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+        $arguments = ['app' => 'hauzer', '--json' => $json];
+        if ($selector !== null) {
+            $arguments['--instance'] = $selector;
+        }
+
+        expect($tester->execute($arguments, ['interactive' => false]))->toBe(1)
+            ->and($mockClient->getLastPendingRequest())->toBeNull();
+
+        if ($json) {
+            expect(json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR)['error']['code'])
+                ->toBe('websocket.instance_required');
+        } else {
+            expect($tester->getDisplay(true))->toContain('Instance ID or Route domain is required.');
+        }
+    })->with(['instance:websocket:add', 'instance:websocket:remove'])
+        ->with(['omitted' => null, 'empty' => ''])
+        ->with(['human' => false, 'json' => true]);
 
     it('refuses a JSON removal without --force and removes after it', function (): void {
         $mockClient = MockClient::global([RemoveInstanceWebSocketAppRequest::class => websocket_attachment_cli_response('detach')]);
         $tester = new CommandTester(app(Kernel::class)->all()['instance:websocket:remove']);
 
-        expect($tester->execute(['instance' => '12', 'app' => 'hauzer', '--json' => true], ['interactive' => false]))->toBe(1)
+        expect($tester->execute(['--instance' => '12', 'app' => 'hauzer', '--json' => true], ['interactive' => false]))->toBe(1)
             ->and($tester->getDisplay(true))->toContain('websocket.confirmation_required')
             ->and($mockClient->getLastPendingRequest())->toBeNull();
 
-        $this->artisan('instance:websocket:remove', ['instance' => '12', 'app' => 'hauzer', '--force' => true, '--json' => true])
+        $this->artisan('instance:websocket:remove', ['--instance' => '12', 'app' => 'hauzer', '--force' => true, '--json' => true])
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/instances/12/websocket-apps/hauzer');

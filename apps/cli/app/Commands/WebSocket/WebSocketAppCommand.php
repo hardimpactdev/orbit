@@ -13,6 +13,17 @@ abstract class WebSocketAppCommand extends GatewayCommand
 {
     public const string NAME_PATTERN = '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D';
 
+    protected function instanceSelector(): ?string
+    {
+        $selector = $this->stringOption('instance');
+
+        if ($selector === null) {
+            $this->renderGatewayFailure('websocket.instance_required', 'Instance ID or Route domain is required.');
+        }
+
+        return $selector;
+    }
+
     protected function appName(string $argument): ?string
     {
         $name = $this->stringArgument($argument, 'WebSocket app name', 'websocket.name_required');

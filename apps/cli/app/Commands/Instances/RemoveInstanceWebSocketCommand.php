@@ -14,8 +14,8 @@ final class RemoveInstanceWebSocketCommand extends WebSocketAppCommand
 {
     #[\Override]
     protected $signature = 'instance:websocket:remove
-        {instance : Positive Instance ID or exact Route domain}
         {app : WebSocket app name}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
@@ -24,8 +24,8 @@ final class RemoveInstanceWebSocketCommand extends WebSocketAppCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $instance = $this->stringArgument('instance', 'Instance ID or Route domain', 'websocket.instance_required');
         $name = $this->appName('app');
+        $instance = $this->instanceSelector();
 
         if ($instance === null || $name === null) {
             return self::FAILURE;

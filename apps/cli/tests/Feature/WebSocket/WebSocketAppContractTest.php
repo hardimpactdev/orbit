@@ -43,7 +43,7 @@ describe('websocket app contract', function (): void {
 
     it('renders the instance:websocket commands from the recorded responses', function (bool $json): void {
         $suffix = $json ? '.json' : '.human.txt';
-        run_contract('websocket-apps/instance-websocket-add/default', 'instance:websocket:add', ['instance' => '1', 'app' => 'hauzer', '--json' => $json], 'websocket-apps/instance-websocket-add/default'.$suffix, 0);
-        run_contract('websocket-apps/instance-websocket-remove/default', 'instance:websocket:remove', ['instance' => '1', 'app' => 'hauzer', '--force' => true, '--json' => $json], 'websocket-apps/instance-websocket-remove/default'.$suffix, 0);
+        run_contract('websocket-apps/instance-websocket-add/default', 'instance:websocket:add', ['--instance' => '1', 'app' => 'hauzer', '--json' => $json], 'websocket-apps/instance-websocket-add/default'.$suffix, 0);
+        run_contract('websocket-apps/instance-websocket-remove/default', 'instance:websocket:remove', ['--instance' => '1', 'app' => 'hauzer', '--force' => true, '--json' => $json], 'websocket-apps/instance-websocket-remove/default'.$suffix, 0);
     })->with(['human' => false, 'json' => true]);
 });

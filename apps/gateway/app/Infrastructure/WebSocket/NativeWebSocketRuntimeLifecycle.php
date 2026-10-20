@@ -190,10 +190,6 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             printf '%s' '{$envEncoded}' | base64 --decode > "\$env_candidate"
             chown "\$managed_user":"\$managed_group" "\$env_candidate"
             chmod 0600 "\$env_candidate"
-            env_changed=1
-            if cmp -s -- "\$env_candidate" "\$install_path/.env"; then
-                env_changed=0
-            fi
             mv -fT -- "\$env_candidate" "\$install_path/.env"
             unit_candidate=/etc/systemd/system/.orbit-websocket.service.orbit-candidate
             verify_directory=\$(mktemp -d)
@@ -204,12 +200,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             mv -fT -- "\$unit_candidate" /etc/systemd/system/orbit-websocket.service
             systemctl daemon-reload
             systemctl enable --quiet orbit-websocket
-            # Reverb reads its apps once at start, so a changed `.env` restarts it. Clients reconnect.
-            if [ "\$env_changed" = 1 ]; then
-                systemctl restart orbit-websocket
-            else
-                systemctl start orbit-websocket
-            fi
+            systemctl restart orbit-websocket
             systemctl is-active --quiet orbit-websocket
             BASH;
     }

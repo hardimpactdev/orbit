@@ -34,7 +34,7 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 2. It generates a Laravel `APP_KEY` for the Reverb server the first time, and stores it encrypted as a setting of that Node. It also creates the Gateway's own [Reverb app](/reference/websocket-apps), `gateway`, when it is missing. Later converges reuse both.
 3. It checks out `https://github.com/nckrtl/orbit-reverb.git` at `main` into `/opt/orbit/websocket` as the managed user and runs `composer install --no-dev`.
 4. It writes the app's `.env` with mode `0600`. `REVERB_APPS` lists every [Reverb app](/reference/websocket-apps#the-reverb-server).
-5. It installs and starts `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. When the `.env` changed, it restarts the service, because Reverb reads its apps only at start.
+5. It installs `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. Each converge restarts Reverb, so it loads the current code and every app, and clients reconnect.
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
 7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 

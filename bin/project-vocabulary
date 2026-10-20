@@ -18,6 +18,7 @@ declare(strict_types=1);
  * CamelCase appInstance and appId count, as do Laravel references to the apps
  * table: constrained(), on(), exists and unique rules, and Rule::exists().
  */
+
 const PROJECT_VOCABULARY_ROOTS = [
     'apps/gateway/app',
     'apps/gateway/bootstrap',

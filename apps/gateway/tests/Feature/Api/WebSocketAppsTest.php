@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -93,6 +94,20 @@ describe('websocket:app:create', function (): void {
             ->and($this->runtime->converged)->toBe([]);
     });
 
+    it('keeps the created app when the websocket converge fails', function (): void {
+        websocket_apps_activate_role($this->caller);
+        $this->runtime->failConverge = true;
+
+        $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node_role.convergence_failed')
+            ->assertJsonPath('error.details.error_code', 'websocket.runtime_convergence_failed');
+
+        $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
+        expect($response->getContent())->not->toContain($app->secret)
+            ->and($this->runtime->appIds())->toContain($app->app_id);
+    });
+
     it('refuses the Gateway name, a taken name, and a name that is not a slug', function (string $name): void {
         WebSocketApp::query()->create(['name' => 'taken', 'app_id' => 'taken-id', 'key' => 'taken-key', 'secret' => 'taken-secret']);
 
@@ -151,6 +166,22 @@ describe('websocket:app:destroy', function (): void {
             ->assertJsonPath('error.code', 'websocket.app_reserved');
 
         expect(WebSocketApp::query()->count())->toBe(1);
+    });
+
+    it('keeps the app deleted when the websocket converge fails', function (): void {
+        websocket_apps_activate_role($this->caller);
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
+        $this->runtime->failConverge = true;
+
+        $this->deleteJson('/api/v1/websocket-apps/hauzer')
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node_role.convergence_failed')
+            ->assertJsonPath('error.details.error_code', 'websocket.runtime_convergence_failed');
+
+        expect(WebSocketApp::query()->whereKey($app->id)->exists())->toBeFalse()
+            ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
+            ->and($this->runtime->appIds())->not->toContain($app->app_id);
     });
 
     it('refuses an app that is still on an Instance', function (): void {
@@ -343,9 +374,20 @@ final class WebSocketAppsRuntimeFake implements WebSocketRuntimeLifecycle
     /** @var list<WebSocketServerCredentials> */
     public array $converged = [];
 
+    public bool $failConverge = false;
+
     public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $this->converged[] = $credentials;
+
+        if ($this->failConverge) {
+            throw new NodeRoleOperationException(
+                step: 'websocket-runtime',
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: 'websocket.runtime_convergence_failed',
+                message: 'WebSocket runtime convergence failed.',
+            );
+        }
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}

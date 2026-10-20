@@ -14,8 +14,8 @@ final class AddInstanceWebSocketCommand extends WebSocketAppCommand
 {
     #[\Override]
     protected $signature = 'instance:websocket:add
-        {instance : Positive Instance ID or exact Route domain}
         {app : WebSocket app name}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -23,8 +23,8 @@ final class AddInstanceWebSocketCommand extends WebSocketAppCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $instance = $this->stringArgument('instance', 'Instance ID or Route domain', 'websocket.instance_required');
         $name = $this->appName('app');
+        $instance = $this->instanceSelector();
 
         if ($instance === null || $name === null) {
             return self::FAILURE;

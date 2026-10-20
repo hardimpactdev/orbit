@@ -77,7 +77,7 @@ it('requires affirmative consent and restores the terminal before returning', fu
         ]],
     ]],
     'remove attachment' => [[
-        'arguments' => ['instance:websocket:remove', '12', 'hauzer'],
+        'arguments' => ['instance:websocket:remove', 'hauzer', '--instance=12'],
         'prompt' => 'Remove WebSocket app [hauzer] from Instance [12]',
         'question' => 'Remove WebSocket app [hauzer] from Instance [12] and clear its stored BROADCAST_CONNECTION and REVERB_* keys? Workload .env stays unchanged.',
         'endpoint' => '/api/v1/instances/12/websocket-apps/hauzer',

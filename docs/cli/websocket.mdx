@@ -56,7 +56,7 @@ orbit websocket:app:show <name> [--json]
 
 ## orbit websocket:app:destroy
 
-Remove an app. Reverb restarts without it, and its clients disconnect.
+Remove an app. With an active `websocket` role, Reverb restarts without it, and its clients disconnect. Without an active role, the next converge serves the remaining apps.
 
 ```bash
 orbit websocket:app:destroy <name> [--force] [--json]

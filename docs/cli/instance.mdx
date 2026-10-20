@@ -742,18 +742,21 @@ An unknown attachment returns `database.attachment_missing`.
 Add a [Reverb app](/reference/websocket-apps) on an Instance and write its credentials into the stored environment configuration. An Instance has one app. Adding another app replaces it.
 
 ```bash
-orbit instance:websocket:add <instance> <app> [--json]
+orbit instance:websocket:add <app> --instance=SELECTOR [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Positive Instance ID or exact Route domain. |
 | `app` | yes | App name from `websocket:app:list`. |
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--instance` | yes | Positive Instance ID or exact Route domain. |
 
 The Gateway writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. The response names the keys and never returns their values. The Gateway's own app, `gateway`, returns `websocket.app_reserved`.
 
 ```bash
-orbit instance:websocket:add 12 hauzer
+orbit instance:websocket:add hauzer --instance=12
 ```
 
 Add changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
@@ -763,20 +766,20 @@ Add changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` 
 Remove the Reverb app from an Instance and clear its stored keys. Other stored keys stay in place.
 
 ```bash
-orbit instance:websocket:remove <instance> <app> [--force] [--json]
+orbit instance:websocket:remove <app> --instance=SELECTOR [--force] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `instance` | yes | Positive Instance ID or exact Route domain. |
 | `app` | yes | Name of the app on the Instance. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--instance` | required | Positive Instance ID or exact Route domain. |
 | `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
-orbit instance:websocket:remove 12 hauzer --force
+orbit instance:websocket:remove hauzer --instance=12 --force
 ```
 
 An app that is not on the Instance returns `websocket.attachment_missing`.
