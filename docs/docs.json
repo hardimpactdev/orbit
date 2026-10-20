@@ -76,6 +76,7 @@
               "reference/gateway-environment",
               "reference/database-connections",
               "reference/database-servers",
+              "reference/websocket-apps",
               "reference/vaultwarden",
               "reference/processes-and-schedules",
               "reference/schedules",
@@ -197,6 +198,7 @@
               "cli/route",
               "cli/env",
               "cli/database",
+              "cli/websocket",
               "cli/vault",
               "cli/process",
               "cli/schedule"
@@ -435,6 +437,8 @@
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
               "POST /api/v1/instances/{instance}/transfer",
+              "DELETE /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+              "PUT /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
               "GET /api/v1/projects/{project}/setup-steps",
               "POST /api/v1/projects/{project}/setup-steps",
               "DELETE /api/v1/projects/{project}/setup-steps/{step}",
@@ -487,6 +491,16 @@
               "DELETE /api/v1/database-servers/{database_server}",
               "GET /api/v1/database-servers/{database_server}",
               "POST /api/v1/database-servers/{database_server}/close"
+            ]
+          },
+          {
+            "group": "WebSocket apps",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/websocket-apps",
+              "POST /api/v1/websocket-apps",
+              "DELETE /api/v1/websocket-apps/{websocket_app}",
+              "GET /api/v1/websocket-apps/{websocket_app}"
             ]
           },
           {
@@ -673,7 +687,8 @@
               "decisions/0223-run-one-gate-from-handoff-to-merge",
               "decisions/0224-give-each-task-group-one-holder-and-one-sender",
               "decisions/0225-make-node-changes-through-agent-commands",
-              "decisions/0226-split-private-dns-on-managed-peers"
+              "decisions/0226-split-private-dns-on-managed-peers",
+              "decisions/0228-serve-several-reverb-apps-on-the-websocket-role"
             ]
           }
         ]

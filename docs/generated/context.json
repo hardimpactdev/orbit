@@ -658,6 +658,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/websocket.mdx",
+            "title": "websocket",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/concepts.md",
             "title": "Concepts",
             "kind": "product",
@@ -1059,7 +1073,8 @@
                 "0209",
                 "0211",
                 "0212",
-                "0218"
+                "0218",
+                "0228"
             ]
         },
         {
@@ -1246,6 +1261,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0228-serve-several-reverb-apps-on-the-websocket-role.md",
+            "title": "ADR 0228: Serve several Reverb apps on the websocket role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0218",
+                "0228"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1308,7 +1347,8 @@
                 "0223",
                 "0224",
                 "0225",
-                "0226"
+                "0226",
+                "0228"
             ]
         },
         {
@@ -2962,6 +3002,26 @@
                 "Tool"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/websocket-apps.md",
+            "title": "Reverb apps",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0228"
+            ]
         },
         {
             "path": "docs/reference/wireguard-endpoints.md",

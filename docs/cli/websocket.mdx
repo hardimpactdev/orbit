@@ -1,0 +1,69 @@
+---
+title: "websocket"
+description: "Create, list, show, and destroy the Reverb apps that the websocket role serves for Instances."
+covers:
+  - apps/cli/app/Commands/WebSocket/**
+---
+
+The `websocket` role runs one Reverb server. It serves the Gateway's own app, `gateway`, and one app for each name you create. An app has an app ID, a key, and a secret. The Gateway keeps the secret encrypted and never returns it. [Reverb apps](/reference/websocket-apps) describes the apps and the keys that an Instance gets.
+
+Put an app on an Instance with [`instance:websocket:add`](/cli/instance#orbit-instancewebsocketadd).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`websocket:app:create`](#orbit-websocketappcreate) | Create a Reverb app. |
+| [`websocket:app:list`](#orbit-websocketapplist) | List the apps. |
+| [`websocket:app:show`](#orbit-websocketappshow) | Show one app and the Instances that use it. |
+| [`websocket:app:destroy`](#orbit-websocketappdestroy) | Remove an app that no Instance uses. |
+
+Every command accepts `--json`.
+
+## orbit websocket:app:create
+
+Create a Reverb app. The Gateway generates its app ID, key, and secret.
+
+```bash
+orbit websocket:app:create <name> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Lowercase kebab name of at most 63 characters. `gateway` is the Gateway's own app. |
+
+```bash
+orbit websocket:app:create hauzer
+```
+
+A taken name, `gateway`, or a name that is not a slug returns `validation.failed`. With an active `websocket` role, the Gateway converges the role again, so Reverb restarts and serves the new app. Without one, the next converge of the role serves it.
+
+## orbit websocket:app:list
+
+List the apps with their name, app ID, key, and the IDs of the Instances that use them.
+
+```bash
+orbit websocket:app:list [--json]
+```
+
+## orbit websocket:app:show
+
+Show one app and the IDs of the Instances that use it.
+
+```bash
+orbit websocket:app:show <name> [--json]
+```
+
+## orbit websocket:app:destroy
+
+Remove an app. Reverb restarts without it, and its clients disconnect.
+
+```bash
+orbit websocket:app:destroy <name> [--force] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. |
+
+The Gateway refuses with `websocket.app_in_use` while an Instance uses the app, and with `websocket.app_reserved` for `gateway`. Remove the app from each Instance with [`instance:websocket:remove`](/cli/instance#orbit-instancewebsocketremove) first.

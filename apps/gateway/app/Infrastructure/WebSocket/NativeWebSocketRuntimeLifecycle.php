@@ -7,8 +7,8 @@ namespace App\Infrastructure\WebSocket;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Shared\StoredValue;
@@ -36,7 +36,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
         private int $port = 0,
     ) {}
 
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $address = $this->address($node);
         $account = $this->accounts->resolve($node);
@@ -190,6 +190,10 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             printf '%s' '{$envEncoded}' | base64 --decode > "\$env_candidate"
             chown "\$managed_user":"\$managed_group" "\$env_candidate"
             chmod 0600 "\$env_candidate"
+            env_changed=1
+            if cmp -s -- "\$env_candidate" "\$install_path/.env"; then
+                env_changed=0
+            fi
             mv -fT -- "\$env_candidate" "\$install_path/.env"
             unit_candidate=/etc/systemd/system/.orbit-websocket.service.orbit-candidate
             verify_directory=\$(mktemp -d)
@@ -199,7 +203,13 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             install -o root -g root -m 0644 -- "\$verify_directory/orbit-websocket.service" "\$unit_candidate"
             mv -fT -- "\$unit_candidate" /etc/systemd/system/orbit-websocket.service
             systemctl daemon-reload
-            systemctl enable --now orbit-websocket
+            systemctl enable --quiet orbit-websocket
+            # Reverb reads its apps once at start, so a changed `.env` restarts it. Clients reconnect.
+            if [ "\$env_changed" = 1 ]; then
+                systemctl restart orbit-websocket
+            else
+                systemctl start orbit-websocket
+            fi
             systemctl is-active --quiet orbit-websocket
             BASH;
     }

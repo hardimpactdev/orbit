@@ -10,6 +10,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -187,7 +188,7 @@ final class WebSocketBaselineRuntime implements WebSocketRuntimeLifecycle
         private bool $lockLost = false,
     ) {}
 
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $this->record('runtime:converge');
     }
@@ -265,11 +266,11 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         private bool $lockLost = false,
     ) {}
 
-    public function ensure(Node $node): WebSocketCredentials
+    public function ensure(Node $node): WebSocketServerCredentials
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('key'));
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), [new WebSocketCredentials('id', 'key', 'secret')]);
     }
 
     public function current(): ?WebSocketCredentials

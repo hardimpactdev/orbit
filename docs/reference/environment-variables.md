@@ -171,7 +171,7 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 `APP_ENV` and `APP_DEBUG` are ordinary stored keys. The Node role, not these keys, decides the release layout, the Unix user, and the PHP-FPM pool. So a change to `APP_ENV` never moves an Instance between layouts. When `APP_ENV` is absent or is the environment placeholder, Orbit reads it as `development` on `app-dev` and `production` on `app-prod`.
 
-A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration except `DB_*` keys and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
+A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration except `DB_*` keys and the keys of its [Reverb app](/reference/websocket-apps#add-an-app-on-an-instance), and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
 
 When the clone seeds a SQLite snapshot, it registers an owned connection on the target Node, attaches it under `DB`, and synchronizes `DB_CONNECTION=sqlite` and `DB_DATABASE=<production_home>/database.sqlite` into the production `.env`. This provisioning step uses the pending clone's placement and Route checks; public environment operations still require an active Instance. An identical retry reuses the connection and attachment. Without a SQLite snapshot, the clone has no candidate `DB_*` values. Other application settings, such as `QUEUE_CONNECTION`, copy unchanged.
 
@@ -180,6 +180,7 @@ When the clone seeds a SQLite snapshot, it registers an owned connection on the 
 Other operations also change stored keys, and never the file itself:
 
 - [`instance:database:add` and `instance:database:remove`](/reference/database-connections#add-a-connection-on-an-instance) write or clear the keys of one database prefix.
+- [`instance:websocket:add` and `instance:websocket:remove`](/reference/websocket-apps#add-an-app-on-an-instance) write or clear the keys of one Reverb app.
 
 A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default deploys in its checkout, so synchronization writes the files it serves and a deployment does not synchronize.
 

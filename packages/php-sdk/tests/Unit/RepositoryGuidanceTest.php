@@ -104,6 +104,12 @@ use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
 use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
+use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
+use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
 
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
@@ -237,6 +243,14 @@ describe('repository guidance bootstrap', function (): void {
             CreateDatabaseServerRequest::class,
             DestroyDatabaseServerRequest::class,
         ];
+        $webSocketRequests = [
+            ListWebSocketAppsRequest::class,
+            ShowWebSocketAppRequest::class,
+            CreateWebSocketAppRequest::class,
+            DestroyWebSocketAppRequest::class,
+            AddInstanceWebSocketAppRequest::class,
+            RemoveInstanceWebSocketAppRequest::class,
+        ];
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
@@ -333,7 +347,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -487,6 +501,13 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($databaseServerRequests))
             ->toEqualCanonicalizing($databaseServerRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\WebSocket\\'),
+        )))
+            ->toHaveCount(count($webSocketRequests))
+            ->toEqualCanonicalizing($webSocketRequests);
 
         expect(array_values(array_filter(
             $requestClasses,

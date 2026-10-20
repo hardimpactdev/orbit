@@ -44,6 +44,7 @@ A command becomes an operation when it changes a Node, a Cluster, an Instance, a
 | `node:role:relocate` | `node_role.relocate` | `node`, the destination | 191 s | Two convergences and a 31-second DNS wait |
 | `metrics:exporter:enable`, `metrics:exporter:disable` | `metrics_exporter.enable`, `metrics_exporter.disable` | `node`, the exporter Node | 65 s | Fleet Metrics reconcile: 120 s per command, 300 s per download |
 | `analytics:update` | `analytics.update` | `node`, the analytics Node | Never run; `node:role:add` of `analytics` took 148 s | Role convergence with an image pull |
+| `websocket:app:create`, `websocket:app:destroy` | `websocket_app.create`, `websocket_app.destroy` | `node`, the websocket Node | New in [ADR 0228](/decisions/0228-serve-several-reverb-apps-on-the-websocket-role) | Role convergence |
 | `cluster:router:set`, `cluster:router:unset` | `cluster_router.set`, `cluster_router.unset` | `cluster` | 101 s for 6 Routes | Grows with the Routes of the Cluster |
 | `cluster:node:add`, `cluster:node:remove` | `cluster_node.add`, `cluster_node.remove` | `cluster` | 1 s without Routes | Grows with the Routes of the Node |
 | `cluster:update` with `state` or `tld` | `cluster.update` | `cluster` | 49 s, failed | Grows with the Routes of the Cluster; Cluster 4 has 39 |
