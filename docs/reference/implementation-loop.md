@@ -338,7 +338,7 @@ TIA records each test’s setup and teardown, so provider, config and route chan
 
 When the candidate changes the project, the gate runs that project’s architecture tests from CI, including the CLI binary contract. CLI documentation, binary scripts, and workflows also trigger the CLI contracts. The SDK’s existing architecture checks include its request inventory in `RepositoryGuidanceTest`.
 
-On every nonempty candidate diff, the gate runs the E2E topology catalog and the Composer, subprocess-group, and Docs merge-ref configuration contracts. These tests read files across projects. TIA cannot reliably link all those inputs to the tests. Architecture and artifact checks always use the full candidate diff, even at a task handoff.
+On every nonempty candidate diff, the gate runs the E2E topology catalog and the Composer, subprocess-group, and Docs workflow configuration contracts (`DocsWorkflowTest.php`). These tests read files across projects. TIA cannot reliably link all those inputs to the tests. The gate selection tests verify that every configured E2E architecture path exists and that real Pest discovers tests there without TIA. Architecture and artifact checks always use the full candidate diff, even at a task handoff.
 
 When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
 

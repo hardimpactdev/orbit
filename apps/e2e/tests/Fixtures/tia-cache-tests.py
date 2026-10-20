@@ -1467,7 +1467,7 @@ fi
             'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
                          'tests/Feature/Configuration/ComposerConfigurationTest.php',
                          'tests/Feature/Configuration/SubprocessTestGroupTest.php',
-                         'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php'],
+                         'tests/Feature/Configuration/DocsWorkflowTest.php'],
             'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
                                  'tests/Unit/RepositoryGuidanceTest.php',
                                  'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
