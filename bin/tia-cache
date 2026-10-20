@@ -24,8 +24,8 @@ QUALITY = {
 # The CI jobs that test each project on main. A failure of any of them is a correctness failure of the project.
 CI_JOBS = {
     'apps/cli': ('CLI',), 'apps/docs': ('Docs',),
-    'apps/gateway': ('Gateway', 'Gateway subprocess', 'Gateway privileged'),
-    'apps/e2e': ('E2E', 'E2E subprocess'), 'packages/php-sdk': ('PHP SDK',),
+    'apps/gateway': ('Gateway', 'Gateway privileged'),
+    'apps/e2e': ('E2E',), 'packages/php-sdk': ('PHP SDK',),
 }
 CI_WORKFLOW = 'ci.yml'
 CI_EVENTS = ('push', 'schedule', 'workflow_dispatch')
@@ -719,8 +719,7 @@ def job_result(jobs, project):
 def ci_history(common, repository, projects):
     """Find each project's newest tested main commit and the failure on main that no later success covers.
 
-    A failure stays open until a run that finished after it passes on the same commit or a descendant. So a newer
-    commit's affected-only run cannot clear a failure that a slower full run found later.
+    A failure stays open until a run that finished after it passes on the same commit or a descendant.
     """
     runs = ci_runs(common, repository)
     jobs = {}

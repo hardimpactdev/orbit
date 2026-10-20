@@ -935,10 +935,12 @@ class CiImportTest(CacheFixture):
                                                       'apps/gateway'))
         self.assertEqual(('failure', ['Gateway']), cache.job_result(
             [{'name': 'Gateway', 'conclusion': 'timed_out'}], 'apps/gateway'))
-        self.assertEqual(('failure', ['E2E subprocess']), cache.job_result(
-            [{'name': 'E2E', 'conclusion': 'success'}, {'name': 'E2E subprocess', 'conclusion': 'failure'}], 'apps/e2e'))
+        self.assertEqual(('Gateway', 'Gateway privileged'), cache.CI_JOBS['apps/gateway'])
+        self.assertEqual(('E2E',), cache.CI_JOBS['apps/e2e'])
+        self.assertEqual(('failure', ['E2E']), cache.job_result(
+            [{'name': 'E2E', 'conclusion': 'failure'}], 'apps/e2e'))
         self.assertEqual((None, []), cache.job_result(
-            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway subprocess', 'conclusion': None}],
+            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged', 'conclusion': None}],
             'apps/gateway'))
 
     def test_unreadable_ci_keeps_earlier_failures_and_publications(self):

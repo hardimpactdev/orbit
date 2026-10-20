@@ -17,7 +17,7 @@ it('checks the base repository merge ref only on pull requests without checkout 
         'runs-on' => 'ubuntu-26.04',
     ])->not->toHaveKey('permissions');
     expect($steps['Check out PR merge ref']['with'])->toMatchArray([
-        'ref' => 'refs/pull/${{ github.event.pull_request.number }}/merge',
+        'ref' => '${{ github.sha }}',
         'repository' => '${{ github.repository }}',
         'fetch-depth' => 0,
         'persist-credentials' => false,
@@ -65,9 +65,6 @@ it('installs dependencies and runs Docs quality checks on the checked out merge 
         ->toBeLessThan(array_search('Run Docs quality checks', array_keys($steps), true));
     expect($steps['Set up PHP'])->toMatchArray(['uses' => './.github/actions/php', 'with' => ['coverage' => 'none']]);
     expect($steps['Log merge commit']['working-directory'])->toBe('.');
-    $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
-    expect($projectSteps['Run architecture tests']['run'])
-        ->toContain('tests/Feature/Configuration/DocsMergeRefWorkflowTest.php');
 });
 
 it('requires the Docs merge result to succeed on PRs while allowing it to be skipped on other events', function (string $event, string $result, int $exitCode): void {
@@ -85,8 +82,7 @@ it('requires the Docs merge result to succeed on PRs while allowing it to be ski
     $environment = array_fill_keys(array_keys($step['env']), 'success');
     $environment['EVENT'] = $event;
     $environment['DOCS_MERGE_REF_RESULT'] = $result;
-    // Every PR requires the full Gateway shards; other events do not run the PR plan or shards.
-    $environment['GATEWAY_PLAN_RESULT'] = $event === 'pull_request' ? 'success' : 'skipped';
+    // Every PR requires the four full Gateway shards; other events run one full recording suite.
     $environment['GATEWAY_SHARDS_RESULT'] = $event === 'pull_request' ? 'success' : 'skipped';
     $process = new Process(['bash', '-e', '-c', $step['run']], env: $environment);
     $process->run();
@@ -127,10 +123,9 @@ it('provisions Gateway and web dependencies before the Docs merge proof can run'
     ]);
     expect(array_search('Set up Bun for package cache and generated merge tests', $names, true))
         ->toBeLessThan(array_search('Install generated merge proof dependencies', $names, true));
-    foreach (['Run full PR test suite', 'Run full test suite and refresh Pest TIA graph', 'Run subprocess tests'] as $name) {
+    foreach (['Run full PR test suite', 'Run full test suite and refresh Pest TIA graph'] as $name) {
         expect($names)->toContain($name);
         expect(array_search('Install generated merge proof dependencies', $names, true))
             ->toBeLessThan(array_search($name, $names, true));
     }
-    expect($steps['Run subprocess tests']['run'])->toContain('--group=subprocess');
 });
