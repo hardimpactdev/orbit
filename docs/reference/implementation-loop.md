@@ -96,7 +96,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 
 Gateway project and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
-The Docs project job also supplies Bun 1.4.2 and installs the Gateway's Composer dependencies and the web app's locked Bun dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including in each full suite.
+The Docs project job also supplies Bun 1.4.2 and installs the Gateway's locked runtime Composer dependencies with `--no-dev` and the web app's locked Bun dependencies. Gateway development tools are not needed for route discovery. Docs keeps its own development dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including in each full suite.
 
 ### Action pins and token permissions
 
