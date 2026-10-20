@@ -3,6 +3,7 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/extensions/documents/**
+  - apps/gateway/database/{schema/sqlite-schema.sql,migrations/*_seed_schema_baseline_reference_rows.php}
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
   - apps/gateway/tests/Feature/Extensions/Documents/**
@@ -14,7 +15,7 @@ covers:
 
 Project Documents are folders and versioned files owned by one [Project](/reference/projects). They hold notes, specifications, and attachments outside Git. They belong to the Project, not an Instance, branch, task, checkout, or Node. Orbit owns their metadata, history, authorization, and client operations; External document services are not backends. The [storage and editing rationale](/reference/project-documents#why-it-works-this-way) explains this boundary.
 
-Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. An install that already had a document storage configuration or a document entry when it updated keeps the switch on. Turn it on with [`extension:enable documents`](/cli/extension#orbit-extensionenable).
+Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. Upgrades preserve the stored switch value. Turn it on with [`extension:enable documents`](/cli/extension#orbit-extensionenable).
 
 Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context. An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
 

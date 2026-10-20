@@ -63,19 +63,6 @@ it('keeps task and subtask columns on one tasks table', function (): void {
         ->and(Schema::hasColumns('agent_thread_send_leases', ['agent_thread_id', 'owner_token', 'expires_at']))->toBeTrue();
 });
 
-it('rolls back archive backoff columns and their index', function (): void {
-    $migration = require database_path('migrations/2026_09_29_120000_add_archive_backoff_to_agent_threads.php');
-
-    try {
-        run_legacy_schema_migration($migration, 'down');
-
-        expect(Schema::hasColumns('agent_threads', ['archive_attempts', 'archive_retry_at']))->toBeFalse()
-            ->and(Schema::hasIndex('agent_threads', 'agent_threads_archive_retry_at_index'))->toBeFalse();
-    } finally {
-        run_legacy_schema_migration($migration, 'up');
-    }
-});
-
 it('persists a Task morph to a Project instance and ordered subtasks', function (): void {
     $node = Node::query()->create([
         'name' => 'task-migration-node',
@@ -122,17 +109,4 @@ it('persists a Task morph to a Project instance and ordered subtasks', function 
         ->and($fresh?->tasks->pluck('title')->all())->toBe(['First', 'Second'])
         ->and($instance->tasks()->first()?->id)->toBe($group->id)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2);
-});
-
-it('drops the retired task notification column without deleting tasks', function (): void {
-    $migration = require database_path('migrations/2026_10_18_160435_drop_task_notification_columns.php');
-    $migration->down();
-    $project = Project::query()->create(['name' => 'Notification removal', 'slug' => 'notification-removal', 'repository_url' => 'https://github.com/acme/project.git', 'default_branch' => 'main']);
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Keep this task', 'brief' => 'Preserve the task.']);
-
-    expect(Schema::hasColumn('tasks', 'notify_coder'))->toBeTrue();
-    $migration->up();
-
-    expect(Schema::hasColumn('tasks', 'notify_coder'))->toBeFalse()
-        ->and(Task::topLevel()->find($group->id)?->title)->toBe('Keep this task');
 });

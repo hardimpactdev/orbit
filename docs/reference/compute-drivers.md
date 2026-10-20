@@ -7,9 +7,9 @@ covers:
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
-  - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
+  - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_upcloud_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/{schema/sqlite-schema.sql,migrations/*_seed_schema_baseline_reference_rows.php}
 ---
 
 # Compute drivers
@@ -21,6 +21,8 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 ## Machine software recipe
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+
+The common tool set includes Ubuntu's `sqlite3` command-line package. Gateway schema dumps and file-database schema loading use it, so Gateway Nodes, task VMs, and runners receive it from this same recipe.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
@@ -106,7 +108,7 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 
 | Profile | Tools in addition to `common` |
 | --- | --- |
-| `common` | Bootstrap packages: `ca-certificates`, `curl`, Git and `git-man` from git-core, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
+| `common` | Bootstrap packages: `ca-certificates`, `curl`, Git and `git-man` from git-core, `gnupg`, `libnss-resolve`, `openssh-client`, `sqlite3`, `sudo`, `ufw`, and `wireguard` |
 | `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package, and `php:8.5` |
 | `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
 | `app-prod` | The application prerequisites and JavaScript/Composer managers, as for `app-dev`, and `php:8.5` only. The PHP step installs `php:8.4` when an Instance selects it |
@@ -956,7 +958,7 @@ The [Node settings field table](/reference/node-settings#task-vm-fields) owns th
 
 Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. Package-cache targeting follows the same setting, without making `app-dev` a host marker.
 
-Deployment [migrates the existing environment list](/reference/node-settings#migrate-the-environment-host-list) into Node 9 (`beast`) and Node 13 (`shark`), preserving live values and defaults rather than changing host resources. It preserves other Node settings and does not create host intent on `services` or any other Node merely because it is `app-dev`. After that copy, runtime consumers stop reading `ORBIT_TASK_VMS_INCUS_HOSTS`; there is no fallback. Verify the stored settings, then remove the variable from `gateway.env` with [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change).
+To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/reference/node-settings#migrate-the-environment-host-list) before removing the variable from `gateway.env`. The Gateway does not read the environment list.
 
 `TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
 

@@ -601,6 +601,42 @@ SH);
             ->and(file_get_contents($suite['log']))->toContain('full suite failed');
     });
 
+    it('discovers native rehearsals without executing them on the gate host', function (): void {
+        $relative = 'tests/Rehearsal/NativeServicesTest.php';
+        $fixture = orb277_gate_fixture('apps/gateway/'.$relative);
+        file_put_contents($fixture['root'].'/apps/gateway/vendor/bin/pest', <<<'SH'
+#!/usr/bin/env sh
+if [ "$1" = "--list-tests" ]; then
+    echo 'Available test:'
+    echo ' - NativeServicesTest::requires_disposable_vm'
+    exit 0
+fi
+case "$*" in
+    *tests/Rehearsal/*) echo 'unsafe native rehearsal execution'; exit 91 ;;
+esac
+exit 0
+SH);
+
+        $run = orb277_run_gate($fixture, 'apps/gateway');
+        $commands = collect($run['receipt']['checks'])->pluck('command')->all();
+
+        expect($run['receipt']['passed'])->toBeTrue()
+            ->and($commands)->toContain(['vendor/bin/pest', '--list-tests', $relative])
+            ->not->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', $relative]);
+    });
+
+    it('fails discovery when a native rehearsal file declares no tests', function (): void {
+        $relative = 'tests/Rehearsal/EmptyTest.php';
+        $fixture = orb277_gate_fixture('apps/gateway/'.$relative);
+
+        $run = orb277_run_gate($fixture, 'apps/gateway', discoverTests: false, expectedExit: 1);
+
+        expect($run['receipt']['passed'])->toBeFalse()
+            ->and(collect($run['receipt']['checks'])->first(
+                static fn (array $check): bool => $check['command'] === ['vendor/bin/pest', '--list-tests', $relative],
+            ))->toMatchArray(['exit_code' => 1]);
+    });
+
     it('runs only changed tests that affected-test analysis did not select', function (): void {
         $fixture = orb277_gate_fixture();
         $additionalTest = $fixture['root'].'/apps/gateway/tests/AdditionalTest.php';

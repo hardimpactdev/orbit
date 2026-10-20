@@ -474,8 +474,10 @@ def main():
                         continue
                     relative = test[len(project) + 1:]
                     if (root / test).is_file() and relative not in selected_tests:
-                        commands.extend((('vendor/bin/pest', '--list-tests', relative),
-                                         (*FULL_SUITE, relative)))
+                        commands.append(('vendor/bin/pest', '--list-tests', relative))
+                        # Native rehearsals require an explicitly provisioned disposable VM, not this gate's host.
+                        if not test.startswith('apps/gateway/tests/Rehearsal/'):
+                            commands.append((*FULL_SUITE, relative))
 
     def run_lane(entries):
         lane = lane_key(entries)

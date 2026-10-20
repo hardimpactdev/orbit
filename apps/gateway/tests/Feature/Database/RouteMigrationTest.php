@@ -14,20 +14,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-
-beforeEach(fn () => roll_back_app_instance_environment_for_migration_test());
-afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
-
-function production_route_target_set_migration(): Migration
-{
-    return require base_path(
-        'database/migrations/2026_09_08_200000_enable_production_route_target_sets.php',
-    );
-}
 
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
     expect(Schema::hasColumns('routes', [
@@ -72,8 +60,8 @@ it('rejects duplicate target Nodes', function (): void {
         'repository_url' => 'https://example.test/acme.git',
     ]);
     $nodeOne = route_migration_node('one');
-    $one = route_migration_instance($project, $nodeOne, 'one');
-    $duplicateNode = route_migration_instance($project, $nodeOne, 'duplicate', 'development');
+    $one = route_migration_instance($project, $nodeOne, 'one', RoleName::AppDev);
+    $duplicateNode = route_migration_instance($project, $nodeOne, 'duplicate', RoleName::AppDev);
     $explicit = Route::query()->create([
         'project_id' => $project->id,
         'node_id' => $nodeOne->id,
@@ -293,57 +281,6 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
         ->toThrow(QueryException::class);
 });
 
-it('preserves a compatible production target set across the forward migration', function (): void {
-    $migration = production_route_target_set_migration();
-    run_legacy_schema_migration($migration, 'down');
-    [$route, $one, $two] = route_migration_production_set('upgrade');
-    $rowsBefore = route_migration_target_rows($route);
-
-    run_legacy_schema_migration($migration, 'up');
-    $route->update(['status' => RouteStatus::Active]);
-
-    expect(route_migration_target_rows($route))
-        ->toBe($rowsBefore)
-        ->and($route->refresh()->status)
-        ->toBe(RouteStatus::Active)
-        ->and($route->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe([$one->id, $two->id]);
-});
-
-it('refuses an incompatible forward migration before changing schema or target membership', function (): void {
-    $migration = production_route_target_set_migration();
-    run_legacy_schema_migration($migration, 'down');
-    [$route] = route_migration_production_set('incompatible', environment: 'development');
-    $schemaBefore = route_migration_target_schema();
-    $rowsBefore = route_migration_target_rows($route);
-
-    expect(fn () => run_legacy_schema_migration($migration, 'up'))
-        ->toThrow(RuntimeException::class, "incompatible Routes: {$route->id}");
-    expect(route_migration_target_schema())
-        ->toBe($schemaBefore)
-        ->and(route_migration_target_rows($route))
-        ->toBe($rowsBefore)
-        ->and(Schema::hasTable('active_app_prod_nodes'))
-        ->toBeFalse();
-});
-
-it('refuses rollback before discarding a compatible production target set', function (): void {
-    $migration = production_route_target_set_migration();
-    [$route] = route_migration_production_set('rollback');
-    $route->update(['status' => RouteStatus::Active]);
-    $schemaBefore = route_migration_target_schema();
-    $rowsBefore = route_migration_target_rows($route);
-
-    expect(fn () => run_legacy_schema_migration($migration, 'down'))
-        ->toThrow(RuntimeException::class, "multiple targets: {$route->id}");
-    expect(route_migration_target_schema())
-        ->toBe($schemaBefore)
-        ->and(route_migration_target_rows($route))
-        ->toBe($rowsBefore)
-        ->and(Schema::hasTable('active_app_prod_nodes'))
-        ->toBeTrue();
-});
-
 function route_migration_node(string $name): Node
 {
     static $suffix = 20;
@@ -362,9 +299,8 @@ function route_migration_instance(
     Project $project,
     Node $node,
     string $name,
-    string $environment = 'production',
+    RoleName $role = RoleName::AppProd,
 ): Instance {
-    $role = $environment === 'production' ? RoleName::AppProd : RoleName::AppDev;
     if (! $node->roles()->where('role', $role->value)->exists()) {
         $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
     }
@@ -376,7 +312,6 @@ function route_migration_instance(
         'checkout_path' => "/srv/{$name}",
         'status' => InstanceState::Active,
     ]);
-    DB::table('instances')->where('id', $instance->id)->update(['environment' => $environment]);
 
     return $instance;
 }
@@ -401,7 +336,6 @@ function route_migration_replacement_pair(string $suffix, bool $activate = true)
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $suffix,
-        'environment' => 'development',
         'checkout_path' => "/srv/{$suffix}",
         'source_is_laravel' => false,
         'status' => InstanceState::Active,
@@ -421,62 +355,4 @@ function route_migration_replacement_pair(string $suffix, bool $activate = true)
     }
 
     return [$route->refresh(), $instance->refresh()];
-}
-
-/** @return array{Route, Instance, Instance} */
-function route_migration_production_set(string $suffix, string $environment = 'production'): array
-{
-    $project = Project::query()->create([
-        'name' => "Set {$suffix}",
-        'slug' => "set-{$suffix}",
-        'repository_url' => "https://example.test/set-{$suffix}.git",
-    ]);
-    $cluster = Cluster::query()->create(['name' => "set-{$suffix}", 'state' => 'active']);
-    $oneNode = route_migration_node("{$suffix}-one");
-    $twoNode = route_migration_node("{$suffix}-two");
-    $oneNode->update(['cluster_id' => $cluster->id]);
-    $twoNode->update(['cluster_id' => $cluster->id]);
-    $oneNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $twoNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $one = route_migration_instance($project, $oneNode, "{$suffix}-one");
-    $two = route_migration_instance($project, $twoNode, "{$suffix}-two");
-    DB::table('instances')->where('id', $one->id)->update(['environment' => $environment]);
-    DB::table('instances')->where('id', $two->id)->update(['environment' => $environment]);
-    $route = Route::query()->create([
-        'project_id' => $project->id,
-        'cluster_id' => $cluster->id,
-        'domain' => "{$suffix}.example.test",
-        'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Pending,
-    ]);
-    $route->targets()->create(['instance_id' => $one->id, 'position' => 0]);
-    $route->targets()->create(['instance_id' => $two->id, 'position' => 1]);
-
-    return [$route, $one, $two];
-}
-
-/** @return list<array<string, mixed>> */
-function route_migration_target_rows(Route $route): array
-{
-    return DB::table('route_targets')
-        ->where('route_id', $route->id)
-        ->orderBy('position')
-        ->get()
-        ->map(static fn (object $row): array => (array) $row)
-        ->all();
-}
-
-/** @return list<array<string, mixed>> */
-function route_migration_target_schema(): array
-{
-    return collect(DB::select(<<<'SQL'
-        SELECT type, name, tbl_name, sql
-        FROM sqlite_master
-        WHERE type IN ('table', 'index', 'trigger')
-            AND tbl_name IN ('nodes', 'node_roles', 'routes', 'route_targets', 'active_app_prod_nodes')
-        ORDER BY type, name
-        SQL))
-        ->map(static fn (object $entry): array => (array) $entry)
-        ->all();
 }

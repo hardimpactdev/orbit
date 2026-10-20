@@ -39,7 +39,6 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
@@ -64,8 +63,6 @@ use Tests\Support\TestToolchain;
 use Tests\Support\UnreachableSshExecutor;
 use Tests\TestCase;
 
-require_once __DIR__.'/Support/InstanceEnvironmentMigration.php';
-require_once __DIR__.'/Support/LegacySchemaMigration.php';
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
@@ -239,41 +236,6 @@ function normalized_deploy_steps(Instance $instance): array
     );
 }
 
-function app_instance_deploy_step_records_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_14_180000_store_deploy_steps_as_named_records.php',
-    );
-}
-
-function app_instance_deployment_config_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_11_000000_add_deployment_config_to_app_instances.php',
-    );
-}
-
-/** @return array{Project, Node} */
-function deployment_migration_parents(): array
-{
-    $count = Node::query()->count();
-    $node = Node::query()->create([
-        'name' => "deployment-migration-{$count}",
-        'status' => 'active',
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.'.(130 + $count),
-    ]);
-    $project = Project::query()->create([
-        'name' => "Deployment migration {$count}",
-        'slug' => "deployment-migration-{$count}",
-        'repository_url' => "https://example.test/deployment-migration-{$count}.git",
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-
-    return [$project, $node];
-}
-
 /** @return array{Node, Node, Project, Instance} */
 function deployment_api_fixture(): array
 {
@@ -316,38 +278,6 @@ function deployment_api_fixture(): array
     ]);
 
     return [$caller, $owner, $project, $instance->fresh()];
-}
-
-function orb183_production_route_migration(): Migration
-{
-    return require base_path(
-        'database/migrations/2026_09_08_200000_enable_production_route_target_sets.php',
-    );
-}
-
-function app_instance_removal_migration_boundary(): Migration
-{
-    return new class extends Migration
-    {
-        public function down(): void
-        {
-            run_legacy_schema_migration(orb183_production_route_migration(), 'down');
-            run_legacy_schema_migration($this->removalMigration(), 'down');
-        }
-
-        public function up(): void
-        {
-            run_legacy_schema_migration($this->removalMigration(), 'up');
-            run_legacy_schema_migration(orb183_production_route_migration(), 'up');
-        }
-
-        private function removalMigration(): Migration
-        {
-            return require base_path(
-                'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
-            );
-        }
-    };
 }
 
 /**

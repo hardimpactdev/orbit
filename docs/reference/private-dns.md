@@ -37,7 +37,7 @@ Private Route, Cluster TLD, and Node TLD writes validate names in a serialized d
 
 Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. SSH inspection failures are unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
 
-The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. On upgrade, data migrations clear existing per-Node DNS overrides and global VPN DNS values outside the usable WireGuard subnet; the next repair, provision, or scheduled pass applies the default server. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
+The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
 
 When repair moves an old underlay selection to `orbit`, it first requires a networkd-managed uplink. It removes the old transient DNS selection with `resolvectl revert` and preserves the uplink’s LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. It reconfigures the uplink through networkd to restore provider or DHCP DNS. It waits up to 15 seconds for networkd and resolved to expose a usable non-Orbit server.
 
@@ -165,7 +165,7 @@ New Routes and Route domain changes cannot take these reserved platform names. E
 
 No Cluster or Node TLD can equal, contain, or sit below either private zone: `orbit` and the configured VPN domain. Overlap is checked at DNS label boundaries. For example, a VPN domain of `vpn.corp` or `VPN.CORP.` also reserves `corp`, `vpn.corp`, and `n1.vpn.corp`; `beast.orbit` is always reserved. Unrelated suffixes such as `test`, `orp`, and `notvpn.corp` remain valid. This comparison ignores case and the optional DNS root dot, including in existing configured domains. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
 
-The guard migration checks stored TLDs only when it first runs. Gateways that already applied it are not scanned again, and Doctor does not report these stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
+Doctor does not report stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
 
 ### Inspect the selection
 
@@ -198,7 +198,7 @@ Run this command on the Gateway to update the resolver settings of one active ma
 php artisan orbit:node-dns-repair <node-name>
 ```
 
-After the Gateway release and its migration are installed, repair app-prod and verify separate resolver paths with these Gateway commands:
+After upgrading the Gateway, repair app-prod and verify separate resolver paths with these Gateway commands:
 
 ```bash
 php artisan orbit:node-dns-repair app-prod

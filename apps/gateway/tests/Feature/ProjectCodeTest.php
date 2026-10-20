@@ -49,17 +49,6 @@ it('rejects a duplicate or invalid code without changing the project', function 
     expect($second->fresh()?->code)->toBe('COM');
 });
 
-it('backfills distinct codes and prioritizes ORB for Orbit', function (): void {
-    $other = projectForCode('orbital');
-    $orbit = projectForCode('orbit');
-    $migration = require database_path('migrations/2026_09_21_132029_add_code_to_apps.php');
-    run_legacy_schema_migration($migration, 'down');
-    run_legacy_schema_migration($migration, 'up');
-    expect($orbit->fresh()?->code)->toBe('ORB')
-        ->and($other->fresh()?->code)->toMatch('/^[A-Z]{3}$/')
-        ->not->toBe('ORB');
-});
-
 it('accepts an explicit code on creation and rejects another project claiming it', function (): void {
     $this->fakeRepositoryBranches();
     $payload = [

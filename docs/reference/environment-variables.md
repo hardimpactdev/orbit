@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,RemoteInstanceEnvironmentRuntimeRefresher,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php
-  - apps/gateway/database/migrations/{2026_09_30_*,*rename_app_domain_to_project_and_instance}.php
+  - apps/gateway/database/schema/sqlite-schema.sql
   - apps/cli/app/Commands/Environment/**
   - packages/php-sdk/src/{Requests,Responses}/Environment/**
 ---

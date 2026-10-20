@@ -2,8 +2,8 @@
 title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
-  - apps/docs/app/Documentation/AdrLifecycle.php
-  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
+  - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
+  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -364,6 +364,8 @@ Root `composer check` runs `bin/review-check`. It checks the working tree as it 
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
 
+The vocabulary check scans SQL names and expressions in the committed SQLite schema, but leaves recorded trigger error messages unchanged. The stock dump preserves those messages from applied migrations; new migration source still uses the current vocabulary.
+
 When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or `bin/remote-programs-check`, the gate also runs `bin/remote-programs-check`. See [Remote programs](/reference/remote-programs#lint-and-direct-tests).
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
@@ -375,6 +377,8 @@ When the candidate changes the project, the gate runs that project’s architect
 On every nonempty candidate diff, the gate runs the E2E topology catalog and the Composer, subprocess-group, and Docs merge-ref configuration contracts. These tests read files across projects. TIA cannot reliably link all those inputs to the tests. Architecture and artifact checks always use the full candidate diff, even at a task handoff.
 
 When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+
+Files under `apps/gateway/tests/Rehearsal/` require an owned disposable VM and are only listed by this gate. Run these native rehearsals explicitly on that VM; the ordinary gate neither runs them on its host nor disables their safety checks.
 
 #### Projects run at the same time
 

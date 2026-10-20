@@ -6,8 +6,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\Project;
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->operator = $this->markAsGateway(Node::query()->create([
@@ -119,33 +117,4 @@ it('still refuses a Project create without a type', function (): void {
         ->assertJsonPath('error.details.type.0', 'The type field is required.');
 
     expect(Project::query()->where('slug', 'untyped')->exists())->toBeFalse();
-});
-
-it('gives every existing Project the composer check task check whatever its type', function (): void {
-    $migration = require database_path('migrations/2026_09_25_140000_add_task_check_to_apps.php');
-    assert($migration instanceof Migration);
-    run_legacy_schema_migration($migration, 'down');
-
-    foreach (ProjectType::cases() as $index => $type) {
-        DB::table('projects')->insert([
-            'name' => $type->value,
-            'slug' => $type->value,
-            'code' => 'MG'.chr(65 + $index),
-            'type' => $type->value,
-            'repository_url' => 'https://github.com/acme/'.$type->value.'.git',
-            'repository_identity' => 'github.com/acme/'.$type->value,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
-
-    run_legacy_schema_migration($migration, 'up');
-
-    expect(DB::table('projects')->orderBy('slug')->pluck('task_check', 'type')->all())->toBe([
-        'laravel-app' => 'composer check',
-        'laravel-package' => 'composer check',
-        'monorepo' => 'composer check',
-        'node-package' => 'composer check',
-        'symfony-app' => 'composer check',
-    ]);
 });

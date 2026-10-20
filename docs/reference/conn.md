@@ -3,6 +3,7 @@ title: "Conn layer"
 description: "How the Gateway signs in Conn devices as Nodes, shares workspaces, appearance, and per-device settings through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
 covers:
   - apps/gateway/extensions/conn/**
+  - apps/gateway/database/schema/sqlite-schema.sql
 ---
 
 # Conn layer
@@ -11,7 +12,7 @@ This page is for the person who builds the Conn client, and for the Gateway main
 
 The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
 
-The Conn layer is the `conn` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/conn`. While the switch is off, every endpoint below refuses with `extension.disabled` (409), including registration by a T3 server, and the MCP server hides the Conn tools. Profiles, servers, and pairings stay. An install that had a registered T3 server or a profile before the move keeps `conn` on. Activity keeps admin sessions and settings documents out through the `ActivityInputRedaction` plug-in point, also while the switch is off.
+The Conn layer is the `conn` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/conn`. While the switch is off, every endpoint below refuses with `extension.disabled` (409), including registration by a T3 server, and the MCP server hides the Conn tools. Profiles, servers, and pairings stay. New installs start with the switch off. Upgrades preserve its stored value. Activity keeps admin sessions and settings documents out through the `ActivityInputRedaction` plug-in point, also while the switch is off.
 
 ## Identity
 

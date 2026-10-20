@@ -167,9 +167,9 @@ it('leaves an unchanged migrated collector untouched on upgrade', function (stri
     $this->process->systemd_activation_hash = null;
     $this->process->desired_state = DesiredProcessState::from($desired);
     $this->process->save();
-    $migration = require base_path('extensions/ai-router/database/migrations/2026_10_16_074137_move_proxycli_process_sources_to_extension_table.php');
-    $migration->down();
-    $migration->up();
+    if ($legacy) {
+        AiRouterProcessSource::query()->whereKey($this->process->id)->delete();
+    }
     expect(AiRouterProcessSource::query()->whereKey($this->process->id)->exists())->toBe(! $legacy);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);

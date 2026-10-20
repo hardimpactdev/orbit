@@ -81,20 +81,6 @@ function backlog_group(mixed $test, array $subtasks = ['One', 'Two', 'Three'], a
     ])->assertCreated()->json('data');
 }
 
-/**
- * @return array{id: string, type: string, description: string, command: string, directory: string}
- */
-function php_test_deliverable(string $file, string $id = 'export-test'): array
-{
-    return [
-        'id' => $id,
-        'type' => 'command',
-        'description' => 'Test the export',
-        'command' => 'vendor/bin/pest '.escapeshellarg($file),
-        'directory' => 'apps/gateway',
-    ];
-}
-
 /** @return list<string> */
 function backlog_order(int $groupId): array
 {
@@ -779,14 +765,6 @@ describe('subtask deliverables', function (): void {
     ]);
 });
 
-/** @param list<array<string, mixed>> $deliverables */
-function stored_test_deliverables(array $deliverables): array
-{
-    return array_map(static function (array $deliverable): array {
-        return $deliverable;
-    }, $deliverables);
-}
-
 it('returns VM power separately from task status in show and list responses', function (TaskVmState $state, ?string $power): void {
     $data = backlog_group($this);
     TaskVm::query()->create([
@@ -844,13 +822,3 @@ it('requires a strict JSON boolean for preview intent', function (mixed $value):
         'project_id' => $this->appRecord->id, 'title' => 'Invalid', 'brief' => 'Invalid flag.', 'preview' => $value,
     ])->assertUnprocessable();
 })->with([0, 1, 'true', 'false', null, [[]]]);
-
-it('backfills preview only for preexisting groups without changing their subtasks', function (): void {
-    $data = backlog_group($this, ['Existing subtask']);
-    $migration = require database_path('migrations/2026_10_12_000800_add_preview_to_tasks_table.php');
-    $migration->down();
-    $migration->up();
-
-    $group = Task::topLevel()->findOrFail($data['id']);
-    expect($group->preview)->toBeFalse()->and($group->tasks()->firstOrFail()->preview)->toBeNull();
-});

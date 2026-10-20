@@ -17,7 +17,7 @@ final readonly class RecipeLoader
     {
         $catalog = array_fill_keys([
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
-            'acl', 'attr', 'composer', 'containerd', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
+            'acl', 'attr', 'sqlite3', 'composer', 'containerd', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev',
             'incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base', 'btrfs-progs', 'nftables',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',

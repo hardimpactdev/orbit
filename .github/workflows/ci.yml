@@ -112,7 +112,7 @@ jobs:
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get $APT_OPTIONS update
-          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools
+          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr sqlite3 wireguard-tools
           brew install caddy openssl@3
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -544,7 +544,7 @@ jobs:
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get $APT_OPTIONS update
-          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools
+          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr sqlite3 wireguard-tools
           brew install caddy openssl@3
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -598,7 +598,7 @@ jobs:
         if: runner.environment == 'github-hosted'
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr sqlite3 wireguard-tools
           brew install caddy openssl@3
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"

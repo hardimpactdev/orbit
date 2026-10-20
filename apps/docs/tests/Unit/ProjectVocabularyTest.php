@@ -112,6 +112,49 @@ it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename 
     }
 });
 
+it('preserves historical trigger messages while checking the rest of the committed schema', function (string $sql, bool $allowed, ?int $line): void {
+    $root = vocabularyFixture();
+    try {
+        $path = 'apps/gateway/database/schema/sqlite-schema.sql';
+        vocabularyWrite($root, $path, $sql);
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe($allowed ? 0 : 1, $process->getOutput());
+        if ($line !== null) {
+            expect($process->getOutput())->toContain($path.':'.$line.':');
+        }
+    } finally {
+        vocabularyRemove($root);
+    }
+})->with([
+    'recorded abort message' => ["SELECT RAISE(ABORT, 'An active AppInstance requires a Route.');\n", true, null],
+    'escaped quote in recorded message' => ["SELECT RAISE(FAIL, 'AppInstance''s contract failed.');\n", true, null],
+    'recorded rollback message' => ["SELECT RAISE(ROLLBACK, 'Invalid AppInstance contract.');\n", true, null],
+    'retired table' => ["CREATE TABLE app_instances (id INTEGER);\n", false, 1],
+    'retired column' => ["CREATE TABLE instances (app_id INTEGER);\n", false, 1],
+    'SQL expression beside a recorded message' => ["CREATE TRIGGER guard BEFORE INSERT ON app_instances BEGIN SELECT RAISE(ABORT, 'AppInstance'); END;\n", false, 1],
+    'line after a multiline message' => ["SELECT RAISE(ABORT, 'AppInstance\ncontract failed.');\nCREATE TABLE app_instances (id INTEGER);\n", false, 3],
+    'ordinary string is still checked' => ["INSERT INTO settings VALUES ('subject', 'AppInstance');\n", false, 1],
+]);
+
+it('checks trigger diagnostics outside the committed schema', function (string $path, string $contents): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, $path, $contents);
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toContain('retired name AppInstance');
+    } finally {
+        vocabularyRemove($root);
+    }
+})->with([
+    'new migration source' => ['apps/gateway/database/migrations/2026_12_05_000000_add_guard.php', "<?php\nDB::unprepared(\"SELECT RAISE(ABORT, 'Invalid AppInstance contract.');\");\n"],
+    'another SQL file' => ['apps/gateway/database/schema/other-schema.sql', "SELECT RAISE(ABORT, 'Invalid AppInstance contract.');\n"],
+]);
+
 it('accepts this repository', function (): void {
     $process = new Process([PHP_BINARY, dirname(__DIR__, 4).'/bin/project-vocabulary']);
     $process->setTimeout(60);

@@ -9,7 +9,6 @@ use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 beforeEach(function (): void {
     $this->host = Node::query()->create(['name' => 'image-host', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']);
@@ -118,14 +117,7 @@ it('reports an empty build history', function (): void {
     $this->artisan('task-vms:image-builds')->expectsOutput('No task VM image builds.')->assertSuccessful();
 });
 
-it('runs the additive migration down and up on SQLite', function (): void {
-    $migration = require database_path('migrations/2026_11_04_000000_create_task_vm_image_builds_table.php');
-
-    $migration->down();
-    expect(Schema::hasTable('task_vm_image_builds'))->toBeFalse();
-    $migration->up();
-    $attemptMigration = require database_path('migrations/2026_11_04_000002_fence_task_vm_image_build_attempts.php');
-    $attemptMigration->up();
+it('permits only one unfinished image build per host on SQLite', function (): void {
     TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id]);
 
     expect(fn () => DB::table('task_vm_image_builds')->insert(['host_node_id' => $this->host->id]))

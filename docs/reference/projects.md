@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "apps/gateway/database/migrations/*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}.php"
+  - "apps/gateway/database/schema/sqlite-schema.sql"
 ---
 
 # Projects
@@ -163,7 +163,7 @@ The Gateway first resolves the remote default branch with the new `source_access
 
 The create and update commands accept `--task-workspace-routed=true` or `--task-workspace-routed=false`. An invalid CLI value returns `project.task_workspace_routed_invalid` before a request. The setting controls task provisioning only. It does not change ordinary Instances or bypass root, Route, and Project-type validation. A settings-only update does not reconcile existing sources or Routes.
 
-The migration seeds false for existing Projects with slug `orbit` and true for other existing Projects to preserve their previous creation behavior. This is a one-time migration of the legacy policy; the engine never consults the slug. It also records the mode of existing task workspaces from their actual provisioned state, so Doctor does not reinterpret them after a settings change. Renaming a Project does not change the setting.
+Each task workspace keeps its recorded routing mode, so Doctor does not reinterpret it after a settings change. Renaming a Project does not change the setting, and the engine never consults the slug.
 
 ### Review and merge
 
@@ -287,7 +287,7 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 
 ### A setting routes task workspaces
 
-A new task workspace is visitable only when the Project's `task_workspace_routed` setting says so. Choosing that from the slug `orbit` was rejected, because the engine would then know one repository. [Task workspace routing](#task-workspace-routing) records the one-time migration of that old result, and that a later change does not reroute a workspace that already exists.
+A new task workspace is visitable only when the Project's `task_workspace_routed` setting says so. Choosing that from the slug `orbit` was rejected, because the engine would then know one repository. [Task workspace routing](#task-workspace-routing) stores that policy explicitly, and a later change does not reroute a workspace that already exists.
 
 ### One public name without compatibility
 
@@ -307,7 +307,7 @@ The model for the repository record is `Project`, and the model for the running 
 
 Project actions live in `Actions/Projects`. A class is `Project*` or `Instance*` according to whether it belongs to the repository record or the running copy. The Gateway, the CLI, the PHP SDK, and the web app follow that rule. Laravel's root namespace stays `App\`, so those actions are `App\Actions\Projects`.
 
-Environment placeholders are `{{instance.domain}}` and `{{instance.environment}}`. A stored value that contains any other `{{...}}` placeholder is invalid. Synchronization returns `env.reference_unavailable`. A write that fails placeholder validation returns `env.configuration_invalid`. The migration rewrites stored placeholders to these two names. Project has no morph alias. The public subject type is `project`. The Instance morph alias is `instance`. The migration rewrites stored activity class names to `App\Models\Project`.
+Environment placeholders are `{{instance.domain}}` and `{{instance.environment}}`. A stored value that contains any other `{{...}}` placeholder is invalid. Synchronization returns `env.reference_unavailable`. A write that fails placeholder validation returns `env.configuration_invalid`. Project has no morph alias. The public subject type is `project`. The Instance morph alias is `instance`. Stored Project activity class names are `App\Models\Project`.
 
 Realtime types are `project.created`, `project.updated`, and `project.deleted`. Payload classes are `ProjectData`, `InstanceData`, and `InstanceDeploymentData`. Project error codes use the `project.` prefix. `project.has_instances` means removal found Instances. `node.has_instances` means the Node still has Instances. `instance.placement_unavailable` means placement failed. Doctor's repository family is `project`.
 
@@ -317,7 +317,7 @@ Keeping a stored name that differs from Project or Instance was rejected, becaus
 
 Renaming the monorepo folders, the Laravel root namespace, the `app/` source folders, `config/app.php`, the `APP_*` variables, Node roles, the GitHub App, the type `laravel-app`, the Route kind, or the node storage setting was rejected, because those names are not the Project or Instance record.
 
-Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. The migration renames tables and columns in place. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
+Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
 
 A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob. The same check rejects the Node names the web app used before [Concepts](/concepts) settled on Nodes with roles and roleless Nodes.
 

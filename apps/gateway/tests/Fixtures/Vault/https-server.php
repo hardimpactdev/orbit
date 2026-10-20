@@ -45,11 +45,12 @@ while (true) {
 
     if ($mode === 'slow-headers') {
         fwrite($connection, "HTTP/1.1 400 Bad Request\r\n");
-        for ($header = 0; $header < 18; $header++) {
-            sleep(1);
+        for ($header = 0; $header < 100; $header++) {
+            usleep(10_000);
             if (@fwrite($connection, "X-Drip-{$header}: yes\r\n") === false) {
                 break;
             }
+            file_put_contents(dirname($cert).'/sent-headers', '.', FILE_APPEND);
         }
     }
 

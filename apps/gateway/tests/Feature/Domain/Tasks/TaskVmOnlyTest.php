@@ -12,7 +12,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 function vm_only_project(array $attributes = []): Project
@@ -23,66 +22,10 @@ function vm_only_project(array $attributes = []): Project
     ]);
 }
 
-function drop_shared_task_mode_migration(): object
-{
-    return require base_path('database/migrations/2026_11_02_000000_drop_shared_task_mode.php');
-}
-
 it('leaves no task compute mode in the schema', function (): void {
     expect(Schema::hasColumn('projects', 'task_compute'))->toBeFalse()
         ->and(Schema::hasColumn('tasks', 'task_compute'))->toBeFalse()
         ->and(Schema::hasColumn('task_comments', 'topology_resume'))->toBeFalse();
-});
-
-it('restores the columns on rollback as vm and drops them again', function (): void {
-    $project = vm_only_project();
-    $claimed = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Done', 'brief' => 'Done', 'status' => TaskGroupStatus::Completed]);
-    $backlog = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Later', 'brief' => 'Later', 'status' => TaskGroupStatus::Backlog]);
-    $migration = drop_shared_task_mode_migration();
-
-    $migration->down();
-
-    expect(DB::table('projects')->where('id', $project->id)->value('task_compute'))->toBe('vm')
-        ->and(DB::table('tasks')->where('id', $claimed->id)->value('task_compute'))->toBe('vm')
-        ->and(DB::table('tasks')->where('id', $backlog->id)->value('task_compute'))->toBeNull()
-        ->and(Schema::hasColumn('task_comments', 'topology_resume'))->toBeTrue();
-
-    $migration->up();
-
-    expect(Schema::hasColumn('projects', 'task_compute'))->toBeFalse()
-        ->and(Schema::hasColumn('tasks', 'task_compute'))->toBeFalse()
-        ->and(Schema::hasColumn('task_comments', 'topology_resume'))->toBeFalse();
-});
-
-it('refuses while a Project or an open group still uses shared compute', function (string $table, string $status): void {
-    $project = vm_only_project();
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => $status]);
-    $migration = drop_shared_task_mode_migration();
-    $migration->down();
-    DB::table($table)->where('id', $table === 'projects' ? $project->id : $group->id)->update(['task_compute' => 'shared']);
-
-    expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'Switch every Project and open task group to vm compute');
-    // The refusal changes nothing, so the old code keeps every column it reads.
-    expect(Schema::hasColumn('projects', 'task_compute'))->toBeTrue()
-        ->and(Schema::hasColumn('instances', 'worker_shared'))->toBeTrue();
-
-    DB::table($table)->update(['task_compute' => 'vm']);
-    $migration->up();
-})->with([
-    'shared Project' => ['projects', 'completed'],
-    'running shared group' => ['tasks', 'running'],
-]);
-
-it('drops the compute mode of finished shared groups', function (): void {
-    $project = vm_only_project();
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed]);
-    $migration = drop_shared_task_mode_migration();
-    $migration->down();
-    DB::table('tasks')->where('id', $group->id)->update(['task_compute' => 'shared']);
-
-    $migration->up();
-
-    expect(Task::topLevel()->find($group->id)?->status)->toBe(TaskGroupStatus::Completed);
 });
 
 it('refuses task_compute in the Project API', function (): void {

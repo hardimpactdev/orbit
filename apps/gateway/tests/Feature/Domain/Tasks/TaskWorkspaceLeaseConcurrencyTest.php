@@ -12,7 +12,6 @@ use App\Models\Task;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
     tick_bind_defaults();
@@ -31,17 +30,11 @@ it('serializes independent groups and preserves FIFO ownership across a process 
     ], 'database.default' => 'lease_concurrency']);
 
     try {
-        Schema::create('tasks', function ($table): void {
-            $table->id();
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->string('status');
-        });
+        $this->artisan('migrate', ['--database' => 'lease_concurrency', '--force' => true, '--schema-path' => database_path('schema/sqlite-schema.sql')])->assertExitCode(0);
         DB::table('tasks')->insert([
-            ['id' => $first->id, 'parent_id' => null, 'status' => 'running'],
-            ['id' => $second->id, 'parent_id' => null, 'status' => 'running'],
+            ['id' => $first->id, 'parent_id' => null, 'title' => 'First', 'brief' => 'First contender', 'status' => 'running'],
+            ['id' => $second->id, 'parent_id' => null, 'title' => 'Second', 'brief' => 'Second contender', 'status' => 'running'],
         ]);
-        (require database_path('migrations/2026_10_16_074802_create_task_workspace_leases_table.php'))->up();
-        (require database_path('migrations/2026_10_16_111138_create_task_workspace_operations_table.php'))->up();
         $first->setConnection('lease_concurrency');
         $second->setConnection('lease_concurrency');
 

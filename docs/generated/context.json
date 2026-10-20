@@ -708,6 +708,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2001,13 +2002,11 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
-                "Process",
                 "Role",
                 "Task"
             ],
@@ -2535,7 +2534,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",

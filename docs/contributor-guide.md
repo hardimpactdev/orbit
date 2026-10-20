@@ -8,7 +8,7 @@ covers:
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,generated-merge,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
-  - apps/gateway/tests/Support/{LinuxHost,TestToolchain,LocalShellSshExecutor}.php
+  - apps/gateway/{database/{schema/**,migrations/*_seed_schema_baseline_reference_rows.php},tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
   - apps/docs/**
   - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
@@ -131,7 +131,13 @@ Each Gateway test process keeps its fixtures in its own directory under `TMPDIR`
 
 Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root.
 
-Gateway tests that need real commits or a database visible to subprocesses use `Tests\Support\WithCommittedSqliteDatabase`. It migrates a pristine SQLite template once per test file and copies it into each case's private directory. The ordinary `RefreshDatabase` connection stays inside its transaction; the committed fixture uses a separate connection. Do not roll back or purge the ordinary connection to replace it, because that invalidates Laravel's migration cache and reruns the full migration chain for every case. Migration-chain tests still run real migrations.
+Gateway tests that need real commits or a database visible to subprocesses use `Tests\Support\WithCommittedSqliteDatabase`. It migrates a pristine SQLite template once per test file and copies it into each case's private directory. The ordinary `RefreshDatabase` connection stays inside its transaction; the committed fixture uses a separate connection. Do not roll back or purge the ordinary connection to replace it, because that invalidates Laravel's migration cache and reloads the database for every case.
+
+Before replacing this helper with a stock reset trait, compare complete Documents workloads, including setup and teardown, not repeated migration calls alone. Both setups must preserve real commits, subprocess visibility, reference defaults, and per-case isolation. `DatabaseTruncation` permits real commits; its seeder must restore reference rows and reset application ID counters left by empty tables that Laravel skips truncating.
+
+The Gateway loads its committed SQLite schema with Laravel's stock schema loader. Existing Gateways must finish the recorded migration chain before receiving the squash; Laravel loads the dump only when no migrations have run. Create the dump with `php artisan schema:dump --prune` on a disposable, fully migrated SQLite database. Remove applied extension migration files recorded in the dump too. Install the Ubuntu `sqlite3` package before writing a dump or loading it into a file database; in-memory loading needs only PDO SQLite.
+
+A separate named test connection passes `--schema-path=database/schema/sqlite-schema.sql` to the stock migrate command. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the post-dump migration, not in the schema file.
 
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
@@ -241,7 +247,9 @@ All maintained documentation lives under the root `docs/` directory, for humans 
 
 The Gateway Tasks engine stores work, deliverables, and lifecycle state. Each Project supplies its own task check and repository policy. Orbit keeps `bin/docs-impact` and its extraction logic in the repository, and enforces the result through `composer check` and `bin/review-check`. Putting docs-first rules in the Gateway is rejected, because it would couple a generic engine to Orbit's documentation, ADRs, and tooling.
 
-A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned changed surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned current surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+
+Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
 
 A waiver lives in the Git directory, not in a tracked file, because it matters only to one branch and nothing reads it after the merge. A shared tracked file is rejected: concurrent branches appended to the same lines, so most merges of `main` into a task branch conflicted.
 

@@ -8,7 +8,7 @@ covers:
   - apps/gateway/{resources/remote/{lib/source-removal.py,instances/{inspect-source,check-publication,remove-source,prepare-source-removal,read-source-removal-state,read-removal-receipt,clean-removal-receipt,finalize-source-removal}.py},tests/Programs/test_source_removal.py}
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal,allow_reserved_worktree_null_prepare_removal,allow_source_resolved_workspace_route_removal}.php
+  - apps/gateway/database/schema/sqlite-schema.sql
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 

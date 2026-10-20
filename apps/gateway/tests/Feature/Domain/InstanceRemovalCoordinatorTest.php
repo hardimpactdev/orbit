@@ -1130,25 +1130,6 @@ it('keeps normal source refusals for a source-resolved workspace with a pending 
     expect(InstanceRemoval::query()->count())->toBe(0);
 });
 
-it('upgrades and reverses the routed workspace removal persistence guards', function (): void {
-    $instance = orb1193_coordinator_workspace();
-    $migration = require database_path('migrations/2026_10_19_000000_allow_source_resolved_workspace_route_removal.php');
-    $migration->down();
-    try {
-        expect(fn () => $this->orb181Coordinator->execute($instance, false))
-            ->toThrow(QueryException::class, 'Invalid AppInstance removal contract.');
-        $this->assertModelExists($instance);
-        expect(InstanceRemoval::query()->count())->toBe(0);
-    } finally {
-        $migration->up();
-    }
-
-    $removal = $this->orb181Coordinator->execute($instance, false);
-
-    expect($removal->status)->toBe(InstanceRemovalStatus::Completed);
-    $this->assertModelMissing($instance);
-});
-
 function orb1193_coordinator_workspace(): Instance
 {
     $instance = orb181_coordinator_instance(layout: InstanceSourceLayout::Worktree->value, withRoute: false);

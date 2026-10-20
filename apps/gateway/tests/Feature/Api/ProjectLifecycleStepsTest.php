@@ -85,38 +85,17 @@ it('records a teardown step on its own list', function (): void {
     $this->getJson($this->url)->assertOk()->assertJsonCount(0, 'data');
 });
 
-it('lowers stored step timeouts that one request could never honor', function (): void {
-    foreach ([['slow', 900, 0], ['default', 600, 1], ['fits', 120, 2]] as [$name, $timeout, $position]) {
-        ProjectLifecycleStep::query()->create([
-            'project_id' => $this->project->id,
-            'phase' => 'setup',
-            'name' => $name,
-            'command' => 'true',
-            'timeout_seconds' => $timeout,
-            'position' => $position,
-        ]);
-    }
-
-    run_legacy_schema_migration(require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'), 'up');
-
-    expect(ProjectLifecycleStep::query()->orderBy('position')->pluck('timeout_seconds')->all())->toBe([540, 540, 120]);
-
-    $this->getJson($this->url)->assertOk()->assertJsonPath('data.0.timeout_seconds', 540);
-});
-
-it('keeps a list over the total limit editable after the migration, as long as an edit does not raise its total', function (): void {
+it('keeps a list over the total limit editable as long as an edit does not raise its total', function (): void {
     foreach (range(0, 6) as $position) {
         ProjectLifecycleStep::query()->create([
             'project_id' => $this->project->id,
             'phase' => 'setup',
             'name' => "step-{$position}",
             'command' => 'true',
-            'timeout_seconds' => 900,
+            'timeout_seconds' => 540,
             'position' => $position,
         ]);
     }
-
-    run_legacy_schema_migration(require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'), 'up');
 
     // 7 x 540 = 3,780 seconds, over the 540-second list limit.
     expect(ProjectLifecycleStep::query()->sum('timeout_seconds'))->toBe(3_780);

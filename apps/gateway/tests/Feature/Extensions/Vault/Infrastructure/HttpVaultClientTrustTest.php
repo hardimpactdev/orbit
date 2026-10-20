@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use GuzzleHttp\Handler\StreamHandler;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -11,6 +12,7 @@ use Orbit\Extensions\Vault\Domain\VaultCredentials;
 use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Infrastructure\BitwardenCrypto;
 use Orbit\Extensions\Vault\Infrastructure\HttpVaultClient;
+use Psr\Http\Message\RequestInterface;
 
 pest()->group('subprocess');
 
@@ -78,6 +80,14 @@ it('rejects a certificate from a CA in the system trust store', function (): voi
 });
 
 it('bounds a Vault request even when the peer keeps sending headers', function (): void {
+    Http::globalMiddleware(static fn (callable $handler): Closure => static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
+        // Keep the production deadline contract, but exercise cURL's real overall timeout at a smaller scale.
+        expect($options['timeout'])->toBe(15)
+            ->and($options['connect_timeout'])->toBe(15);
+        $options['timeout'] = 0.25;
+
+        return $handler($request, $options);
+    });
     $port = orbit_https_server($this->servers, $this->directory, 'orbit', 'slow-headers');
     $started = hrtime(true);
     $failure = null;
@@ -88,10 +98,12 @@ it('bounds a Vault request even when the peer keeps sending headers', function (
         $failure = $exception;
     }
 
-    expect((hrtime(true) - $started) / 1e9)->toBeLessThan(17);
+    expect((hrtime(true) - $started) / 1e9)->toBeLessThan(0.75);
     expect($failure)->toBeInstanceOf(VaultException::class);
 
     if ($failure instanceof VaultException) {
-        expect($failure->errorCode)->toBe('vault.unreachable');
+        expect($failure->errorCode)->toBe('vault.unreachable')
+            ->and($failure->getPrevious()?->getMessage())->toContain('cURL error 28')
+            ->and(strlen((string) file_get_contents($this->directory.'/sent-headers')))->toBeGreaterThan(1);
     }
 });

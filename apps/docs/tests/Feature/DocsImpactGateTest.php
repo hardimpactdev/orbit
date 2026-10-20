@@ -157,6 +157,40 @@ it('docs impact gate rejects unowned migration errors', function (): void {
         ->and($gate['failures'])->toContain("Unowned migration surface in {$path}; add a matching covers glob.");
 });
 
+it('docs impact gate accepts deleting an unowned migration without adding a stale owner', function (): void {
+    [$root] = docsImpactGateFixture();
+    mkdir($root.'/apps/gateway/database/migrations', 0777, true);
+    $path = 'apps/gateway/database/migrations/2026_01_01_create_orphans.php';
+    file_put_contents($root.'/'.$path, unownedMigrationContents());
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm migration');
+    unlink($root.'/'.$path);
+
+    $gate = new DocsImpact($root)->gate('HEAD');
+
+    expect($gate['passed'])->toBeTrue()
+        ->and($gate['failures'])->toBe([])
+        ->and($gate['report']['surfaces'])->toBe([]);
+});
+
+it('docs impact gate still requires the owner page when deleting an owned migration', function (): void {
+    [$root] = docsImpactGateFixture();
+    mkdir($root.'/apps/gateway/database/migrations', 0777, true);
+    $path = 'apps/gateway/database/migrations/2026_01_01_create_orphans.php';
+    file_put_contents($root.'/'.$path, unownedMigrationContents());
+    file_put_contents($root.'/apps/gateway/database/migrations/2026_01_02_keep_tasks.php', "<?php\n");
+    file_put_contents($root.'/docs/reference/tasks.md', "---\ntitle: Tasks\ncovers:\n  - apps/gateway/app/Domain/Tasks/**\n  - apps/gateway/database/migrations/*.php\n---\nTasks\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm migration');
+    unlink($root.'/'.$path);
+
+    $gate = new DocsImpact($root)->gate('HEAD');
+
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['failures'])->toBe([])
+        ->and($gate['missing_pages'])->toBe(['docs/reference/tasks.md']);
+});
+
 it('docs impact gate rejects failed generators even when their pages are updated', function (string $path, string $contents, string $page, string $generator): void {
     [$root, $base] = docsImpactGateFixture();
     file_put_contents($root.'/'.$path, $contents);

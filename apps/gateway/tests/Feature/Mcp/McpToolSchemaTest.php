@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ToolManifest;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\TaskModelRouter;
@@ -22,6 +26,39 @@ beforeEach(function (): void {
     $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
     $this->postJson('/api/v1/extensions/vault/enable')->assertOk();
     $this->postJson('/api/v1/extensions/conn/enable')->assertOk();
+});
+
+it('reads each extension switch once per catalogue and observes changes on the next catalogue', function (): void {
+    $manifest = ToolManifest::default();
+    $definitions = $manifest->definitions();
+    $extensions = array_unique(array_filter(array_column($definitions, 'extension')));
+    DB::enableQueryLog();
+
+    $catalogue = static function () use ($manifest, $extensions): array {
+        DB::flushQueryLog();
+        $tools = $manifest->tools(app(ApiDispatcher::class));
+        $switchReads = array_filter(DB::getQueryLog(), static fn (array $query): bool => array_any(
+            $query['bindings'],
+            static fn (mixed $value): bool => is_string($value) && str_starts_with($value, 'extension.'),
+        ));
+        expect($switchReads)->toHaveCount(count($extensions));
+
+        return $tools;
+    };
+
+    try {
+        $tools = $catalogue();
+        app(ExtensionStore::class)->set('documents', false);
+        $withoutDocuments = $catalogue();
+        $documentCount = count(array_filter($definitions, static fn ($tool): bool => $tool->extension === 'documents'));
+        expect($documentCount)->toBeGreaterThan(1)
+            ->and($withoutDocuments)->toHaveCount(count($tools) - $documentCount);
+        app(ExtensionStore::class)->set('documents', true);
+        expect($catalogue())->toHaveCount(count($tools));
+    } finally {
+        DB::disableQueryLog();
+        DB::flushQueryLog();
+    }
 });
 
 describe('MCP tool schemas', function (): void {

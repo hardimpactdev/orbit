@@ -34,7 +34,7 @@ it('defers a rollout visit during recorded cutover state and retries publication
     $management = Route::query()->forceCreate(['id' => 104, 'kind' => 'custom_proxy', 'node_id' => 17, 'domain' => 'cli-proxy-api.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $management->customProxy()->create(['node_id' => 17, 'upstream' => 'http://127.0.0.1:8317']);
     $management->update(['status' => 'active']);
-    $vm = DB::table('task_vms')->insertGetId(['provider' => 'incus', 'name' => 'held', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'model_key' => 'held-key-bytes', 'model_proxy_origin' => 'http://10.44.0.3:8317']);
+    $vm = DB::table('task_vms')->insertGetId(['provider' => 'incus', 'name' => 'held', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'model_key' => 'held-key-bytes', 'ai_router_origin' => 'http://10.44.0.3:8317']);
     $encrypted = DB::table('settings')->where('is_secret', true)->pluck('value', 'id')->all();
     $cache = app(AiRouterCache::class);
     $cache->put('orbit:proxycli:snapshot', 'old snapshot');
@@ -91,7 +91,6 @@ it('defers a rollout visit during recorded cutover state and retries publication
     $hosts = Mockery::mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/tmp/test-known-hosts');
     app()->instance(KnownHostsStore::class, $hosts);
-    (require base_path('extensions/ai-router/database/migrations/2026_11_16_000001_rename_ai_router_state.php'))->up();
     if ($switchOff) {
         app(ExtensionStore::class)->set('ai-router', false);
     }

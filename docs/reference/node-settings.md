@@ -1,12 +1,12 @@
 ---
 title: "Node settings"
-description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and migration."
+description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
-  - apps/gateway/database/migrations/*_migrate_task_vm_host_settings.php
+  - apps/gateway/database/schema/sqlite-schema.sql
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
@@ -90,9 +90,9 @@ Placement selects active Nodes with a valid, non-null `settings.task_vms`. Reque
 
 ### Migrate the environment host list
 
-Deployment copies the current `ORBIT_TASK_VMS_INCUS_HOSTS` entries into the settings of Node 9 (`beast`) and Node 13 (`shark`). It preserves each host's explicit values, including `pool`, `max_vms`, `operator_owned`, and resource and network fields, with the former defaults for omitted fields and `orbit-task-base` for the image alias. `node_id` selects the destination Node and is not stored inside `task_vms`. Other Node settings stay unchanged; the migration does not enroll other `app-dev` Nodes as hosts or replace existing explicit host settings.
+The Gateway reads Node settings only. It does not copy `ORBIT_TASK_VMS_INCUS_HOSTS`, and there is no runtime fallback to that environment list. Configure each host's `settings.task_vms` with the fields above.
 
-After migration, placement and capacity read Node settings only. There is no runtime fallback to the environment list. Verify beast and shark's settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal. Keep the live values through deployment so the migration can copy operator intent rather than inventing host configuration.
+Verify the stored settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal.
 
 ## Derive the effective root
 

@@ -37,9 +37,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Models\TaskWorkspaceLeaseRecord;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
@@ -593,67 +590,6 @@ it('keeps persisted role links after workspace removal', function (): void {
         ->and($links[1]->effort)->toBe(config('orbit.tasks.implementer_effort'))
         ->and($links[1]->node_id)->not->toBeNull();
 });
-
-it('imports legacy thread links using the instance morph alias', function (string $scenario): void {
-    $default = DB::getDefaultConnection();
-    config()->set('database.connections.agent_migration', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
-    DB::setDefaultConnection('agent_migration');
-    try {
-        $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'create_agent_threads_from_task_agent_sessions')
-            // The per-role split depends on the column this legacy import creates.
-            && ! str_contains($path, 'split_task_group_agent_driver_by_role')
-            // The token split alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_token_metrics_to_agent_threads')
-            // The Pi resume points at agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')
-            // Thread archiving alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_thread_archiving_to_agent_threads')
-            // Archive backoff alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')
-            && basename($path) < '2026_10_05_000000_merge_task_groups_into_tasks.php'));
-        Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
-        $projectId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
-        $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
-        $instanceId = DB::table('instances')->insertGetId(['project_id' => $projectId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
-        $groupId = DB::table('task_groups')->insertGetId([
-            'project_id' => $projectId, 'title' => 'Legacy', 'brief' => 'Legacy links',
-            'taskable_type' => 'instance', 'taskable_id' => $instanceId,
-            'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
-        ]);
-        $taskId = DB::table('tasks')->insertGetId(['task_group_id' => $groupId, 'position' => 1, 'title' => 'Legacy task', 'brief' => 'Legacy', 'implementer_thread_id' => 'legacy-implement']);
-        if ($scenario !== 'pointers') {
-            DB::table('task_agent_sessions')->insert([
-                'id' => 42, 'task_group_id' => $groupId, 'node_id' => $nodeId, 'task_id' => null,
-                'role' => $scenario === 'conflict' ? 'implementer' : 'reviewer', 'thread_id' => 'legacy-review',
-                'model' => 'claude-opus-5', 'effort' => 'high',
-            ]);
-        }
-        $migration = require glob(database_path('migrations/*create_agent_threads_from_task_agent_sessions.php'))[0];
-        if ($scenario === 'conflict') {
-            expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(RuntimeException::class, 'ownership is ambiguous');
-            expect(Schema::hasTable('task_agent_sessions'))->toBeTrue()
-                ->and(Schema::hasTable('agent_threads'))->toBeFalse();
-            DB::table('task_agent_sessions')->where('id', 42)->update(['role' => 'reviewer']);
-        }
-        run_legacy_schema_migration($migration, 'up');
-        $links = AgentThread::query()->orderBy('id')->get();
-        expect($links)->toHaveCount(2)
-            ->and($links[0]->node_id)->toBe($nodeId)
-            ->and($links[0]->id)->toBe($scenario === 'pointers' ? 1 : 42)
-            ->and($links[0]->effort)->toBe('high')
-            ->and($links[1]->effort)->toBe(config('orbit.tasks.implementer_effort'))
-            ->and($links[0]->model)->toBe('claude-opus-5')
-            ->and($links[0]->driver)->toBe('t3')
-            ->and($links[0]->runtime_key)->toBe('node:'.$nodeId)
-            ->and($links[1]->task_id)->toBe($taskId)
-            ->and($links[1]->external_id)->toBe('legacy-implement')
-            ->and(DB::table('task_groups')->where('id', $groupId)->value('reviewer_agent_thread_id'))->toBe($links[0]->id)
-            ->and(DB::table('tasks')->where('id', $taskId)->value('implementer_agent_thread_id'))->toBe($links[1]->id);
-    } finally {
-        DB::setDefaultConnection($default);
-        DB::purge('agent_migration');
-    }
-})->with(['persisted', 'pointers', 'conflict']);
 
 it('gives a fresh reviewer the questions and answers from earlier consults', function (): void {
     $group = task_spawner_group();

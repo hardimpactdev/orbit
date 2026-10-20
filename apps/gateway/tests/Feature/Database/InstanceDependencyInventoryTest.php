@@ -290,31 +290,6 @@ describe('dependency inventory persistence', function (): void {
         expect($observation->fresh()->observed_at->format('Y-m-d H:i:s'))->toBe('2026-09-15 12:00:00');
     });
 
-    it('rolls the inventory migration back and reapplies it without changing instance state', function (): void {
-        $instance = dependency_inventory_instance();
-        $before = $instance->fresh()->getAttributes();
-        $observation = dependency_inventory_observation($instance);
-        $resolution = dependency_inventory_resolution($observation);
-        dependency_inventory_edge($observation, ['to_resolution_id' => $resolution->id]);
-        $instance->dependencyScanAttempts()->create(['ecosystem' => 'npm', 'attempted_at' => now()]);
-        $migration = require base_path('database/migrations/2026_09_15_200000_create_instance_dependency_inventory.php');
-
-        run_legacy_schema_migration($migration, 'down');
-        try {
-            foreach (['dependency_packages', 'instance_dependency_observations', 'instance_dependency_resolutions', 'instance_dependency_edges', 'instance_dependency_scan_attempts'] as $table) {
-                expect(Schema::hasTable($table))->toBeFalse();
-            }
-            expect($instance->fresh()->getAttributes())->toBe($before);
-        } finally {
-            run_legacy_schema_migration($migration, 'up');
-        }
-
-        $new = dependency_inventory_observation($instance);
-        dependency_inventory_resolution($new);
-        $this->assertDatabaseCount('instance_dependency_resolutions', 1);
-        expect($instance->fresh()->getAttributes())->toBe($before);
-    });
-
     it('round trips named provenance without raw source or process fields', function (): void {
         $observation = dependency_inventory_observation(dependency_inventory_instance());
         $resolution = dependency_inventory_resolution($observation);

@@ -27,7 +27,7 @@ trait WithCommittedSqliteDatabase
             $template = sys_get_temp_dir().'/committed-sqlite-'.bin2hex(random_bytes(16)).'.sqlite';
             touch($template);
             config(['database.connections.committed_test.database' => $template]);
-            $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+            $this->artisan('migrate:fresh', ['--force' => true, '--schema-path' => database_path('schema/sqlite-schema.sql')])->assertExitCode(0);
             DB::disconnect('committed_test');
             self::$committedSqliteTemplate = $template;
         }

@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
-  - apps/gateway/{app/Http/Controllers/Api/InstancesController.php,app/Http/Requests/Instances/**,app/Data/Instances/**,app/Models/Instance.php,database/migrations/*_record_instance_first_setup_pending.php}
+  - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/schema/sqlite-schema.sql}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---

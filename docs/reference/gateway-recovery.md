@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging}.php
   - apps/gateway/app/Infrastructure/Logging/**
-  - apps/gateway/app/Domain/Gateway/GatewayCacheStore.php
+  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/schema/sqlite-schema.sql}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
@@ -166,7 +166,9 @@ Deploy is the manual release. Before it changes anything, it:
 
 `--force` skips only the commit ancestry check. Laravel owns migration discovery, including migrations registered by vendor service providers.
 
-Then it takes the pre-release database snapshot, runs `php artisan migrate --force`, and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
+Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
+
+Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>

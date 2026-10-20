@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tasks\CreateTaskGroupAction;
-use App\Data\Tasks\CreateTaskGroupData;
-use App\Data\Tasks\TaskInputData;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
@@ -16,7 +13,6 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Models\Activity;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
@@ -27,11 +23,9 @@ use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVmImageBuild;
-use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 it('files a repro-first group when a fingerprint is over the threshold', function (): void {
     $project = problem_filer_project();
@@ -893,89 +887,6 @@ it('closes a Caddy skip only after a fresh successful publication', function ():
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
-it('normalizes SHA buckets once and adopts only untouched generated groups', function (string $edit): void {
-    $this->freezeTime();
-    $project = problem_filer_project();
-    $recipe = 'sha256:'.str_repeat('d', 64);
-    $build = UpCloudTaskVmImageBuild::query()->create(['recipe_identity' => $recipe, 'state' => TaskVmImageBuildState::Failed, 'started_at' => now(), 'finished_at' => now()]);
-    $groups = [];
-    foreach (['a', 'b'] as $letter) {
-        $sha = str_repeat($letter, 40);
-        $fingerprint = 'release|rollout_halted|machine-recipe-upcloud|'.$sha;
-        $summary = $build->fenceMessage();
-        $activity = Activity::query()->create(['request_id' => (string) Str::uuid(), 'log_name' => 'releases', 'description' => 'rollout_halted', 'command' => 'release:alert', 'status' => 'succeeded', 'properties' => [
-            'kind' => 'rollout_halted', 'subject' => ['target' => 'machine-recipe-upcloud', 'repository' => 'nckrtl/orbit', 'sha' => $sha, 'release_id' => 'recipe-build-'.$build->id],
-            'summary' => $summary, 'evidence_url' => null, 'problem' => ['fingerprint' => $fingerprint],
-        ]]);
-        $stamp = now()->utc()->format('Y-m-d H:i:s').' UTC';
-        $brief = implode("\n\n", ['Filed by the outer loop.', "Symptom\n".$summary, "Fingerprint\n".$fingerprint, "First seen\n".$stamp, "Last seen\n".$stamp, "Count\n1", "Occurrences\n".$stamp.' 1', "Evidence\nActivity ids: ".$activity->id, "Suspected entry point\nnckrtl/orbit@".$sha.', release recipe-build-'.$build->id]);
-        $data = new CreateTaskGroupData(projectId: $project->id, title: 'Rollout halted for machine-recipe-upcloud at '.substr($sha, 0, 12), brief: $brief, status: TaskGroupStatus::Backlog, tasks: [
-            new TaskInputData(title: 'Document the owning page', brief: $summary, deliverables: [['id' => 'docs', 'type' => 'review', 'description' => 'The owning page matches the fix, or no page changes.']]),
-            new TaskInputData(title: 'Reproduce the failure and fix it', brief: $summary, deliverables: [['id' => 'test', 'type' => 'review', 'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.']]),
-        ]);
-        $group = app(CreateTaskGroupAction::class)->execute($data);
-        ProblemFingerprint::query()->create(['fingerprint' => $fingerprint, 'source' => ProblemSource::Release, 'occurrences' => 0, 'filed_at' => now(), 'task_group_id' => $group->id, 'evidence' => ['summary' => $summary, 'release_repository' => 'nckrtl/orbit', 'release_id' => 'recipe-build-'.$build->id]]);
-        $groups[] = $group;
-    }
-    if ($edit === 'brief') {
-        $groups[0]->update(['brief' => $groups[0]->brief."\nPreserve my instructions."]);
-    } elseif ($edit === 'api') {
-        Activity::query()->create(['request_id' => (string) Str::uuid(), 'log_name' => 'commands', 'description' => 'tasks:update', 'command' => 'tasks:update', 'status' => 'succeeded', 'properties' => ['path' => 'api/task-groups/'.$groups[0]->id]]);
-    }
-    if (in_array($edit, ['mute', 'pending_mute'], true)) {
-        $groups[1]->update(['status' => TaskGroupStatus::Cancelled]);
-        if ($edit === 'mute') {
-            ProblemFingerprint::query()->where('task_group_id', $groups[1]->id)->update(['muted_until' => now()->addDays(14)]);
-        }
-    }
-    if ($edit === 'windows') {
-        foreach (ProblemFingerprint::query()->orderBy('id')->get() as $index => $row) {
-            $times = $index === 0 ? [now()->toISOString()] : [now()->toISOString(), now()->addMinutes(5)->toISOString()];
-            $blocks = array_map(static fn (string $at): int => intdiv(Carbon::parse($at)->getTimestamp(), 300), $times);
-            $row->update(['occurrences' => count($blocks), 'evidence' => [...$row->evidence, 'observation_times' => $times, 'observation_counts' => $index === 0 ? [1] : [2, 1], 'counted_blocks' => $blocks]]);
-        }
-    }
-    $migration = require database_path('migrations/2026_11_16_000000_normalize_release_incidents.php');
-    $migration->up();
-    $migration->up();
-    if ($edit === 'windows') {
-        expect(ProblemFingerprint::query()->sole()->occurrences)->toBe(2)
-            ->and(ProblemFingerprint::query()->sole()->evidence['observation_counts'])->toBe([3, 1]);
-    }
-    if (in_array($edit, ['mute', 'pending_mute'], true)) {
-        expect(ProblemFingerprint::query()->sole()->muted_until?->getTimestamp())->toBe(now()->addDays(14)->getTimestamp());
-    }
-    expect(ProblemFingerprint::query()->count())->toBe(1)
-        ->and(ProblemFingerprint::query()->sole()->fingerprint)->toBe('release|rollout_halted|upcloud:'.$recipe.'|'.$build->id.'|template_unverified')
-        ->and(ProblemFingerprint::query()->sole()->evidence['release_shas'])->toBe([str_repeat('a', 40), str_repeat('b', 40)]);
-    $build->update(['state' => TaskVmImageBuildState::Succeeded, 'template_uuid' => 'verified-template']);
-    expect(Artisan::call('problems:file'))->toBe(0)
-        ->and($groups[0]->refresh()->status)->toBe(in_array($edit, ['none', 'mute', 'pending_mute', 'windows'], true) ? TaskGroupStatus::Cancelled : TaskGroupStatus::Backlog)
-        ->and($groups[1]->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and(Task::topLevel()->count())->toBe(2);
-})->with(['none', 'brief', 'api', 'mute', 'pending_mute', 'windows']);
-
-it('does not auto-file an ambiguous historical SHA bucket', function (): void {
-    problem_filer_project();
-    problem_filer_fingerprint('release|release_stalled|gateway|'.str_repeat('a', 40), 1, ['summary' => 'The original head was not retained', ...problem_filer_windows(1)]);
-    $migration = require database_path('migrations/2026_11_16_000000_normalize_release_incidents.php');
-    $migration->up();
-    expect(Artisan::call('problems:file'))->toBe(0)
-        ->and(Task::topLevel()->count())->toBe(0)
-        ->and(ProblemFingerprint::query()->sole()->evidence)->not->toHaveKey('resolved_at');
-});
-
-it('uses historical Doctor probe ownership without inventing synthetic resources', function (): void {
-    problem_filer_project();
-    $removed = problem_filer_fingerprint('doctor|instance.checkout_missing|instance|348', 0, ['summary' => 'Checkout missing']);
-    $synthetic = problem_filer_fingerprint('doctor|firewall.rule_missing|firewall|orbit-metrics', 0, ['summary' => 'Metrics rule missing']);
-    $migration = require database_path('migrations/2026_11_16_000000_normalize_release_incidents.php');
-    $migration->up();
-    Artisan::call('problems:file');
-    expect($removed->refresh()->evidence['resolution'] ?? null)->toBe('resource_gone')
-        ->and($synthetic->refresh()->evidence)->not->toHaveKey('resolved_at');
-});
-
 it('keeps a pending Instance commit incident when an older deployment finishes', function (): void {
     $project = problem_filer_project();
     $node = Node::query()->create(['name' => 'deploy-host', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
@@ -1010,38 +921,6 @@ it('closes completed fleet incidents only after a verified later rollout', funct
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
-
-it('retires historical Doctor incidents before filing their scoped replacement', function (string $fingerprint, string $briefForm, ?string $code): void {
-    $this->freezeTime();
-    problem_filer_project();
-    $legacy = problem_filer_fingerprint($fingerprint, 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
-    expect(Artisan::call('problems:file'))->toBe(0);
-    $group = Task::topLevel()->sole();
-    if ($briefForm === 'symptom') {
-        foreach ($group->tasks()->get() as $task) {
-            $task->update(['brief' => 'Inventory failed']);
-        }
-    }
-    $evidence = $legacy->refresh()->evidence;
-    unset($evidence['generated_group_hash']);
-    $legacy->update(['evidence' => $evidence]);
-    $migration = require database_path('migrations/2026_11_16_000000_normalize_release_incidents.php');
-
-    $migration->up();
-    $migration->up();
-
-    expect($legacy->refresh()->evidence['resolution'] ?? null)->toBe('doctor_identity_replaced');
-    expect($legacy->evidence['doctor_code'] ?? null)->toBe($code);
-    problem_filer_fingerprint('doctor|tool.inspection_failed|tool|node:1:inventory', 3, ['summary' => 'Inventory failed', ...problem_filer_windows(3)], now()->subMinutes(10), now());
-    expect(Artisan::call('problems:file'))->toBe(0);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
-    expect(Task::topLevel()->where('status', TaskGroupStatus::Backlog)->count())->toBe(1);
-})->with([
-    'unscoped symptom briefs' => ['doctor|tool.inspection_failed|tool|none', 'symptom', 'tool.inspection_failed'],
-    'unscoped instruction briefs' => ['doctor|tool.inspection_failed|tool|none', 'instructions', 'tool.inspection_failed'],
-    'hashed symptom briefs' => ['doctor#0123456789ab', 'symptom', null],
-    'hashed instruction briefs' => ['doctor#0123456789ab', 'instructions', null],
-]);
 
 it('resolves an image-build incident only after recovery or supersession', function (string $recovery, string $reason): void {
     problem_filer_project();

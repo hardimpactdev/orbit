@@ -10,11 +10,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 
 /** Loads the real effort configuration without leaking environment changes to other tests. */
@@ -179,36 +176,4 @@ describe('thread effort', function (): void {
             && $request['id'] === $thread->external_id && $request['thinkingLevel'] === 'medium');
     })->with('effort roles');
 
-    it('backfills configured effort for legacy sessions of both roles', function (): void {
-        config()->set('orbit.tasks.implementer_effort', 'medium');
-        config()->set('orbit.tasks.reviewer_effort', 'low');
-        $default = DB::getDefaultConnection();
-        config()->set('database.connections.effort_migration', ['driver' => 'sqlite', 'database' => ':memory:']);
-        DB::setDefaultConnection('effort_migration');
-        try {
-            Schema::create('task_groups', static function (Blueprint $table): void {
-                $table->id();
-                $table->string('implementer_model')->nullable();
-                $table->string('reviewer_model')->nullable();
-            });
-            Schema::create('task_agent_sessions', static function (Blueprint $table): void {
-                $table->id();
-                $table->unsignedBigInteger('task_group_id');
-                $table->string('role');
-            });
-            DB::table('task_groups')->insert(['id' => 1]);
-            DB::table('task_agent_sessions')->insert([
-                ['task_group_id' => 1, 'role' => 'implementer'],
-                ['task_group_id' => 1, 'role' => 'reviewer'],
-            ]);
-            $migration = require database_path('migrations/2026_09_21_150000_add_model_and_effort_to_task_agent_sessions.php');
-
-            $migration->up();
-
-            expect(DB::table('task_agent_sessions')->orderBy('id')->pluck('effort')->all())->toBe(['medium', 'low']);
-        } finally {
-            DB::setDefaultConnection($default);
-            DB::purge('effort_migration');
-        }
-    });
 });
