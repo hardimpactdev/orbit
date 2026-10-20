@@ -523,7 +523,7 @@ def wait_for_tick(options, budget):
     detail = {'command': 'orbit tasks:status', 'tick_after': iso(threshold), 'last_tick_at': None, 'reads': 0}
     while True:
         try:
-            body = orbit_json(options, budget, 'tasks:status', limit=COMMAND_LIMIT)
+            body = orbit_json(options, budget, 'tasks:status')
         except CheckTimedOut:
             if budget.remaining() > 0:
                 raise

@@ -43,14 +43,14 @@ function orb277_tia_directory(string $root, string|false $override): string
     return is_array($compact) && is_string($compact['raw'][0] ?? null) ? $compact['raw'][0] : $output;
 }
 
-/** @return array{root: string, main: string, candidate: string, path: string} */
+/** @return array{root: string, path: string} */
 function orb277_gate_fixture(?string $candidatePath = null): array
 {
     static $template = null;
     $template ??= orb277_build_gate_template();
     $root = temporaryPath('orbit-builder-gate-', 6);
-    (new Process(['cp', '-a', $template['root'].'/.', $root]))->mustRun();
-    $fixture = [...$template, 'root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
+    (new Process(['cp', '-a', $template.'/.', $root]))->mustRun();
+    $fixture = ['root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
     $candidatePath ??= 'apps/gateway/app/Example.php';
 
     if ($candidatePath === 'apps/gateway/app/Example.php') {
@@ -62,13 +62,11 @@ function orb277_gate_fixture(?string $candidatePath = null): array
     orb277_write_candidate($root, $candidatePath);
     (new Process(['git', 'add', '.'], $root))->mustRun();
     (new Process(['git', 'commit', '--quiet', '-m', 'candidate'], $root))->mustRun();
-    $fixture['candidate'] = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
 
     return $fixture;
 }
 
-/** @return array{root: string, main: string, candidate: string, path: string} */
-function orb277_build_gate_template(): array
+function orb277_build_gate_template(): string
 {
     // Keep only the immutable template until process shutdown; each test's writable copy is cleaned normally.
     $root = TemporaryPaths::directory().'/builder-gate-template';
@@ -152,8 +150,6 @@ SH);
         (new Process($arguments, $root))->mustRun();
     }
 
-    $main = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
-
     orb277_write_candidate($root, 'apps/gateway/app/Example.php');
 
     foreach ([
@@ -164,12 +160,7 @@ SH);
         (new Process($arguments, $root))->mustRun();
     }
 
-    return [
-        'root' => $root,
-        'main' => $main,
-        'candidate' => trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput()),
-        'path' => $root.'/tooling:'.getenv('PATH'),
-    ];
+    return $root;
 }
 
 function orb277_write_candidate(string $root, string $candidatePath): void
@@ -190,7 +181,6 @@ function orb277_write_candidate(string $root, string $candidatePath): void
         }
         file_put_contents($path, "candidate change\n");
     }
-
 }
 
 /** @return array{process: Process, receipt: array<string, mixed>} */
@@ -228,8 +218,10 @@ describe('Builder gate', function (): void {
         $second = orb277_gate_fixture();
 
         expect($second['root'])->not->toBe($first['root']);
-        expect($second['main'])->toBe($first['main']);
-        expect($second['candidate'])->toBe($first['candidate']);
+        $history = ['git', 'rev-parse', 'main', 'HEAD'];
+        expect((new Process($history, $second['root']))->mustRun()->getOutput())
+            ->toBe((new Process($history, $first['root']))->mustRun()->getOutput());
+        expect(trim((new Process(['git', 'rev-list', '--count', 'HEAD'], $second['root']))->mustRun()->getOutput()))->toBe('2');
         expect(file_get_contents($second['root'].'/tooling/composer'))->not->toBe('changed');
         expect(is_executable($second['root'].'/tooling/composer'))->toBeTrue();
         expect(file_get_contents($second['root'].'/.git/config'))->not->toContain('changed only in this fixture');

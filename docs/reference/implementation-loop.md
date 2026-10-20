@@ -297,7 +297,9 @@ The E2E checks for unusable caches and inherited databases run the Gateway's rea
 
 Subprocess-group checks share one stock full-project PHPUnit XML listing across the configured suites. They prepare these listings once per file, with PCOV disabled because discovery needs no coverage. Every project except PHP SDK must list subprocess tests.
 
-Gateway smoke cases run individually through Python's unittest runner. Polling tests use a 0.25-second interval. The stale-tick and total-timeout tests keep their three- and four-second total limits so concurrent scheduler, agent-view, and CLI checks have time to finish under load. A shorter poll interval does not reserve time for the next read.
+Gateway smoke cases use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a 0.25-second interval and a short command limit in the test process; production defaults stay unchanged. Timeout cases still expire real deadlines, including the total run limit. The no-tick and total-timeout tests keep their four- and three-second total limits so concurrent scheduler, agent-view, and CLI checks have time to finish under load.
+
+The slow-Orbit case returns a stale tick immediately on its first read and stalls its second read past the total limit. It checks that the interrupted read reports `tick_stale` with the last seen tick, without depending on a delayed first read finishing just before the next poll. A shorter poll interval does not reserve time for the next read.
 
 The worker-budget test keeps a locked count of active shares, including overlap between waves. It lets the first lane acquire its share before later lanes register, so later allocations must respect shares already held. Signals report when each active lane has either acquired a share or entered the allocator's real condition wait. Workers stay on sockets until all granted workers in that wave have connected; no observation sleep determines completion. `TiaCacheTest` keeps its separate real-time cache coverage.
 

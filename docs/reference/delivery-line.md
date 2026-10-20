@@ -185,8 +185,6 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 
 ## bin/gateway-smoke
 
-The E2E smoke tests use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a short interval and command time limit in the test process; the production interval and CLI defaults stay unchanged. Timeout cases still expire real deadlines, including the total run limit.
-
 Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
 
 ```bash

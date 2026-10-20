@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-REPOSITORY = Path(sys.argv.pop(1)).resolve()
+REPOSITORY = Path(__file__).resolve().parents[4]
 SMOKE = REPOSITORY / 'bin/gateway-smoke'
 SHA = '2f214816deaed1d961f4a64c7f40762088c64226'
 RELEASE = SHA[:12]
@@ -483,12 +483,16 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertGreaterEqual(checks['tasks_tick']['detail']['reads'], 2)
 
     def test_tasks_tick_reports_stale_instead_of_timing_out_with_a_slow_orbit(self):
-        self.world.orbit('tasks:status', self.world.tick(seconds_ago=None), sleep=0.5)
+        stale_tick = self.world.tick(seconds_ago=600)
+        self.world.orbit('tasks:status', None, sequence=[
+            {'stdout': stale_tick},
+            {'stdout': self.world.tick(seconds_ago=0), 'sleep': 30},
+        ])
 
         checks = self.assert_only_failed(self.world.smoke('--timeout', '1', '--wait-for-tick'), ['tasks_tick'])
 
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
-        self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
+        self.assertEqual(checks['tasks_tick']['detail']['last_tick_at'], stale_tick['last_tick_at'])
         self.assertEqual(checks['tasks_tick']['detail']['reads'], 1)
         self.assertEqual(self.world.orbit_calls().count(['tasks:status', '--json']), 2)
 
