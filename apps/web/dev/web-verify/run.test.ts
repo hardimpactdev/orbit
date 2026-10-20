@@ -399,7 +399,7 @@ function expectPng(root: string, file: string): void {
 it("does not let demo adapters call the CLI or an upstream service", async () => {
     const port = (upstream.address() as AddressInfo).port;
     const opened = await run(browserHome, ["open", "/activity"]);
-    expect(opened.status).toBe(0);
+    expect(opened.status, JSON.stringify(opened.json)).toBe(0);
     const origin = new URL(opened.json.url ?? "").origin;
 
     const profile = await fetch(`${origin}/__orbit/profile?instance=1`);

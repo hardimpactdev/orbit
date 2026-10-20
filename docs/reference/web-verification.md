@@ -189,7 +189,7 @@ The page-operation tests start one real Bun daemon and demo server in shared set
 
 ### Scheduling and dependencies
 
-Vitest bounds browser-file concurrency to two. It runs the daemon integration files sequentially in their own project, before the other projects launch the persistent browser-test provider. This avoids overlapping the idle test's independent Vite server with the page-operation server. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
+Vitest uses its default parallel scheduling without a worker cap or project ordering. Each daemon integration file owns its temporary home and server, so the files can run alongside each other and the browser-test provider. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
 
 The CLI parses commands, validates maps, and dispatches socket requests without loading Playwright or Vite. Only the daemon loads those libraries, so repeated commands do not initialize them again. [CI](/reference/implementation-loop#ci) installs both engines and their system libraries on the hosted runner. It reports Node and verification tests separately from browser tests.
 
