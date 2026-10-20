@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(MetricsSshExecutor::class)]
 interface MetricsRuntimeHost
 {
     public function snapshotConfiguration(

@@ -19,8 +19,11 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
+use Illuminate\Container\Attributes\Singleton;
 use SensitiveParameter;
 
+#[Singleton]
 final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerProjectionManager
 {
     private const string GENERATED_CONFIG_PATH = '/generated/wireguard/orbit.conf';
@@ -38,7 +41,7 @@ final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerPr
         private WireGuardServerConfigRenderer $serverRenderer,
         private ProtectedFileWriter $files,
         private ProcessRunner $processes,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
         private ?SshExecutor $ssh = null,
         private ?SshKeyProvider $keys = null,
         private ?KnownHostsStore $knownHosts = null,

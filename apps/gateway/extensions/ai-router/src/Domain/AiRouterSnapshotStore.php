@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Domain;
 
+use Illuminate\Container\Attributes\Singleton;
 use JsonException;
 
+#[Singleton]
 final readonly class AiRouterSnapshotStore
 {
     public function __construct(

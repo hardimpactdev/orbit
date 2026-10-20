@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class NativeGatewayWebConverger implements GatewayWebConverger
 {
@@ -28,8 +29,8 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private NativeGatewayFpmConverger $fpm,
         private NodeCaddyBuilds $builds,
         private NativeGatewayCaddyInstaller $caddyInstaller,
-        private string $orbitHome,
-        private string $checkoutPath,
+        #[Config('orbit.home')] private string $orbitHome,
+        #[Config('orbit.gateway_checkout')] private string $checkoutPath,
         private RuntimeHibernatorConverger $hibernator,
         private AgentViewConverger $agentView,
         private GatewayReleaseUnitConverger $releaseUnits,

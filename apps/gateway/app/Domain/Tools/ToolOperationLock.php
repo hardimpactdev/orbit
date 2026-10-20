@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Infrastructure\Tools\NativeToolOperationLock;
 use Closure;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeToolOperationLock::class)]
 interface ToolOperationLock
 {
     /**

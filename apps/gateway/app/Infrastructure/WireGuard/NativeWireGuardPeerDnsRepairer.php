@@ -12,7 +12,9 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Singleton;
 
+#[Singleton]
 final readonly class NativeWireGuardPeerDnsRepairer implements WireGuardPeerDnsRepairer
 {
     public function __construct(

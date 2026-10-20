@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Infrastructure\Certificates\OrbitCaCurlFactory;
 use GuzzleHttp\Handler\CurlHandler;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -24,7 +25,7 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
 {
     /** @param list<int> $backoff Seconds to wait before each retry; about a minute in all by default. */
     public function __construct(
-        private string $origin = 'https://gateway.orbit',
+        #[Config('orbit.gateway_verify_origin')] private string $origin = 'https://gateway.orbit',
         private string $caFile = '/etc/caddy/orbit-cert-current/root-ca.pem',
         private array $backoff = [2, 4, 8, 16, 30],
     ) {}

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use Illuminate\Container\Attributes\Bind;
+use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
 use SensitiveParameter;
 
 /**
@@ -11,6 +13,7 @@ use SensitiveParameter;
  * and `$adminSession` is the admin bearer session the server's host issued for the Gateway.
  * Every method throws T3ServerException when the server is unreachable or refuses the call.
  */
+#[Bind(HttpT3ServerClient::class)]
 interface T3ServerClient
 {
     /** GET /.well-known/t3/environment */

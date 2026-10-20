@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects;
 
+use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteProjectUpdateSourceMutator::class)]
 interface ProjectUpdateSourceMutator
 {
     /**

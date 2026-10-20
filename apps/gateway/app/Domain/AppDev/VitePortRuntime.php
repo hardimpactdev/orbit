@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\AppDev;
 
+use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteVitePortRuntime::class)]
 interface VitePortRuntime
 {
     /** @param list<int> $excluded */

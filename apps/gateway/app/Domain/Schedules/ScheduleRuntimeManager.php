@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Data\Schedules\ScheduleLogsData;
+use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
 use App\Models\Schedule;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteScheduleRuntimeManager::class)]
 interface ScheduleRuntimeManager
 {
     public function install(Schedule $schedule): void;

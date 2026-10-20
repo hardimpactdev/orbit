@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(PlacementRouteApplicationUrlWriter::class)]
 interface RouteApplicationUrlWriter
 {
     /**

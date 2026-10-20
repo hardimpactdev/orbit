@@ -6,8 +6,10 @@ namespace App\Domain\Fleet;
 
 use App\Data\Fleet\DesiredFleetStateData;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
 /** Visits one Node of a fleet rollout and reports its outcome. It never throws for a Node failure. */
+#[Bind(FleetNodeConverger::class)]
 interface FleetNodeVisitor
 {
     /**

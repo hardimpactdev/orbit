@@ -8,6 +8,8 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\Certificates\OrbitCaCurlFactory;
 use GuzzleHttp\Handler\CurlHandler;
+use Illuminate\Container\Attributes\Config;
+use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Facades\Broadcast;
 
 /**
@@ -17,6 +19,7 @@ use Illuminate\Support\Facades\Broadcast;
  * only when something actually asks for the connection (a broadcast, or the
  * realtime config/tail endpoints) — never unconditionally on every request.
  */
+#[Scoped]
 final class RealtimeConnection
 {
     private static ?OrbitCaCurlFactory $caFactory = null;
@@ -38,7 +41,7 @@ final class RealtimeConnection
 
     public function __construct(
         private readonly WebSocketCredentialManager $credentials,
-        private readonly string $orbitHome,
+        #[Config('orbit.home')] private readonly string $orbitHome,
     ) {}
 
     public function resolve(): ?RealtimeConnectionData

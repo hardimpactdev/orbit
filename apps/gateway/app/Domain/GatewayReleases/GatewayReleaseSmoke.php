@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\GatewayReleases;
 
+use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use DateTimeImmutable;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * The smoke test that runs after the web app has switched. A failure or a timeout throws with step
@@ -13,6 +15,7 @@ use DateTimeImmutable;
  *
  * @phpstan-type SmokeResult array{outcome: string, report: array<array-key, mixed>|null}
  */
+#[Bind(ScriptGatewayReleaseSmoke::class)]
 interface GatewayReleaseSmoke
 {
     /**

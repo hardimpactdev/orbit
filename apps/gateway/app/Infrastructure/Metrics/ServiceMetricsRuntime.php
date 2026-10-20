@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeServiceMetricsRuntime::class)]
 interface ServiceMetricsRuntime
 {
     /** Snapshot includes only owned monitoring state; application content is never included. */

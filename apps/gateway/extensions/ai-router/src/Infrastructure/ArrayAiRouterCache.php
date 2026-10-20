@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
+use Illuminate\Container\Attributes\Singleton;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 
+#[Singleton]
 final class ArrayAiRouterCache implements AiRouterCache
 {
     /** @var array<string, array{value: string, expires: int|null}> */

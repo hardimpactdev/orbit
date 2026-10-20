@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Infrastructure\Analytics\PlausibleCommunityEditionStatsDriver;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Reads visits for one Instance from the fleet analytics service.
@@ -12,6 +14,7 @@ use App\Models\Instance;
  * The first implementation talks to the fleet Plausible Community Edition Stats API
  * ([ADR 0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver)).
  */
+#[Bind(PlausibleCommunityEditionStatsDriver::class)]
 interface AnalyticsStatsDriver
 {
     /** Stable driver name, such as `plausible_ce`. */

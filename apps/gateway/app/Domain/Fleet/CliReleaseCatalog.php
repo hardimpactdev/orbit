@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Data\Fleet\DesiredCliReleaseData;
+use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
+use Illuminate\Container\Attributes\Bind;
 
 /** The published CLI releases. A lookup never throws: a release it cannot confirm is unavailable with a reason. */
+#[Bind(GitHubCliReleaseCatalog::class)]
 interface CliReleaseCatalog
 {
     /**

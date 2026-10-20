@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Releases;
 
+use Illuminate\Container\Attributes\Bind;
+
 /**
  * Raises a release alert: an Activity entry, a problem for the outer loop, and the opt-in signed webhook.
  *
@@ -11,6 +13,7 @@ namespace App\Domain\Releases;
  * so a release command can raise an alert from its failure path. Call it outside a database
  * transaction: a rollback would discard the Activity entry and the problem after the webhook went out.
  */
+#[Bind(GatewayReleaseAlertNotifier::class)]
 interface ReleaseAlertNotifier
 {
     public function alert(ReleaseAlert $alert): ReleaseAlertReceipt;

@@ -10,12 +10,13 @@ use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class NativeGatewayCertificatePublisher
 {
     public function __construct(
         private ProcessRunner $processes,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
     ) {}
 
     public function publish(GatewayCertificatePaths $certificate): void

@@ -18,6 +18,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckoutInspector
 {
@@ -26,7 +27,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private ManagedUserAccountResolver $accounts,
-        private int $restoreTimeoutSeconds = RuntimeHibernation::DefaultColdWakeTimeoutSeconds,
+        #[Config('orbit.hibernation.cold_wake_timeout_seconds')] private int $restoreTimeoutSeconds = RuntimeHibernation::DefaultColdWakeTimeoutSeconds,
     ) {}
 
     public function inspect(Instance $instance): RuntimeDependencyState

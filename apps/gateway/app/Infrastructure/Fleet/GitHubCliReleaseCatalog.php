@@ -12,6 +12,7 @@ use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
@@ -34,7 +35,7 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
     public function __construct(
         private GitHubAppStore $apps,
         private GitHubApi $github,
-        private string $repositoryOrigin,
+        #[Config('orbit.cli_releases.repository')] private string $repositoryOrigin,
     ) {}
 
     public function find(string $commit, CliReleaseName $release): DesiredCliReleaseData

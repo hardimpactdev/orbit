@@ -15,6 +15,7 @@ use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -49,7 +50,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
-        private int $keptReleases,
+        #[Config('orbit.gateway_releases.keep')] private int $keptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
         private ?FleetConvergeUnits $fleet = null,
         private ?GatewayReleaseTickConfirmation $ticks = null,

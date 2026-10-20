@@ -23,6 +23,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -43,7 +44,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private ProtectedFileWriter $files,
         private ProcessRunner $processes,
         private UfwStatusParser $firewallParser,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
         private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,

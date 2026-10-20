@@ -6,10 +6,13 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /** Deploys a development default in its own checkout. */
+#[Bind(RemoteDevelopmentDeployment::class)]
 interface DevelopmentDeployment
 {
     /**

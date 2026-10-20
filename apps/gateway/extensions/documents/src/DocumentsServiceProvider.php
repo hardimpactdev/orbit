@@ -52,7 +52,6 @@ final class DocumentsServiceProvider extends ExtensionServiceProvider
         if (! $this->app->configurationIsCached()) {
             $this->app->make('config')->set('filesystems.disks.documents', config()->array('documents.disk'));
         }
-        $this->app->singleton(CleanupSchedulerSession::class);
         $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
         $this->contribute(GatewayReleaseCleanup::class, DocumentsReleaseCleanup::class);
         $this->contribute(ActivityInputRedaction::class, DocumentsActivityInputRedaction::class);

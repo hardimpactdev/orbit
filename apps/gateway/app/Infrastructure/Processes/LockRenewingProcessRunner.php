@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Infrastructure\Nodes\NodeLocks;
+use Illuminate\Container\Attributes\Give;
 
 /**
  * Renews the Node locks this process holds before each command it runs, on a Node over SSH or on the
@@ -13,7 +14,7 @@ use App\Infrastructure\Nodes\NodeLocks;
 final readonly class LockRenewingProcessRunner implements ProcessRunner
 {
     public function __construct(
-        private ProcessRunner $runner,
+        #[Give(NativeProcessRunner::class)] private ProcessRunner $runner,
         private NodeLocks $locks,
     ) {}
 

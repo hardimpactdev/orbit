@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Transfer;
 
+use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
 use App\Models\Instance;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeInstanceTransferRuntime::class)]
 interface InstanceTransferRuntime
 {
     public function pause(Instance $instance): void;

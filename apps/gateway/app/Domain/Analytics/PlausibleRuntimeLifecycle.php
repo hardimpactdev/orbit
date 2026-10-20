@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Container\Attributes\Bind;
 use SensitiveParameter;
 
 /** Keeps the one `plausible` Process of the analytics role's node at the intended specification. */
+#[Bind(NativePlausibleRuntimeLifecycle::class)]
 interface PlausibleRuntimeLifecycle
 {
     public function converge(

@@ -12,57 +12,18 @@ use App\Console\Commands\RenderTaskPromptCommand;
 use App\Console\Commands\TaskGitHubReviewsCommand;
 use App\Console\Commands\TickTaskSessionsCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\AgentSpawner;
-use App\Domain\Tasks\BriefCoverageLabeler;
-use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
-use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskAgentSpawner;
-use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
-use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskPullRequestCheckOutput;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Domain\Tasks\TaskPullRequestReviewWatcher;
-use App\Domain\Tasks\TaskPullRequestUpdater;
-use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
-use App\Domain\Tasks\TaskTurnReceipts;
-use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
-use App\Domain\Tasks\TaskWorkspaceRoute;
-use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\ModelKeyIssuer;
-use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
-use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
-use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
-use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
-use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
-use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
-use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
-use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
-use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
-use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
-use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -72,30 +33,16 @@ use Illuminate\Support\Facades\Route;
 /** The tasks extension. Its code is still in core ([Extensions](/reference/extensions#the-extensions)). */
 final class TasksServiceProvider extends ExtensionServiceProvider
 {
-    /** @var array<class-string, class-string> */
+    /**
+     * The other Tasks interfaces declare their implementation with #[Bind]. These three move to #[Bind] after the
+     * handoff CI change (#1399), which edits the same files.
+     *
+     * @var array<class-string, class-string>
+     */
     public array $bindings = [
-        InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
-        TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
-        TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
-        AgentSpawner::class => TaskAgentSpawner::class,
-        TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
-        TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
-        TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
-        TaskReviewDiff::class => RemoteTaskReviewDiff::class,
-        TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
-        TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
-        DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
-        TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
-        BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
-        TaskPullRequestCheckOutput::class => GitHubTaskPullRequestCheckOutput::class,
         TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
-        TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
-        TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
-        TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
-        TaskPullRequestUpdater::class => HttpTaskPullRequestWatcher::class,
-        TaskPullRequestReviewWatcher::class => HttpTaskPullRequestWatcher::class,
     ];
 
     #[\Override]
@@ -130,14 +77,13 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
-        $this->app->bind(TaskWorkspaceOperationRecovery::class, RemoteWorkspaceOperationJournal::class);
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
-        $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class), $app->make(TaskCheckOutputBuilder::class)));
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
+        // Constructors give these a default, so they stay bound here (see ApplicationServiceProvider).
         $this->app->singleton(TaskBroadcasts::class);
         $this->app->singleton(TaskTurnFetchNotice::class);
     }

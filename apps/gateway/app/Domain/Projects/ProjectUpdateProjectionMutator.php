@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects;
 
+use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\Project;
 use Closure;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeProjectUpdateProjectionMutator::class)]
 interface ProjectUpdateProjectionMutator
 {
     /**

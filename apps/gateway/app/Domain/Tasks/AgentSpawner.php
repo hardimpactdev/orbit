@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Task;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Starts agent conversations on the Node that owns the group's Instance.
@@ -13,6 +14,7 @@ use App\Models\Task;
  * implementer per subtask and a fresh reviewer for that subtask's first review,
  * then continues that reviewer on a later handoff of the same subtask.
  */
+#[Bind(TaskAgentSpawner::class)]
 interface AgentSpawner
 {
     public function reserveReviewer(Task $task): ?int;

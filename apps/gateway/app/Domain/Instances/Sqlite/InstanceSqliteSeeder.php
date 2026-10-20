@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Sqlite;
 
+use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
+use Illuminate\Container\Attributes\Bind;
 use SensitiveParameter;
 
+#[Bind(RemoteInstanceSqliteSeeder::class)]
 interface InstanceSqliteSeeder
 {
     public function seed(

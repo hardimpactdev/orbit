@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
+use Illuminate\Container\Attributes\Bind;
 use InvalidArgumentException;
 
 /**
@@ -15,6 +17,7 @@ use InvalidArgumentException;
  * branch's own commits never ship. There is no answer without a deployed commit: descent from it
  * is what rules out a downgrade, so the first release of a target is deployed by hand.
  */
+#[Bind(GitHubGreenCommitResolver::class)]
 interface GreenCommitResolver
 {
     /**

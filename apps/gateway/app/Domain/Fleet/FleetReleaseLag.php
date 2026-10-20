@@ -9,6 +9,7 @@ use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
 
 /**
  * Whether a Node of the rollout set runs behind the desired fleet state: the catch-up's selection and
@@ -22,7 +23,7 @@ final readonly class FleetReleaseLag
         private FleetRolloutMembership $membership,
         private NodeFootprint $footprint,
         private AgentReportedVersions $versions,
-        private bool $enabled,
+        #[Config('fleet.rollout')] private bool $enabled,
     ) {}
 
     /**

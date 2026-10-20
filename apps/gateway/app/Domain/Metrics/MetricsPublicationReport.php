@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use Illuminate\Container\Attributes\Scoped;
+
 /**
  * Carries what the Metrics baseline did to the publication out to the caller.
  *
@@ -16,6 +18,7 @@ namespace App\Domain\Metrics;
  *
  * The recorder is shared for one request and is deliberately not readonly.
  */
+#[Scoped]
 final class MetricsPublicationReport
 {
     private ?MetricsPublicationCleanup $outcome = null;

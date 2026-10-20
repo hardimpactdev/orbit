@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Infrastructure\Analytics\NativeAnalyticsSecretManager;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeAnalyticsSecretManager::class)]
 interface AnalyticsSecretManager
 {
     /** Plausible's `SECRET_KEY_BASE`: generated once, then the same on every converge, so sessions survive a replaced Process. */

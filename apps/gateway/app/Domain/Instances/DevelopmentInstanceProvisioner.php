@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeDevelopmentInstanceProvisioner::class)]
 interface DevelopmentInstanceProvisioner
 {
     public function reserve(Instance $instance, ?string $domain): void;

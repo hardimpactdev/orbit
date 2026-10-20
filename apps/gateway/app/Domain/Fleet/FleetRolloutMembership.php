@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\TaskVm;
+use Illuminate\Container\Attributes\Config;
 
 /**
  * Which Nodes the fleet rollout visits, and in which order (ADR 0202).
@@ -63,7 +64,7 @@ final readonly class FleetRolloutMembership
     public function __construct(
         private ManagedNodeEligibility $eligibility,
         private GatewayServingHost $servingHost,
-        private array $order = [],
+        #[Config('fleet.order')] private array $order = [],
         private NodeCliState $cli = new NodeCliState,
     ) {}
 

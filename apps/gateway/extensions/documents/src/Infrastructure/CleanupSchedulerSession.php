@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Documents\Infrastructure;
 
 use App\Domain\Shared\ResourceOperationException;
+use Illuminate\Container\Attributes\Singleton;
 use Throwable;
 
 /** Recognizes recurring ticks of a live scheduler; never authorizes document deletion. */
+#[Singleton]
 final class CleanupSchedulerSession
 {
     public const string ENVIRONMENT_VARIABLE = 'ORBIT_DOCUMENT_SCHEDULER_SESSION';

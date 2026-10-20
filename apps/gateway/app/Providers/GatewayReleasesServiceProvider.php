@@ -26,15 +26,12 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
-use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
-use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
@@ -56,25 +53,16 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
-use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
-use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
-use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
-use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
-use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
-use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
-use App\Infrastructure\GatewayReleases\NativeGatewayReleaseUnitConverger;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseDrain;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
-use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use Illuminate\Contracts\Foundation\Application;
@@ -87,30 +75,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bind(GatewayReleaseExecutionOwner::class, NativeGatewayReleaseExecutionOwner::class);
+        // What stays here is a factory with logic, or an abstract that a constructor gives a default (see
+        // ApplicationServiceProvider). The other release classes declare their wiring with container attributes.
         $this->app->bind(GatewayReleaseDrain::class, SystemdGatewayReleaseDrain::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
-        $this->app->bind(
-            GatewayReleaseWebBuild::class,
-            static fn (Application $app): GitHubArtifactWebBuild => new GitHubArtifactWebBuild(
-                layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
-                actions: $app->make(GitHubActionsReader::class),
-                webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
-            ),
-        );
-        $this->app->bind(
-            ScriptGatewayReleaseSmoke::class,
-            static fn (Application $app): ScriptGatewayReleaseSmoke => new ScriptGatewayReleaseSmoke(
-                layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
-                origin: rtrim(Config::string('orbit.gateway_verify_origin'), '/'),
-                webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
-                timeoutSeconds: Config::integer('orbit.gateway_release_smoke_timeout'),
-                writeCheckProject: Config::string('orbit.gateway_release_smoke_project'),
-            ),
-        );
-        $this->app->bind(GatewayReleaseSmoke::class, ScriptGatewayReleaseSmoke::class);
         $this->app->bind(
             GatewayReleaseDatabase::class,
             static fn (Application $app): SqliteGatewayReleaseDatabase => new SqliteGatewayReleaseDatabase(
@@ -176,31 +144,11 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             ),
         );
         $this->app->bind(
-            GatewayReleaseVerifier::class,
-            static fn (): HttpGatewayReleaseVerifier => new HttpGatewayReleaseVerifier(
-                origin: rtrim(Config::string('orbit.gateway_verify_origin'), '/'),
-            ),
-        );
-        $this->app->bind(
-            GatewayReleaseSwitcher::class,
-            static fn (Application $app): GatewayReleaseSwitcher => new GatewayReleaseSwitcher(
-                $app->make(GatewayReleaseLayout::class),
-                $app->make(ProcessRunner::class),
-            ),
-        );
-        $this->app->bind(
             GatewayReleaseSource::class,
             static fn (Application $app): GatewayReleaseSource => new GatewayReleaseSource(
                 processes: $app->make(ProcessRunner::class),
                 branch: Config::string('orbit.gateway_releases.branch'),
                 checkName: Config::string('orbit.gateway_releases.check'),
-            ),
-        );
-        $this->app->bind(
-            GatewayReleaseSupersession::class,
-            static fn (Application $app): GatewayReleaseSupersession => new GatewayReleaseSupersession(
-                source: $app->make(GatewayReleaseSource::class),
-                resolver: $app->make(GreenCommitResolver::class),
             ),
         );
         $this->app->bind(
@@ -220,31 +168,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 pauseMarker: rtrim(Config::string('orbit.home'), '/').'/gateway-release.paused',
             ),
         );
-        $this->app->bind(
-            GatewayReleaseUnitConverger::class,
-            static fn (Application $app): NativeGatewayReleaseUnitConverger => new NativeGatewayReleaseUnitConverger($app->make(ProcessRunner::class)),
-        );
-        $this->app->bind(
-            GatewayReleaseUnitStarter::class,
-            static fn (Application $app): SystemdGatewayReleaseUnitStarter => new SystemdGatewayReleaseUnitStarter($app->make(ProcessRunner::class)),
-        );
-        $this->app->bind(
-            GatewayReleasePromoter::class,
-            static fn (Application $app): GatewayReleasePromoter => new GatewayReleasePromoter(
-                layout: $app->make(GatewayReleaseLayout::class),
-                switcher: $app->make(GatewayReleaseSwitcher::class),
-                runtime: $app->make(GatewayReleaseRuntime::class),
-                verifier: $app->make(GatewayReleaseVerifier::class),
-                web: $app->make(GatewayReleaseWebBuild::class),
-                smoke: $app->make(GatewayReleaseSmoke::class),
-                recorder: $app->make(GatewayReleaseRecorder::class),
-                builder: $app->make(GatewayReleaseBuilder::class),
-                keptReleases: Config::integer('orbit.gateway_releases.keep'),
-                retry: $app->make(GatewayReleaseRetry::class),
-                fleet: $app->make(FleetConvergeUnits::class),
-                ticks: $app->make(GatewayReleaseTickConfirmation::class),
-            ),
-        );
+        $this->app->bind(GatewayReleaseUnitStarter::class, SystemdGatewayReleaseUnitStarter::class);
         $this->app->bind(
             GatewayReleaseTickConfirmation::class,
             static fn (Application $app): GatewayReleaseTickConfirmation => new GatewayReleaseTickConfirmation(

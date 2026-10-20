@@ -13,6 +13,7 @@ use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\GitHub\GitHubActionsUnavailable;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 use ZipArchive;
 
 /**
@@ -50,7 +51,7 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         private readonly GatewayReleaseLayout $layout,
         private readonly ProcessRunner $processes,
         private readonly GitHubActionsReader $actions,
-        private readonly string $webRoot,
+        #[Config('orbit.gateway_web')] private readonly string $webRoot,
         private readonly string $group = 'caddy',
         private readonly string $branch = 'main',
         private readonly string $workflow = '.github/workflows/ci.yml',

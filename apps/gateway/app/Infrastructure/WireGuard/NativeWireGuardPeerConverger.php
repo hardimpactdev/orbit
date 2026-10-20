@@ -12,7 +12,9 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Closure;
+use Illuminate\Container\Attributes\Singleton;
 
+#[Singleton]
 final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
 {
     /** @var list<positive-int> */

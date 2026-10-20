@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Infrastructure\Analytics\NativeAnalyticsTrackingRouteProjector;
 use App\Models\Route;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Publishes a tracking host on the Node that serves it: its cluster's Router, or its own Node when
  * the host is Node-scoped. The certificate, the Caddy site, and the private DNS record.
  */
+#[Bind(NativeAnalyticsTrackingRouteProjector::class)]
 interface AnalyticsTrackingRouteProjector
 {
     public function converge(Route $route): void;

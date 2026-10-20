@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
 /** The verify step of a fleet rollout Node: a Doctor baseline before the steps and the check after them. */
+#[Bind(FleetNodeVerifier::class)]
 interface FleetNodeVerification
 {
     /** @return list<string> */

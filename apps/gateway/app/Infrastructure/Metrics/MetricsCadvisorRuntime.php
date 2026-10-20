@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Converges one Node's cAdvisor binary, unit, and firewall rule.
@@ -15,6 +16,7 @@ use App\Models\Node;
  * this executor already fails closed on (see `MetricsCadvisorSshExecutor::guardOwnership()`) is
  * the whole of it.
  */
+#[Bind(MetricsCadvisorSshExecutor::class)]
 interface MetricsCadvisorRuntime
 {
     public function snapshot(Node $node, Node $metricsNode): MetricsExporterState;

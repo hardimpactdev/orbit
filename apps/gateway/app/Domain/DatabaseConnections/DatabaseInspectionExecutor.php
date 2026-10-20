@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseConnections;
 
+use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Models\DatabaseConnection;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RegisteredDatabaseInspectionExecutor::class)]
 interface DatabaseInspectionExecutor
 {
     public function query(DatabaseConnection $connection, string $sql, bool $write): DatabaseQueryResult;

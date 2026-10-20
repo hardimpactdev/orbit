@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
 use Carbon\CarbonInterface;
+use Illuminate\Container\Attributes\Bind;
 
 /** Prepare a subtask's declared topology before each turn that Orbit prepares for it, and read its evidence. */
+#[Bind(TaskVmTopologyAdmission::class)]
 interface TaskTopologyAdmission
 {
     /**

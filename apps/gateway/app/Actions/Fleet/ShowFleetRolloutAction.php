@@ -11,13 +11,14 @@ use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Models\FleetRollout;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class ShowFleetRolloutAction
 {
     public function __construct(
         private FleetRolloutMembership $membership,
         private DesiredFleetState $desired,
-        private bool $enabled,
+        #[Config('fleet.rollout')] private bool $enabled,
     ) {}
 
     public function execute(): FleetRolloutStatusData

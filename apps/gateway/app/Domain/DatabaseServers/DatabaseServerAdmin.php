@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Models\DatabaseServer;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Runs admin commands as MySQL root inside a Database server's container. The root password
  * travels only on protected standard input. A failed command throws
  * `database.server_command_failed` without SQL output.
  */
+#[Bind(RemoteDatabaseServerAdmin::class)]
 interface DatabaseServerAdmin
 {
     /** Wait until MySQL accepts the root login over TCP inside the container. */

@@ -21,8 +21,11 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Config;
+use Illuminate\Container\Attributes\Singleton;
 use Throwable;
 
+#[Singleton]
 final readonly class BootstrapGatewayAction
 {
     /** @var list<RoleName> */
@@ -39,7 +42,7 @@ final readonly class BootstrapGatewayAction
         private GatewayWebConverger $web,
         private GatewaySelfAccessConverger $selfAccess,
         private PrivateDnsManager $dns,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
         private ?GatewayServingHost $servingHost = null,
     ) {}
 

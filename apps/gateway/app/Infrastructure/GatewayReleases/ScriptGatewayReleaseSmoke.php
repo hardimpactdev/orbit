@@ -13,6 +13,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Container\Attributes\Config;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
 /**
@@ -46,10 +47,10 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
     public function __construct(
         private GatewayReleaseLayout $layout,
         private ProcessRunner $processes,
-        private string $origin,
-        private string $webRoot,
-        private int $timeoutSeconds = 90,
-        private ?string $writeCheckProject = null,
+        #[Config('orbit.gateway_verify_origin')] private string $origin,
+        #[Config('orbit.gateway_web')] private string $webRoot,
+        #[Config('orbit.gateway_release_smoke_timeout')] private int $timeoutSeconds = 90,
+        #[Config('orbit.gateway_release_smoke_project')] private ?string $writeCheckProject = null,
         private string $caFile = '/etc/caddy/orbit-cert-current/root-ca.pem',
         private int $graceSeconds = self::GraceSeconds,
     ) {}

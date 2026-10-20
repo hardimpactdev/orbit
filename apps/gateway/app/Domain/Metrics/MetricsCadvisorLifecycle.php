@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Infrastructure\Metrics\NativeMetricsCadvisorLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Converges cAdvisor across the same fleet `MetricsExporterLifecycle` converges the node exporter
@@ -13,6 +15,7 @@ use App\Models\NodeRole;
  * exporter does, so `PrometheusConfigRenderer` reuses `MetricsExporterLifecycle::targets()` and
  * just scrapes a second port. There is no `actual()`: nothing surfaces per-node cAdvisor status.
  */
+#[Bind(NativeMetricsCadvisorLifecycle::class)]
 interface MetricsCadvisorLifecycle
 {
     public function converge(Node $node, NodeRole $assignment): void;

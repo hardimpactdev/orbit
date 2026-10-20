@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * The tracked and untracked diff of a subtask since its start commit (ADR 0169).
@@ -14,6 +16,7 @@ use App\Models\Instance;
  * When the captured output is cut, files_complete and diff_available are false and summary still
  * holds the full counts.
  */
+#[Bind(RemoteTaskReviewDiff::class)]
 interface TaskReviewDiff
 {
     /**

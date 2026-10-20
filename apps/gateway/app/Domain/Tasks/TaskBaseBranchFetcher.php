@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Models\Task;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Fetches remote-tracking refs before a turn and prepares a resumed workspace (ADR 0164).
  */
+#[Bind(GitHubTaskBaseBranchFetcher::class)]
 interface TaskBaseBranchFetcher
 {
     /**

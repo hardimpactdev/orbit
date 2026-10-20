@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Assigns the one Instance that a task group shares.
@@ -18,6 +20,7 @@ use App\Models\Instance;
  * A typed failure carries the cause; a null result means no cause is available.
  * A wait throws TaskCapacityException instead, and a failed task VM throws TaskVmFailedException.
  */
+#[Bind(TaskWorkspaceProvisioner::class)]
 interface InstanceProvisioning
 {
     /** @throws TaskCapacityException when every Node that could host the group is at the task ceiling. */

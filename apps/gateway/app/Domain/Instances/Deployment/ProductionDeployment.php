@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteProductionDeployment::class)]
 interface ProductionDeployment
 {
     /**

@@ -2,10 +2,13 @@
 
 namespace App\Domain\Instances\Transfer;
 
+use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Route;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeDevelopmentRouteProjector::class)]
 interface InstanceTransferRouteProjector
 {
     /**

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\WebSocket;
 
+use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeWebSocketPublicationManager::class)]
 interface WebSocketPublicationManager
 {
     public function converge(Node $node): void;

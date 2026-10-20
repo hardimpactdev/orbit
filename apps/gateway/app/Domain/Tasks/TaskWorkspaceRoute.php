@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Task;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Finishes the Route of a task workspace that {@see InstanceProvisioning} returned before its Route was active. A
@@ -12,6 +14,7 @@ use App\Models\Task;
  * packages, not the Route. The scheduler finishes the Route after the check started, and again before any work that
  * uses it: the implementer and the final review.
  */
+#[Bind(TaskWorkspaceProvisioner::class)]
 interface TaskWorkspaceRoute
 {
     /** Whether the group's workspace is routed and its Route is not active yet. */

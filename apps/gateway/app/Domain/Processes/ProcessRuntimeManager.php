@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
+use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Models\Process;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteProcessRuntimeManager::class)]
 interface ProcessRuntimeManager
 {
     /** Refuse a desired-running admission before the Process row or runtime changes. */

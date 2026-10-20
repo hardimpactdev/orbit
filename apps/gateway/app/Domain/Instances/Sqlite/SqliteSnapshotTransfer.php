@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Sqlite;
 
+use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
+use Illuminate\Container\Attributes\Bind;
+
+#[Bind(ProtectedSqliteSnapshotTransfer::class)]
 interface SqliteSnapshotTransfer
 {
     public function transfer(

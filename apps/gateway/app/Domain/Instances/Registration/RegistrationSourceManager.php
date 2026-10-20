@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Registration;
 
+use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Models\Instance;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteRegistrationSourceManager::class)]
 interface RegistrationSourceManager
 {
     /** @return list<RegistrationSourceFacts> */

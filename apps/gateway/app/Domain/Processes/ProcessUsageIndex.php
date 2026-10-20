@@ -6,6 +6,7 @@ namespace App\Domain\Processes;
 
 use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
 use App\Models\Process;
+use Illuminate\Container\Attributes\Bind;
 use Illuminate\Support\Collection;
 
 /**
@@ -15,6 +16,7 @@ use Illuminate\Support\Collection;
  *
  * @see PrometheusProcessUsageIndex
  */
+#[Bind(PrometheusProcessUsageIndex::class)]
 interface ProcessUsageIndex
 {
     /**

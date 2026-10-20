@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\GatewayReleases;
 
+use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
+use Illuminate\Container\Attributes\Bind;
+
 /**
  * The web app build that ships with a Gateway release. Prepare installs it before anything goes
  * live, so a missing build fails the prepare. Activation publishes it only after the Gateway
  * release verified, and restores the build that was current before when the release switches back.
  * Pruning a Gateway release removes its web build too, and a build that belongs to no retained release.
  */
+#[Bind(GitHubArtifactWebBuild::class)]
 interface GatewayReleaseWebBuild
 {
     /**

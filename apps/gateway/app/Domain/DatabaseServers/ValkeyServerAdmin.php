@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Models\DatabaseServer;
+use Illuminate\Container\Attributes\Bind;
 use SensitiveParameter;
 
 /**
@@ -13,6 +15,7 @@ use SensitiveParameter;
  * Valkey only as its SHA-256 hash. A rule that Valkey refuses throws `database.acl_rules_invalid` with Valkey's message;
  * every other failure throws `database.server_command_failed` without output.
  */
+#[Bind(PredisValkeyServerAdmin::class)]
 interface ValkeyServerAdmin
 {
     /** Wait until `default` can log in with the admin password. */

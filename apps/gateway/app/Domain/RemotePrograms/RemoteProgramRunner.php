@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Domain\RemotePrograms;
 
 use App\Domain\GitHub\GitReadEnvironment;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Models\Node;
 use Closure;
+use Illuminate\Container\Attributes\Bind;
 use SensitiveParameter;
 
 /**
  * Runs a remote program on a Node and returns its declared outcome. Callers never see the transport.
  */
+#[Bind(SshProgramRunner::class)]
 interface RemoteProgramRunner
 {
     /**

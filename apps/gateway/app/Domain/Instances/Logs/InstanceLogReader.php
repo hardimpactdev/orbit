@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Logs;
 
+use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteInstanceLogReader::class)]
 interface InstanceLogReader
 {
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Models\TaskVm;
+use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Log;
  * with {@see step()}, which does nothing while no clock runs. The binding is scoped, so each job starts
  * with a stopped clock. It reads the app clock, so a test that freezes time gets exact seconds.
  */
+#[Scoped]
 final class TaskVmStepClock
 {
     private ?string $vm = null;

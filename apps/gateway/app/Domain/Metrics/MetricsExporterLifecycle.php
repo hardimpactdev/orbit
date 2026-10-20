@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeMetricsExporterLifecycle::class)]
 interface MetricsExporterLifecycle
 {
     public function converge(Node $node, NodeRole $assignment): void;

@@ -12,6 +12,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Shared\StoredValue;
+use Illuminate\Container\Attributes\Config;
 use RuntimeException;
 use Throwable;
 
@@ -25,7 +26,7 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
         private string $orbitHome = '',
         private string $workingDirectory = '',
         private string $user = 'orbit',
-        private int $sweepSeconds = RuntimeHibernation::DefaultSweepSeconds,
+        #[Config('orbit.hibernation.sweep_seconds')] private int $sweepSeconds = RuntimeHibernation::DefaultSweepSeconds,
     ) {}
 
     public function converge(): void

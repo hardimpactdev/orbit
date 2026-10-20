@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * ADR 0178 and ADR 0169: gives a task workspace Orbit MCP at `/mcp/search`, whatever MCP the Node's agent is configured with.
  */
+#[Bind(RemoteTaskWorkspaceMcp::class)]
 interface TaskWorkspaceMcp
 {
     /**

@@ -6,18 +6,11 @@ namespace Orbit\Extensions\Conn;
 
 use App\Domain\Activity\ActivityInputRedaction;
 use App\Providers\ExtensionServiceProvider;
-use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Infrastructure\ConnActivityInputRedaction;
-use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
 
 /** The conn extension: Conn devices, shared profiles, and T3 server pairing ([Conn layer](/reference/conn)). */
 final class ConnServiceProvider extends ExtensionServiceProvider
 {
-    /** @var array<class-string, class-string> */
-    public array $bindings = [
-        T3ServerClient::class => HttpT3ServerClient::class,
-    ];
-
     public function name(): string
     {
         return 'conn';

@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use Closure;
+use Illuminate\Container\Attributes\Bind;
+use Illuminate\Container\Attributes\Scoped;
 
+#[Bind(NativeToolManagerScopeLock::class)]
+#[Scoped]
 interface ToolManagerScopeLock
 {
     /**

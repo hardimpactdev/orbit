@@ -6,13 +6,16 @@ namespace App\Domain\Nodes;
 
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\SshNodeCliInstaller;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Installs the Orbit CLI on a managed Linux Node when it is missing and configures its Gateway
  * connection with the Node's identity (ADR 0202). Provisioning, role converge, and the fleet rollout
  * use the same step.
  */
+#[Bind(SshNodeCliInstaller::class)]
 interface NodeCliInstaller
 {
     /**

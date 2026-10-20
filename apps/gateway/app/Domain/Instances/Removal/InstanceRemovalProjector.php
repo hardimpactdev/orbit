@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Removal;
 
+use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Models\InstanceRemovalMember;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeInstanceRemovalProjector::class)]
 interface InstanceRemovalProjector
 {
     public function clearRouteTarget(InstanceRemovalMember $member): string;

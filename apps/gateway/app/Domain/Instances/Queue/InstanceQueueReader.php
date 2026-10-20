@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Queue;
 
+use App\Infrastructure\Instances\RemoteInstanceQueueReader;
 use App\Models\Process;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(RemoteInstanceQueueReader::class)]
 interface InstanceQueueReader
 {
     /**

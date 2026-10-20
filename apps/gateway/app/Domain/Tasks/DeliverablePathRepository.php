@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Models\Instance;
 use App\Models\Project;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeDeliverablePathRepository::class)]
 interface DeliverablePathRepository
 {
     public function defaultBranchCommit(Project $project): string;

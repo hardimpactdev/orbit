@@ -13,6 +13,7 @@ use App\Infrastructure\Files\AtomicSymlinkPublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 use InvalidArgumentException;
 use Throwable;
 
@@ -24,7 +25,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         private ProcessRunner $processes,
         private OpenSslGatewayCertificateValidator $validator,
         private AtomicSymlinkPublisher $links,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
     ) {}
 
     public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths

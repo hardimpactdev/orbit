@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Removal;
 
+use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Models\InstanceRemovalMember;
+use Illuminate\Container\Attributes\Bind;
+use Illuminate\Container\Attributes\Singleton;
 
+#[Bind(RemoteDevelopmentInstanceSourceRemoval::class)]
+#[Singleton]
 interface DevelopmentInstanceSourceFinalizer
 {
     public function prepare(

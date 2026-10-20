@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 
 /**
  * Prepares the web app release directory that the Gateway site serves. Releases arrive through
@@ -18,7 +19,7 @@ final readonly class GatewayWebDirectoryConverger
 {
     public function __construct(
         private ProcessRunner $processes,
-        private string $webRoot,
+        #[Config('orbit.gateway_web')] private string $webRoot,
     ) {}
 
     public function converge(): void

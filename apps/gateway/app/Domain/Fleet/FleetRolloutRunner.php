@@ -12,6 +12,7 @@ use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\Node;
 use App\Models\NodeFootprint as NodeFootprintRecord;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Support\Carbon;
 use Throwable;
 
@@ -47,7 +48,7 @@ final readonly class FleetRolloutRunner
         private FleetReleaseLag $lag,
         private FleetRolloutAlerts $alerts,
         private NodeLocks $locks,
-        private bool $enabled,
+        #[Config('fleet.rollout')] private bool $enabled,
         private FleetServingRelease $serving,
         private FleetConvergeUnits $units,
         private NodeUpdateBroadcaster $nodeUpdates,

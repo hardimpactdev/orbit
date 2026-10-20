@@ -9,6 +9,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Closure;
+use Illuminate\Container\Attributes\Config;
 use RuntimeException;
 
 final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSigner
@@ -21,7 +22,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
     /** @param null|(Closure(): int) $clock */
     public function __construct(
         private ProcessRunner $processes,
-        private string $orbitHome,
+        #[Config('orbit.home')] private string $orbitHome,
         ?Closure $clock = null,
     ) {
         $this->clock = $clock ?? time(...);

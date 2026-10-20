@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Requests a Node Caddy build (ADR 0141). Every publisher commits its state change first, outside any
  * database transaction, and then requests a build for each Node whose sites changed.
  */
+#[Bind(NodeCaddyBuilder::class)]
 interface NodeCaddyBuilds
 {
     /**

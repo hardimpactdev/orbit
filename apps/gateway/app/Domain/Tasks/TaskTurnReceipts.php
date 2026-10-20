@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Places the turn command in a task workspace and reads the receipt an agent writes with it.
  */
+#[Bind(RemoteTaskTurnReceipts::class)]
 interface TaskTurnReceipts
 {
     /**

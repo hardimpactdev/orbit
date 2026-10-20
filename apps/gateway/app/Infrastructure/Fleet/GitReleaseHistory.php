@@ -8,6 +8,7 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 use Throwable;
 
 /**
@@ -20,7 +21,7 @@ final readonly class GitReleaseHistory implements ReleaseHistory
 
     public function __construct(
         private ProcessRunner $processes,
-        private string $directory,
+        #[Config('orbit.cli_releases.git_directory')] private string $directory,
     ) {}
 
     public function commit(string $revision): ?string

@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Closure;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class GatewayCheckoutAccessConverger
 {
@@ -22,7 +23,7 @@ final readonly class GatewayCheckoutAccessConverger
      */
     public function __construct(
         private ProcessRunner $processes,
-        private string $checkoutPath,
+        #[Config('orbit.gateway_checkout')] private string $checkoutPath,
         ?Closure $currentRelease = null,
     ) {
         $this->currentRelease = $currentRelease ?? static fn (string $checkout): ?string => new GatewayReleaseLayout($checkout)->currentReleaseId();

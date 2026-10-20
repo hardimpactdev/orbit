@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Models\Route;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Withdraws a Route's projections. Each Node-side step leaves the Nodes in `$skippedNodeIds` alone, so
  * an offline removal changes nothing on a Node it cannot reach.
  */
+#[Bind(NativeRouteRemovalProjector::class)]
 interface RouteRemovalProjector
 {
     /**

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use App\Infrastructure\GitHub\GitHubBranchHeadReader;
+use Illuminate\Container\Attributes\Bind;
+
 /** Reads the commit a branch points at now. */
+#[Bind(GitHubBranchHeadReader::class)]
 interface BranchHeadReader
 {
     /**

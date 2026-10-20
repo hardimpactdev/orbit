@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Models\TaskVm;
+use Illuminate\Container\Attributes\Bind;
 
 /**
  * Creates and removes task VMs on one kind of compute host, and runs the fixed guest commands in them. Every method
  * is idempotent by `$vm->name`. The implementation validates the output of its host, and `TaskVmGuest` the output
  * of the guest commands.
  */
+#[Bind(TaskVmProviders::class)]
 interface TaskVmProvider
 {
     /** Create the VM with this cloud-init user-data. An existing VM with the name counts as created. */

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Models\Instance;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(SynchronizeInstanceEnvironmentAction::class)]
 interface InstanceEnvironmentSynchronizer
 {
     public function execute(Instance $instance): InstanceEnvironmentResult;

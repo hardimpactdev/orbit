@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Infrastructure\Fleet\GitReleaseHistory;
+use Illuminate\Container\Attributes\Bind;
+
 /** The Gateway's own Git history, which maps its commit to a CLI release number. */
+#[Bind(GitReleaseHistory::class)]
 interface ReleaseHistory
 {
     /** The full SHA of the commit that a hexadecimal revision names, or null when the history cannot resolve it. */

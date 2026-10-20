@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Models\Node;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(\App\Infrastructure\Metrics\MetricsPublicationManager::class)]
 interface MetricsPublicationManager
 {
     public function converge(Node $gateway, Node $metrics): void;

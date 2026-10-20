@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Container\Attributes\Bind;
 
+#[Bind(NativeMetricsContainerRuntime::class)]
 interface MetricsRuntimeLifecycle
 {
     public function converge(Node $node, NodeRole $assignment): void;
