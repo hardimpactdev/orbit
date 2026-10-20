@@ -195,7 +195,7 @@ The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP
 
 The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change.
 
-Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run. Jobs that run directly on the host use the same uutils coreutils as a Node; the Web job uses the Playwright container's tools.
+Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use the same uutils coreutils as a Node.
 
 ### Gateway shards
 
