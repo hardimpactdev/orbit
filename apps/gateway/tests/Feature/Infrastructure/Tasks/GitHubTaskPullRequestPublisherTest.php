@@ -259,186 +259,20 @@ it('refuses an incoming pull request branch that is not a valid branch name', fu
     Queue::assertNothingPushed();
 });
 
-/**
- * GitHub with pull request #12 for the task branch: a new open answers 422, and the list finds #12. GraphQL answers
- * each draft mutation with the state it asked for, or refuses it.
- */
-function publisher_github_draft(bool $conflicting = false, bool $mutates = true, bool $draft = true, string $state = 'open'): void
-{
-    Http::fake([
-        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
-        'https://api.github.com/repos/acme/shop/pulls?*' => Http::response([[
-            'html_url' => 'https://github.com/acme/shop/pull/12', 'number' => 12, 'user' => ['login' => 'orbit-bot'],
-            'state' => $state, 'draft' => $draft, 'node_id' => 'PR_kwDOdraft12',
-        ]]),
-        'https://api.github.com/repos/acme/shop/pulls' => Http::response(['message' => 'A pull request already exists'], 422),
-        'https://api.github.com/repos/acme/shop/pulls/12' => static fn (Request $request) => $request->method() === 'PATCH' ? Http::response([]) : Http::response([
-            'state' => $state, 'merged' => false, 'mergeable' => ! $conflicting, 'mergeable_state' => $conflicting ? 'dirty' : 'clean',
-            'head' => ['sha' => str_repeat('a', 40)], 'base' => ['ref' => 'main'], 'body' => 'Draft', 'draft' => $draft, 'node_id' => 'PR_kwDOdraft12',
-        ]),
-        'https://api.github.com/graphql' => static function (Request $request) use ($mutates) {
-            $mutation = str_contains((string) $request['query'], 'convertPullRequestToDraft') ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
-
-            return Http::response($mutates
-                ? ['data' => [$mutation => ['pullRequest' => ['isDraft' => $mutation === 'convertPullRequestToDraft']]]]
-                : ['errors' => [['message' => 'Resource not accessible by integration']]]);
-        },
-    ]);
-}
-
-/** The GraphQL draft mutations GitHub received, in order. @return list<string> */
-function publisher_draft_mutations(): array
-{
-    return array_values(array_map(
-        static fn (array $sent): string => str_contains((string) $sent[0]['query'], 'convertPullRequestToDraft') ? 'draft' : 'ready',
-        Http::recorded(static fn (Request $request): bool => $request->url() === 'https://api.github.com/graphql')->all(),
-    ));
-}
-
-it('opens a draft for the handoff commit and reports the pull request that runs its CI', function (): void {
+it('pushes a handoff commit once to task-{id}-handoff, also for an incoming pull request, and touches no pull request', function (?string $incoming): void {
     GitHubTestSupport::storeApp();
-    Http::fake([
-        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
-        'https://api.github.com/repos/acme/shop/pulls' => Http::response([
-            'html_url' => 'https://github.com/acme/shop/pull/11', 'number' => 11, 'user' => ['login' => 'orbit-bot'], 'draft' => true, 'node_id' => 'PR_11',
-        ], 201),
-    ]);
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    publisher_pushed($group, str_repeat('a', 40));
-
-    expect(publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))->toBe(11)
-        ->and($group->fresh()?->pr_url)->toBeNull();
-    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
-        && $request['draft'] === true && $request['head'] === 'task-'.Task::topLevel()->sole()->id && $request['base'] === 'main');
-});
-
-it('makes the group\'s own pull request a draft before a handoff pushes unreviewed work to it', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft(draft: false);
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
-    publisher_pushed($group, str_repeat('a', 40));
-
-    expect(publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))->toBe(12)
-        ->and(publisher_draft_mutations())->toBe(['draft']);
-    Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls'));
-});
-
-it('pushes nothing for its own pull request that already merged', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft(draft: false, state: 'closed');
     Queue::fake();
     $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
+    $group->update(['pr_branch' => $incoming]);
+    $commit = str_repeat('a', 40);
 
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))
-        ->toThrow(TaskPullRequestException::class, 'is already closed');
-    expect(publisher_draft_mutations())->toBe([]);
-    Queue::assertNothingPushed();
-});
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->pushHandoff($group, $commit))
+        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit '.$commit.' to task-'.$group->id.'-handoff.');
+    Queue::assertPushed(PublishTaskVmCommit::class, static fn (PublishTaskVmCommit $job): bool => $job->commit === $commit && $job->branch === 'task-'.$group->id.'-handoff');
 
-it('publishes an incoming pull request\'s handoff on task-{id} with its own draft and never touches the author\'s pull request', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft(draft: false);
-    Queue::fake();
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12', 'pr_branch' => 'cursor/login-throttle']);
+    publisher_pushed($group, $commit, 'task-'.$group->id.'-handoff');
+    publisher(new AppDevFakeSshExecutor)->pushHandoff($group, $commit);
 
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit');
-    Queue::assertPushed(PublishTaskVmCommit::class, static fn (PublishTaskVmCommit $job): bool => $job->branch === 'task-'.$group->id);
-
-    publisher_pushed($group, str_repeat('a', 40));
-    expect(publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))->toBe(12)
-        ->and(publisher_draft_mutations())->toBe([]);
-    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
-        && $request['head'] === 'task-'.$group->id && $request['draft'] === true);
-    Http::assertNotSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/shop/pulls/12');
-
-    publisher_pushed($group, str_repeat('a', 40), 'cursor/login-throttle');
-    publisher(new AppDevFakeSshExecutor)->push($group, str_repeat('a', 40));
-    expect(publisher_draft_mutations())->toBe([]);
-});
-
-it('pushes a commit it pushed before again when the handoff asks for it', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft();
-    Queue::fake();
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    publisher_pushed($group, str_repeat('a', 40));
-
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40), again: true))
-        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit');
-    Queue::assertPushed(PublishTaskVmCommit::class, static fn (PublishTaskVmCommit $job): bool => $job->commit === str_repeat('a', 40) && $job->branch === 'task-'.$group->id);
-    Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls'));
-});
-
-it('waits for the push before it opens the draft', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft();
-    Queue::fake();
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))
-        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit');
-    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/pulls'));
-});
-
-it('publishes the task through the draft the handoffs opened instead of a second pull request', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft();
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    publisher_pushed($group, str_repeat('a', 40));
-
-    $url = publisher(new AppDevFakeSshExecutor)->publish($group, "Adds the export.\n", str_repeat('a', 40));
-
-    expect($url)->toBe('https://github.com/acme/shop/pull/12')
-        ->and(publisher_draft_mutations())->toBe(['ready']);
-    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PATCH' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls/12'
-        && $request->data() === ['title' => 'Export orders', 'body' => "Adds the export.\n"]);
-    Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/graphql' && $request['variables'] === ['id' => 'PR_kwDOdraft12']);
-    Http::assertSentCount(6);
-});
-
-it('fails the publication when GitHub keeps the pull request a draft', function (): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft(mutates: false);
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    publisher_pushed($group, str_repeat('a', 40));
-
-    expect(fn () => publisher(new AppDevFakeSshExecutor)->publish($group, 'Body', str_repeat('a', 40)))
-        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened');
-});
-
-it('makes the stored pull request ready again when it pushes an approved commit', function (bool $draft, array $mutations): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft(draft: $draft);
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
-    publisher_pushed($group, str_repeat('a', 40));
-
-    publisher(new AppDevFakeSshExecutor)->push($group, str_repeat('a', 40));
-
-    expect(publisher_draft_mutations())->toBe($mutations);
-})->with(['a draft from a handoff' => [true, ['ready']], 'a ready pull request' => [false, []]]);
-
-it('gives back the handoff draft: closes the one it opened on task-{id}, or makes its own pull request ready', function (bool $stored, ?string $incoming, int $closes, array $mutations): void {
-    GitHubTestSupport::storeApp();
-    publisher_github_draft();
-    $group = publisher_group('/srv/orbit/apps/shop/workspace');
-    $group->update(['pr_url' => $stored ? 'https://github.com/acme/shop/pull/12' : null, 'pr_branch' => $incoming]);
-
-    publisher(new AppDevFakeSshExecutor)->releaseHandoffDraft($group);
-
-    expect(Http::recorded(static fn (Request $request): bool => $request->method() === 'PATCH' && $request->data() === ['state' => 'closed'])->count())->toBe($closes)
-        ->and(publisher_draft_mutations())->toBe($mutations);
-    if ($closes > 0) {
-        Http::assertSent(static fn (Request $request): bool => str_starts_with($request->url(), 'https://api.github.com/repos/acme/shop/pulls?')
-            && $request['head'] === 'acme:task-'.$group->id);
-    }
-})->with([
-    'a draft the handoffs opened' => [false, null, 1, []],
-    'its own pull request a handoff made a draft' => [true, null, 0, ['ready']],
-    'an incoming pull request, whose author keeps their pull request' => [true, 'cursor/login-throttle', 1, []],
-]);
+    Queue::assertPushed(PublishTaskVmCommit::class, 1);
+    Http::assertNothingSent();
+})->with(['own branch' => [null], 'incoming pull request' => ['cursor/login-throttle']]);

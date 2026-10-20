@@ -36,23 +36,14 @@ interface TaskPullRequestMerger
     public function checkRuns(Task $group, string $sha): ?array;
 
     /**
-     * Every check suite on exactly this commit, from the same shared snapshot as {@see checkRuns()}. GitHub Actions makes
-     * one suite per workflow run. Null when the installation has not granted `checks: read`.
+     * Every check run and check suite on exactly this commit, as one snapshot, the one {@see checkRuns()} shares.
+     * GitHub Actions makes one suite per workflow run. Null when the installation has not granted `checks: read`.
      *
-     * @return list<GitHubCheckSuite>|null
+     * @return array{runs: list<GitHubCheckRun>, suites: list<GitHubCheckSuite>}|null
      *
      * @throws TaskPullRequestException when the App or GitHub is unavailable
      */
-    public function checkSuites(Task $group, string $sha): ?array;
-
-    /**
-     * What handoff pull request `$number` reports for commit `$sha`: whether it is open with that head, and the base it
-     * conflicts with. GitHub runs no `pull_request` workflow while it conflicts. A current answer is shared for a
-     * minute like {@see checkRuns()}. Any other is read again, so a republished commit is seen at once.
-     *
-     * @throws TaskPullRequestException
-     */
-    public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest;
+    public function commitChecks(Task $group, string $sha): ?array;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.

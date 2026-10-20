@@ -18,7 +18,7 @@ final readonly class TaskRemoteBranch
     {
         $branch = $group->pr_branch;
         if (! is_string($branch) || $branch === '') {
-            return self::handoff($group);
+            return 'task-'.$group->id;
         }
         if (! GitBranchName::isValid($branch)) {
             throw new TaskPullRequestException('The pull request branch is not a valid Git branch name.');
@@ -28,11 +28,12 @@ final readonly class TaskRemoteBranch
     }
 
     /**
-     * `task-{id}`, Orbit's own branch, where every handoff commit goes for CI (/reference/tasks#handoff-ci), also for
-     * an incoming pull request: unreviewed commits never reach an outside author's branch.
+     * `task-{id}-handoff`, where every handoff commit goes so CI tests it on the push (/reference/tasks#handoff-ci).
+     * No pull request has it as head, so an unreviewed commit never reaches a pull request, nor an outside author's
+     * branch.
      */
     public static function handoff(Task $group): string
     {
-        return 'task-'.$group->id;
+        return 'task-'.$group->id.'-handoff';
     }
 }

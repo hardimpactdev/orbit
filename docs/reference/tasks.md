@@ -14,7 +14,7 @@ covers:
 
 # Tasks
 
-Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work, and it keeps the pull request a draft while unreviewed work is on it. After the last approval, Orbit opens the pull request and watches it until it merges.
+Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work. After the last approval, Orbit opens the pull request and watches it until it merges.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
 
@@ -992,52 +992,50 @@ The handoff commit's author is `orbit <tasks@orbit>`. Its message is the subtask
 After a handoff check passes and its deliverables verify, Orbit:
 
 1. Commits the checked tree in the workspace as a new commit and stores it on the check as `commit_sha`. A handoff that changed nothing gets an empty commit.
-2. Checks that the commit holds exactly the tree the check passed on. Otherwise the check fails with `failed_step` `ci`, and nothing is published.
-3. Publishes the commit once: it pushes it to Orbit's own branch `task-{id}` and makes sure a draft pull request of that branch runs CI. It stores that pull request's number on the check as `pull_request_number`.
-4. Reads the `merge_check` runs on exactly that commit, by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
+2. Checks that the commit holds exactly the tree the check passed on. Otherwise the check fails with `failed_step` `ci`, and nothing is pushed.
+3. Pushes the commit once to Orbit's handoff branch `task-{id}-handoff`. The task VM records the push, so a later tick does not push it again.
+4. Reads the check runs and check suites of exactly that commit. It judges the merge check by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 
-The draft is the group's own `pr_url` when Orbit already opened it, converted to a draft before the push. Otherwise Orbit opens a draft, or keeps the open one that `task-{id}` already has, and does not store it in `pr_url`. A merged or closed own `pr_url` gets no push.
+The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, four Gateway shards, and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
 
-Handoff CI also uses `task-{id}` and its own draft for an [incoming pull request](#incoming-pull-requests). Orbit never pushes an unreviewed commit to an outside author's branch, and never drafts or readies the author's pull request. That `task-{id}` holds only handoff commits, and the workspace follows the author's head. So a handoff replaces it with `--force-with-lease`, only over the tip Orbit just fetched.
+The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed handoff commit never reaches the task's pull request, nor an outside author's branch. A conflict with the base is not a handoff concern: the task's pull request, opened after the last approval, merges against the latest base through the [merge gate](#merge-on-green).
 
-A draft cannot merge. Orbit does not review a pull request from a `task-*` branch as an incoming pull request. An approved push to the group's own pull request marks it ready again, because an approved commit is reviewed work. The approval that opens the pull request reuses the draft, as [Pull request and settle metrics](#pull-request-and-settle-metrics) describes.
-
-When the group's workspace is removed, such as on cancel, Orbit gives the draft back. It marks its own `pr_url` ready again when a handoff made it a draft. Otherwise it closes the open drafts of `task-{id}`; the branch keeps its commits.
+The handoff branch holds only commits for CI, and the workspace can leave its history, as when it follows an [incoming pull request](#incoming-pull-requests). So a handoff replaces the branch with `--force-with-lease`, only over the tip that Orbit just fetched.
 
 | Merge check on the handoff commit | Result |
 | --- | --- |
 | Passed | The handoff passes, and the reviewer starts. |
-| Pending, or no run yet | The subtask stays `running`, and each tick reads the result again. Orbit publishes again only as the next table says. |
-| Failed | The check becomes `failed` with `failed_step` `ci`. Its output lists each failed job, its URL, and a [log excerpt](#check-output) of at most 16 KiB per job. The implementer gets it as a failed check. |
+| Pending, or no run yet | The subtask stays `running`, and each tick reads the result again. |
+| Failed by a job of the change | The check becomes `failed` with `failed_step` `ci`. The implementer gets it as a failed check. |
+| Failed only by infrastructure | Assistance that names the jobs |
+| Not passed, but no job failed | Assistance that names the runs |
 
-A failed result counts toward the [failed-check budget](#rubric-and-reminders).
+A failed check's output lists each failed job, its URL, and a [log excerpt](#check-output) of at most 16 KiB per job. A failed result counts toward the [failed-check budget](#rubric-and-reminders).
 
-A job that did not run to completion, such as one that was cancelled or could not start, is infrastructure, as [Fix a settling pull request](#fix-a-settling-pull-request) judges it too. When every failed job is infrastructure, the code is not at fault. The check stays `passed`, the implementer gets no reminder, and the subtask asks for assistance with a reason that names the jobs. Re-run them, then post a resolution, so the implementer hands off again.
+Orbit classifies GitHub's conclusions in one place, for check runs and suites alike. A job that did not run to completion, such as one that was cancelled or that no runner started (`startup_failure`), is infrastructure, as [Fix a settling pull request](#fix-a-settling-pull-request) judges it too. When every failed job is infrastructure, the code is not at fault. The check stays `passed`, and the implementer gets no reminder. Re-run the jobs, then post a resolution, so the implementer hands off again.
+
+A merge-check run that ended `skipped`, `neutral`, or `stale`, or a run of that name from another App, did not fail. Orbit charges nothing to the implementer and asks for assistance.
 
 Every handoff reads the merge check on its own commit. A result on another commit never counts. A rework hands off a new commit, and CI must pass on that commit.
 
-GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, Orbit reads the handoff's pull request and the commit's GitHub Actions check suites. GitHub Actions makes one suite per workflow run when the event that starts it fires. So once every suite has completed, the merge-check run cannot come, and every completed state is final. Suites and runs of other Apps, such as Mintlify, never count. The rows apply in order.
+GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, its GitHub Actions check suites decide. The push starts one suite per workflow, and Orbit pushes the commit once. So once every suite has completed, no new one comes, and every completed state is final. Suites and runs of other Apps, such as Mintlify, never count.
 
-| While the merge-check run is missing | Result |
+| GitHub Actions suites on the commit | Result |
 | --- | --- |
-| The pull request is closed, or its head is not the commit | Orbit publishes the commit again |
-| The pull request conflicts with its base | The check fails with `failed_step` `ci` |
-| No GitHub Actions suite yet, or one not completed | Pending |
+| None yet, or one not completed | Pending |
 | All completed, one `startup_failure` or `failure` | The check fails with `failed_step` `ci` |
-| All completed, one `cancelled` | Infrastructure, as for a cancelled job: assistance |
+| All completed, one `cancelled` | Infrastructure: assistance |
 | All completed otherwise | Assistance that names the suites |
 
-A conflict fails the check. GitHub runs no `pull_request` workflow on a conflicting pull request, and a workflow that runs on pushes does not show the conflict, so Orbit always reads it. The reminder asks the implementer to merge `origin/{base}` into the task branch and resolve the conflicts, without a rebase or a force-push.
+A suite that completed with `startup_failure` or `failure` without the merge-check run is a fault of the change. Its failed jobs go to the implementer with their logs. When no job failed, the suite ended before its jobs existed, as for a workflow file that GitHub cannot parse or start, and the reminder links the commit's checks. A suite differs from a run here: a run that ended `startup_failure` never started on a runner.
 
-A suite that completed with `startup_failure` or `failure` and no merge-check run ended before its jobs existed. GitHub does that for a workflow file it cannot parse or start, so the reminder names the suites and links the commit's checks.
+Any other completed suite, such as `success`, `skipped`, or `timed_out`, ran to an end without the merge check. A renamed or removed job causes this. Orbit cannot tell a fault of the change from one of the Project setup, so it asks for assistance and charges the implementer nothing.
 
-Any other completed suite, such as `success`, `skipped`, or `timed_out`, ran to an end without the merge check. A renamed or removed job, or a narrower workflow trigger, causes this. Orbit cannot tell a fault of the change from one of the Project setup, so it asks for assistance and charges the implementer nothing.
+A commit with no GitHub Actions suite at all waits, because Orbit adds no timeout. A workflow whose `push` trigger leaves out `task-*-handoff` branches causes this. When a handoff waits without a suite, check the workflow's `push` trigger.
 
-Orbit classifies GitHub's conclusions in one place, for check runs and suites alike. The same conclusion can mean something different on each. A check run is one job, so a run that ended `startup_failure` never started on a runner: that is infrastructure. A suite is one workflow run, and one that ended `startup_failure` without the merge check is a fault of its workflow file.
+The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. The approval stores the commit that CI passed and commits nothing; the [reviewer outcomes](#reviewer-outcomes) describe how. A failed push or an unreadable check read is a communication failure; the fifth asks for assistance. A pending run waits until CI reports a result.
 
-The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. The approval stores the commit that CI passed and commits nothing; the [reviewer outcomes](#reviewer-outcomes) describe how. An unreadable check-run list, a failed push, a merged or closed own pull request, or a failed pull request read is a communication failure; the fifth asks for assistance. Orbit adds no timeout: a pending run waits until CI reports a result.
-
-Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check suites and check runs are read together, suites first, so a completed suite always comes with its final runs. The read of the handoff's pull request is shared only while its head is the commit. Any other answer is read again, so a republished commit is seen at once.
+Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check suites and check runs are read together, suites first, so a completed suite always comes with its final runs.
 
 In a Project with a merge check, an Orbit-owned change of HEAD during a subtask review, such as a workspace fast-forward, reopens the handoff at once instead of restarting the review. The passed CI result stays as it is. The implementer's next reminder names the reason, and its new handoff runs the check and CI on the new HEAD before any review.
 
@@ -1170,9 +1168,7 @@ Then it [publishes](#pull-request-and-settle-metrics) that commit. When publicat
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway imports the stored commit from the task VM into its Git mirror and pushes from that mirror, never from the agent's checkout. It runs `git push --quiet origin <commit_sha>:refs/heads/task-{id}`, using the stored commit, never `HEAD`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes for review. A commit that the [handoff CI](#handoff-ci) already pushed is not pushed again.
-
-On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. When that pull request is the draft the handoffs opened, Orbit sets its title and description and marks it ready for review. GitHub's REST API cannot leave draft, so that step uses GraphQL's `markPullRequestReadyForReview`.
+After each approval, the Gateway imports the stored commit from the task VM into its Git mirror and pushes from that mirror, never from the agent's checkout. It runs `git push --quiet origin <commit_sha>:refs/heads/task-{id}`, using the stored commit, never `HEAD`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
 
 Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. Orbit stores `pr_url`. During settling, it records `settled_at` and moves the task from `settling` to `waiting_for_review`. The `waiting_for_review` status uses the pull request watch, fixup, and completion rules of [Settling](#settling).
 
@@ -1431,7 +1427,7 @@ The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite
 
 A Project can opt in to review and merge. Orbit then holds three rules:
 
-1. Orbit opens or readies a pull request for review only with a head that a final review approved. Handoff commits reach Orbit's own `task-{id}` earlier, only so that [CI tests them](#handoff-ci).
+1. Orbit pushes only a commit that a final review approved. Handoff commits go to the separate branch `task-{id}-handoff`, only so that [CI tests them](#handoff-ci).
 2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
 3. Orbit merges a pull request through the GitHub App. The head must have recorded final-review evidence, and CI must pass on that head.
 
@@ -1475,7 +1471,7 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 ### Every push is reviewed
 
-In a review-and-merge task, an approval does not push. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review. [Handoff CI](#handoff-ci) pushes each handoff commit to Orbit's own `task-{id}` before its review, on a draft pull request that cannot merge. The merge gate still requires a final-reviewed head.
+In a review-and-merge task, an approval does not push. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review. [Handoff CI](#handoff-ci) pushes each handoff commit to `task-{id}-handoff`, which no pull request has as head.
 
 The migration that removes the integration gate refuses to run while one of its checks is running or a holder it would cancel has uncertain remote work or a pending workspace operation. It cancels the gate’s queued and held workspace leases before deleting its checks, and clears the delta-review fixup identities.
 
@@ -1483,7 +1479,7 @@ It converts the gate’s reviewed heads to `orbit_push`, preserving their eviden
 
 Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
-Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace; handoff commits that CI tested stay on the branch, and the removal gives back their draft.
+Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace; handoff commits that CI tested stay on `task-{id}-handoff`.
 
 ### Incoming pull requests
 
@@ -1803,9 +1799,9 @@ On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sh
 
 The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
 
-The draft pull request carries the CI run, because the workflow runs on `pull_request` and pushes to `main` only. Reusing it at the end, instead of opening a second pull request, keeps one pull request per task.
+CI runs on the push of the handoff commit to `task-{id}-handoff`, not on a pull request. One push makes exactly one Actions suite per workflow for that commit, so the result is deterministic. A draft pull request per handoff was rejected. It needs draft conversions, conflict reads, a new push when its head moves, and timing rules for its suites. The merge gate checks the task's pull request against the latest base anyway.
 
-A separate CI branch per handoff was rejected: it needs a pull request per branch, and the final head would be tested again on another pull request. Orbit commits at the handoff, so the approval stores the commit CI tested, and the final head needs no extra CI run. A side commit that leaves `HEAD` alone was rejected: the later approval commit would not descend from it, and the push would need force.
+Pushing handoffs to `task-{id}` itself was rejected. Once the task's pull request is open, `task-{id}` is its head, so an unreviewed handoff commit would become the pull request head, and its push would start a second CI run there. Orbit commits at the handoff, so the approval stores the commit CI tested. A side commit that leaves `HEAD` alone was rejected: the later approval commit would not descend from it, and the push would need force.
 
 ### Deliverables are checked, not read
 

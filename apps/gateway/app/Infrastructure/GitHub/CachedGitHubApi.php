@@ -114,16 +114,6 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->openPullRequest($token, $repository, $draft);
     }
 
-    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, array $changes): void
-    {
-        $this->github->updatePullRequest($token, $repository, $number, $changes);
-    }
-
-    public function setPullRequestDraft(#[SensitiveParameter] string $token, string $nodeId, bool $draft): void
-    {
-        $this->github->setPullRequestDraft($token, $nodeId, $draft);
-    }
-
     public function requestPullRequestReviewers(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, array $reviewers): void
     {
         $this->github->requestPullRequestReviewers($token, $repository, $number, $reviewers);

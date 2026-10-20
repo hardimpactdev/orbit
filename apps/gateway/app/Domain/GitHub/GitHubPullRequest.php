@@ -21,8 +21,6 @@ final readonly class GitHubPullRequest
         public ?string $body = null,
         public ?string $mergeCommitSha = null,
         public ?string $mergedAt = null,
-        public bool $draft = false,
-        public ?string $nodeId = null,
     ) {}
 
     /** Whether GitHub reports that the pull request conflicts with its base branch. */

@@ -145,12 +145,14 @@ When main moves after CI ran on a merge ref, the App can merge a head whose merg
 This item replaced, on 2026-10-20, the start-commit test base that it chose on 2026-10-18.
 
 - The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
-- After the local gate passes, Orbit commits exactly the checked tree, publishes it once to its own branch `task-{id}`, and keeps a draft pull request open on that branch, so CI runs on it. An incoming pull request's branch and state are never touched.
+- After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
+- The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
 - The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
 - The handoff stays blocking: the reviewer starts only after CI passed.
-- The publishing approval reuses the draft: it sets the description and marks it ready.
-- Every handoff gets its own commit, an empty one when nothing changed, so every handoff is published and tested the same way.
-- While no merge-check run exists, the handoff's pull request and the commit's GitHub Actions check suites decide. A closed pull request, or one with another head, gets the commit again. A conflict fails the check. Unfinished suites are pending. Every completed state is final: `startup_failure` or `failure` fails the check, `cancelled` asks for assistance as infrastructure, and any other conclusion asks for assistance that names the suites.
+- Every handoff gets its own commit, an empty one when nothing changed, so every handoff is pushed and tested the same way.
+- While no merge-check run exists, the commit's GitHub Actions check suites decide. No suite yet, or an unfinished one, is pending. Orbit pushes the commit once, so GitHub makes no new suite for it after every suite completed, and every completed state is final: `startup_failure` or `failure` fails the check, `cancelled` asks for assistance as infrastructure, and any other conclusion asks for assistance that names the suites.
+- A merge-check run that did not fail, such as a skipped one, or a run of that name from another App, asks for assistance and is not charged to the implementer.
+- A conflict with main is not a handoff concern. The task's pull request, opened after the last approval, merges against the latest main through the full-suite merge gate.
 - One enum classifies GitHub's conclusions for check runs and suites, and states where the two differ.
 - The approval stores the commit CI passed and commits nothing. A HEAD that left that commit, or an Orbit-owned HEAD change during the review, reopens the handoff with its reason; the CI result stays as it is.
 - The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
@@ -319,7 +321,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 - It removes the last main merge that Orbit makes in a workspace. The lease and #1297 to #1314 already fixed the incident in which groups 1632 and 1692 lost about 19 hours, so this saves no more of those hours.
 - A typical subtask costs one fast handoff gate, one CI run on the handoff commit, and one review. The Gateway CI runs as four shards in about five minutes, and the final head needs no extra run.
 - A formatting or static-analysis failure now reaches the implementer as a reminder after the handoff check, not before. That can cost one more correction turn, inside the new failed-check budget.
-- GitHub runs no CI on a pull request that conflicts with its base, so such a handoff asks the implementer to merge the base first.
+- Each handoff push runs CI on the branch commit, not on a merge with main. The task's pull request tests the merge with main before it merges.
 - A semantic conflict between two pull requests that both passed CI can reach main. The `push` run of CI on main finds it.
 - Review and merge refuses to merge into a base branch that requires an up-to-date branch.
 
@@ -331,7 +333,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
-  - In apps/gateway, `HandoffCiTest`: green, red, pending, a conflict, and a passed result on an earlier handoff commit that must not count. In apps/e2e, the gate runs no test suite.
+  - In apps/gateway, `HandoffCiTest`: green, red, pending, every final suite state, an unchanged handoff, and a passed result on an earlier handoff commit that must not count. `ReviewAndMergeTest`: a moved HEAD and one commit from handoff to merge. In apps/e2e, the gate runs no test suite, and `ci.yml` treats a `task-*` push as a change run.
   - In apps/gateway, the `project:update` preflight cases: a strict ruleset, strict classic protection, no protection, and an unreadable source.
   - On the live Gateway, after the build, no new `base_merge` check row appears.
   - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.

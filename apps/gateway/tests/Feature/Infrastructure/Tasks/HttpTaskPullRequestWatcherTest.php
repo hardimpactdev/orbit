@@ -683,7 +683,7 @@ describe('malformed watcher cache values', function (): void {
         watcher_fake_health([], [
             ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
         ]);
-        Cache::put('tasks:commit-checks:v1:acme/orbit@abc123:checks', $value, 60);
+        Cache::put('tasks:commit-checks:v1:acme/orbit@abc123', $value, 60);
 
         $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 

@@ -33,7 +33,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $output
  * @property array<string, mixed>|null $deliverable_evidence
  * @property string|null $commit_sha the handoff commit that CI tests, once Orbit committed it ([Handoff CI](/reference/tasks#handoff-ci))
- * @property int|null $pull_request_number the pull request that runs CI on that commit, once Orbit published the commit
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
  */
@@ -43,7 +42,7 @@ final class TaskCheck extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
-        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pull_request_number', 'started_at', 'finished_at',
+        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'started_at', 'finished_at',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -68,7 +67,6 @@ final class TaskCheck extends Model
             'status' => TaskCheckStatus::class,
             'pid' => 'integer',
             'exit_code' => 'integer',
-            'pull_request_number' => 'integer',
             'changed_paths' => 'array',
             'deliverable_evidence' => 'array',
             'started_at' => 'datetime',

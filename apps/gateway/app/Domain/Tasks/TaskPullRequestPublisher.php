@@ -13,8 +13,7 @@ use App\Models\Task;
 interface TaskPullRequestPublisher
 {
     /**
-     * Pushes `$commit` and opens the pull request. When the branch already has an open draft, such as the one
-     * the handoffs opened, Orbit gives it this title and body and marks it ready instead of opening another.
+     * Pushes `$commit` and opens the pull request.
      *
      * @return string the pull request's web URL
      *
@@ -23,32 +22,18 @@ interface TaskPullRequestPublisher
     public function publish(Task $group, string $body, string $commit): string;
 
     /**
-     * Pushes a handoff commit to Orbit's own branch `task-{id}` so CI tests it
-     * ([Handoff CI](/reference/tasks#handoff-ci)), and makes sure a draft pull request of that branch runs the CI:
-     * the group's own `pr_url`, converted to a draft first, or else a draft Orbit opens, or the open pull request the
-     * branch already has. An incoming pull request's branch and state are never touched. A merged or closed own
-     * pull request gets no push. A commit that Orbit pushed before is not pushed again, unless `$again` asks for it:
-     * the pull request lost the commit, so the earlier push no longer counts.
-     *
-     * @return int the number of the pull request that runs CI on the commit
-     *
-     * @throws TaskPullRequestException pending while the push job waits or runs
-     */
-    public function publishHandoff(Task $group, string $commit, bool $again = false): int;
-
-    /**
-     * Pushes an approved `$commit` to the task branch without opening a pull request. When a handoff made the
-     * group's own pull request a draft, the push marks it ready again: an approved commit is reviewed work.
+     * Pushes `$commit` to the task branch without opening a pull request.
      *
      * @throws TaskPullRequestException
      */
     public function push(Task $group, string $commit): void;
 
     /**
-     * Gives back the pull request that the handoffs used when the group ends. The group's own `pr_url`, if a handoff
-     * made it a draft, is marked ready. Otherwise the open drafts of `task-{id}` that the handoffs opened are closed.
+     * Pushes a handoff commit to Orbit's branch `task-{id}-handoff`, where CI runs on the push
+     * ([Handoff CI](/reference/tasks#handoff-ci)). No pull request has that branch as head, and this call reads and
+     * writes none. A commit that Orbit pushed there before is not pushed again.
      *
-     * @throws TaskPullRequestException
+     * @throws TaskPullRequestException pending while the push job waits or runs
      */
-    public function releaseHandoffDraft(Task $group): void;
+    public function pushHandoff(Task $group, string $commit): void;
 }

@@ -39,6 +39,8 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
 
+The Project's CI workflow must run the `merge_check` on pushes to `task-*-handoff` branches too, because each [handoff commit](/reference/tasks#handoff-ci) is tested on its push.
+
 ## Application directory
 
 For a Laravel Instance, the application directory is the effective web root without its trailing `/public` segment. The effective root is the Instance's override when present, otherwise the Project's root. `public` means the checkout root in development, or the release root in production. `apps/site/public` means `apps/site` inside that checkout or release. One shared helper derives the directory for Laravel source inspection and runtime consumers; Orbit does not store a second directory setting.

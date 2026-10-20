@@ -11,6 +11,5 @@ final readonly class GitHubPullRequestDraft
         public string $base,
         public string $title,
         public string $body,
-        public bool $draft = false,
     ) {}
 }

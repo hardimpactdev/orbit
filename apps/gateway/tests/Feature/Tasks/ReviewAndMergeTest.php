@@ -26,7 +26,6 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskHandoffPullRequest;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -283,22 +282,14 @@ function rm_runtime(array $receipts = []): object
             return RM_PR_URL;
         }
 
-        /** @var list<string> */
+        /** @var list<string> the handoff commits pushed to task-{id}, each once, as the task VM row records them */
         public array $handoffs = [];
 
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
+        public function pushHandoff(Task $group, string $commit): void
         {
-            $this->handoffs[] = $commit;
-
-            return 43;
-        }
-
-        /** @var list<int> */
-        public array $released = [];
-
-        public function releaseHandoffDraft(Task $group): void
-        {
-            $this->released[] = $group->id;
+            if (! in_array($commit, $this->handoffs, true)) {
+                $this->handoffs[] = $commit;
+            }
         }
 
         public function push(Task $group, string $commit): void
@@ -315,16 +306,11 @@ function rm_runtime(array $receipts = []): object
             return $this->check;
         }
 
-        public function checkSuites(Task $group, string $sha): ?array
+        public function commitChecks(Task $group, string $sha): ?array
         {
-            return $this->check === RequiredCheckState::Missing ? [] : [new GitHubCheckSuite(1,
+            return ['runs' => $this->checkRuns($group, $sha) ?? [], 'suites' => $this->check === RequiredCheckState::Missing ? [] : [new GitHubCheckSuite(1,
                 $this->check === RequiredCheckState::Pending ? 'in_progress' : 'completed',
-                $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)];
-        }
-
-        public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest
-        {
-            return new TaskHandoffPullRequest(true, null);
+                $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)]];
         }
 
         public function checkRuns(Task $group, string $sha): ?array
@@ -1404,7 +1390,6 @@ it('tests, approves, and merges one and the same handoff commit', function (): v
 
     $handoff = TaskCheck::query()->where('task_id', $task->id)->sole();
     expect($handoff->commit_sha)->toBe(RM_COMMIT)
-        ->and($handoff->pull_request_number)->toBe(43)
         ->and($runtime->handoffs)->toBe([RM_COMMIT])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
         ->and($task->comments()->where('type', 'approved')->sole()->commit_sha)->toBe(RM_COMMIT)

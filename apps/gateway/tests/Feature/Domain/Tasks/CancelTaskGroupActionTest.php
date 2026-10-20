@@ -18,8 +18,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -34,7 +32,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -107,24 +104,11 @@ function cancel_recording_publisher(int $failures = 0): object
         /** @var list<int> the database transaction level at each push */
         public array $transactionLevels = [];
 
-        /** @var list<int> */
-        public array $releasedDrafts = [];
-
         public function __construct(private int $failures) {}
 
         public function publish(Task $group, string $body, string $commit): string
         {
             throw new LogicException('Cancel never opens a pull request.');
-        }
-
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
-        {
-            throw new LogicException('This fake publishes no handoff.');
-        }
-
-        public function releaseHandoffDraft(Task $group): void
-        {
-            $this->releasedDrafts[] = $group->id;
         }
 
         public function push(Task $group, string $commit): void
@@ -136,28 +120,16 @@ function cancel_recording_publisher(int $failures = 0): object
                 throw new TaskPullRequestException('The task branch could not be pushed.');
             }
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('Cancel pushes no handoff.');
+        }
     };
     app()->instance(TaskPullRequestPublisher::class, $publisher);
 
     return $publisher;
 }
-
-it('gives back the handoff draft of a running group it cancels, and only after a handoff published one', function (bool $handedOff): void {
-    app(TaskExtensionState::class)->enable();
-    cancel_recording_remover();
-    $publisher = cancel_recording_publisher();
-    $group = cancellable_task_group(TaskGroupStatus::Running);
-    $subtask = cancel_subtask($group, TaskStatus::Running);
-    TaskCheck::query()->create([
-        'task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
-        'commit_sha' => $handedOff ? str_repeat('c', 40) : null,
-        'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-    ]);
-
-    expect(app(CancelTaskGroupAction::class)->execute($group)->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($publisher->releasedDrafts)->toBe($handedOff ? [$group->id] : [])
-        ->and($publisher->pushes)->toBe([]);
-})->with(['after a handoff CI' => true, 'without one' => false]);
 
 function cancel_approval(Task $task, string $commit): void
 {

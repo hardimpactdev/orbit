@@ -2128,12 +2128,10 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
+        public function pushHandoff(Task $group, string $commit): void
         {
-            throw new LogicException('This fake publishes no handoff.');
+            throw new LogicException('This fake pushes no handoff.');
         }
-
-        public function releaseHandoffDraft(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -2743,12 +2741,10 @@ function scheduler_review(array $receipts, bool $notified = true): array
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
+        public function pushHandoff(Task $group, string $commit): void
         {
-            throw new LogicException('This fake publishes no handoff.');
+            throw new LogicException('This fake pushes no handoff.');
         }
-
-        public function releaseHandoffDraft(Task $group): void {}
 
         public function push(Task $group, string $commit): void {}
     });
@@ -3405,12 +3401,10 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
+        public function pushHandoff(Task $group, string $commit): void
         {
-            throw new LogicException('This fake publishes no handoff.');
+            throw new LogicException('This fake pushes no handoff.');
         }
-
-        public function releaseHandoffDraft(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -3484,12 +3478,10 @@ it('stores the commit when its response is lost and pushes that stored commit wi
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit, bool $again = false): int
+        public function pushHandoff(Task $group, string $commit): void
         {
-            throw new LogicException('This fake publishes no handoff.');
+            throw new LogicException('This fake pushes no handoff.');
         }
-
-        public function releaseHandoffDraft(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
