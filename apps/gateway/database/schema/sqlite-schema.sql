@@ -1,203 +1,203 @@
-CREATE TABLE IF NOT EXISTS "migrations"(
-  "id" integer primary key autoincrement not null,
-  "migration" varchar not null,
-  "batch" integer not null
+CREATE TABLE IF NOT EXISTS `migrations`(
+  `id` integer not null primary key autoincrement,
+  `migration` varchar not null,
+  `batch` integer not null
 );
-CREATE TABLE IF NOT EXISTS "horizon_new_dawn_batch_metadata"(
-  "batch_id" varchar not null,
-  "queue" varchar,
-  "connection" varchar,
-  "queue_is_explicit" tinyint(1) not null,
-  "connection_is_explicit" tinyint(1) not null,
-  primary key("batch_id")
+CREATE TABLE IF NOT EXISTS `horizon_new_dawn_batch_metadata`(
+  `batch_id` varchar not null,
+  `queue` varchar,
+  `connection` varchar,
+  `queue_is_explicit` tinyint(1) not null,
+  `connection_is_explicit` tinyint(1) not null,
+  primary key(`batch_id`)
 );
-CREATE INDEX "hnd_batch_metadata_queue_index" on "horizon_new_dawn_batch_metadata"(
-  "queue"
+CREATE INDEX `hnd_batch_metadata_queue_index` on `horizon_new_dawn_batch_metadata`(
+  `queue`
 );
-CREATE INDEX "hnd_batch_metadata_connection_index" on "horizon_new_dawn_batch_metadata"(
-  "connection"
+CREATE INDEX `hnd_batch_metadata_connection_index` on `horizon_new_dawn_batch_metadata`(
+  `connection`
 );
-CREATE TABLE IF NOT EXISTS "firewall_rules"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "name" varchar not null,
-  "action" varchar not null,
-  "source" varchar,
-  "protocol" varchar not null,
-  "port" varchar not null,
-  "status" varchar not null default 'provisioning',
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete restrict
+CREATE TABLE IF NOT EXISTS `firewall_rules`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `name` varchar not null,
+  `action` varchar not null,
+  `source` varchar,
+  `protocol` varchar not null,
+  `port` varchar not null,
+  `status` varchar not null default 'provisioning',
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete restrict
 );
-CREATE UNIQUE INDEX "firewall_rules_node_id_name_unique" on "firewall_rules"(
-  "node_id",
-  "name"
+CREATE UNIQUE INDEX `firewall_rules_node_id_name_unique` on `firewall_rules`(
+  `node_id`,
+  `name`
 );
-CREATE INDEX "firewall_rules_status_index" on "firewall_rules"("status");
-CREATE TABLE IF NOT EXISTS "settings"(
-  "id" integer primary key autoincrement not null,
-  "scope_type" varchar not null,
-  "scope_id" integer not null default '0',
-  "key" varchar not null,
-  "value" text,
-  "is_secret" tinyint(1) not null default '0',
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE INDEX `firewall_rules_status_index` on `firewall_rules`(`status`);
+CREATE TABLE IF NOT EXISTS `settings`(
+  `id` integer not null primary key autoincrement,
+  `scope_type` varchar not null,
+  `scope_id` integer not null default '0',
+  `key` varchar not null,
+  `value` text,
+  `is_secret` tinyint(1) not null default '0',
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE UNIQUE INDEX "settings_scope_type_scope_id_key_unique" on "settings"(
-  "scope_type",
-  "scope_id",
-  "key"
+CREATE UNIQUE INDEX `settings_scope_type_scope_id_key_unique` on `settings`(
+  `scope_type`,
+  `scope_id`,
+  `key`
 );
-CREATE INDEX "settings_scope_type_index" on "settings"("scope_type");
-CREATE TABLE IF NOT EXISTS "activity_log"(
-  "id" integer primary key autoincrement not null,
-  "log_name" varchar,
-  "description" text not null,
-  "subject_type" varchar,
-  "subject_id" integer,
-  "causer_type" varchar,
-  "causer_id" integer,
-  "event" varchar,
-  "properties" text,
-  "attribute_changes" text,
-  "batch_uuid" varchar,
-  "request_id" varchar not null,
-  "command" varchar not null,
-  "caller_node_id" integer,
-  "target_node_id" integer,
-  "caller_ip" varchar,
-  "status" varchar not null,
-  "duration_ms" integer,
-  "exit_code" integer,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("caller_node_id") references "nodes"("id") on delete set null,
-  foreign key("target_node_id") references "nodes"("id") on delete set null
+CREATE INDEX `settings_scope_type_index` on `settings`(`scope_type`);
+CREATE TABLE IF NOT EXISTS `activity_log`(
+  `id` integer not null primary key autoincrement,
+  `log_name` varchar,
+  `description` text not null,
+  `subject_type` varchar,
+  `subject_id` integer,
+  `causer_type` varchar,
+  `causer_id` integer,
+  `event` varchar,
+  `properties` text,
+  `attribute_changes` text,
+  `batch_uuid` varchar,
+  `request_id` varchar not null,
+  `command` varchar not null,
+  `caller_node_id` integer,
+  `target_node_id` integer,
+  `caller_ip` varchar,
+  `status` varchar not null,
+  `duration_ms` integer,
+  `exit_code` integer,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`caller_node_id`) references `nodes`(`id`) on delete set null,
+  foreign key(`target_node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE INDEX "subject" on "activity_log"("subject_type", "subject_id");
-CREATE INDEX "causer" on "activity_log"("causer_type", "causer_id");
-CREATE INDEX "activity_log_log_name_index" on "activity_log"("log_name");
-CREATE INDEX "activity_log_request_id_index" on "activity_log"("request_id");
-CREATE INDEX "activity_log_command_index" on "activity_log"("command");
-CREATE INDEX "activity_log_status_index" on "activity_log"("status");
-CREATE INDEX "activity_log_error_code_index" on "activity_log"("error_code");
-CREATE TABLE IF NOT EXISTS "node_access"(
-  "id" integer primary key autoincrement not null,
-  "consumer_node_id" integer not null,
-  "serving_node_id" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("consumer_node_id") references "nodes"("id") on delete cascade,
-  foreign key("serving_node_id") references "nodes"("id") on delete cascade
+CREATE INDEX `subject` on `activity_log`(`subject_type`, `subject_id`);
+CREATE INDEX `causer` on `activity_log`(`causer_type`, `causer_id`);
+CREATE INDEX `activity_log_log_name_index` on `activity_log`(`log_name`);
+CREATE INDEX `activity_log_request_id_index` on `activity_log`(`request_id`);
+CREATE INDEX `activity_log_command_index` on `activity_log`(`command`);
+CREATE INDEX `activity_log_status_index` on `activity_log`(`status`);
+CREATE INDEX `activity_log_error_code_index` on `activity_log`(`error_code`);
+CREATE TABLE IF NOT EXISTS `node_access`(
+  `id` integer not null primary key autoincrement,
+  `consumer_node_id` integer not null,
+  `serving_node_id` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`consumer_node_id`) references `nodes`(`id`) on delete cascade,
+  foreign key(`serving_node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "node_access_consumer_node_id_serving_node_id_unique" on "node_access"(
-  "consumer_node_id",
-  "serving_node_id"
+CREATE UNIQUE INDEX `node_access_consumer_node_id_serving_node_id_unique` on `node_access`(
+  `consumer_node_id`,
+  `serving_node_id`
 );
-CREATE TABLE IF NOT EXISTS "tool_managers"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "name" varchar not null,
-  "status" varchar not null,
-  "installed_version" varchar,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `tool_managers`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `name` varchar not null,
+  `status` varchar not null,
+  `installed_version` varchar,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "tool_managers_node_id_name_unique" on "tool_managers"(
-  "node_id",
-  "name"
+CREATE UNIQUE INDEX `tool_managers_node_id_name_unique` on `tool_managers`(
+  `node_id`,
+  `name`
 );
-CREATE TABLE IF NOT EXISTS "tools"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "tool_manager_id" integer not null,
-  "package" varchar not null,
-  "version_constraint" varchar,
-  "status" varchar not null,
-  "installed_version" varchar,
-  "failed_operation" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade,
-  foreign key("tool_manager_id") references "tool_managers"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `tools`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `tool_manager_id` integer not null,
+  `package` varchar not null,
+  `version_constraint` varchar,
+  `status` varchar not null,
+  `installed_version` varchar,
+  `failed_operation` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade,
+  foreign key(`tool_manager_id`) references `tool_managers`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "tools_node_id_tool_manager_id_package_unique" on "tools"(
-  "node_id",
-  "tool_manager_id",
-  "package"
+CREATE UNIQUE INDEX `tools_node_id_tool_manager_id_package_unique` on `tools`(
+  `node_id`,
+  `tool_manager_id`,
+  `package`
 );
-CREATE INDEX "tools_node_id_status_index" on "tools"("node_id", "status");
-CREATE TABLE IF NOT EXISTS "clusters"(
-  "id" integer primary key autoincrement not null,
-  "name" varchar not null,
-  "tld" varchar,
-  "state" varchar check("state" in('inactive', 'active')) not null default 'inactive',
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE INDEX `tools_node_id_status_index` on `tools`(`node_id`, `status`);
+CREATE TABLE IF NOT EXISTS `clusters`(
+  `id` integer not null primary key autoincrement,
+  `name` varchar not null,
+  `tld` varchar,
+  `state` varchar not null check(`state` in('inactive', 'active')) default 'inactive',
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE UNIQUE INDEX "clusters_name_unique" on "clusters"("name");
-CREATE UNIQUE INDEX "clusters_tld_unique" on "clusters"("tld");
-CREATE INDEX "clusters_state_index" on "clusters"("state");
-CREATE TABLE IF NOT EXISTS "nodes"(
-  "id" integer primary key autoincrement not null,
-  "name" varchar not null,
-  "status" varchar not null default('provisioning'),
-  "platform" varchar not null default('linux'),
-  "architecture" varchar,
-  "public_ssh_host" varchar not null,
-  "public_ssh_port" integer not null default('22'),
-  "wireguard_public_key" text,
-  "wireguard_endpoint_override" varchar,
-  "dns_server_override" varchar,
-  "ssh_host_key_type" varchar,
-  "ssh_host_key" text,
-  "ssh_host_fingerprint" varchar,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "tld" varchar,
-  "user" varchar not null default('orbit'),
-  "settings" text,
-  "cluster_id" integer,
-  "wireguard_ip" varchar,
-  "lan_ip" varchar,
-  "agent_secret_hash" varchar,
+CREATE UNIQUE INDEX `clusters_name_unique` on `clusters`(`name`);
+CREATE UNIQUE INDEX `clusters_tld_unique` on `clusters`(`tld`);
+CREATE INDEX `clusters_state_index` on `clusters`(`state`);
+CREATE TABLE IF NOT EXISTS `nodes`(
+  `id` integer not null primary key autoincrement,
+  `name` varchar not null,
+  `status` varchar not null default('provisioning'),
+  `platform` varchar not null default('linux'),
+  `architecture` varchar,
+  `public_ssh_host` varchar not null,
+  `public_ssh_port` integer not null default('22'),
+  `wireguard_public_key` text,
+  `wireguard_endpoint_override` varchar,
+  `dns_server_override` varchar,
+  `ssh_host_key_type` varchar,
+  `ssh_host_key` text,
+  `ssh_host_fingerprint` varchar,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `tld` varchar,
+  `user` varchar not null default('orbit'),
+  `settings` text,
+  `cluster_id` integer,
+  `wireguard_ip` varchar,
+  `lan_ip` varchar,
+  `agent_secret_hash` varchar,
   ssh_jump_node_id integer NULL REFERENCES nodes(id) ON DELETE SET NULL,
-  foreign key("cluster_id") references "clusters"("id") on delete restrict
+  foreign key(`cluster_id`) references `clusters`(`id`) on delete restrict
 );
-CREATE UNIQUE INDEX "nodes_name_unique" on "nodes"("name");
-CREATE INDEX "nodes_status_index" on "nodes"("status");
-CREATE UNIQUE INDEX "nodes_tld_unique" on "nodes"("tld");
-CREATE UNIQUE INDEX "nodes_wireguard_ip_unique" on "nodes"("wireguard_ip");
-CREATE TABLE IF NOT EXISTS "node_roles"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "role" varchar not null,
-  "status" varchar not null default('provisioning'),
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "cluster_id" integer,
-  foreign key("node_id") references nodes("id") on delete restrict on update no action,
-  foreign key("cluster_id") references "clusters"("id") on delete restrict
+CREATE UNIQUE INDEX `nodes_name_unique` on `nodes`(`name`);
+CREATE INDEX `nodes_status_index` on `nodes`(`status`);
+CREATE UNIQUE INDEX `nodes_tld_unique` on `nodes`(`tld`);
+CREATE UNIQUE INDEX `nodes_wireguard_ip_unique` on `nodes`(`wireguard_ip`);
+CREATE TABLE IF NOT EXISTS `node_roles`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `role` varchar not null,
+  `status` varchar not null default('provisioning'),
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `cluster_id` integer,
+  foreign key(`node_id`) references nodes(`id`) on delete restrict on update no action,
+  foreign key(`cluster_id`) references `clusters`(`id`) on delete restrict
 );
-CREATE UNIQUE INDEX "node_roles_node_id_role_unique" on "node_roles"(
-  "node_id",
-  "role"
+CREATE UNIQUE INDEX `node_roles_node_id_role_unique` on `node_roles`(
+  `node_id`,
+  `role`
 );
-CREATE INDEX "node_roles_role_index" on "node_roles"("role");
-CREATE INDEX "node_roles_status_index" on "node_roles"("status");
+CREATE INDEX `node_roles_role_index` on `node_roles`(`role`);
+CREATE INDEX `node_roles_status_index` on `node_roles`(`status`);
 CREATE UNIQUE INDEX nodes_cluster_lan_ip_unique
 ON nodes(
   cluster_id,
@@ -214,252 +214,252 @@ ON node_roles(
   cluster_id
 )
 WHERE role = 'ingress' AND status = 'active';
-CREATE TABLE IF NOT EXISTS "route_targets"(
-  "id" integer primary key autoincrement not null,
-  "route_id" integer not null,
-  "instance_id" integer not null,
-  "position" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("route_id") references "routes"("id") on delete cascade,
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `route_targets`(
+  `id` integer not null primary key autoincrement,
+  `route_id` integer not null,
+  `instance_id` integer not null,
+  `position` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`route_id`) references `routes`(`id`) on delete cascade,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "projects"(
-  "id" integer primary key autoincrement not null,
-  "name" varchar not null,
-  "slug" varchar not null,
-  "repository_url" text not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "default_branch" varchar,
-  "root" varchar,
-  "repository_identity" text not null,
-  "type" varchar not null default 'laravel-app',
-  "code" varchar,
-  "task_check" text,
-  "task_workspace_routed" tinyint(1) not null default '1',
-  "source_access" varchar not null default 'github_app',
-  "review_and_merge" tinyint(1) not null default '0',
-  "merge_check" varchar
+CREATE TABLE IF NOT EXISTS `projects`(
+  `id` integer not null primary key autoincrement,
+  `name` varchar not null,
+  `slug` varchar not null,
+  `repository_url` text not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `default_branch` varchar,
+  `root` varchar,
+  `repository_identity` text not null,
+  `type` varchar not null default 'laravel-app',
+  `code` varchar,
+  `task_check` text,
+  `task_workspace_routed` tinyint(1) not null default '1',
+  `source_access` varchar not null default 'github_app',
+  `review_and_merge` tinyint(1) not null default '0',
+  `merge_check` varchar
 );
-CREATE TABLE IF NOT EXISTS "instances"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "node_id" integer not null,
-  "name" varchar not null,
-  "checkout_path" text not null,
-  "root" varchar,
-  "branch" varchar,
-  "starting_commit" varchar,
-  "status" varchar check("status" in('reserved', 'checkout_prepared', 'source_resolved', 'active', 'removing')) not null default 'reserved',
-  "created_at" datetime,
-  "updated_at" datetime,
-  "selected_php_version" varchar,
-  "provisioning_step" varchar,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "source_layout" varchar not null default('checkout'),
-  "branch_override" varchar,
-  "registration_original_path" text,
-  "registration_request_id" varchar,
-  "registration_primary" tinyint(1) not null default '0',
-  "registration_include_worktrees" tinyint(1) not null default '0',
-  "registration_repository_url" text,
-  "registration_repository_identity" varchar,
-  "registration_source_digest" varchar,
-  "registration_detached" tinyint(1) not null default '0',
-  "registration_default_branch" varchar,
-  "registration_inferred_slug" varchar,
-  "registration_inferred_root" varchar,
-  "registration_common_repository_path" text,
-  "registration_worktree_paths" text,
-  "registration_relocation_state" varchar,
-  "registration_authoritative_path" text,
-  "registration_route_domain" varchar,
-  "registration_route_provenance" varchar,
-  "registration_completed_at" datetime,
-  "source_is_laravel" tinyint(1),
-  "production_user" varchar,
-  "production_home" text,
-  "registration_source_device" integer,
-  "registration_source_inode" integer,
-  "production_php_service" varchar,
-  "production_php_pool" varchar,
-  "production_php_socket" text,
-  "deployment_branch" varchar,
-  "runtime_definitions_captured_at" datetime,
-  "clone_candidate_id" integer,
-  "clone_candidate_commit" varchar,
-  "clone_requested_branch" varchar,
-  "clone_preview_name" varchar,
-  "clone_preview_domain" varchar,
-  "clone_sqlite_source_path" text,
-  "clone_completed_at" datetime,
-  "vite_port" integer,
-  "task_workspace_routed" tinyint(1),
-  "development_release_layout" tinyint(1) not null default '0',
-  "source_prepare_id" varchar,
-  "seed_path" text,
-  "seed_commit" varchar,
-  "seed_repository" text,
-  "seed_selected" tinyint(1) not null default '0',
-  "development_projection_pending" tinyint(1) not null default '1',
-  "dependency_sub_projects" text,
-  "shared_paths" text,
-  "first_setup_pending" tinyint(1) not null default '0',
-  "ssr_port" integer,
-  "environment_owned_keys" text,
-  "auto_deploy" tinyint(1) not null default '0',
-  "auto_deploy_resumed_after" integer not null default '0',
-  "auto_deploy_state" text,
-  "vp_environment" text,
-  "environment_runtime_pending_at" datetime,
+CREATE TABLE IF NOT EXISTS `instances`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `node_id` integer not null,
+  `name` varchar not null,
+  `checkout_path` text not null,
+  `root` varchar,
+  `branch` varchar,
+  `starting_commit` varchar,
+  `status` varchar not null check(`status` in('reserved', 'checkout_prepared', 'source_resolved', 'active', 'removing')) default 'reserved',
+  `created_at` datetime,
+  `updated_at` datetime,
+  `selected_php_version` varchar,
+  `provisioning_step` varchar,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `source_layout` varchar not null default('checkout'),
+  `branch_override` varchar,
+  `registration_original_path` text,
+  `registration_request_id` varchar,
+  `registration_primary` tinyint(1) not null default '0',
+  `registration_include_worktrees` tinyint(1) not null default '0',
+  `registration_repository_url` text,
+  `registration_repository_identity` varchar,
+  `registration_source_digest` varchar,
+  `registration_detached` tinyint(1) not null default '0',
+  `registration_default_branch` varchar,
+  `registration_inferred_slug` varchar,
+  `registration_inferred_root` varchar,
+  `registration_common_repository_path` text,
+  `registration_worktree_paths` text,
+  `registration_relocation_state` varchar,
+  `registration_authoritative_path` text,
+  `registration_route_domain` varchar,
+  `registration_route_provenance` varchar,
+  `registration_completed_at` datetime,
+  `source_is_laravel` tinyint(1),
+  `production_user` varchar,
+  `production_home` text,
+  `registration_source_device` integer,
+  `registration_source_inode` integer,
+  `production_php_service` varchar,
+  `production_php_pool` varchar,
+  `production_php_socket` text,
+  `deployment_branch` varchar,
+  `runtime_definitions_captured_at` datetime,
+  `clone_candidate_id` integer,
+  `clone_candidate_commit` varchar,
+  `clone_requested_branch` varchar,
+  `clone_preview_name` varchar,
+  `clone_preview_domain` varchar,
+  `clone_sqlite_source_path` text,
+  `clone_completed_at` datetime,
+  `vite_port` integer,
+  `task_workspace_routed` tinyint(1),
+  `development_release_layout` tinyint(1) not null default '0',
+  `source_prepare_id` varchar,
+  `seed_path` text,
+  `seed_commit` varchar,
+  `seed_repository` text,
+  `seed_selected` tinyint(1) not null default '0',
+  `development_projection_pending` tinyint(1) not null default '1',
+  `dependency_sub_projects` text,
+  `shared_paths` text,
+  `first_setup_pending` tinyint(1) not null default '0',
+  `ssr_port` integer,
+  `environment_owned_keys` text,
+  `auto_deploy` tinyint(1) not null default '0',
+  `auto_deploy_resumed_after` integer not null default '0',
+  `auto_deploy_state` text,
+  `vp_environment` text,
+  `environment_runtime_pending_at` datetime,
   task_workspace_owner_id integer NULL REFERENCES tasks(id) ON DELETE SET NULL,
-  foreign key("node_id") references nodes("id") on delete restrict on update no action,
-  foreign key("project_id") references "projects"("id") on delete restrict on update no action
+  foreign key(`node_id`) references nodes(`id`) on delete restrict on update no action,
+  foreign key(`project_id`) references `projects`(`id`) on delete restrict on update no action
 );
-CREATE TABLE IF NOT EXISTS "instance_removals"(
-  "id" varchar not null,
-  "requested_instance_id" integer not null,
-  "requested_name" varchar not null,
-  "force" tinyint(1) not null,
-  "inventory_digest" varchar not null,
-  "total" integer not null,
-  "status" varchar check("status" in('removing', 'failed', 'completed')) not null,
-  "current_step" varchar,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  primary key("id")
+CREATE TABLE IF NOT EXISTS `instance_removals`(
+  `id` varchar not null,
+  `requested_instance_id` integer not null,
+  `requested_name` varchar not null,
+  `force` tinyint(1) not null,
+  `inventory_digest` varchar not null,
+  `total` integer not null,
+  `status` varchar not null check(`status` in('removing', 'failed', 'completed')),
+  `current_step` varchar,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  primary key(`id`)
 );
-CREATE TABLE IF NOT EXISTS "instance_removal_members"(
-  "id" integer primary key autoincrement not null,
-  "instance_removal_id" varchar not null,
-  "position" integer not null,
-  "instance_id" integer not null,
-  "project_id" integer not null,
-  "node_id" integer not null,
-  "route_id" integer,
-  "name" varchar not null,
-  "environment" varchar not null,
-  "source_layout" varchar not null,
-  "repository_identity" varchar,
-  "checkout_path" text,
-  "root" text,
-  "branch" varchar,
-  "starting_commit" varchar,
-  "common_repository_path" text,
-  "source_identity" varchar,
-  "linked_worktree_paths" text not null,
-  "source_digest" varchar not null,
-  "source_prepared_at" datetime,
-  "route_cleared_at" datetime,
-  "route_outcome" varchar,
-  "source_finalized_at" datetime,
-  "finalization_receipt" varchar,
-  "runtime_cleaned_at" datetime,
-  "row_deleted_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "source_commit" varchar,
-  "runtime_published" tinyint(1) not null default '1',
-  foreign key("instance_removal_id") references "instance_removals"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_removal_members`(
+  `id` integer not null primary key autoincrement,
+  `instance_removal_id` varchar not null,
+  `position` integer not null,
+  `instance_id` integer not null,
+  `project_id` integer not null,
+  `node_id` integer not null,
+  `route_id` integer,
+  `name` varchar not null,
+  `environment` varchar not null,
+  `source_layout` varchar not null,
+  `repository_identity` varchar,
+  `checkout_path` text,
+  `root` text,
+  `branch` varchar,
+  `starting_commit` varchar,
+  `common_repository_path` text,
+  `source_identity` varchar,
+  `linked_worktree_paths` text not null,
+  `source_digest` varchar not null,
+  `source_prepared_at` datetime,
+  `route_cleared_at` datetime,
+  `route_outcome` varchar,
+  `source_finalized_at` datetime,
+  `finalization_receipt` varchar,
+  `runtime_cleaned_at` datetime,
+  `row_deleted_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `source_commit` varchar,
+  `runtime_published` tinyint(1) not null default '1',
+  foreign key(`instance_removal_id`) references `instance_removals`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "active_app_prod_nodes"(
-  "node_id" integer not null,
-  "cluster_id" integer,
-  "active" tinyint(1) not null default '0',
-  primary key("node_id")
+CREATE TABLE IF NOT EXISTS `active_app_prod_nodes`(
+  `node_id` integer not null,
+  `cluster_id` integer,
+  `active` tinyint(1) not null default '0',
+  primary key(`node_id`)
 );
-CREATE TABLE IF NOT EXISTS "instance_environment_values"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "env_key" varchar not null,
-  "env_value" text not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_environment_values`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `env_key` varchar not null,
+  `env_value` text not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "schedules"(
-  "id" varchar not null,
-  "target_type" varchar not null,
-  "target_id" integer not null,
-  "host_node_id" integer not null,
-  "name" varchar not null,
-  "calendar" varchar not null,
-  "command" text not null,
-  "timeout_seconds" integer not null default '3600',
-  "desired_timer_state" varchar not null,
-  "status" varchar not null default 'provisioning',
-  "failed_step" varchar,
-  "error_code" varchar,
-  "last_run_at" datetime,
-  "last_run_status" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "source_definition_id" varchar,
-  foreign key("host_node_id") references "nodes"("id") on delete restrict,
-  primary key("id")
+CREATE TABLE IF NOT EXISTS `schedules`(
+  `id` varchar not null,
+  `target_type` varchar not null,
+  `target_id` integer not null,
+  `host_node_id` integer not null,
+  `name` varchar not null,
+  `calendar` varchar not null,
+  `command` text not null,
+  `timeout_seconds` integer not null default '3600',
+  `desired_timer_state` varchar not null,
+  `status` varchar not null default 'provisioning',
+  `failed_step` varchar,
+  `error_code` varchar,
+  `last_run_at` datetime,
+  `last_run_status` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `source_definition_id` varchar,
+  foreign key(`host_node_id`) references `nodes`(`id`) on delete restrict,
+  primary key(`id`)
 );
-CREATE INDEX "schedules_target_type_target_id_index" on "schedules"(
-  "target_type",
-  "target_id"
+CREATE INDEX `schedules_target_type_target_id_index` on `schedules`(
+  `target_type`,
+  `target_id`
 );
-CREATE UNIQUE INDEX "schedules_target_type_target_id_name_unique" on "schedules"(
-  "target_type",
-  "target_id",
-  "name"
+CREATE UNIQUE INDEX `schedules_target_type_target_id_name_unique` on `schedules`(
+  `target_type`,
+  `target_id`,
+  `name`
 );
-CREATE INDEX "schedules_status_index" on "schedules"("status");
-CREATE TABLE IF NOT EXISTS "process_definitions"(
-  "id" varchar not null,
-  "project_id" integer not null,
-  "name" varchar not null,
-  "environments" text not null,
-  "spec" text not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade,
-  primary key("id")
+CREATE INDEX `schedules_status_index` on `schedules`(`status`);
+CREATE TABLE IF NOT EXISTS `process_definitions`(
+  `id` varchar not null,
+  `project_id` integer not null,
+  `name` varchar not null,
+  `environments` text not null,
+  `spec` text not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade,
+  primary key(`id`)
 );
-CREATE TABLE IF NOT EXISTS "schedule_definitions"(
-  "id" varchar not null,
-  "project_id" integer not null,
-  "name" varchar not null,
-  "environments" text not null,
-  "spec" text not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade,
-  primary key("id")
+CREATE TABLE IF NOT EXISTS `schedule_definitions`(
+  `id` varchar not null,
+  `project_id` integer not null,
+  `name` varchar not null,
+  `environments` text not null,
+  `spec` text not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade,
+  primary key(`id`)
 );
-CREATE UNIQUE INDEX "schedules_target_definition_unique" on "schedules"(
-  "target_type",
-  "target_id",
-  "source_definition_id"
+CREATE UNIQUE INDEX `schedules_target_definition_unique` on `schedules`(
+  `target_type`,
+  `target_id`,
+  `source_definition_id`
 );
-CREATE TABLE IF NOT EXISTS "database_connection_targets"(
-  "id" integer primary key autoincrement not null,
-  "database_connection_id" integer not null,
-  "instance_id" integer not null,
-  "prefix" varchar not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("database_connection_id") references "database_connections"("id") on delete restrict,
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `database_connection_targets`(
+  `id` integer not null primary key autoincrement,
+  `database_connection_id` integer not null,
+  `instance_id` integer not null,
+  `prefix` varchar not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`database_connection_id`) references `database_connections`(`id`) on delete restrict,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "instance_deploy_steps"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "name" varchar not null,
-  "phase" varchar not null,
-  "command" text not null,
-  "timeout_seconds" integer not null,
-  "position" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_deploy_steps`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `name` varchar not null,
+  `phase` varchar not null,
+  `command` text not null,
+  `timeout_seconds` integer not null,
+  `position` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
 CREATE TRIGGER active_app_prod_nodes_node_delete
 AFTER DELETE ON nodes
@@ -578,467 +578,467 @@ WHEN NEW.cluster_id IS NOT OLD.cluster_id
 BEGIN
     SELECT RAISE(ABORT, 'Cluster role assignment prevents membership changes.');
 END;
-CREATE TABLE IF NOT EXISTS "processes"(
-  "id" integer primary key autoincrement not null,
-  "owner_type" varchar not null,
-  "owner_id" integer not null,
-  "name" varchar not null,
-  "runtime" varchar not null,
-  "working_directory" text,
-  "runtime_config" text not null,
-  "restart_policy" varchar not null default('unless-stopped'),
-  "desired_state" varchar not null default('stopped'),
-  "status" varchar not null default('provisioning'),
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "source_definition_id" varchar,
-  "keep_alive" tinyint(1) not null default('0'),
-  "retired_runtime" varchar,
-  "systemd_activation_hash" varchar,
-  "systemd_activation_pending" tinyint(1) not null default '0',
-  "restart_on_deploy" tinyint(1) not null default '1'
+CREATE TABLE IF NOT EXISTS `processes`(
+  `id` integer not null primary key autoincrement,
+  `owner_type` varchar not null,
+  `owner_id` integer not null,
+  `name` varchar not null,
+  `runtime` varchar not null,
+  `working_directory` text,
+  `runtime_config` text not null,
+  `restart_policy` varchar not null default('unless-stopped'),
+  `desired_state` varchar not null default('stopped'),
+  `status` varchar not null default('provisioning'),
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `source_definition_id` varchar,
+  `keep_alive` tinyint(1) not null default('0'),
+  `retired_runtime` varchar,
+  `systemd_activation_hash` varchar,
+  `systemd_activation_pending` tinyint(1) not null default '0',
+  `restart_on_deploy` tinyint(1) not null default '1'
 );
-CREATE UNIQUE INDEX "processes_owner_definition_unique" on "processes"(
-  "owner_type",
-  "owner_id",
-  "source_definition_id"
+CREATE UNIQUE INDEX `processes_owner_definition_unique` on `processes`(
+  `owner_type`,
+  `owner_id`,
+  `source_definition_id`
 );
-CREATE INDEX "processes_owner_type_owner_id_index" on "processes"(
-  "owner_type",
-  "owner_id"
+CREATE INDEX `processes_owner_type_owner_id_index` on `processes`(
+  `owner_type`,
+  `owner_id`
 );
-CREATE UNIQUE INDEX "processes_owner_type_owner_id_name_unique" on "processes"(
-  "owner_type",
-  "owner_id",
-  "name"
+CREATE UNIQUE INDEX `processes_owner_type_owner_id_name_unique` on `processes`(
+  `owner_type`,
+  `owner_id`,
+  `name`
 );
-CREATE INDEX "processes_status_index" on "processes"("status");
-CREATE TABLE IF NOT EXISTS "project_updates"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "status" varchar not null,
-  "fingerprint" varchar not null,
-  "requested_slug" varchar,
-  "requested_repository_url" varchar,
-  "requested_default_branch" varchar,
-  "requested_root" varchar,
-  "previous_slug" varchar not null,
-  "previous_repository_url" varchar not null,
-  "previous_default_branch" varchar,
-  "previous_root" varchar,
-  "inventory" text,
-  "evidence" text,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade
+CREATE INDEX `processes_status_index` on `processes`(`status`);
+CREATE TABLE IF NOT EXISTS `project_updates`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `status` varchar not null,
+  `fingerprint` varchar not null,
+  `requested_slug` varchar,
+  `requested_repository_url` varchar,
+  `requested_default_branch` varchar,
+  `requested_root` varchar,
+  `previous_slug` varchar not null,
+  `previous_repository_url` varchar not null,
+  `previous_default_branch` varchar,
+  `previous_root` varchar,
+  `inventory` text,
+  `evidence` text,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "dependency_packages"(
-  "id" integer primary key autoincrement not null,
-  "ecosystem" varchar check("ecosystem" in('composer', 'npm')) not null,
-  "name" varchar not null,
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE TABLE IF NOT EXISTS `dependency_packages`(
+  `id` integer not null primary key autoincrement,
+  `ecosystem` varchar not null check(`ecosystem` in('composer', 'npm')),
+  `name` varchar not null,
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE UNIQUE INDEX "dependency_packages_ecosystem_name_unique" on "dependency_packages"(
-  "ecosystem",
-  "name"
+CREATE UNIQUE INDEX `dependency_packages_ecosystem_name_unique` on `dependency_packages`(
+  `ecosystem`,
+  `name`
 );
-CREATE UNIQUE INDEX "dependency_packages_id_ecosystem_unique" on "dependency_packages"(
-  "id",
-  "ecosystem"
+CREATE UNIQUE INDEX `dependency_packages_id_ecosystem_unique` on `dependency_packages`(
+  `id`,
+  `ecosystem`
 );
-CREATE TABLE IF NOT EXISTS "instance_dependency_observations"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "ecosystem" varchar check("ecosystem" in('composer', 'npm')) not null,
-  "present" tinyint(1) not null,
-  "observed_at" datetime not null,
-  "project_root" text not null,
-  "source_reference" text,
-  "file_hashes" text not null,
-  "format" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "sub_project" varchar not null default '',
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_dependency_observations`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `ecosystem` varchar not null check(`ecosystem` in('composer', 'npm')),
+  `present` tinyint(1) not null,
+  `observed_at` datetime not null,
+  `project_root` text not null,
+  `source_reference` text,
+  `file_hashes` text not null,
+  `format` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `sub_project` varchar not null default '',
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "dependency_observation_id_ecosystem" on "instance_dependency_observations"(
-  "id",
-  "ecosystem"
+CREATE UNIQUE INDEX `dependency_observation_id_ecosystem` on `instance_dependency_observations`(
+  `id`,
+  `ecosystem`
 );
-CREATE TABLE IF NOT EXISTS "instance_dependency_resolutions"(
-  "id" integer primary key autoincrement not null,
-  "observation_id" integer not null,
-  "dependency_package_id" integer not null,
-  "ecosystem" varchar check("ecosystem" in('composer', 'npm')) not null,
-  "locator" text not null,
-  "version" text not null,
-  "regular" tinyint(1) not null,
-  "development" tinyint(1) not null,
-  "source_reference" text,
-  "integrity" text,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("observation_id", "ecosystem") references "instance_dependency_observations"("id", "ecosystem") on delete cascade,
-  foreign key("dependency_package_id", "ecosystem") references "dependency_packages"("id", "ecosystem") on delete restrict
+CREATE TABLE IF NOT EXISTS `instance_dependency_resolutions`(
+  `id` integer not null primary key autoincrement,
+  `observation_id` integer not null,
+  `dependency_package_id` integer not null,
+  `ecosystem` varchar not null check(`ecosystem` in('composer', 'npm')),
+  `locator` text not null,
+  `version` text not null,
+  `regular` tinyint(1) not null,
+  `development` tinyint(1) not null,
+  `source_reference` text,
+  `integrity` text,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`observation_id`, `ecosystem`) references `instance_dependency_observations`(`id`, `ecosystem`) on delete cascade,
+  foreign key(`dependency_package_id`, `ecosystem`) references `dependency_packages`(`id`, `ecosystem`) on delete restrict
 );
-CREATE UNIQUE INDEX "dependency_resolution_locator" on "instance_dependency_resolutions"(
-  "observation_id",
-  "locator"
+CREATE UNIQUE INDEX `dependency_resolution_locator` on `instance_dependency_resolutions`(
+  `observation_id`,
+  `locator`
 );
-CREATE UNIQUE INDEX "dependency_resolution_observation_id" on "instance_dependency_resolutions"(
-  "observation_id",
-  "id"
+CREATE UNIQUE INDEX `dependency_resolution_observation_id` on `instance_dependency_resolutions`(
+  `observation_id`,
+  `id`
 );
-CREATE INDEX "dependency_resolution_package_lookup" on "instance_dependency_resolutions"(
-  "dependency_package_id",
-  "ecosystem"
+CREATE INDEX `dependency_resolution_package_lookup` on `instance_dependency_resolutions`(
+  `dependency_package_id`,
+  `ecosystem`
 );
-CREATE TABLE IF NOT EXISTS "instance_dependency_edges"(
-  "id" integer primary key autoincrement not null,
-  "observation_id" integer not null,
-  "from_resolution_id" integer,
-  "to_resolution_id" integer,
-  "name" varchar not null,
-  "constraint" text not null,
-  "kind" varchar check("kind" in('dependency', 'peer')) not null,
-  "scope" varchar check("scope" in('regular', 'development')) not null,
-  "optional" tinyint(1) not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("observation_id") references "instance_dependency_observations"("id") on delete cascade,
-  foreign key("observation_id", "from_resolution_id") references "instance_dependency_resolutions"("observation_id", "id") on delete cascade,
-  foreign key("observation_id", "to_resolution_id") references "instance_dependency_resolutions"("observation_id", "id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_dependency_edges`(
+  `id` integer not null primary key autoincrement,
+  `observation_id` integer not null,
+  `from_resolution_id` integer,
+  `to_resolution_id` integer,
+  `name` varchar not null,
+  `constraint` text not null,
+  `kind` varchar not null check(`kind` in('dependency', 'peer')),
+  `scope` varchar not null check(`scope` in('regular', 'development')),
+  `optional` tinyint(1) not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`observation_id`) references `instance_dependency_observations`(`id`) on delete cascade,
+  foreign key(`observation_id`, `from_resolution_id`) references `instance_dependency_resolutions`(`observation_id`, `id`) on delete cascade,
+  foreign key(`observation_id`, `to_resolution_id`) references `instance_dependency_resolutions`(`observation_id`, `id`) on delete cascade
 );
-CREATE INDEX "dependency_edge_from_lookup" on "instance_dependency_edges"(
-  "observation_id",
-  "from_resolution_id"
+CREATE INDEX `dependency_edge_from_lookup` on `instance_dependency_edges`(
+  `observation_id`,
+  `from_resolution_id`
 );
-CREATE INDEX "dependency_edge_to_lookup" on "instance_dependency_edges"(
-  "observation_id",
-  "to_resolution_id"
+CREATE INDEX `dependency_edge_to_lookup` on `instance_dependency_edges`(
+  `observation_id`,
+  `to_resolution_id`
 );
-CREATE UNIQUE INDEX dependency_edge_identity ON "instance_dependency_edges"(
+CREATE UNIQUE INDEX dependency_edge_identity ON `instance_dependency_edges`(
   observation_id,
   (from_resolution_id IS NULL),
   COALESCE(from_resolution_id, 0),
   (to_resolution_id IS NULL),
   COALESCE(to_resolution_id, 0),
   name,
-  "constraint",
+  `constraint`,
   kind,
   scope,
   optional
 );
-CREATE TABLE IF NOT EXISTS "instance_dependency_scan_attempts"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "ecosystem" varchar check("ecosystem" in('composer', 'npm')) not null,
-  "attempted_at" datetime not null,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "sub_project" varchar not null default '',
-  "error_detail" varchar,
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_dependency_scan_attempts`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `ecosystem` varchar not null check(`ecosystem` in('composer', 'npm')),
+  `attempted_at` datetime not null,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `sub_project` varchar not null default '',
+  `error_detail` varchar,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE INDEX "dependency_attempt_latest" on "instance_dependency_scan_attempts"(
-  "instance_id",
-  "ecosystem",
-  "id"
+CREATE INDEX `dependency_attempt_latest` on `instance_dependency_scan_attempts`(
+  `instance_id`,
+  `ecosystem`,
+  `id`
 );
-CREATE TABLE IF NOT EXISTS "vite_port_assignments"(
-  "instance_id" integer not null,
-  "node_id" integer not null,
-  "port" integer not null,
-  foreign key("instance_id") references "instances"("id") on delete cascade,
-  foreign key("node_id") references "nodes"("id") on delete restrict,
-  primary key("instance_id", "node_id")
+CREATE TABLE IF NOT EXISTS `vite_port_assignments`(
+  `instance_id` integer not null,
+  `node_id` integer not null,
+  `port` integer not null,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade,
+  foreign key(`node_id`) references `nodes`(`id`) on delete restrict,
+  primary key(`instance_id`, `node_id`)
 );
-CREATE UNIQUE INDEX "vite_port_assignments_node_id_port_unique" on "vite_port_assignments"(
-  "node_id",
-  "port"
+CREATE UNIQUE INDEX `vite_port_assignments_node_id_port_unique` on `vite_port_assignments`(
+  `node_id`,
+  `port`
 );
-CREATE TABLE IF NOT EXISTS "routes"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer,
-  "node_id" integer,
-  "cluster_id" integer,
-  "generation_basis_node_id" integer,
-  "domain" varchar not null,
-  "provenance" varchar not null,
-  "publication" varchar not null,
-  "status" varchar not null default('pending'),
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "replaces_route_id" integer,
-  "replaced_by_route_id" integer,
-  "replacement_step" varchar,
-  "target_set_intent" text,
-  "target_set_step" varchar,
-  "kind" varchar not null default('app'),
-  "sites_published" tinyint(1) not null default '0',
-  "transition_node_id" integer,
-  "transition_cluster_id" integer,
-  "transition_dns_moved_at" datetime,
-  "web_root" varchar,
-  foreign key("replaced_by_route_id") references routes("id") on delete set null on update no action,
-  foreign key("replaces_route_id") references routes("id") on delete set null on update no action,
-  foreign key("generation_basis_node_id") references nodes("id") on delete restrict on update no action,
-  foreign key("cluster_id") references clusters("id") on delete restrict on update no action,
-  foreign key("node_id") references nodes("id") on delete restrict on update no action,
-  foreign key("project_id") references "projects"("id") on delete restrict on update no action
+CREATE TABLE IF NOT EXISTS `routes`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer,
+  `node_id` integer,
+  `cluster_id` integer,
+  `generation_basis_node_id` integer,
+  `domain` varchar not null,
+  `provenance` varchar not null,
+  `publication` varchar not null,
+  `status` varchar not null default('pending'),
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `replaces_route_id` integer,
+  `replaced_by_route_id` integer,
+  `replacement_step` varchar,
+  `target_set_intent` text,
+  `target_set_step` varchar,
+  `kind` varchar not null default('app'),
+  `sites_published` tinyint(1) not null default '0',
+  `transition_node_id` integer,
+  `transition_cluster_id` integer,
+  `transition_dns_moved_at` datetime,
+  `web_root` varchar,
+  foreign key(`replaced_by_route_id`) references routes(`id`) on delete set null on update no action,
+  foreign key(`replaces_route_id`) references routes(`id`) on delete set null on update no action,
+  foreign key(`generation_basis_node_id`) references nodes(`id`) on delete restrict on update no action,
+  foreign key(`cluster_id`) references clusters(`id`) on delete restrict on update no action,
+  foreign key(`node_id`) references nodes(`id`) on delete restrict on update no action,
+  foreign key(`project_id`) references `projects`(`id`) on delete restrict on update no action
 );
-CREATE UNIQUE INDEX "routes_hostname_unique" on "routes"("domain");
-CREATE INDEX "routes_status_index" on "routes"("status");
-CREATE TABLE IF NOT EXISTS "route_custom_proxies"(
-  "route_id" integer not null,
-  "node_id" integer not null,
-  "process_id" integer,
-  "upstream" varchar not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete restrict,
-  foreign key("process_id") references "processes"("id") on delete restrict,
-  foreign key("route_id") references "routes"("id") on delete cascade,
-  primary key("route_id")
+CREATE UNIQUE INDEX `routes_hostname_unique` on `routes`(`domain`);
+CREATE INDEX `routes_status_index` on `routes`(`status`);
+CREATE TABLE IF NOT EXISTS `route_custom_proxies`(
+  `route_id` integer not null,
+  `node_id` integer not null,
+  `process_id` integer,
+  `upstream` varchar not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete restrict,
+  foreign key(`process_id`) references `processes`(`id`) on delete restrict,
+  foreign key(`route_id`) references `routes`(`id`) on delete cascade,
+  primary key(`route_id`)
 );
-CREATE TABLE IF NOT EXISTS "instance_deployments"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "release" varchar,
-  "branch" varchar,
-  "commit" varchar,
-  "started_at" datetime not null,
-  "finished_at" datetime,
-  "duration_seconds" integer,
-  "status" varchar not null,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "selected_release" varchar,
-  "triggered_by" varchar,
-  "events" text,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "kind" varchar not null default 'deploy',
-  foreign key("instance_id") references "instances"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `instance_deployments`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `release` varchar,
+  `branch` varchar,
+  `commit` varchar,
+  `started_at` datetime not null,
+  `finished_at` datetime,
+  `duration_seconds` integer,
+  `status` varchar not null,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `selected_release` varchar,
+  `triggered_by` varchar,
+  `events` text,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `kind` varchar not null default 'deploy',
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "database_users"(
-  "id" integer primary key autoincrement not null,
-  "database_connection_id" integer not null,
-  "username" varchar not null,
-  "privileges" text not null,
-  "created_by" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "password" text,
-  foreign key("database_connection_id") references "database_connections"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `database_users`(
+  `id` integer not null primary key autoincrement,
+  `database_connection_id` integer not null,
+  `username` varchar not null,
+  `privileges` text not null,
+  `created_by` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `password` text,
+  foreign key(`database_connection_id`) references `database_connections`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "database_users_database_connection_id_username_unique" on "database_users"(
-  "database_connection_id",
-  "username"
+CREATE UNIQUE INDEX `database_users_database_connection_id_username_unique` on `database_users`(
+  `database_connection_id`,
+  `username`
 );
-CREATE TABLE IF NOT EXISTS "route_analytics_trackings"(
-  "route_id" integer not null,
-  "instance_id" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("instance_id") references "instances"("id") on delete cascade,
-  foreign key("route_id") references "routes"("id") on delete cascade,
-  primary key("route_id")
+CREATE TABLE IF NOT EXISTS `route_analytics_trackings`(
+  `route_id` integer not null,
+  `instance_id` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade,
+  foreign key(`route_id`) references `routes`(`id`) on delete cascade,
+  primary key(`route_id`)
 );
-CREATE TABLE IF NOT EXISTS "instance_transfers"(
-  "id" varchar not null,
-  "instance_id" integer,
-  "source_node_id" integer not null,
-  "destination_node_id" integer not null,
-  "requested_name" varchar,
-  "destination_name" varchar not null,
-  "destination_path" text not null,
-  "destination_domain" varchar not null,
-  "sqlite_source_path" text,
-  "source_layout" varchar not null,
-  "source_path" text not null,
-  "common_repository_path" text,
-  "source_route_id" integer not null,
-  "destination_route_id" integer,
-  "status" varchar not null,
-  "current_step" varchar not null,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "recovery_evidence" text,
-  "cutover_at" datetime,
-  "completed_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "source_router_node_id" integer,
-  "imported_environment_keys" text,
-  "web_root_route_ids" text,
-  foreign key("instance_id") references "instances"("id") on delete restrict,
-  primary key("id")
+CREATE TABLE IF NOT EXISTS `instance_transfers`(
+  `id` varchar not null,
+  `instance_id` integer,
+  `source_node_id` integer not null,
+  `destination_node_id` integer not null,
+  `requested_name` varchar,
+  `destination_name` varchar not null,
+  `destination_path` text not null,
+  `destination_domain` varchar not null,
+  `sqlite_source_path` text,
+  `source_layout` varchar not null,
+  `source_path` text not null,
+  `common_repository_path` text,
+  `source_route_id` integer not null,
+  `destination_route_id` integer,
+  `status` varchar not null,
+  `current_step` varchar not null,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `recovery_evidence` text,
+  `cutover_at` datetime,
+  `completed_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `source_router_node_id` integer,
+  `imported_environment_keys` text,
+  `web_root_route_ids` text,
+  foreign key(`instance_id`) references `instances`(`id`) on delete restrict,
+  primary key(`id`)
 );
-CREATE TABLE IF NOT EXISTS "project_lifecycle_steps"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "phase" varchar not null,
-  "name" varchar not null,
-  "command" text not null,
-  "timeout_seconds" integer not null,
-  "position" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `project_lifecycle_steps`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `phase` varchar not null,
+  `name` varchar not null,
+  `command` text not null,
+  `timeout_seconds` integer not null,
+  `position` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "project_node_exclusions"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "node_id" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade,
-  foreign key("node_id") references "nodes"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `project_node_exclusions`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `node_id` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "task_checks"(
-  "id" integer primary key autoincrement not null,
-  "task_id" integer not null,
-  "task_comment_id" integer,
-  "status" varchar not null,
-  "pid" integer not null,
-  "process_started" varchar not null,
-  "head_before" varchar not null,
-  "tree_before" varchar not null,
-  "head_after" varchar,
-  "tree_after" varchar,
-  "exit_code" integer,
-  "changed_paths" text,
-  "output" text,
-  "started_at" datetime not null,
-  "finished_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "kind" varchar not null default 'handoff',
-  "failed_step" varchar,
-  "deliverable_evidence" text,
-  foreign key("task_comment_id") references task_comments("id") on delete cascade on update no action,
-  foreign key("task_id") references tasks("id") on delete cascade on update no action
+CREATE TABLE IF NOT EXISTS `task_checks`(
+  `id` integer not null primary key autoincrement,
+  `task_id` integer not null,
+  `task_comment_id` integer,
+  `status` varchar not null,
+  `pid` integer not null,
+  `process_started` varchar not null,
+  `head_before` varchar not null,
+  `tree_before` varchar not null,
+  `head_after` varchar,
+  `tree_after` varchar,
+  `exit_code` integer,
+  `changed_paths` text,
+  `output` text,
+  `started_at` datetime not null,
+  `finished_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `kind` varchar not null default 'handoff',
+  `failed_step` varchar,
+  `deliverable_evidence` text,
+  foreign key(`task_comment_id`) references task_comments(`id`) on delete cascade on update no action,
+  foreign key(`task_id`) references tasks(`id`) on delete cascade on update no action
 );
-CREATE INDEX "task_checks_task_id_id_index" on "task_checks"("task_id", "id");
-CREATE TABLE IF NOT EXISTS "agent_thread_send_leases"(
-  "id" integer primary key autoincrement not null,
-  "agent_thread_id" integer not null,
-  "owner_token" varchar not null,
-  "expires_at" datetime not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("agent_thread_id") references "agent_threads"("id") on delete cascade
+CREATE INDEX `task_checks_task_id_id_index` on `task_checks`(`task_id`, `id`);
+CREATE TABLE IF NOT EXISTS `agent_thread_send_leases`(
+  `id` integer not null primary key autoincrement,
+  `agent_thread_id` integer not null,
+  `owner_token` varchar not null,
+  `expires_at` datetime not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`agent_thread_id`) references `agent_threads`(`id`) on delete cascade
 );
-CREATE INDEX "agent_thread_send_lease_active_idx" on "agent_thread_send_leases"(
-  "agent_thread_id",
-  "expires_at"
+CREATE INDEX `agent_thread_send_lease_active_idx` on `agent_thread_send_leases`(
+  `agent_thread_id`,
+  `expires_at`
 );
-CREATE UNIQUE INDEX "agent_thread_send_leases_owner_token_unique" on "agent_thread_send_leases"(
-  "owner_token"
+CREATE UNIQUE INDEX `agent_thread_send_leases_owner_token_unique` on `agent_thread_send_leases`(
+  `owner_token`
 );
-CREATE INDEX "agent_thread_send_leases_expires_at_index" on "agent_thread_send_leases"(
-  "expires_at"
+CREATE INDEX `agent_thread_send_leases_expires_at_index` on `agent_thread_send_leases`(
+  `expires_at`
 );
-CREATE UNIQUE INDEX "instance_deploy_steps_instance_id_name_unique" on "instance_deploy_steps"(
-  "instance_id",
-  "name"
+CREATE UNIQUE INDEX `instance_deploy_steps_instance_id_name_unique` on `instance_deploy_steps`(
+  `instance_id`,
+  `name`
 );
-CREATE UNIQUE INDEX "instance_deploy_steps_instance_id_phase_position_unique" on "instance_deploy_steps"(
-  "instance_id",
-  "phase",
-  "position"
+CREATE UNIQUE INDEX `instance_deploy_steps_instance_id_phase_position_unique` on `instance_deploy_steps`(
+  `instance_id`,
+  `phase`,
+  `position`
 );
-CREATE INDEX "instance_deployments_instance_id_started_at_index" on "instance_deployments"(
-  "instance_id",
-  "started_at"
+CREATE INDEX `instance_deployments_instance_id_started_at_index` on `instance_deployments`(
+  `instance_id`,
+  `started_at`
 );
-CREATE UNIQUE INDEX "instance_environment_values_instance_id_env_key_unique" on "instance_environment_values"(
-  "instance_id",
-  "env_key"
+CREATE UNIQUE INDEX `instance_environment_values_instance_id_env_key_unique` on `instance_environment_values`(
+  `instance_id`,
+  `env_key`
 );
-CREATE UNIQUE INDEX "instance_removal_members_instance_removal_id_instance_id_unique" on "instance_removal_members"(
-  "instance_removal_id",
-  "instance_id"
+CREATE UNIQUE INDEX `instance_removal_members_instance_removal_id_instance_id_unique` on `instance_removal_members`(
+  `instance_removal_id`,
+  `instance_id`
 );
-CREATE UNIQUE INDEX "instance_removal_members_instance_removal_id_position_unique" on "instance_removal_members"(
-  "instance_removal_id",
-  "position"
+CREATE UNIQUE INDEX `instance_removal_members_instance_removal_id_position_unique` on `instance_removal_members`(
+  `instance_removal_id`,
+  `position`
 );
-CREATE UNIQUE INDEX "instance_removal_members_live_unique"
-ON "instance_removal_members"(
-  "instance_id"
+CREATE UNIQUE INDEX `instance_removal_members_live_unique`
+ON `instance_removal_members`(
+  `instance_id`
 )
 WHERE row_deleted_at IS NULL;
-CREATE INDEX "instance_removals_status_index" on "instance_removals"("status");
-CREATE INDEX "instance_transfers_instance_id_status_index" on "instance_transfers"(
-  "instance_id",
-  "status"
+CREATE INDEX `instance_removals_status_index` on `instance_removals`(`status`);
+CREATE INDEX `instance_transfers_instance_id_status_index` on `instance_transfers`(
+  `instance_id`,
+  `status`
 );
-CREATE UNIQUE INDEX "instances_project_id_name_unique" on "instances"(
-  "project_id",
-  "name"
+CREATE UNIQUE INDEX `instances_project_id_name_unique` on `instances`(
+  `project_id`,
+  `name`
 );
-CREATE INDEX "instances_clone_candidate_id_index" on "instances"(
-  "clone_candidate_id"
+CREATE INDEX `instances_clone_candidate_id_index` on `instances`(
+  `clone_candidate_id`
 );
-CREATE UNIQUE INDEX "instances_node_id_registration_original_path_unique" on "instances"(
-  "node_id",
-  "registration_original_path"
+CREATE UNIQUE INDEX `instances_node_id_registration_original_path_unique` on `instances`(
+  `node_id`,
+  `registration_original_path`
 );
-CREATE UNIQUE INDEX "instances_node_id_vite_port_unique" on "instances"(
-  "node_id",
-  "vite_port"
+CREATE UNIQUE INDEX `instances_node_id_vite_port_unique` on `instances`(
+  `node_id`,
+  `vite_port`
 );
-CREATE INDEX "instances_registration_request_id_index" on "instances"(
-  "registration_request_id"
+CREATE INDEX `instances_registration_request_id_index` on `instances`(
+  `registration_request_id`
 );
-CREATE INDEX "instances_status_index" on "instances"("status");
-CREATE INDEX "project_updates_project_id_status_index" on "project_updates"(
-  "project_id",
-  "status"
+CREATE INDEX `instances_status_index` on `instances`(`status`);
+CREATE INDEX `project_updates_project_id_status_index` on `project_updates`(
+  `project_id`,
+  `status`
 );
-CREATE UNIQUE INDEX "projects_code_unique" on "projects"("code");
-CREATE UNIQUE INDEX "projects_repository_identity_unique" on "projects"(
-  "repository_identity"
+CREATE UNIQUE INDEX `projects_code_unique` on `projects`(`code`);
+CREATE UNIQUE INDEX `projects_repository_identity_unique` on `projects`(
+  `repository_identity`
 );
-CREATE UNIQUE INDEX "projects_slug_unique" on "projects"("slug");
-CREATE UNIQUE INDEX "database_connection_targets_instance_id_prefix_unique" on "database_connection_targets"(
-  "instance_id",
-  "prefix"
+CREATE UNIQUE INDEX `projects_slug_unique` on `projects`(`slug`);
+CREATE UNIQUE INDEX `database_connection_targets_instance_id_prefix_unique` on `database_connection_targets`(
+  `instance_id`,
+  `prefix`
 );
-CREATE UNIQUE INDEX "process_definitions_project_id_name_unique" on "process_definitions"(
-  "project_id",
-  "name"
+CREATE UNIQUE INDEX `process_definitions_project_id_name_unique` on `process_definitions`(
+  `project_id`,
+  `name`
 );
-CREATE UNIQUE INDEX "project_lifecycle_steps_project_id_phase_name_unique" on "project_lifecycle_steps"(
-  "project_id",
-  "phase",
-  "name"
+CREATE UNIQUE INDEX `project_lifecycle_steps_project_id_phase_name_unique` on `project_lifecycle_steps`(
+  `project_id`,
+  `phase`,
+  `name`
 );
-CREATE UNIQUE INDEX "project_lifecycle_steps_project_id_phase_position_unique" on "project_lifecycle_steps"(
-  "project_id",
-  "phase",
-  "position"
+CREATE UNIQUE INDEX `project_lifecycle_steps_project_id_phase_position_unique` on `project_lifecycle_steps`(
+  `project_id`,
+  `phase`,
+  `position`
 );
-CREATE UNIQUE INDEX "project_node_exclusions_project_id_node_id_unique" on "project_node_exclusions"(
-  "project_id",
-  "node_id"
+CREATE UNIQUE INDEX `project_node_exclusions_project_id_node_id_unique` on `project_node_exclusions`(
+  `project_id`,
+  `node_id`
 );
-CREATE UNIQUE INDEX "route_targets_route_id_instance_id_unique" on "route_targets"(
-  "route_id",
-  "instance_id"
+CREATE UNIQUE INDEX `route_targets_route_id_instance_id_unique` on `route_targets`(
+  `route_id`,
+  `instance_id`
 );
-CREATE UNIQUE INDEX "schedule_definitions_project_id_name_unique" on "schedule_definitions"(
-  "project_id",
-  "name"
+CREATE UNIQUE INDEX `schedule_definitions_project_id_name_unique` on `schedule_definitions`(
+  `project_id`,
+  `name`
 );
 CREATE TRIGGER route_targets_reject_analytics_tracking
 BEFORE INSERT ON route_targets
@@ -1330,12 +1330,12 @@ WHEN EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'Shared production Route target AppInstance cannot invalidate its target set.');
 END;
-CREATE TRIGGER "instance_removal_members_delete"
+CREATE TRIGGER `instance_removal_members_delete`
 BEFORE DELETE ON instance_removal_members
 BEGIN
     SELECT RAISE(ABORT, 'AppInstance removal member evidence is immutable.');
 END;
-CREATE TRIGGER "instance_removal_members_immutable"
+CREATE TRIGGER `instance_removal_members_immutable`
 BEFORE UPDATE ON instance_removal_members
 WHEN NEW.instance_removal_id <> OLD.instance_removal_id
     OR NEW.position <> OLD.position
@@ -1394,427 +1394,427 @@ WHEN NEW.instance_removal_id <> OLD.instance_removal_id
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
 END;
-CREATE TRIGGER "instance_removal_members_source_commit_immutable"
+CREATE TRIGGER `instance_removal_members_source_commit_immutable`
 BEFORE UPDATE ON instance_removal_members
 WHEN NEW.source_commit IS NOT OLD.source_commit
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
 END;
-CREATE TRIGGER "instance_removals_delete"
+CREATE TRIGGER `instance_removals_delete`
 BEFORE DELETE ON instance_removals
 BEGIN
     SELECT RAISE(ABORT, 'AppInstance removal evidence is immutable.');
 END;
-CREATE TRIGGER "instances_production_placement_insert" BEFORE INSERT ON instances WHEN EXISTS (SELECT 1 FROM node_roles WHERE node_roles.node_id = NEW.node_id AND node_roles.role = 'app-prod' AND node_roles.status IN ('active', 'removing')) AND EXISTS (SELECT 1 FROM instances WHERE project_id = NEW.project_id AND node_id = NEW.node_id AND EXISTS (SELECT 1 FROM node_roles AS existing_role WHERE existing_role.node_id = instances.node_id AND existing_role.role = 'app-prod' AND existing_role.status IN ('active', 'removing'))) BEGIN SELECT RAISE(ABORT, 'Production AppInstance placement already exists.'); END;
-CREATE TRIGGER "instances_production_placement_update" BEFORE UPDATE OF project_id, node_id ON instances WHEN EXISTS (SELECT 1 FROM node_roles WHERE node_roles.node_id = NEW.node_id AND node_roles.role = 'app-prod' AND node_roles.status IN ('active', 'removing')) AND EXISTS (SELECT 1 FROM instances WHERE id <> OLD.id AND project_id = NEW.project_id AND node_id = NEW.node_id AND EXISTS (SELECT 1 FROM node_roles AS existing_role WHERE existing_role.node_id = instances.node_id AND existing_role.role = 'app-prod' AND existing_role.status IN ('active', 'removing'))) BEGIN SELECT RAISE(ABORT, 'Production AppInstance placement already exists.'); END;
-CREATE TRIGGER "instances_removal_status_insert"
+CREATE TRIGGER `instances_production_placement_insert` BEFORE INSERT ON instances WHEN EXISTS (SELECT 1 FROM node_roles WHERE node_roles.node_id = NEW.node_id AND node_roles.role = 'app-prod' AND node_roles.status IN ('active', 'removing')) AND EXISTS (SELECT 1 FROM instances WHERE project_id = NEW.project_id AND node_id = NEW.node_id AND EXISTS (SELECT 1 FROM node_roles AS existing_role WHERE existing_role.node_id = instances.node_id AND existing_role.role = 'app-prod' AND existing_role.status IN ('active', 'removing'))) BEGIN SELECT RAISE(ABORT, 'Production AppInstance placement already exists.'); END;
+CREATE TRIGGER `instances_production_placement_update` BEFORE UPDATE OF project_id, node_id ON instances WHEN EXISTS (SELECT 1 FROM node_roles WHERE node_roles.node_id = NEW.node_id AND node_roles.role = 'app-prod' AND node_roles.status IN ('active', 'removing')) AND EXISTS (SELECT 1 FROM instances WHERE id <> OLD.id AND project_id = NEW.project_id AND node_id = NEW.node_id AND EXISTS (SELECT 1 FROM node_roles AS existing_role WHERE existing_role.node_id = instances.node_id AND existing_role.role = 'app-prod' AND existing_role.status IN ('active', 'removing'))) BEGIN SELECT RAISE(ABORT, 'Production AppInstance placement already exists.'); END;
+CREATE TRIGGER `instances_removal_status_insert`
 BEFORE INSERT ON instances
 WHEN NEW.status = 'removing'
 BEGIN
     SELECT RAISE(ABORT, 'A removing AppInstance requires recorded removal membership.');
 END;
-CREATE TRIGGER "projects_code_insert" BEFORE insert ON projects WHEN NEW.code IS NULL OR NEW.code NOT GLOB '[A-Z][A-Z][A-Z]' BEGIN SELECT RAISE(ABORT, 'Project code must contain three uppercase letters'); END;
-CREATE TRIGGER "projects_code_update" BEFORE update ON projects WHEN NEW.code IS NULL OR NEW.code NOT GLOB '[A-Z][A-Z][A-Z]' BEGIN SELECT RAISE(ABORT, 'Project code must contain three uppercase letters'); END;
-CREATE TABLE IF NOT EXISTS "project_document_storages"(
-  "id" integer not null,
-  "endpoint" varchar,
-  "region" varchar,
-  "bucket" varchar,
-  "access_key_id" text,
-  "secret_access_key" text,
-  "created_at" datetime,
-  "updated_at" datetime,
-  primary key("id")
+CREATE TRIGGER `projects_code_insert` BEFORE insert ON projects WHEN NEW.code IS NULL OR NEW.code NOT GLOB '[A-Z][A-Z][A-Z]' BEGIN SELECT RAISE(ABORT, 'Project code must contain three uppercase letters'); END;
+CREATE TRIGGER `projects_code_update` BEFORE update ON projects WHEN NEW.code IS NULL OR NEW.code NOT GLOB '[A-Z][A-Z][A-Z]' BEGIN SELECT RAISE(ABORT, 'Project code must contain three uppercase letters'); END;
+CREATE TABLE IF NOT EXISTS `project_document_storages`(
+  `id` integer not null,
+  `endpoint` varchar,
+  `region` varchar,
+  `bucket` varchar,
+  `access_key_id` text,
+  `secret_access_key` text,
+  `created_at` datetime,
+  `updated_at` datetime,
+  primary key(`id`)
 );
-CREATE TABLE IF NOT EXISTS "project_document_entries"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "parent_id" integer,
-  "kind" varchar not null,
-  "name" varchar not null collate 'BINARY',
-  "sibling_scope" integer not null,
-  "revision" integer not null default '1',
-  "current_version_id" integer,
-  "archived_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete restrict,
-  foreign key("parent_id") references "project_document_entries"("id") on delete restrict
+CREATE TABLE IF NOT EXISTS `project_document_entries`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `parent_id` integer,
+  `kind` varchar not null,
+  `name` varchar not null collate 'BINARY',
+  `sibling_scope` integer not null,
+  `revision` integer not null default '1',
+  `current_version_id` integer,
+  `archived_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete restrict,
+  foreign key(`parent_id`) references `project_document_entries`(`id`) on delete restrict
 );
-CREATE UNIQUE INDEX "project_document_entries_project_id_sibling_scope_name_unique" on "project_document_entries"(
-  "project_id",
-  "sibling_scope",
-  "name"
+CREATE UNIQUE INDEX `project_document_entries_project_id_sibling_scope_name_unique` on `project_document_entries`(
+  `project_id`,
+  `sibling_scope`,
+  `name`
 );
-CREATE TABLE IF NOT EXISTS "project_document_uploads"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "entry_id" integer,
-  "storage_key" varchar not null,
-  "state" varchar not null default 'active',
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE TABLE IF NOT EXISTS `project_document_uploads`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `entry_id` integer,
+  `storage_key` varchar not null,
+  `state` varchar not null default 'active',
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE INDEX "project_document_uploads_state_created_at_index" on "project_document_uploads"(
-  "state",
-  "created_at"
+CREATE INDEX `project_document_uploads_state_created_at_index` on `project_document_uploads`(
+  `state`,
+  `created_at`
 );
-CREATE UNIQUE INDEX "project_document_uploads_storage_key_unique" on "project_document_uploads"(
-  "storage_key"
+CREATE UNIQUE INDEX `project_document_uploads_storage_key_unique` on `project_document_uploads`(
+  `storage_key`
 );
-CREATE TABLE IF NOT EXISTS "project_document_versions"(
-  "id" integer primary key autoincrement not null,
-  "entry_id" integer not null,
-  "upload_id" integer not null,
-  "number" integer not null,
-  "media_type" varchar not null,
-  "size_bytes" integer not null,
-  "sha256" varchar not null,
-  "storage_key" varchar not null,
-  "created_by_node_id" integer,
-  "created_at" datetime not null,
-  foreign key("entry_id") references "project_document_entries"("id") on delete cascade,
-  foreign key("upload_id") references "project_document_uploads"("id") on delete restrict,
-  foreign key("created_by_node_id") references "nodes"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `project_document_versions`(
+  `id` integer not null primary key autoincrement,
+  `entry_id` integer not null,
+  `upload_id` integer not null,
+  `number` integer not null,
+  `media_type` varchar not null,
+  `size_bytes` integer not null,
+  `sha256` varchar not null,
+  `storage_key` varchar not null,
+  `created_by_node_id` integer,
+  `created_at` datetime not null,
+  foreign key(`entry_id`) references `project_document_entries`(`id`) on delete cascade,
+  foreign key(`upload_id`) references `project_document_uploads`(`id`) on delete restrict,
+  foreign key(`created_by_node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "project_document_versions_entry_id_number_unique" on "project_document_versions"(
-  "entry_id",
-  "number"
+CREATE UNIQUE INDEX `project_document_versions_entry_id_number_unique` on `project_document_versions`(
+  `entry_id`,
+  `number`
 );
-CREATE UNIQUE INDEX "project_document_versions_upload_id_unique" on "project_document_versions"(
-  "upload_id"
+CREATE UNIQUE INDEX `project_document_versions_upload_id_unique` on `project_document_versions`(
+  `upload_id`
 );
-CREATE UNIQUE INDEX "project_document_versions_storage_key_unique" on "project_document_versions"(
-  "storage_key"
+CREATE UNIQUE INDEX `project_document_versions_storage_key_unique` on `project_document_versions`(
+  `storage_key`
 );
-CREATE TABLE IF NOT EXISTS "project_document_cleanups"(
-  "id" integer primary key autoincrement not null,
-  "storage_key" varchar not null,
-  "retained_fence" tinyint(1) not null default '0',
-  "pending" tinyint(1) not null default '1',
-  "next_attempt_at" datetime not null,
-  "attempts" integer not null default '0',
-  "last_error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "claim_token" varchar,
-  "claim_expires_at" datetime
+CREATE TABLE IF NOT EXISTS `project_document_cleanups`(
+  `id` integer not null primary key autoincrement,
+  `storage_key` varchar not null,
+  `retained_fence` tinyint(1) not null default '0',
+  `pending` tinyint(1) not null default '1',
+  `next_attempt_at` datetime not null,
+  `attempts` integer not null default '0',
+  `last_error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `claim_token` varchar,
+  `claim_expires_at` datetime
 );
-CREATE UNIQUE INDEX "project_document_cleanups_storage_key_unique" on "project_document_cleanups"(
-  "storage_key"
+CREATE UNIQUE INDEX `project_document_cleanups_storage_key_unique` on `project_document_cleanups`(
+  `storage_key`
 );
-CREATE TABLE IF NOT EXISTS "agent_threads"(
-  "id" integer primary key autoincrement not null,
-  "task_group_id" integer not null,
-  "task_id" integer,
-  "node_id" integer,
-  "role" varchar not null,
-  "external_id" varchar not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "model" varchar,
-  "effort" varchar,
-  "driver" varchar not null default('t3'),
-  "runtime_key" varchar not null,
-  "state" varchar,
-  "observed_at" datetime,
-  "observation_version" integer not null default('0'),
-  "observation_error" text,
-  "error" text,
-  "tokens" integer,
-  "lines_added" integer,
-  "lines_deleted" integer,
-  "input_tokens" integer,
-  "cached_input_tokens" integer,
-  "output_tokens" integer,
-  "model_calls" integer,
-  "peak_context_tokens" integer,
-  "t3_input_tokens" integer,
-  "t3_cached_input_tokens" integer,
-  "t3_output_tokens" integer,
-  "t3_model_calls" integer,
-  "t3_peak_context_tokens" integer,
-  "t3_counted_total_processed_tokens" integer,
-  "t3_observed_total_processed_tokens" integer,
-  "t3_event_sequence" integer,
-  "t3_metrics_partial" tinyint(1) not null default('0'),
-  "t3_metrics_initialized" tinyint(1) not null default('0'),
-  "t3_metrics_collected_at" datetime,
-  "t3_metrics_final_at" datetime,
-  "t3_metrics_retry_at" datetime,
-  "t3_metrics_attempts" integer not null default('0'),
-  "t3_metrics_activity_version" integer not null default('0'),
-  "t3_metrics_observed_activity_version" integer,
-  "archived_at" datetime,
-  "archive_command_id" varchar,
-  "archive_attempts" integer not null default('0'),
-  "archive_retry_at" datetime,
-  foreign key("task_id") references tasks("id") on delete cascade on update no action,
-  foreign key("node_id") references nodes("id") on delete set null on update no action,
-  foreign key("task_group_id") references "tasks"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `agent_threads`(
+  `id` integer not null primary key autoincrement,
+  `task_group_id` integer not null,
+  `task_id` integer,
+  `node_id` integer,
+  `role` varchar not null,
+  `external_id` varchar not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `model` varchar,
+  `effort` varchar,
+  `driver` varchar not null default('t3'),
+  `runtime_key` varchar not null,
+  `state` varchar,
+  `observed_at` datetime,
+  `observation_version` integer not null default('0'),
+  `observation_error` text,
+  `error` text,
+  `tokens` integer,
+  `lines_added` integer,
+  `lines_deleted` integer,
+  `input_tokens` integer,
+  `cached_input_tokens` integer,
+  `output_tokens` integer,
+  `model_calls` integer,
+  `peak_context_tokens` integer,
+  `t3_input_tokens` integer,
+  `t3_cached_input_tokens` integer,
+  `t3_output_tokens` integer,
+  `t3_model_calls` integer,
+  `t3_peak_context_tokens` integer,
+  `t3_counted_total_processed_tokens` integer,
+  `t3_observed_total_processed_tokens` integer,
+  `t3_event_sequence` integer,
+  `t3_metrics_partial` tinyint(1) not null default('0'),
+  `t3_metrics_initialized` tinyint(1) not null default('0'),
+  `t3_metrics_collected_at` datetime,
+  `t3_metrics_final_at` datetime,
+  `t3_metrics_retry_at` datetime,
+  `t3_metrics_attempts` integer not null default('0'),
+  `t3_metrics_activity_version` integer not null default('0'),
+  `t3_metrics_observed_activity_version` integer,
+  `archived_at` datetime,
+  `archive_command_id` varchar,
+  `archive_attempts` integer not null default('0'),
+  `archive_retry_at` datetime,
+  foreign key(`task_id`) references tasks(`id`) on delete cascade on update no action,
+  foreign key(`node_id`) references nodes(`id`) on delete set null on update no action,
+  foreign key(`task_group_id`) references `tasks`(`id`) on delete cascade
 );
-CREATE INDEX "agent_threads_archive_retry_at_index" on "agent_threads"(
-  "archive_retry_at"
+CREATE INDEX `agent_threads_archive_retry_at_index` on `agent_threads`(
+  `archive_retry_at`
 );
-CREATE UNIQUE INDEX "agent_threads_driver_runtime_key_external_id_unique" on "agent_threads"(
-  "driver",
-  "runtime_key",
-  "external_id"
+CREATE UNIQUE INDEX `agent_threads_driver_runtime_key_external_id_unique` on `agent_threads`(
+  `driver`,
+  `runtime_key`,
+  `external_id`
 );
-CREATE INDEX "agent_threads_t3_collection_idx" on "agent_threads"(
-  "driver",
-  "t3_metrics_final_at",
-  "t3_metrics_retry_at",
-  "t3_metrics_collected_at"
+CREATE INDEX `agent_threads_t3_collection_idx` on `agent_threads`(
+  `driver`,
+  `t3_metrics_final_at`,
+  `t3_metrics_retry_at`,
+  `t3_metrics_collected_at`
 );
-CREATE TABLE IF NOT EXISTS "task_comments"(
-  "id" integer primary key autoincrement not null,
-  "task_group_id" integer not null,
-  "task_id" integer not null,
-  "agent_thread_id" integer,
-  "completion_attempt" integer,
-  "type" varchar not null,
-  "body" text not null,
-  "author" varchar not null,
-  "review_attempt" integer,
-  "commit_sha" varchar,
-  "posted_at" datetime not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "receipt_hash" varchar,
-  "pull_request" text,
-  "deliverables" text,
-  "cause" varchar,
-  "request_id" varchar,
-  foreign key("agent_thread_id") references agent_threads("id") on delete set null on update no action,
-  foreign key("task_id") references tasks("id") on delete cascade on update no action,
-  foreign key("task_group_id") references "tasks"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `task_comments`(
+  `id` integer not null primary key autoincrement,
+  `task_group_id` integer not null,
+  `task_id` integer not null,
+  `agent_thread_id` integer,
+  `completion_attempt` integer,
+  `type` varchar not null,
+  `body` text not null,
+  `author` varchar not null,
+  `review_attempt` integer,
+  `commit_sha` varchar,
+  `posted_at` datetime not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `receipt_hash` varchar,
+  `pull_request` text,
+  `deliverables` text,
+  `cause` varchar,
+  `request_id` varchar,
+  foreign key(`agent_thread_id`) references agent_threads(`id`) on delete set null on update no action,
+  foreign key(`task_id`) references tasks(`id`) on delete cascade on update no action,
+  foreign key(`task_group_id`) references `tasks`(`id`) on delete cascade
 );
-CREATE INDEX "task_comments_task_id_posted_at_index" on "task_comments"(
-  "task_id",
-  "posted_at"
+CREATE INDEX `task_comments_task_id_posted_at_index` on `task_comments`(
+  `task_id`,
+  `posted_at`
 );
-CREATE UNIQUE INDEX "task_comments_task_id_receipt_hash_unique" on "task_comments"(
-  "task_id",
-  "receipt_hash"
+CREATE UNIQUE INDEX `task_comments_task_id_receipt_hash_unique` on `task_comments`(
+  `task_id`,
+  `receipt_hash`
 );
-CREATE TABLE IF NOT EXISTS "jev_decisions"(
-  "id" integer primary key autoincrement not null,
-  "purpose" varchar not null,
-  "call_started_at" datetime not null,
-  "task_group_id" integer,
-  "task_id" integer,
-  "task_ids" text,
-  "approval_comment_id" integer,
-  "approval_changes" text,
-  "approval_changes_digest" varchar,
-  "approval_changes_redacted" tinyint(1),
-  "merged_pull_request_number" integer,
-  "merge_commit_sha" varchar,
-  "merged_at" datetime,
-  "merge_changes" text,
-  "merge_changes_digest" varchar,
-  "merge_changes_redacted" tinyint(1),
-  "merge_body_digest" varchar,
-  "agent_thread_id" varchar,
-  "questions" text not null,
-  "input_state" text not null,
-  "answers" text,
-  "labels" text,
-  "provider_model" varchar,
-  "latency_ms" integer,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("task_id") references tasks("id") on delete set null on update no action,
-  foreign key("task_group_id") references "tasks"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `jev_decisions`(
+  `id` integer not null primary key autoincrement,
+  `purpose` varchar not null,
+  `call_started_at` datetime not null,
+  `task_group_id` integer,
+  `task_id` integer,
+  `task_ids` text,
+  `approval_comment_id` integer,
+  `approval_changes` text,
+  `approval_changes_digest` varchar,
+  `approval_changes_redacted` tinyint(1),
+  `merged_pull_request_number` integer,
+  `merge_commit_sha` varchar,
+  `merged_at` datetime,
+  `merge_changes` text,
+  `merge_changes_digest` varchar,
+  `merge_changes_redacted` tinyint(1),
+  `merge_body_digest` varchar,
+  `agent_thread_id` varchar,
+  `questions` text not null,
+  `input_state` text not null,
+  `answers` text,
+  `labels` text,
+  `provider_model` varchar,
+  `latency_ms` integer,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`task_id`) references tasks(`id`) on delete set null on update no action,
+  foreign key(`task_group_id`) references `tasks`(`id`) on delete set null
 );
-CREATE INDEX "jev_decisions_purpose_created_at_index" on "jev_decisions"(
-  "purpose",
-  "created_at"
+CREATE INDEX `jev_decisions_purpose_created_at_index` on `jev_decisions`(
+  `purpose`,
+  `created_at`
 );
-CREATE TABLE IF NOT EXISTS "project_development_deploy_steps"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "name" varchar not null,
-  "command" text not null,
-  "timeout_seconds" integer not null,
-  "required" tinyint(1) not null default '1',
-  "position" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `project_development_deploy_steps`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `name` varchar not null,
+  `command` text not null,
+  `timeout_seconds` integer not null,
+  `required` tinyint(1) not null default '1',
+  `position` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "project_development_deploy_steps_project_id_name_unique" on "project_development_deploy_steps"(
-  "project_id",
-  "name"
+CREATE UNIQUE INDEX `project_development_deploy_steps_project_id_name_unique` on `project_development_deploy_steps`(
+  `project_id`,
+  `name`
 );
-CREATE UNIQUE INDEX "project_development_deploy_steps_project_id_position_unique" on "project_development_deploy_steps"(
-  "project_id",
-  "position"
+CREATE UNIQUE INDEX `project_development_deploy_steps_project_id_position_unique` on `project_development_deploy_steps`(
+  `project_id`,
+  `position`
 );
-CREATE INDEX "project_document_cleanups_next_attempt_at_id_index" on "project_document_cleanups"(
-  "next_attempt_at",
-  "id"
+CREATE INDEX `project_document_cleanups_next_attempt_at_id_index` on `project_document_cleanups`(
+  `next_attempt_at`,
+  `id`
 );
-CREATE TABLE IF NOT EXISTS "problem_fingerprints"(
-  "id" integer primary key autoincrement not null,
-  "fingerprint" varchar not null,
-  "source" varchar not null,
-  "first_seen" datetime,
-  "last_seen" datetime,
-  "occurrences" integer not null default '0',
-  "evidence" text not null,
-  "task_group_id" integer,
-  "muted_until" datetime,
-  "filed_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("task_group_id") references "tasks"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `problem_fingerprints`(
+  `id` integer not null primary key autoincrement,
+  `fingerprint` varchar not null,
+  `source` varchar not null,
+  `first_seen` datetime,
+  `last_seen` datetime,
+  `occurrences` integer not null default '0',
+  `evidence` text not null,
+  `task_group_id` integer,
+  `muted_until` datetime,
+  `filed_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`task_group_id`) references `tasks`(`id`) on delete set null
 );
-CREATE INDEX "problem_fingerprints_source_index" on "problem_fingerprints"(
-  "source"
+CREATE INDEX `problem_fingerprints_source_index` on `problem_fingerprints`(
+  `source`
 );
-CREATE UNIQUE INDEX "problem_fingerprints_fingerprint_unique" on "problem_fingerprints"(
-  "fingerprint"
+CREATE UNIQUE INDEX `problem_fingerprints_fingerprint_unique` on `problem_fingerprints`(
+  `fingerprint`
 );
-CREATE TABLE IF NOT EXISTS "problem_collector_state"(
-  "id" integer primary key autoincrement not null,
-  "activity_cursor" integer,
-  "log_path" varchar,
-  "log_inode" integer,
-  "log_offset" integer,
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE TABLE IF NOT EXISTS `problem_collector_state`(
+  `id` integer not null primary key autoincrement,
+  `activity_cursor` integer,
+  `log_path` varchar,
+  `log_inode` integer,
+  `log_offset` integer,
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE TABLE IF NOT EXISTS "task_questions"(
-  "id" integer primary key autoincrement not null,
-  "task_id" integer not null,
-  "subtask_id" integer not null,
-  "attempt" integer not null,
-  "asked_by" varchar not null,
-  "question" text not null,
-  "status" varchar not null,
-  "answered_by" varchar,
-  "answer" text,
-  "cause" varchar,
-  "asked_at" datetime not null,
-  "escalated_at" datetime,
-  "answered_at" datetime,
-  "opened_comment_id" integer,
-  "resolution_comment_id" integer,
-  "answered_comment_id" integer,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "consult" tinyint(1) not null default '0',
-  foreign key("task_id") references "tasks"("id") on delete cascade,
-  foreign key("subtask_id") references "tasks"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `task_questions`(
+  `id` integer not null primary key autoincrement,
+  `task_id` integer not null,
+  `subtask_id` integer not null,
+  `attempt` integer not null,
+  `asked_by` varchar not null,
+  `question` text not null,
+  `status` varchar not null,
+  `answered_by` varchar,
+  `answer` text,
+  `cause` varchar,
+  `asked_at` datetime not null,
+  `escalated_at` datetime,
+  `answered_at` datetime,
+  `opened_comment_id` integer,
+  `resolution_comment_id` integer,
+  `answered_comment_id` integer,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `consult` tinyint(1) not null default '0',
+  foreign key(`task_id`) references `tasks`(`id`) on delete cascade,
+  foreign key(`subtask_id`) references `tasks`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "task_questions_opened_comment_id_unique" on "task_questions"(
-  "opened_comment_id"
+CREATE UNIQUE INDEX `task_questions_opened_comment_id_unique` on `task_questions`(
+  `opened_comment_id`
 );
-CREATE INDEX "task_questions_asked_at_index" on "task_questions"("asked_at");
-CREATE INDEX "task_questions_status_cause_index" on "task_questions"(
-  "status",
-  "cause"
+CREATE INDEX `task_questions_asked_at_index` on `task_questions`(`asked_at`);
+CREATE INDEX `task_questions_status_cause_index` on `task_questions`(
+  `status`,
+  `cause`
 );
-CREATE TABLE IF NOT EXISTS "database_servers"(
-  "id" integer primary key autoincrement not null,
-  "slug" varchar not null,
-  "node_id" integer not null,
-  "process_id" integer,
-  "tag" varchar not null,
-  "port" integer not null,
-  "root_password" text not null,
-  "status" varchar not null,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "driver" varchar not null default 'mysql',
-  "default_open" tinyint(1) not null default '0',
-  foreign key("node_id") references "nodes"("id") on delete restrict,
-  foreign key("process_id") references "processes"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `database_servers`(
+  `id` integer not null primary key autoincrement,
+  `slug` varchar not null,
+  `node_id` integer not null,
+  `process_id` integer,
+  `tag` varchar not null,
+  `port` integer not null,
+  `root_password` text not null,
+  `status` varchar not null,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `driver` varchar not null default 'mysql',
+  `default_open` tinyint(1) not null default '0',
+  foreign key(`node_id`) references `nodes`(`id`) on delete restrict,
+  foreign key(`process_id`) references `processes`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "database_servers_slug_unique" on "database_servers"(
-  "slug"
+CREATE UNIQUE INDEX `database_servers_slug_unique` on `database_servers`(
+  `slug`
 );
-CREATE TABLE IF NOT EXISTS "database_connections"(
-  "id" integer primary key autoincrement not null,
-  "slug" varchar not null,
-  "driver" varchar not null,
-  "node_id" integer,
-  "host" varchar,
-  "port" integer,
-  "database" varchar,
-  "path" varchar,
-  "username" varchar,
-  "password" text,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "database_server_id" integer,
-  "owner_instance_id" integer,
-  "test_database" varchar,
-  "clone_step" varchar,
-  foreign key("node_id") references nodes("id") on delete set null on update no action,
-  foreign key("database_server_id") references "database_servers"("id") on delete restrict,
-  foreign key("owner_instance_id") references "instances"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `database_connections`(
+  `id` integer not null primary key autoincrement,
+  `slug` varchar not null,
+  `driver` varchar not null,
+  `node_id` integer,
+  `host` varchar,
+  `port` integer,
+  `database` varchar,
+  `path` varchar,
+  `username` varchar,
+  `password` text,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `database_server_id` integer,
+  `owner_instance_id` integer,
+  `test_database` varchar,
+  `clone_step` varchar,
+  foreign key(`node_id`) references nodes(`id`) on delete set null on update no action,
+  foreign key(`database_server_id`) references `database_servers`(`id`) on delete restrict,
+  foreign key(`owner_instance_id`) references `instances`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "database_connections_slug_unique" on "database_connections"(
-  "slug"
+CREATE UNIQUE INDEX `database_connections_slug_unique` on `database_connections`(
+  `slug`
 );
-CREATE TABLE IF NOT EXISTS "task_github_review_scans"(
-  "group_id" integer not null,
-  "sequence" integer not null default '0',
-  "snapshot" text not null,
-  foreign key("group_id") references "tasks"("id") on delete cascade,
-  primary key("group_id")
+CREATE TABLE IF NOT EXISTS `task_github_review_scans`(
+  `group_id` integer not null,
+  `sequence` integer not null default '0',
+  `snapshot` text not null,
+  foreign key(`group_id`) references `tasks`(`id`) on delete cascade,
+  primary key(`group_id`)
 );
-CREATE TABLE IF NOT EXISTS "task_github_review_observations"(
-  "id" integer primary key autoincrement not null,
-  "group_id" integer not null,
-  "repository" varchar not null,
-  "pull_request_number" integer not null,
-  "reviewer_id" integer not null,
-  "review_id" integer not null,
-  "source" text not null,
-  "latest" text not null,
-  foreign key("group_id") references "tasks"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `task_github_review_observations`(
+  `id` integer not null primary key autoincrement,
+  `group_id` integer not null,
+  `repository` varchar not null,
+  `pull_request_number` integer not null,
+  `reviewer_id` integer not null,
+  `review_id` integer not null,
+  `source` text not null,
+  `latest` text not null,
+  foreign key(`group_id`) references `tasks`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "task_github_approval_source" on "task_github_review_observations"(
-  "group_id",
-  "repository",
-  "pull_request_number",
-  "review_id"
+CREATE UNIQUE INDEX `task_github_approval_source` on `task_github_review_observations`(
+  `group_id`,
+  `repository`,
+  `pull_request_number`,
+  `review_id`
 );
-CREATE TABLE IF NOT EXISTS "task_github_review_consumptions"(
-  "id" integer primary key autoincrement not null,
-  "group_id" integer not null,
-  "repository" varchar not null,
-  "pull_request_number" integer not null,
-  "review_id" integer not null,
-  "identity" varchar not null,
-  "operator_task_id" integer,
-  "fixup_id" integer,
-  "digest" varchar not null,
-  "packet" text not null,
-  "created_at" datetime not null,
-  foreign key("group_id") references "tasks"("id") on delete cascade,
-  foreign key("fixup_id") references "tasks"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `task_github_review_consumptions`(
+  `id` integer not null primary key autoincrement,
+  `group_id` integer not null,
+  `repository` varchar not null,
+  `pull_request_number` integer not null,
+  `review_id` integer not null,
+  `identity` varchar not null,
+  `operator_task_id` integer,
+  `fixup_id` integer,
+  `digest` varchar not null,
+  `packet` text not null,
+  `created_at` datetime not null,
+  foreign key(`group_id`) references `tasks`(`id`) on delete cascade,
+  foreign key(`fixup_id`) references `tasks`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "task_github_review_consumption_source" on "task_github_review_consumptions"(
-  "group_id",
-  "repository",
-  "pull_request_number",
-  "review_id"
+CREATE UNIQUE INDEX `task_github_review_consumption_source` on `task_github_review_consumptions`(
+  `group_id`,
+  `repository`,
+  `pull_request_number`,
+  `review_id`
 );
-CREATE TABLE IF NOT EXISTS "task_github_review_feedback"(
-  "group_id" integer not null,
-  "causes" text not null,
-  foreign key("group_id") references "tasks"("id") on delete cascade,
-  primary key("group_id")
+CREATE TABLE IF NOT EXISTS `task_github_review_feedback`(
+  `group_id` integer not null,
+  `causes` text not null,
+  foreign key(`group_id`) references `tasks`(`id`) on delete cascade,
+  primary key(`group_id`)
 );
-CREATE TRIGGER "instance_removals_immutable"
+CREATE TRIGGER `instance_removals_immutable`
 BEFORE UPDATE ON instance_removals
 WHEN NEW.id <> OLD.id
     OR NEW.requested_instance_id <> OLD.requested_instance_id
@@ -1863,7 +1863,7 @@ WHEN NEW.id <> OLD.id
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal contract.');
 END;
-CREATE TRIGGER "instance_removal_members_source_commit_insert"
+CREATE TRIGGER `instance_removal_members_source_commit_insert`
 BEFORE INSERT ON instance_removal_members
 WHEN NEW.environment = 'development' AND (
     NEW.source_commit IS NULL
@@ -1872,394 +1872,394 @@ WHEN NEW.environment = 'development' AND (
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
 END;
-CREATE TABLE IF NOT EXISTS "gateway_releases"(
-  "id" integer primary key autoincrement not null,
-  "release_id" varchar,
-  "sha" varchar,
-  "trigger" varchar not null,
-  "outcome" varchar not null,
-  "migrations_ran" tinyint(1) not null default('0'),
-  "retryable" tinyint(1) not null default('0'),
-  "cleanup_paused" tinyint(1) not null default('0'),
-  "snapshot_path" varchar,
-  "previous_release_id" varchar,
-  "phases" text not null,
-  "error_code" varchar,
-  "message" text,
-  "duration_ms" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "requested" varchar,
-  "force" tinyint(1) not null default '0',
-  "alert" text
+CREATE TABLE IF NOT EXISTS `gateway_releases`(
+  `id` integer not null primary key autoincrement,
+  `release_id` varchar,
+  `sha` varchar,
+  `trigger` varchar not null,
+  `outcome` varchar not null,
+  `migrations_ran` tinyint(1) not null default('0'),
+  `retryable` tinyint(1) not null default('0'),
+  `cleanup_paused` tinyint(1) not null default('0'),
+  `snapshot_path` varchar,
+  `previous_release_id` varchar,
+  `phases` text not null,
+  `error_code` varchar,
+  `message` text,
+  `duration_ms` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `requested` varchar,
+  `force` tinyint(1) not null default '0',
+  `alert` text
 );
-CREATE INDEX "gateway_releases_outcome_index" on "gateway_releases"("outcome");
-CREATE INDEX "gateway_releases_release_id_index" on "gateway_releases"(
-  "release_id"
+CREATE INDEX `gateway_releases_outcome_index` on `gateway_releases`(`outcome`);
+CREATE INDEX `gateway_releases_release_id_index` on `gateway_releases`(
+  `release_id`
 );
-CREATE UNIQUE INDEX "dependency_observation_instance_source_ecosystem" on "instance_dependency_observations"(
-  "instance_id",
-  "sub_project",
-  "ecosystem"
+CREATE UNIQUE INDEX `dependency_observation_instance_source_ecosystem` on `instance_dependency_observations`(
+  `instance_id`,
+  `sub_project`,
+  `ecosystem`
 );
-CREATE INDEX "dependency_attempt_source_latest" on "instance_dependency_scan_attempts"(
-  "instance_id",
-  "sub_project",
-  "ecosystem",
-  "id"
+CREATE INDEX `dependency_attempt_source_latest` on `instance_dependency_scan_attempts`(
+  `instance_id`,
+  `sub_project`,
+  `ecosystem`,
+  `id`
 );
-CREATE TABLE IF NOT EXISTS "package_cache_snapshots"(
-  "project_id" integer not null,
-  "commit" varchar,
-  "fill_pending" tinyint(1) not null default '0',
-  "blobs" text not null,
-  "artifacts" text not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade,
-  primary key("project_id")
+CREATE TABLE IF NOT EXISTS `package_cache_snapshots`(
+  `project_id` integer not null,
+  `commit` varchar,
+  `fill_pending` tinyint(1) not null default '0',
+  `blobs` text not null,
+  `artifacts` text not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade,
+  primary key(`project_id`)
 );
-CREATE TABLE IF NOT EXISTS "package_cache_entries"(
-  "id" integer primary key autoincrement not null,
-  "project_id" integer not null,
-  "host_node_id" integer not null,
-  "manager" varchar not null,
-  "package" varchar not null,
-  "version" varchar not null,
-  "integrity" varchar not null,
-  "key" varchar not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("project_id") references "projects"("id") on delete cascade,
-  foreign key("host_node_id") references "nodes"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `package_cache_entries`(
+  `id` integer not null primary key autoincrement,
+  `project_id` integer not null,
+  `host_node_id` integer not null,
+  `manager` varchar not null,
+  `package` varchar not null,
+  `version` varchar not null,
+  `integrity` varchar not null,
+  `key` varchar not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`project_id`) references `projects`(`id`) on delete cascade,
+  foreign key(`host_node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "package_cache_entries_identity_unique" on "package_cache_entries"(
-  "project_id",
-  "host_node_id",
-  "package",
-  "version",
-  "key"
+CREATE UNIQUE INDEX `package_cache_entries_identity_unique` on `package_cache_entries`(
+  `project_id`,
+  `host_node_id`,
+  `package`,
+  `version`,
+  `key`
 );
-CREATE INDEX "package_cache_entries_package_version_index" on "package_cache_entries"(
-  "package",
-  "version"
+CREATE INDEX `package_cache_entries_package_version_index` on `package_cache_entries`(
+  `package`,
+  `version`
 );
-CREATE TABLE IF NOT EXISTS "fleet_rollouts"(
-  "id" integer primary key autoincrement not null,
-  "gateway_release_id" integer,
-  "commit" varchar not null,
-  "status" varchar not null,
-  "desired_state" text not null,
-  "order" text not null,
-  "halted_node_id" integer,
-  "error_code" varchar,
-  "message" text,
-  "alert" text,
-  "notices" text,
-  "started_at" datetime,
-  "finished_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("gateway_release_id") references "gateway_releases"("id") on delete set null,
-  foreign key("halted_node_id") references "nodes"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `fleet_rollouts`(
+  `id` integer not null primary key autoincrement,
+  `gateway_release_id` integer,
+  `commit` varchar not null,
+  `status` varchar not null,
+  `desired_state` text not null,
+  `order` text not null,
+  `halted_node_id` integer,
+  `error_code` varchar,
+  `message` text,
+  `alert` text,
+  `notices` text,
+  `started_at` datetime,
+  `finished_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`gateway_release_id`) references `gateway_releases`(`id`) on delete set null,
+  foreign key(`halted_node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "fleet_rollouts_gateway_release_id_unique" on "fleet_rollouts"(
-  "gateway_release_id"
+CREATE UNIQUE INDEX `fleet_rollouts_gateway_release_id_unique` on `fleet_rollouts`(
+  `gateway_release_id`
 );
-CREATE INDEX "fleet_rollouts_commit_index" on "fleet_rollouts"("commit");
-CREATE INDEX "fleet_rollouts_status_index" on "fleet_rollouts"("status");
-CREATE TABLE IF NOT EXISTS "fleet_rollout_nodes"(
-  "id" integer primary key autoincrement not null,
-  "fleet_rollout_id" integer not null,
-  "node_id" integer,
-  "node_name" varchar not null,
-  "position" integer not null,
-  "outcome" varchar not null,
-  "step" varchar,
-  "error_code" varchar,
-  "message" text,
-  "evidence" text,
-  "cli_version" varchar,
-  "agent_version" varchar,
-  "footprint_digest" varchar,
-  "attempts" integer not null default '0',
-  "started_at" datetime,
-  "finished_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("fleet_rollout_id") references "fleet_rollouts"("id") on delete cascade,
-  foreign key("node_id") references "nodes"("id") on delete set null
+CREATE INDEX `fleet_rollouts_commit_index` on `fleet_rollouts`(`commit`);
+CREATE INDEX `fleet_rollouts_status_index` on `fleet_rollouts`(`status`);
+CREATE TABLE IF NOT EXISTS `fleet_rollout_nodes`(
+  `id` integer not null primary key autoincrement,
+  `fleet_rollout_id` integer not null,
+  `node_id` integer,
+  `node_name` varchar not null,
+  `position` integer not null,
+  `outcome` varchar not null,
+  `step` varchar,
+  `error_code` varchar,
+  `message` text,
+  `evidence` text,
+  `cli_version` varchar,
+  `agent_version` varchar,
+  `footprint_digest` varchar,
+  `attempts` integer not null default '0',
+  `started_at` datetime,
+  `finished_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`fleet_rollout_id`) references `fleet_rollouts`(`id`) on delete cascade,
+  foreign key(`node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "fleet_rollout_nodes_fleet_rollout_id_node_id_unique" on "fleet_rollout_nodes"(
-  "fleet_rollout_id",
-  "node_id"
+CREATE UNIQUE INDEX `fleet_rollout_nodes_fleet_rollout_id_node_id_unique` on `fleet_rollout_nodes`(
+  `fleet_rollout_id`,
+  `node_id`
 );
-CREATE TABLE IF NOT EXISTS "node_footprints"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "digest" varchar,
-  "artifacts" text,
-  "converged_at" datetime,
-  "cli_state" varchar,
-  "cli_checked_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `node_footprints`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `digest` varchar,
+  `artifacts` text,
+  `converged_at` datetime,
+  `cli_state` varchar,
+  `cli_checked_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "node_footprints_node_id_unique" on "node_footprints"(
-  "node_id"
+CREATE UNIQUE INDEX `node_footprints_node_id_unique` on `node_footprints`(
+  `node_id`
 );
-CREATE TABLE IF NOT EXISTS "task_reviewed_commits"(
-  "id" integer primary key autoincrement not null,
-  "task_id" integer not null,
-  "sha" varchar not null,
-  "source" varchar not null,
-  "review_task_id" integer,
-  "pushed_at" datetime,
-  "github_review_id" integer,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "inherited_approval_sha" varchar,
-  foreign key("task_id") references "tasks"("id") on delete cascade,
-  foreign key("review_task_id") references "tasks"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `task_reviewed_commits`(
+  `id` integer not null primary key autoincrement,
+  `task_id` integer not null,
+  `sha` varchar not null,
+  `source` varchar not null,
+  `review_task_id` integer,
+  `pushed_at` datetime,
+  `github_review_id` integer,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `inherited_approval_sha` varchar,
+  foreign key(`task_id`) references `tasks`(`id`) on delete cascade,
+  foreign key(`review_task_id`) references `tasks`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "task_reviewed_commits_task_id_sha_unique" on "task_reviewed_commits"(
-  "task_id",
-  "sha"
+CREATE UNIQUE INDEX `task_reviewed_commits_task_id_sha_unique` on `task_reviewed_commits`(
+  `task_id`,
+  `sha`
 );
-CREATE TABLE IF NOT EXISTS "ai_router_process_sources"(
-  "process_id" integer not null,
-  "source_revision" varchar,
-  "activation_pending" tinyint(1) not null default '0',
-  foreign key("process_id") references "processes"("id") on delete cascade,
-  primary key("process_id")
+CREATE TABLE IF NOT EXISTS `ai_router_process_sources`(
+  `process_id` integer not null,
+  `source_revision` varchar,
+  `activation_pending` tinyint(1) not null default '0',
+  foreign key(`process_id`) references `processes`(`id`) on delete cascade,
+  primary key(`process_id`)
 );
-CREATE TABLE IF NOT EXISTS "task_workspace_leases"(
-  "id" integer primary key autoincrement not null,
-  "instance_id" integer not null,
-  "group_id" integer not null,
-  "task_id" integer,
-  "task_context" varchar,
-  "acquisition_sequence" integer,
-  "active_instance_id" integer,
-  "kind" varchar not null,
-  "owner" varchar not null,
-  "status" varchar not null default 'queued',
-  "thread_id" integer,
-  "check_id" integer,
-  "pid" integer,
-  "process_started" varchar,
-  "process_head" varchar,
-  "process_tree" varchar,
-  "previous_turn_id" varchar,
-  "dispatch_key" varchar,
-  "dispatch_hash" varchar,
-  "dispatch_message" text,
-  "dispatch_generated" tinyint(1) not null default '0',
-  "dispatch_completed" tinyint(1) not null default '0',
-  "review_baseline_required" tinyint(1) not null default '0',
-  "saw_working" tinyint(1) not null default '0',
-  "adopted" tinyint(1) not null default '0',
-  "remote_uncertain" tinyint(1) not null default '0',
-  "orbit_mutation" tinyint(1) not null default '0',
-  "dispatch_started_at" datetime,
-  "gateway_pid" integer,
-  "gateway_started" varchar,
-  "head_before" varchar,
-  "tree_before" varchar,
-  "head_after" varchar,
-  "tree_after" varchar,
-  "acquired_at" datetime,
-  "released_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "gateway_host" varchar,
-  "gateway_boot" varchar,
-  "journaled" tinyint(1) not null default '0',
-  "completion_pending" tinyint(1) not null default '0',
-  "check_run_id" varchar,
-  "actor_kind" varchar,
-  "actor_owner" varchar,
-  "recovery_sealed" tinyint(1) not null default '0',
-  "causality_uncertain" tinyint(1) not null default '0'
+CREATE TABLE IF NOT EXISTS `task_workspace_leases`(
+  `id` integer not null primary key autoincrement,
+  `instance_id` integer not null,
+  `group_id` integer not null,
+  `task_id` integer,
+  `task_context` varchar,
+  `acquisition_sequence` integer,
+  `active_instance_id` integer,
+  `kind` varchar not null,
+  `owner` varchar not null,
+  `status` varchar not null default 'queued',
+  `thread_id` integer,
+  `check_id` integer,
+  `pid` integer,
+  `process_started` varchar,
+  `process_head` varchar,
+  `process_tree` varchar,
+  `previous_turn_id` varchar,
+  `dispatch_key` varchar,
+  `dispatch_hash` varchar,
+  `dispatch_message` text,
+  `dispatch_generated` tinyint(1) not null default '0',
+  `dispatch_completed` tinyint(1) not null default '0',
+  `review_baseline_required` tinyint(1) not null default '0',
+  `saw_working` tinyint(1) not null default '0',
+  `adopted` tinyint(1) not null default '0',
+  `remote_uncertain` tinyint(1) not null default '0',
+  `orbit_mutation` tinyint(1) not null default '0',
+  `dispatch_started_at` datetime,
+  `gateway_pid` integer,
+  `gateway_started` varchar,
+  `head_before` varchar,
+  `tree_before` varchar,
+  `head_after` varchar,
+  `tree_after` varchar,
+  `acquired_at` datetime,
+  `released_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `gateway_host` varchar,
+  `gateway_boot` varchar,
+  `journaled` tinyint(1) not null default '0',
+  `completion_pending` tinyint(1) not null default '0',
+  `check_run_id` varchar,
+  `actor_kind` varchar,
+  `actor_owner` varchar,
+  `recovery_sealed` tinyint(1) not null default '0',
+  `causality_uncertain` tinyint(1) not null default '0'
 );
-CREATE INDEX "task_workspace_leases_instance_id_index" on "task_workspace_leases"(
-  "instance_id"
+CREATE INDEX `task_workspace_leases_instance_id_index` on `task_workspace_leases`(
+  `instance_id`
 );
-CREATE INDEX "task_workspace_leases_group_id_index" on "task_workspace_leases"(
-  "group_id"
+CREATE INDEX `task_workspace_leases_group_id_index` on `task_workspace_leases`(
+  `group_id`
 );
-CREATE INDEX "task_workspace_leases_task_id_index" on "task_workspace_leases"(
-  "task_id"
+CREATE INDEX `task_workspace_leases_task_id_index` on `task_workspace_leases`(
+  `task_id`
 );
-CREATE UNIQUE INDEX "task_workspace_leases_active_instance_id_unique" on "task_workspace_leases"(
-  "active_instance_id"
+CREATE UNIQUE INDEX `task_workspace_leases_active_instance_id_unique` on `task_workspace_leases`(
+  `active_instance_id`
 );
-CREATE TABLE IF NOT EXISTS "tasks"(
-  "id" integer primary key autoincrement not null,
-  "parent_id" integer,
-  "project_id" integer,
-  "taskable_type" varchar,
-  "taskable_id" integer,
-  "title" varchar not null,
-  "brief" text not null,
-  "status" varchar not null default('todo'),
-  "position" integer,
-  "pr_url" varchar,
-  "implementer_model" varchar,
-  "reviewer_model" varchar,
-  "tokens" integer,
-  "line_diff" integer,
-  "lines_added" integer,
-  "lines_deleted" integer,
-  "duration_ms" integer,
-  "started_at" datetime,
-  "settled_at" datetime,
-  "reserved_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "reviewer_agent_thread_id" integer,
-  "implementer_agent_thread_id" integer,
-  "assistance_requested" tinyint(1) not null default('0'),
-  "assistance_reason" text,
-  "implementer_agent_driver" varchar,
-  "reviewer_agent_driver" varchar,
-  "agent_unavailable_since" datetime,
-  "agent_unavailable_notified_at" datetime,
-  "type" varchar,
-  "completion_summary" text,
-  "subtask_start_commit" varchar,
-  "completion_attempt" integer,
-  "completion_handoff_comment_id" integer,
-  "completion_reminder_attempt" integer,
-  "completion_reminder_input_id" varchar,
-  "completion_handoff_attempt" integer,
-  "completion_handoff_turn_id" varchar,
-  "review_attempt" integer,
-  "review_handled_comment_id" integer,
-  "review_reminder_attempt" integer,
-  "review_reminder_input_id" varchar,
-  "review_notified_attempt" integer,
-  "review_notified_turn_id" varchar,
-  "review_workspace_head" varchar,
-  "review_workspace_tree" varchar,
-  "deliverables" text,
-  "fixup_problem" text,
-  "fixup_head_sha" varchar,
-  "communication_failures" integer,
-  "resolution_delivered_comment_id" integer,
-  "pi_restart_resumes" integer,
-  "pi_restart_key" varchar,
-  "pi_restart_thread_id" integer,
-  "pi_restart_source_turn_id" varchar,
-  "pi_restart_reservation" varchar,
-  "pi_restart_session_revision" varchar,
-  "continuation_of_task_id" integer,
-  "assistance_kind" varchar,
-  "assistance_question" text,
-  "questions" integer not null default('0'),
-  "escalations" integer not null default('0'),
-  "direction_relay_comment_id" integer,
-  "direction_answer_key" varchar,
-  "direction_answer_source_turn_id" varchar,
-  "consult_comment_id" integer,
-  "topology" text,
-  "watched_pr_url" varchar,
-  "watched_pr_number" integer,
-  "watched_pr_state" varchar,
-  "watched_pr_completion" varchar,
-  "ended_pr_notice_thread_id" integer,
-  "ended_pr_notice_key" varchar,
-  "ended_pr_notice_state" varchar,
-  "capacity_wait_reason" text,
-  "preview" tinyint(1),
-  "pr_branch" varchar,
-  "merge_status" varchar,
-  "merge_reason" text,
-  "merged_sha" varchar,
-  "pending_resolution_reason" text,
-  "pending_resolution_message" text,
-  "pending_resolution_comment_id" integer,
-  "review_workspace_lease_id" integer,
-  "deliverable_correction_check_id" integer,
-  "deliverable_correction_resume" text,
-  "provider_retry" text,
-  foreign key("continuation_of_task_id") references tasks("id") on delete set null on update no action,
-  foreign key("resolution_delivered_comment_id") references task_comments("id") on delete set null on update no action,
-  foreign key("review_handled_comment_id") references task_comments("id") on delete set null on update no action,
-  foreign key("completion_handoff_comment_id") references task_comments("id") on delete set null on update no action,
-  foreign key("pi_restart_thread_id") references agent_threads("id") on delete set null on update no action,
-  foreign key("implementer_agent_thread_id") references agent_threads("id") on delete set null on update no action,
-  foreign key("reviewer_agent_thread_id") references agent_threads("id") on delete set null on update no action,
-  foreign key("project_id") references projects("id") on delete restrict on update no action,
-  foreign key("parent_id") references tasks("id") on delete cascade on update no action,
-  foreign key("pending_resolution_comment_id") references "task_comments"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `tasks`(
+  `id` integer not null primary key autoincrement,
+  `parent_id` integer,
+  `project_id` integer,
+  `taskable_type` varchar,
+  `taskable_id` integer,
+  `title` varchar not null,
+  `brief` text not null,
+  `status` varchar not null default('todo'),
+  `position` integer,
+  `pr_url` varchar,
+  `implementer_model` varchar,
+  `reviewer_model` varchar,
+  `tokens` integer,
+  `line_diff` integer,
+  `lines_added` integer,
+  `lines_deleted` integer,
+  `duration_ms` integer,
+  `started_at` datetime,
+  `settled_at` datetime,
+  `reserved_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `reviewer_agent_thread_id` integer,
+  `implementer_agent_thread_id` integer,
+  `assistance_requested` tinyint(1) not null default('0'),
+  `assistance_reason` text,
+  `implementer_agent_driver` varchar,
+  `reviewer_agent_driver` varchar,
+  `agent_unavailable_since` datetime,
+  `agent_unavailable_notified_at` datetime,
+  `type` varchar,
+  `completion_summary` text,
+  `subtask_start_commit` varchar,
+  `completion_attempt` integer,
+  `completion_handoff_comment_id` integer,
+  `completion_reminder_attempt` integer,
+  `completion_reminder_input_id` varchar,
+  `completion_handoff_attempt` integer,
+  `completion_handoff_turn_id` varchar,
+  `review_attempt` integer,
+  `review_handled_comment_id` integer,
+  `review_reminder_attempt` integer,
+  `review_reminder_input_id` varchar,
+  `review_notified_attempt` integer,
+  `review_notified_turn_id` varchar,
+  `review_workspace_head` varchar,
+  `review_workspace_tree` varchar,
+  `deliverables` text,
+  `fixup_problem` text,
+  `fixup_head_sha` varchar,
+  `communication_failures` integer,
+  `resolution_delivered_comment_id` integer,
+  `pi_restart_resumes` integer,
+  `pi_restart_key` varchar,
+  `pi_restart_thread_id` integer,
+  `pi_restart_source_turn_id` varchar,
+  `pi_restart_reservation` varchar,
+  `pi_restart_session_revision` varchar,
+  `continuation_of_task_id` integer,
+  `assistance_kind` varchar,
+  `assistance_question` text,
+  `questions` integer not null default('0'),
+  `escalations` integer not null default('0'),
+  `direction_relay_comment_id` integer,
+  `direction_answer_key` varchar,
+  `direction_answer_source_turn_id` varchar,
+  `consult_comment_id` integer,
+  `topology` text,
+  `watched_pr_url` varchar,
+  `watched_pr_number` integer,
+  `watched_pr_state` varchar,
+  `watched_pr_completion` varchar,
+  `ended_pr_notice_thread_id` integer,
+  `ended_pr_notice_key` varchar,
+  `ended_pr_notice_state` varchar,
+  `capacity_wait_reason` text,
+  `preview` tinyint(1),
+  `pr_branch` varchar,
+  `merge_status` varchar,
+  `merge_reason` text,
+  `merged_sha` varchar,
+  `pending_resolution_reason` text,
+  `pending_resolution_message` text,
+  `pending_resolution_comment_id` integer,
+  `review_workspace_lease_id` integer,
+  `deliverable_correction_check_id` integer,
+  `deliverable_correction_resume` text,
+  `provider_retry` text,
+  foreign key(`continuation_of_task_id`) references tasks(`id`) on delete set null on update no action,
+  foreign key(`resolution_delivered_comment_id`) references task_comments(`id`) on delete set null on update no action,
+  foreign key(`review_handled_comment_id`) references task_comments(`id`) on delete set null on update no action,
+  foreign key(`completion_handoff_comment_id`) references task_comments(`id`) on delete set null on update no action,
+  foreign key(`pi_restart_thread_id`) references agent_threads(`id`) on delete set null on update no action,
+  foreign key(`implementer_agent_thread_id`) references agent_threads(`id`) on delete set null on update no action,
+  foreign key(`reviewer_agent_thread_id`) references agent_threads(`id`) on delete set null on update no action,
+  foreign key(`project_id`) references projects(`id`) on delete restrict on update no action,
+  foreign key(`parent_id`) references tasks(`id`) on delete cascade on update no action,
+  foreign key(`pending_resolution_comment_id`) references `task_comments`(`id`) on delete set null
 );
-CREATE UNIQUE INDEX "tasks_parent_id_position_unique" on "tasks"(
-  "parent_id",
-  "position"
+CREATE UNIQUE INDEX `tasks_parent_id_position_unique` on `tasks`(
+  `parent_id`,
+  `position`
 );
-CREATE INDEX "tasks_project_id_status_index" on "tasks"(
-  "project_id",
-  "status"
+CREATE INDEX `tasks_project_id_status_index` on `tasks`(
+  `project_id`,
+  `status`
 );
-CREATE INDEX "tasks_status_index" on "tasks"("status");
-CREATE INDEX "tasks_taskable_type_taskable_id_index" on "tasks"(
-  "taskable_type",
-  "taskable_id"
+CREATE INDEX `tasks_status_index` on `tasks`(`status`);
+CREATE INDEX `tasks_taskable_type_taskable_id_index` on `tasks`(
+  `taskable_type`,
+  `taskable_id`
 );
-CREATE INDEX "task_workspace_leases_instance_id_status_index" on "task_workspace_leases"(
-  "instance_id",
-  "status"
+CREATE INDEX `task_workspace_leases_instance_id_status_index` on `task_workspace_leases`(
+  `instance_id`,
+  `status`
 );
-CREATE TABLE IF NOT EXISTS "task_workspace_operations"(
-  "id" integer primary key autoincrement not null,
-  "lease_id" integer not null,
-  "operation" varchar not null,
-  "binding" varchar not null,
-  "connection" text not null,
-  "status" varchar not null default 'pending',
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("lease_id") references "task_workspace_leases"("id") on delete restrict
+CREATE TABLE IF NOT EXISTS `task_workspace_operations`(
+  `id` integer not null primary key autoincrement,
+  `lease_id` integer not null,
+  `operation` varchar not null,
+  `binding` varchar not null,
+  `connection` text not null,
+  `status` varchar not null default 'pending',
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`lease_id`) references `task_workspace_leases`(`id`) on delete restrict
 );
-CREATE INDEX "task_workspace_operations_lease_id_status_index" on "task_workspace_operations"(
-  "lease_id",
-  "status"
+CREATE INDEX `task_workspace_operations_lease_id_status_index` on `task_workspace_operations`(
+  `lease_id`,
+  `status`
 );
-CREATE UNIQUE INDEX "task_workspace_operations_operation_unique" on "task_workspace_operations"(
-  "operation"
+CREATE UNIQUE INDEX `task_workspace_operations_operation_unique` on `task_workspace_operations`(
+  `operation`
 );
-CREATE TABLE IF NOT EXISTS "route_removal_residues"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "route_id" integer not null,
-  "domain" varchar not null,
-  "steps" text not null,
-  "attempts" integer not null default '0',
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `route_removal_residues`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `route_id` integer not null,
+  `domain` varchar not null,
+  `steps` text not null,
+  `attempts` integer not null default '0',
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "route_removal_residues_node_id_route_id_unique" on "route_removal_residues"(
-  "node_id",
-  "route_id"
+CREATE UNIQUE INDEX `route_removal_residues_node_id_route_id_unique` on `route_removal_residues`(
+  `node_id`,
+  `route_id`
 );
-CREATE UNIQUE INDEX "instances_node_id_ssr_port_unique" on "instances"(
-  "node_id",
-  "ssr_port"
+CREATE UNIQUE INDEX `instances_node_id_ssr_port_unique` on `instances`(
+  `node_id`,
+  `ssr_port`
 );
-CREATE TABLE IF NOT EXISTS "ssr_port_assignments"(
-  "instance_id" integer not null,
-  "node_id" integer not null,
-  "port" integer not null,
-  foreign key("instance_id") references "instances"("id") on delete cascade,
-  foreign key("node_id") references "nodes"("id") on delete restrict,
-  primary key("instance_id", "node_id")
+CREATE TABLE IF NOT EXISTS `ssr_port_assignments`(
+  `instance_id` integer not null,
+  `node_id` integer not null,
+  `port` integer not null,
+  foreign key(`instance_id`) references `instances`(`id`) on delete cascade,
+  foreign key(`node_id`) references `nodes`(`id`) on delete restrict,
+  primary key(`instance_id`, `node_id`)
 );
-CREATE UNIQUE INDEX "ssr_port_assignments_node_id_port_unique" on "ssr_port_assignments"(
-  "node_id",
-  "port"
+CREATE UNIQUE INDEX `ssr_port_assignments_node_id_port_unique` on `ssr_port_assignments`(
+  `node_id`,
+  `port`
 );
 CREATE TRIGGER route_targets_contract_insert
 BEFORE INSERT ON route_targets
@@ -2370,7 +2370,7 @@ WHEN (
 BEGIN
     SELECT RAISE(ABORT, 'Invalid Route target contract.');
 END;
-CREATE TRIGGER "instances_active_route_update"
+CREATE TRIGGER `instances_active_route_update`
 BEFORE UPDATE OF status ON instances
 WHEN NEW.status = 'active'
     AND (SELECT type FROM projects WHERE id = NEW.project_id) = 'laravel-app'
@@ -2383,166 +2383,166 @@ WHEN NEW.status = 'active'
 BEGIN
     SELECT RAISE(ABORT, 'An active AppInstance requires exactly one authoritative Route.');
 END;
-CREATE TABLE IF NOT EXISTS "conn_profiles"(
-  "id" integer primary key autoincrement not null,
-  "name" varchar not null,
-  "settings" text not null,
-  "settings_version" integer not null default '1',
-  "created_at" datetime,
-  "updated_at" datetime,
-  "section_meta" text
+CREATE TABLE IF NOT EXISTS `conn_profiles`(
+  `id` integer not null primary key autoincrement,
+  `name` varchar not null,
+  `settings` text not null,
+  `settings_version` integer not null default '1',
+  `created_at` datetime,
+  `updated_at` datetime,
+  `section_meta` text
 );
-CREATE TABLE IF NOT EXISTS "conn_profile_bindings"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "conn_profile_id" integer not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade,
-  foreign key("conn_profile_id") references "conn_profiles"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `conn_profile_bindings`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `conn_profile_id` integer not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade,
+  foreign key(`conn_profile_id`) references `conn_profiles`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "conn_environments"(
-  "id" integer primary key autoincrement not null,
-  "environment_id" varchar not null,
-  "label" varchar not null,
-  "url" varchar not null,
-  "node_id" integer,
-  "server_version" varchar,
-  "admin_session" text not null,
-  "admin_session_expires_at" datetime not null,
-  "registered_at" datetime not null,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `conn_environments`(
+  `id` integer not null primary key autoincrement,
+  `environment_id` varchar not null,
+  `label` varchar not null,
+  `url` varchar not null,
+  `node_id` integer,
+  `server_version` varchar,
+  `admin_session` text not null,
+  `admin_session_expires_at` datetime not null,
+  `registered_at` datetime not null,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE TABLE IF NOT EXISTS "conn_pairings"(
-  "id" integer primary key autoincrement not null,
-  "node_id" integer not null,
-  "conn_environment_id" integer not null,
-  "pairing_link_id" varchar not null,
-  "client_label" varchar not null,
-  "expires_at" datetime not null,
-  "revoked_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete cascade,
-  foreign key("conn_environment_id") references "conn_environments"("id") on delete cascade
+CREATE TABLE IF NOT EXISTS `conn_pairings`(
+  `id` integer not null primary key autoincrement,
+  `node_id` integer not null,
+  `conn_environment_id` integer not null,
+  `pairing_link_id` varchar not null,
+  `client_label` varchar not null,
+  `expires_at` datetime not null,
+  `revoked_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade,
+  foreign key(`conn_environment_id`) references `conn_environments`(`id`) on delete cascade
 );
-CREATE TABLE IF NOT EXISTS "jobs"(
-  "id" integer primary key autoincrement not null,
-  "queue" varchar not null,
-  "payload" text not null,
-  "attempts" integer not null,
-  "reserved_at" integer,
-  "available_at" integer not null,
-  "created_at" integer not null
+CREATE TABLE IF NOT EXISTS `jobs`(
+  `id` integer not null primary key autoincrement,
+  `queue` varchar not null,
+  `payload` text not null,
+  `attempts` integer not null,
+  `reserved_at` integer,
+  `available_at` integer not null,
+  `created_at` integer not null
 );
-CREATE INDEX "jobs_queue_index" on "jobs"("queue");
-CREATE TABLE IF NOT EXISTS "failed_jobs"(
-  "id" integer primary key autoincrement not null,
-  "uuid" varchar not null,
-  "connection" varchar not null,
-  "queue" varchar not null,
-  "payload" text not null,
-  "exception" text not null,
-  "failed_at" datetime not null default CURRENT_TIMESTAMP
+CREATE INDEX `jobs_queue_index` on `jobs`(`queue`);
+CREATE TABLE IF NOT EXISTS `failed_jobs`(
+  `id` integer not null primary key autoincrement,
+  `uuid` varchar not null,
+  `connection` varchar not null,
+  `queue` varchar not null,
+  `payload` text not null,
+  `exception` text not null,
+  `failed_at` datetime not null default CURRENT_TIMESTAMP
 );
-CREATE INDEX "failed_jobs_connection_queue_failed_at_index" on "failed_jobs"(
-  "connection",
-  "queue",
-  "failed_at"
+CREATE INDEX `failed_jobs_connection_queue_failed_at_index` on `failed_jobs`(
+  `connection`,
+  `queue`,
+  `failed_at`
 );
-CREATE UNIQUE INDEX "failed_jobs_uuid_unique" on "failed_jobs"("uuid");
-CREATE TABLE IF NOT EXISTS "job_batches"(
-  "id" varchar not null,
-  "name" varchar not null,
-  "total_jobs" integer not null,
-  "pending_jobs" integer not null,
-  "failed_jobs" integer not null,
-  "failed_job_ids" text not null,
-  "options" text,
-  "cancelled_at" integer,
-  "created_at" integer not null,
-  "finished_at" integer,
-  primary key("id")
+CREATE UNIQUE INDEX `failed_jobs_uuid_unique` on `failed_jobs`(`uuid`);
+CREATE TABLE IF NOT EXISTS `job_batches`(
+  `id` varchar not null,
+  `name` varchar not null,
+  `total_jobs` integer not null,
+  `pending_jobs` integer not null,
+  `failed_jobs` integer not null,
+  `failed_job_ids` text not null,
+  `options` text,
+  `cancelled_at` integer,
+  `created_at` integer not null,
+  `finished_at` integer,
+  primary key(`id`)
 );
-CREATE UNIQUE INDEX "conn_profiles_name_unique" on "conn_profiles"("name");
-CREATE UNIQUE INDEX "conn_profile_bindings_node_id_unique" on "conn_profile_bindings"(
-  "node_id"
+CREATE UNIQUE INDEX `conn_profiles_name_unique` on `conn_profiles`(`name`);
+CREATE UNIQUE INDEX `conn_profile_bindings_node_id_unique` on `conn_profile_bindings`(
+  `node_id`
 );
-CREATE UNIQUE INDEX "conn_environments_environment_id_unique" on "conn_environments"(
-  "environment_id"
+CREATE UNIQUE INDEX `conn_environments_environment_id_unique` on `conn_environments`(
+  `environment_id`
 );
-CREATE INDEX "conn_pairings_conn_environment_id_node_id_index" on "conn_pairings"(
-  "conn_environment_id",
-  "node_id"
+CREATE INDEX `conn_pairings_conn_environment_id_node_id_index` on `conn_pairings`(
+  `conn_environment_id`,
+  `node_id`
 );
-CREATE TABLE IF NOT EXISTS "vault_items"(
-  "id" integer primary key autoincrement not null,
-  "source" varchar not null,
-  "cipher_id" varchar not null,
-  "fingerprint" varchar not null,
-  "revision_date" varchar,
-  "created_at" datetime,
-  "updated_at" datetime
+CREATE TABLE IF NOT EXISTS `vault_items`(
+  `id` integer not null primary key autoincrement,
+  `source` varchar not null,
+  `cipher_id` varchar not null,
+  `fingerprint` varchar not null,
+  `revision_date` varchar,
+  `created_at` datetime,
+  `updated_at` datetime
 );
-CREATE UNIQUE INDEX "vault_items_source_unique" on "vault_items"("source");
-CREATE TABLE IF NOT EXISTS "task_vms"(
-  "id" integer primary key autoincrement not null,
-  "group_id" integer,
-  "host_node_id" integer,
-  "node_id" integer,
-  "provider" varchar not null,
-  "name" varchar not null,
-  "state" varchar not null,
-  "address" varchar,
-  "wireguard_ip" varchar not null,
-  "pi_token" text,
-  "model_key" text,
-  "error_code" varchar,
-  "error_message" text,
-  "ready_at" datetime,
-  "destroyed_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "ai_router_origin" varchar,
-  "claimed_at" datetime,
-  "warmed_at" datetime,
-  "image_fingerprint" varchar,
-  "provider_id" varchar,
-  "ssh_host_key" text,
-  "size" varchar not null default 'normal',
-  "topology" text,
-  "topology_state" varchar,
-  "topology_run" varchar,
-  "topology_started_at" datetime,
-  "topology_error" text,
-  "publish_commit" varchar,
-  "publish_branch" varchar,
-  "publish_state" varchar,
-  "publish_error" text,
-  "publish_queued_at" datetime,
-  "publish_started_at" datetime,
-  "recipe_identity" varchar,
-  foreign key("group_id") references tasks("id") on delete no action on update no action,
-  foreign key("host_node_id") references nodes("id") on delete no action on update no action,
-  foreign key("node_id") references nodes("id") on delete set null on update no action
+CREATE UNIQUE INDEX `vault_items_source_unique` on `vault_items`(`source`);
+CREATE TABLE IF NOT EXISTS `task_vms`(
+  `id` integer not null primary key autoincrement,
+  `group_id` integer,
+  `host_node_id` integer,
+  `node_id` integer,
+  `provider` varchar not null,
+  `name` varchar not null,
+  `state` varchar not null,
+  `address` varchar,
+  `wireguard_ip` varchar not null,
+  `pi_token` text,
+  `model_key` text,
+  `error_code` varchar,
+  `error_message` text,
+  `ready_at` datetime,
+  `destroyed_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  `ai_router_origin` varchar,
+  `claimed_at` datetime,
+  `warmed_at` datetime,
+  `image_fingerprint` varchar,
+  `provider_id` varchar,
+  `ssh_host_key` text,
+  `size` varchar not null default 'normal',
+  `topology` text,
+  `topology_state` varchar,
+  `topology_run` varchar,
+  `topology_started_at` datetime,
+  `topology_error` text,
+  `publish_commit` varchar,
+  `publish_branch` varchar,
+  `publish_state` varchar,
+  `publish_error` text,
+  `publish_queued_at` datetime,
+  `publish_started_at` datetime,
+  `recipe_identity` varchar,
+  foreign key(`group_id`) references tasks(`id`) on delete no action on update no action,
+  foreign key(`host_node_id`) references nodes(`id`) on delete no action on update no action,
+  foreign key(`node_id`) references nodes(`id`) on delete set null on update no action
 );
-CREATE INDEX "task_vms_group_id_index" on "task_vms"("group_id");
-CREATE INDEX "task_vms_host_node_id_state_index" on "task_vms"(
-  "host_node_id",
-  "state"
+CREATE INDEX `task_vms_group_id_index` on `task_vms`(`group_id`);
+CREATE INDEX `task_vms_host_node_id_state_index` on `task_vms`(
+  `host_node_id`,
+  `state`
 );
-CREATE UNIQUE INDEX "task_vms_name_unique" on "task_vms"("name");
-CREATE UNIQUE INDEX "task_vms_node_id_unique" on "task_vms"("node_id");
-CREATE INDEX "task_vms_state_index" on "task_vms"("state");
+CREATE UNIQUE INDEX `task_vms_name_unique` on `task_vms`(`name`);
+CREATE UNIQUE INDEX `task_vms_node_id_unique` on `task_vms`(`node_id`);
+CREATE INDEX `task_vms_state_index` on `task_vms`(`state`);
 CREATE UNIQUE INDEX task_vms_live_group_id_unique ON task_vms(
   group_id
 ) WHERE state != 'destroyed';
 CREATE UNIQUE INDEX task_vms_live_wireguard_ip_unique ON task_vms(
   wireguard_ip
 ) WHERE state != 'destroyed';
-CREATE TRIGGER "instance_removals_insert"
+CREATE TRIGGER `instance_removals_insert`
 BEFORE INSERT ON instance_removals
 WHEN NEW.id = ''
     OR NEW.requested_name = ''
@@ -2563,7 +2563,7 @@ WHEN NEW.id = ''
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal contract.');
 END;
-CREATE TRIGGER "instance_removal_members_insert"
+CREATE TRIGGER `instance_removal_members_insert`
 BEFORE INSERT ON instance_removal_members
 WHEN NOT EXISTS (
         SELECT 1
@@ -2650,7 +2650,7 @@ WHEN NOT EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
 END;
-CREATE TRIGGER "instances_removal_status_update"
+CREATE TRIGGER `instances_removal_status_update`
 BEFORE UPDATE OF status ON instances
 WHEN (OLD.status = 'removing' AND NEW.status <> 'removing')
     OR (NEW.status = 'removing' AND OLD.status <> 'removing' AND (
@@ -2675,118 +2675,118 @@ CREATE UNIQUE INDEX instances_node_id_checkout_path_unique ON instances(
   node_id,
   checkout_path
 );
-CREATE TABLE IF NOT EXISTS "task_vm_image_builds"(
-  "id" integer primary key autoincrement not null,
-  "host_node_id" integer not null,
-  "source_alias" varchar,
-  "source_fingerprint" varchar,
-  "from_stock" tinyint(1) not null default '0',
-  "builder_vm_name" varchar,
-  "image_fingerprint" varchar,
-  "current_step" varchar,
-  "current_program" varchar,
-  "state" varchar not null default 'running',
-  "steps" text not null default '[]', "created_at" datetime,
-  "updated_at" datetime,
-  "submission_pending_at" varchar,
-  "cleanup_started_at" datetime,
-  "attempt" integer not null default '1',
-  "recipe_identity" varchar,
-  "recipe_json" text,
-  "recipe_generation" integer,
-  "images" text not null default '{}',
-  "promoted_at" datetime,
-  "fleet_convergence" text,
-  foreign key("host_node_id") references "nodes"("id") on delete restrict
+CREATE TABLE IF NOT EXISTS `task_vm_image_builds`(
+  `id` integer not null primary key autoincrement,
+  `host_node_id` integer not null,
+  `source_alias` varchar,
+  `source_fingerprint` varchar,
+  `from_stock` tinyint(1) not null default '0',
+  `builder_vm_name` varchar,
+  `image_fingerprint` varchar,
+  `current_step` varchar,
+  `current_program` varchar,
+  `state` varchar not null default 'running',
+  `steps` text not null default '[]', `created_at` datetime,
+  `updated_at` datetime,
+  `submission_pending_at` varchar,
+  `cleanup_started_at` datetime,
+  `attempt` integer not null default '1',
+  `recipe_identity` varchar,
+  `recipe_json` text,
+  `recipe_generation` integer,
+  `images` text not null default '{}',
+  `promoted_at` datetime,
+  `fleet_convergence` text,
+  foreign key(`host_node_id`) references `nodes`(`id`) on delete restrict
 );
 CREATE UNIQUE INDEX task_vm_image_builds_running_host_unique ON task_vm_image_builds(
   host_node_id
 ) WHERE state = 'running';
-CREATE TABLE IF NOT EXISTS "task_vm_image_recipe"(
-  "id" integer not null,
-  "identity" varchar,
-  "recipe_json" text,
-  "generation" integer not null default '0',
-  "upcloud_rebuild_after_attempt" integer,
-  primary key("id")
+CREATE TABLE IF NOT EXISTS `task_vm_image_recipe`(
+  `id` integer not null,
+  `identity` varchar,
+  `recipe_json` text,
+  `generation` integer not null default '0',
+  `upcloud_rebuild_after_attempt` integer,
+  primary key(`id`)
 );
-CREATE TABLE IF NOT EXISTS "operations"(
-  "id" integer primary key autoincrement not null,
-  "kind" varchar not null,
-  "target_type" varchar not null,
-  "target_id" integer not null,
-  "node_id" integer,
-  "lock_key" varchar,
-  "input" text not null,
-  "state" text,
-  "result" text,
-  "status" varchar not null,
-  "sequence" integer not null default '1',
-  "current_step" varchar,
-  "failed_step" varchar,
-  "error_code" varchar,
-  "attempts" integer not null default '0',
-  "worker" varchar,
-  "triggered_by" varchar,
-  "request_id" varchar,
-  "cancel_requested_at" datetime,
-  "dispatched_at" datetime,
-  "started_at" datetime,
-  "finished_at" datetime,
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("node_id") references "nodes"("id") on delete set null
+CREATE TABLE IF NOT EXISTS `operations`(
+  `id` integer not null primary key autoincrement,
+  `kind` varchar not null,
+  `target_type` varchar not null,
+  `target_id` integer not null,
+  `node_id` integer,
+  `lock_key` varchar,
+  `input` text not null,
+  `state` text,
+  `result` text,
+  `status` varchar not null,
+  `sequence` integer not null default '1',
+  `current_step` varchar,
+  `failed_step` varchar,
+  `error_code` varchar,
+  `attempts` integer not null default '0',
+  `worker` varchar,
+  `triggered_by` varchar,
+  `request_id` varchar,
+  `cancel_requested_at` datetime,
+  `dispatched_at` datetime,
+  `started_at` datetime,
+  `finished_at` datetime,
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`node_id`) references `nodes`(`id`) on delete set null
 );
-CREATE INDEX "operations_status_id_index" on "operations"("status", "id");
-CREATE INDEX "operations_target_type_target_id_id_index" on "operations"(
-  "target_type",
-  "target_id",
-  "id"
+CREATE INDEX `operations_status_id_index` on `operations`(`status`, `id`);
+CREATE INDEX `operations_target_type_target_id_id_index` on `operations`(
+  `target_type`,
+  `target_id`,
+  `id`
 );
-CREATE UNIQUE INDEX "operations_lock_key_unique" on "operations"("lock_key");
-CREATE TABLE IF NOT EXISTS "operation_steps"(
-  "id" integer primary key autoincrement not null,
-  "operation_id" integer not null,
-  "position" integer not null,
-  "name" varchar not null,
-  "status" varchar not null,
-  "resumable" tinyint(1) not null,
-  "sequence" integer not null,
-  "started_at" datetime,
-  "finished_at" datetime,
-  "error_code" varchar,
-  "output" text,
-  "output_truncated" tinyint(1) not null default '0',
-  "created_at" datetime,
-  "updated_at" datetime,
-  foreign key("operation_id") references "operations"("id") on delete cascade
+CREATE UNIQUE INDEX `operations_lock_key_unique` on `operations`(`lock_key`);
+CREATE TABLE IF NOT EXISTS `operation_steps`(
+  `id` integer not null primary key autoincrement,
+  `operation_id` integer not null,
+  `position` integer not null,
+  `name` varchar not null,
+  `status` varchar not null,
+  `resumable` tinyint(1) not null,
+  `sequence` integer not null,
+  `started_at` datetime,
+  `finished_at` datetime,
+  `error_code` varchar,
+  `output` text,
+  `output_truncated` tinyint(1) not null default '0',
+  `created_at` datetime,
+  `updated_at` datetime,
+  foreign key(`operation_id`) references `operations`(`id`) on delete cascade
 );
-CREATE UNIQUE INDEX "operation_steps_operation_id_name_unique" on "operation_steps"(
-  "operation_id",
-  "name"
+CREATE UNIQUE INDEX `operation_steps_operation_id_name_unique` on `operation_steps`(
+  `operation_id`,
+  `name`
 );
-CREATE UNIQUE INDEX "operation_steps_operation_id_position_unique" on "operation_steps"(
-  "operation_id",
-  "position"
+CREATE UNIQUE INDEX `operation_steps_operation_id_position_unique` on `operation_steps`(
+  `operation_id`,
+  `position`
 );
-CREATE INDEX "operation_steps_operation_id_sequence_index" on "operation_steps"(
-  "operation_id",
-  "sequence"
+CREATE INDEX `operation_steps_operation_id_sequence_index` on `operation_steps`(
+  `operation_id`,
+  `sequence`
 );
-CREATE TABLE IF NOT EXISTS "upcloud_task_vm_image_builds"(
-  "id" integer primary key autoincrement not null,
-  "recipe_identity" varchar not null,
-  "state" varchar not null default 'running',
-  "started_at" datetime not null,
-  "finished_at" datetime,
-  "template_uuid" varchar,
-  "failure" text
+CREATE TABLE IF NOT EXISTS `upcloud_task_vm_image_builds`(
+  `id` integer not null primary key autoincrement,
+  `recipe_identity` varchar not null,
+  `state` varchar not null default 'running',
+  `started_at` datetime not null,
+  `finished_at` datetime,
+  `template_uuid` varchar,
+  `failure` text
 );
-CREATE INDEX "upcloud_task_vm_image_builds_recipe_identity_index" on "upcloud_task_vm_image_builds"(
-  "recipe_identity"
+CREATE INDEX `upcloud_task_vm_image_builds_recipe_identity_index` on `upcloud_task_vm_image_builds`(
+  `recipe_identity`
 );
-CREATE UNIQUE INDEX "instances_task_workspace_owner_id_unique" on "instances"(
-  "task_workspace_owner_id"
+CREATE UNIQUE INDEX `instances_task_workspace_owner_id_unique` on `instances`(
+  `task_workspace_owner_id`
 );
 CREATE TRIGGER instances_task_workspace_owner_immutable
 BEFORE UPDATE OF task_workspace_owner_id ON instances
@@ -2794,15 +2794,15 @@ WHEN NEW.task_workspace_owner_id IS NOT NULL AND NEW.task_workspace_owner_id IS 
 BEGIN
     SELECT RAISE(ABORT, 'A task workspace owner never changes.');
 END;
-CREATE TABLE IF NOT EXISTS "ai_router_cutovers"(
-  "node_id" integer not null,
-  "process_id" integer not null,
-  foreign key("node_id") references "nodes"("id") on delete cascade,
-  primary key("node_id")
+CREATE TABLE IF NOT EXISTS `ai_router_cutovers`(
+  `node_id` integer not null,
+  `process_id` integer not null,
+  foreign key(`node_id`) references `nodes`(`id`) on delete cascade,
+  primary key(`node_id`)
 );
-CREATE INDEX "task_vm_image_builds_host_node_id_recipe_identity_index" on "task_vm_image_builds"(
-  "host_node_id",
-  "recipe_identity"
+CREATE INDEX `task_vm_image_builds_host_node_id_recipe_identity_index` on `task_vm_image_builds`(
+  `host_node_id`,
+  `recipe_identity`
 );
 
 INSERT INTO migrations VALUES(1,'2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table',1);
