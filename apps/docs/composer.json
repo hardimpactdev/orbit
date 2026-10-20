@@ -12,7 +12,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
-        "hardimpactdev/librarian": "^0.0.2",
+        "hardimpactdev/librarian": "^0.0.3",
         "laravel/framework": "^13.0"
     },
     "require-dev": {
