@@ -45,7 +45,7 @@ On the install page, choose the account or organization and all or selected repo
 
 ## Read branch protection
 
-The App manifest declares `administration: read`. When a Project enables [review and merge](/reference/projects#review-and-merge), the Gateway mints a token with only that permission to read classic branch protection. Rulesets use a separate `metadata: read` token. Installations must accept the read permission before enabling the flow. The App never requests Administration write, which permits repository deletion. Runner registration for user-owned repositories needs its own decision; GitHub offers no narrower runner permission there.
+The App manifest declares `administration: read`. When a Project enables [review and merge](/reference/projects#review-and-merge), the Gateway mints a token with only that permission to read classic branch protection. Rulesets use a separate `metadata: read` token. Installations must accept the read permission before enabling the flow. The App never requests Administration write, which permits repository deletion. The App does not register CI runners; [ADR 0227](/decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts) keeps registration a manual step.
 
 ## How Orbit reads a repository
 

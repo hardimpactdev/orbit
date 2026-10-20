@@ -185,7 +185,7 @@ Runs on main never shard. Each keeps one full Gateway recording run, because Pes
 
 ### Self-hosted Gateway runner
 
-[ADR 0227](/decisions/0227-run-ci-jobs-in-single-use-vms-on-dedicated-ci-hosts) replaces the runners in this section and the next with single-use VMs on Sabre and Shark. Until its migration ends, the runners work as described here.
+[ADR 0227](/decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts) changes the runners in this section and the next. Until its migration ends, they work as described here.
 
 When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards run on the [shard runners](#self-hosted-shard-runners) under the same condition. The Gateway privileged job always runs on a GitHub-hosted runner. PRs can use any four runners with `orbit-shard`, including Sabre; main uses one `sabre` runner for the full Gateway suite.
 

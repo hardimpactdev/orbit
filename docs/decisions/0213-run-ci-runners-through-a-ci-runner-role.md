@@ -6,7 +6,7 @@ description: "Superseded by ADR 0227 on 2026-10-20. A ci-runner role prepares a 
 
 # ADR 0213: Run CI runners through a ci-runner role
 
-This record is superseded by [ADR 0227](/decisions/0227-run-ci-jobs-in-single-use-vms-on-dedicated-ci-hosts). The text below records the earlier decision.
+This record is superseded by [ADR 0227](/decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts). The text below records the earlier decision.
 
 A new `ci-runner` role prepares a Node to host self-hosted runners for GitHub Actions. Every runner runs in an unprivileged Incus container on that Node. Each runner is a CI runner record that the Gateway registers with one repository through its GitHub App, converges on the Node, and deregisters on removal.
 
@@ -14,7 +14,7 @@ A new `ci-runner` role prepares a Node to host self-hosted runners for GitHub Ac
 
 Superseded on 2026-10-20 by ADR 0227.
 
-Superseded by [ADR 0227](/decisions/0227-run-ci-jobs-in-single-use-vms-on-dedicated-ci-hosts). None of this decision was built.
+Superseded by [ADR 0227](/decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts). None of this decision was built.
 
 Principle: [Agents operate, humans steer](/mission#principles). Runners become commands that an agent can run and a human can read, instead of hand-made services and a shell script. It also serves [Security fits the real threat model](/mission#principles): a job runs as an unprivileged user in a container whose egress cannot reach the Gateway, WireGuard, or the LAN, so a job never acts as the Node. No principle exception is proposed.
 

@@ -1247,34 +1247,26 @@
             ]
         },
         {
-            "path": "docs/decisions/0227-run-ci-jobs-in-single-use-vms-on-dedicated-ci-hosts.md",
-            "title": "ADR 0227: Run CI jobs in single-use VMs on dedicated CI hosts",
+            "path": "docs/decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts.md",
+            "title": "ADR 0227: Run CI on GitHub-hosted runners and two dedicated CI hosts",
             "kind": "decision",
             "components": [
-                "apps/cli",
                 "apps/docs",
-                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
-                "Cluster",
-                "Database server",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
-                "Roleless Node",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
-                "0206",
                 "0213",
                 "0223",
-                "0225",
                 "0227"
             ]
         },
@@ -2167,7 +2159,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0227"
+            ]
         },
         {
             "path": "docs/reference/implementation-loop.md",

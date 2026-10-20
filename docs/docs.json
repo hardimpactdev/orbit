@@ -674,7 +674,7 @@
               "decisions/0224-give-each-task-group-one-holder-and-one-sender",
               "decisions/0225-make-node-changes-through-agent-commands",
               "decisions/0226-split-private-dns-on-managed-peers",
-              "decisions/0227-run-ci-jobs-in-single-use-vms-on-dedicated-ci-hosts"
+              "decisions/0227-run-ci-on-hosted-runners-and-dedicated-ci-hosts"
             ]
           }
         ]
