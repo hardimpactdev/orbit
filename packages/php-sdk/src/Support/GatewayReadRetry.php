@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Support;
 
+use Closure;
 use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -38,16 +39,21 @@ final class GatewayReadRetry
      */
     private const array RETRYABLE_CURL_ERRORS = [7, 35, 52, 55, 56];
 
-    /** @return callable(callable): callable */
-    public static function middleware(): callable
+    /**
+     * @param  (Closure(): float)|null  $clock
+     * @return callable(callable): callable
+     */
+    public static function middleware(?Closure $clock = null): callable
     {
+        $clock ??= static fn (): float => hrtime(true) / 1_000_000_000;
+
         return static fn (callable $handler): callable => static function (
             #[SensitiveParameter]
             RequestInterface $request,
             #[SensitiveParameter]
             array $options,
-        ) use ($handler): PromiseInterface {
-            $startedAt = microtime(true);
+        ) use ($handler, $clock): PromiseInterface {
+            $startedAt = $clock();
 
             $first = $handler($request, $options);
 
@@ -55,12 +61,12 @@ final class GatewayReadRetry
                 return $first;
             }
 
-            return $first->then(null, static function (#[SensitiveParameter] mixed $reason) use ($handler, $request, $options, $startedAt): PromiseInterface {
+            return $first->then(null, static function (#[SensitiveParameter] mixed $reason) use ($handler, $request, $options, $startedAt, $clock): PromiseInterface {
                 if (! self::isConnectionFailure($reason)) {
                     return Create::rejectionFor($reason);
                 }
 
-                $retryOptions = self::retryOptions($options, microtime(true) - $startedAt);
+                $retryOptions = self::retryOptions($options, $clock() - $startedAt);
 
                 if ($retryOptions === null) {
                     return Create::rejectionFor($reason);

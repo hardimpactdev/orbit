@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\GatewayProfile;
+use App\Repositories\GatewayConfigRepository;
+use App\Services\Git\GitRegistrationDiscovery;
+use App\Services\Git\GitRegistrationFacts;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -11,6 +15,12 @@ use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Input\StringInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
@@ -68,22 +78,53 @@ function run_instance_source_consent(array $case, array $keys, bool $pty = true)
 {
     $directory = sys_get_temp_dir().'/orbit-instance-consent-'.Str::uuid();
     new Filesystem()->makeDirectory($directory);
-    $configuration = [...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
+    $configuration = ['isolate_command' => true, ...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
         'keys' => array_map(base64_encode(...), $keys)];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
     $fixtures = __DIR__.'/../../Fixtures/Console/';
     $argv = [PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'];
     try {
-        $process = new Process($pty ? ['python3', $fixtures.'command-consent-pty.py', ...$argv] : $argv, env: ['PAO_DISABLE' => '1']);
+        if (! $pty) {
+            config()->set('orbit.home', $configuration['home']);
+            app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
+            if (isset($case['registration_facts'])) {
+                test()->mock(GitRegistrationDiscovery::class)->shouldReceive('inspect')
+                    ->andReturn(new GitRegistrationFacts(...$case['registration_facts']));
+            }
+            $requests = [];
+            $replies = $case['replies'];
+            MockClient::global(['*' => static function (PendingRequest $pending) use (&$requests, &$replies): MockResponse {
+                $request = $pending->getRequest();
+                $requests[] = ['class' => $request::class, 'method' => $pending->getMethod()->value,
+                    'url' => $pending->getUrl(), 'body' => method_exists($request, 'body') ? $request->body()->all() : []];
+                $reply = array_shift($replies);
+                expect($request::class)->toBe($reply['class']);
+
+                return MockResponse::make($reply['body'], $reply['status'] ?? 200,
+                    ['X-Orbit-Request-Id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']);
+            }]);
+            test()->withoutMockingConsoleOutput();
+            $errors = new BufferedOutput;
+            $output = Mockery::mock(BufferedOutput::class.'[getErrorOutput,setErrorOutput]', ConsoleOutputInterface::class, []);
+            $output->shouldReceive('getErrorOutput')->andReturn($errors);
+            $input = new StringInput(implode(' ', array_map(escapeshellarg(...), $case['arguments'])));
+            $stream = fopen('php://memory', 'r+');
+            $input->setStream($stream);
+            try {
+                $status = Artisan::handle($input, $output);
+            } finally {
+                fclose($stream);
+            }
+
+            return ['status' => $status, 'output' => $output->fetch(), 'stderr' => $errors->fetch(), 'requests' => $requests];
+        }
+
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', ...$argv], env: ['PAO_DISABLE' => '1']);
         $process->setTimeout(15);
         $process->run();
-        if ($pty) {
-            expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $result['output'] = base64_decode($result['raw']);
-        } else {
-            $result = ['status' => $process->getExitCode(), 'output' => $process->getOutput(), 'stderr' => $process->getErrorOutput()];
-        }
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $result['output'] = base64_decode($result['raw']);
         $result['requests'] = is_file($configuration['trace']) ? array_map(
             static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
             file($configuration['trace'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES),
@@ -91,12 +132,14 @@ function run_instance_source_consent(array $case, array $keys, bool $pty = true)
 
         return $result;
     } finally {
+        MockClient::destroyGlobal();
         new Filesystem()->deleteDirectory($directory);
     }
 }
 
 it('requires default-No native consent and restores the terminal before returning', function (string $family, array $keys, bool $accepted): void {
     $case = instance_source_consent_case($family);
+    $case['isolate_command'] = ! $accepted;
     $case['arguments'][] = '--no-ansi';
     $result = run_instance_source_consent($case, $keys);
     expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['prompt_seen'])->toBeTrue()
@@ -219,7 +262,8 @@ it('refuses the removed Project creation options before any request', function (
     $case = instance_source_consent_case('register');
     $case['arguments'] = [...$case['arguments'], $option, '--yes', '--json'];
     $result = run_instance_source_consent($case, [], pty: false);
-    expect($result['status'])->not->toBe(0)->and($result['requests'])->toBe([]);
+    expect($result['status'])->not->toBe(0)->and($result['requests'])->toBe([])
+        ->and($result['output'].$result['stderr'])->toContain('option does not exist');
 })->with(['--project-slug=source', '--project-name=Source', '--default-branch=main']);
 
 it('preserves the Gateway deployment-eligibility refusal before deploy-step consent', function (): void {

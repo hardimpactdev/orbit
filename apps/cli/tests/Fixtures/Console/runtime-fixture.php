@@ -17,6 +17,8 @@ require dirname(__DIR__, 3).'/vendor/autoload.php';
 
 $input = new ArgvInput;
 $case = $argv[1] ?? 'progress';
+$duration = getenv('ORBIT_UX_DURATION_US');
+$duration = $duration === false ? null : (int) $duration;
 $outputStream = $case === 'spinner-output-failure' ? fopen('/dev/full', 'w') : (in_array('--stderr', $argv, true) ? STDERR : STDOUT);
 $output = new StreamOutput($outputStream, decorated: ! in_array('--plain', $argv, true));
 $mode = ConsoleMode::detect($input, $output, machine: in_array('--json', $argv, true),
@@ -58,13 +60,13 @@ $record('start', ['mode' => (array) $mode]);
 $signals = function_exists('pcntl_async_signals') ? pcntl_async_signals() : null;
 $handler = function_exists('pcntl_signal_get_handler') ? pcntl_signal_get_handler(SIGTERM) : null;
 $calls = 0;
-$operation = static function () use ($case, &$calls, $record, $mode, $output, $firstPaint): int {
+$operation = static function () use ($case, &$calls, $record, $mode, $output, $firstPaint, $duration): int {
     $firstPaint('operation');
     $calls++;
     $record('callback', ['count' => $calls]);
 
     if (in_array($case, ['exit', 'spinner-exit'], true)) {
-        usleep(350000);
+        usleep($duration ?? 350000);
         exit(23);
     }
 
@@ -72,19 +74,19 @@ $operation = static function () use ($case, &$calls, $record, $mode, $output, $f
         posix_kill($GLOBALS['orbit_ux_renderer_pid'], SIGKILL);
     }
 
-    usleep($case === 'short-spinner' ? 650000 : (in_array($case, ['signal', 'spinner-signal'], true) ? 10000000 : 1300000));
+    usleep($duration ?? ($case === 'short-spinner' ? 650000 : (in_array($case, ['signal', 'spinner-signal'], true) ? 10000000 : 1300000)));
 
     if (in_array($case, ['failure', 'spinner-failure', 'invalid-settled-exception', 'failure-teardown-signal'], true)) {
         throw new RuntimeException('Private fixture detail must not be printed.', 57);
     }
 
     if ($case === 'nested-spinners') {
-        new SpinnerDisplay($mode, $output)->during('Waiting for nested response', static function () use ($record, $firstPaint): void {
+        new SpinnerDisplay($mode, $output)->during('Waiting for nested response', static function () use ($record, $firstPaint, $duration): void {
             $firstPaint('nested-spinner');
             $record('inner-callback');
-            usleep(1200000);
+            usleep($duration ?? 1200000);
         });
-        usleep(650000);
+        usleep($duration ?? 650000);
     }
 
     if ($case === 'nested-invalid-start') {
@@ -124,32 +126,20 @@ try {
         $display->admit('update', 'Update resource', 'Updating resource', 'Updated resource');
         $value = $display->during('resolve', $operation);
         $display->complete('resolve', ProgressState::Success, 'Resource found.');
-        $display->during('update', static function () use ($case, $mode, $output, $record, $firstPaint): void {
+        $display->during('update', static function () use ($case, $mode, $output, $record, $firstPaint, $duration): void {
             $firstPaint('update');
             if ($case === 'nested') {
-                new SpinnerDisplay($mode, $output)->during('Waiting for inner response', static function () use ($record, $firstPaint): void {
+                new SpinnerDisplay($mode, $output)->during('Waiting for inner response', static function () use ($record, $firstPaint, $duration): void {
                     $firstPaint('inner-spinner');
                     $record('inner-callback');
-                    usleep(1200000);
+                    usleep($duration ?? 1200000);
                 });
             }
 
-            if ($case === 'nested-progress') {
-                $inner = new ProgressDisplay($mode, $output, 'Inner operation');
-                $inner->admit('inner', 'Read inner resource', 'Reading inner resource', 'Read inner resource');
-                $inner->during('inner', static function () use ($record, $firstPaint): void {
-                    $firstPaint('inner-progress');
-                    $record('inner-callback');
-                    usleep(1200000);
-                });
-                $inner->complete('inner', ProgressState::Success);
-                $inner->finish('Inner operation completed.');
-            }
-
-            $events = (static function (): Generator {
-                usleep(650000);
+            $events = (static function () use ($duration): Generator {
+                usleep($duration ?? 650000);
                 yield 'accepted';
-                usleep(650000);
+                usleep($duration ?? 650000);
                 yield 'completed';
             })();
 

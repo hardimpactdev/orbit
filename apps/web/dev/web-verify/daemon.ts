@@ -7,7 +7,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { commandFailed, type Paths, type SessionCommand, type ToolResult } from "./contract";
 import { descendantPids, idleTimeoutMs, killProcessTree, pidAlive } from "./processes";
-import { Verifier } from "./session";
 
 const COMMAND_MS = 120_000;
 
@@ -84,6 +83,7 @@ export async function stopDaemon(paths: Paths): Promise<ToolResult> {
  * time. The idle wait does not run during a command.
  */
 export async function runDaemon(paths: Paths): Promise<void> {
+    const { Verifier } = await import("./session");
     mkdirSync(paths.home, { recursive: true });
     rmSync(paths.socketPath, { force: true });
     const verifier = new Verifier(paths);

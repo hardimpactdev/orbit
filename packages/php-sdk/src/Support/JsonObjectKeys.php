@@ -33,7 +33,9 @@ final class JsonObjectKeys
             } elseif ($token === '}' || $token === ']') {
                 array_pop($stack);
             } elseif (($validJson[$offset + strspn($validJson, " \t\r\n", $offset)] ?? null) === ':') {
-                $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                $key = str_contains($token, '\\')
+                    ? json_decode($token, flags: JSON_THROW_ON_ERROR)
+                    : substr($token, 1, -1);
                 if (! is_string($key)) {
                     return false;
                 }

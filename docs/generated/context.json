@@ -1574,7 +1574,8 @@
             "concepts": [
                 "Access grant",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2736,6 +2737,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Task",
                 "Tool"
@@ -2951,6 +2953,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Project Documents",
                 "Route",

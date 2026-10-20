@@ -10,7 +10,7 @@
         "preview": "vp preview",
         "check": "vp check",
         "test": "vp test run",
-        "test:unit": "vp test run --project unit",
+        "test:unit": "vp test run --project unit --project verification",
         "test:browser": "vp test run --project browser",
         "types": "openapi-typescript ../../docs/openapi.json -o src/api/schema.d.ts"
     },

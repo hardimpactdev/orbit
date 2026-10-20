@@ -372,6 +372,10 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 | `missing` | The subscriber has no complete snapshot from this agent. It asks for one within about 10 seconds of the agent's next event. | Check `journalctl -u orbit-agent` on the Node. |
 | `stale` | No agent event arrived in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent`. |
 
+## Checks
+
+Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal user. The dev profile optimizes `regex` and `regex-automata` so the shared redaction fixtures run without the cost of unoptimized matching. The inputs, redaction rules, and assertions stay the same; these overrides do not change the release profile. [Live logs](/reference/live-logs#stream-tests) describes which stream tests use a paused clock and which retain real processes and observation intervals.
+
 ## Releases
 
 A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
