@@ -90,8 +90,9 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     }
 
     /**
-     * Check runs need the separate `checks: read` token. Without it, only conflicts are reported. The runs come from
-     * the merger's shared read of the head commit ({@see TaskPullRequestMerger::checkRuns()}).
+     * Check runs need the separate `checks: read` token. Without it, only conflicts are reported. The merger's shared
+     * read of the head commit ({@see TaskPullRequestMerger::checkRuns()}) also needs `actions: read` when uncached.
+     * A failed read, including workflow identities, makes health return null.
      * A rollup check is dropped while another failed check explains the failure. Cancelled runs, runs
      * that could not start, and runs pending for more than 60 minutes are infrastructure, kept apart
      * from genuine failures (ADR 0164).

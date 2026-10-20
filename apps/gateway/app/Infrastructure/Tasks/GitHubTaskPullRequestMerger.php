@@ -24,8 +24,8 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Reviews and merges through the Project's App installation (ADR 0203). The write token is the publishing
- * token: `contents`, `pull_requests`, and `workflows` write. Check runs use a `checks: read` token, and the
- * pull request list uses the cached `pull_requests: read` token. No new App permission is needed.
+ * token: `contents`, `pull_requests`, and `workflows` write. Uncached commit snapshots use separate `checks: read`
+ * and `actions: read` tokens. The pull request list uses the cached `pull_requests: read` token.
  */
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
@@ -56,11 +56,12 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
     public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
     {
         try {
-            $runs = $this->checkRuns($group, $sha);
-            if ($runs === null) {
+            $snapshot = $this->commitChecks($group, $sha);
+            if ($snapshot === null) {
                 return RequiredCheckState::Unreadable;
             }
-            $suites = $this->pullRequestSuites($group, $sha);
+            $runs = $snapshot['runs'];
+            $suites = $snapshot['pull_request_suites'];
         } catch (TaskPullRequestException) {
             return RequiredCheckState::Unreadable;
         }
@@ -71,63 +72,28 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         return RequiredCheckState::of($counted, $sha, $checkName);
     }
 
-    /**
-     * The check suites of the `pull_request` workflow runs for exactly this head, shared for a minute like the checks.
-     * It reads at most one page of 100 runs; more fails the read.
-     *
-     * @return list<int>
-     *
-     * @throws TaskPullRequestException
-     */
-    private function pullRequestSuites(Task $group, string $sha): array
-    {
-        $repository = $this->githubRepository($group);
-        $key = 'tasks:commit-checks:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha.':pull-request-suites';
-        $cached = Cache::get($key);
-        if (is_array($cached) && array_is_list($cached) && array_all($cached, is_int(...))) {
-            return $cached;
-        }
-        try {
-            $read = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/runs?'.http_build_query([
-                'head_sha' => $sha, 'event' => 'pull_request', 'per_page' => 100,
-            ]), $this->actions->token($repository));
-        } catch (GitHubActionsUnavailable $exception) {
-            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.', previous: $exception);
-        }
-        $rows = $read['workflow_runs'] ?? null;
-        if (! is_array($rows) || ! array_is_list($rows) || ! is_int($read['total_count'] ?? null) || $read['total_count'] !== count($rows)) {
-            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
-        }
-        $suites = [];
-        foreach ($rows as $row) {
-            if (is_array($row) && ($row['event'] ?? null) === 'pull_request' && ($row['head_sha'] ?? null) === $sha && is_int($row['check_suite_id'] ?? null)) {
-                $suites[] = $row['check_suite_id'];
-            }
-        }
-        Cache::put($key, $suites, self::ReadSeconds);
-
-        return $suites;
-    }
-
     public function checkRuns(Task $group, string $sha): ?array
     {
         return $this->commitChecks($group, $sha)['runs'] ?? null;
     }
 
     /**
-     * The check runs and check suites are read together, so the two lists never come from different moments. A
-     * missing `checks: read` permission is not cached, so the next read checks it again.
+     * Check runs, check suites, and workflow identities share one snapshot. A missing `checks: read` permission is
+     * not cached, so the next read checks it again.
+     *
+     * @return array{runs: list<GitHubCheckRun>, suites: list<GitHubCheckSuite>, pull_request_suites: list<int>}|null
      */
     public function commitChecks(Task $group, string $sha): ?array
     {
         $repository = $this->githubRepository($group);
-        $key = 'tasks:commit-checks:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        $key = 'tasks:commit-checks:v3:'.$repository->owner.'/'.$repository->name.'@'.$sha;
         $cached = Cache::get($key);
         if (is_array($cached)) {
             $runs = self::decoded($cached['runs'] ?? null, GitHubCheckRun::fromArray(...));
             $suites = self::decoded($cached['suites'] ?? null, GitHubCheckSuite::fromArray(...));
-            if ($runs !== null && $suites !== null) {
-                return ['runs' => $runs, 'suites' => $suites];
+            $pullRequestSuites = $cached['pull_request_suites'] ?? null;
+            if ($runs !== null && $suites !== null && is_array($pullRequestSuites) && array_is_list($pullRequestSuites) && array_all($pullRequestSuites, static fn (mixed $id): bool => is_int($id))) {
+                return ['runs' => $runs, 'suites' => $suites, 'pull_request_suites' => $pullRequestSuites];
             }
         }
         $token = $this->access->checksToken($repository);
@@ -141,12 +107,67 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read the checks of '.$sha.': '.$exception->getMessage(), previous: $exception);
         }
+        $workflows = $this->workflowSuites($repository, $sha);
+        $superseded = $workflows['superseded'];
+        $snapshot = [
+            'runs' => array_values(array_filter($snapshot['runs'], static fn (GitHubCheckRun $run): bool => ! in_array($run->checkSuiteId, $superseded, true))),
+            'suites' => array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => ! in_array($suite->id, $superseded, true))),
+            'pull_request_suites' => $workflows['pull_request'],
+        ];
         Cache::put($key, [
             'runs' => array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $snapshot['runs']),
             'suites' => array_map(static fn (GitHubCheckSuite $suite): array => $suite->toArray(), $snapshot['suites']),
+            'pull_request_suites' => $snapshot['pull_request_suites'],
         ], self::ReadSeconds);
 
         return $snapshot;
+    }
+
+    /**
+     * Older suites of the same workflow, event, and branch cannot decide a commit's checks. The same workflow read
+     * identifies the pull request's suites. At most one page of 100 runs is read; an incomplete list fails the read.
+     *
+     * @return array{superseded: list<int>, pull_request: list<int>}
+     */
+    private function workflowSuites(GitHubRepository $repository, string $sha): array
+    {
+        try {
+            $read = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/runs?'.http_build_query([
+                'head_sha' => $sha, 'per_page' => 100,
+            ]), $this->actions->token($repository));
+        } catch (GitHubActionsUnavailable $exception) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.', previous: $exception);
+        }
+        $rows = $read['workflow_runs'] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || ! is_int($read['total_count'] ?? null) || $read['total_count'] !== count($rows)) {
+            throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
+        }
+        $latest = [];
+        $superseded = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || ($row['head_sha'] ?? null) !== $sha || ! is_int($row['id'] ?? null)
+                || ! is_int($row['workflow_id'] ?? null) || ! is_int($row['check_suite_id'] ?? null)
+                || ! is_string($row['event'] ?? null) || ! array_key_exists('head_branch', $row)
+                || ($row['head_branch'] !== null && ! is_string($row['head_branch']))) {
+                throw new TaskPullRequestException('Orbit could not read the workflow runs of '.$sha.'.');
+            }
+            $key = json_encode([$row['workflow_id'], $row['event'], $row['head_branch']], JSON_THROW_ON_ERROR);
+            $prior = $latest[$key] ?? null;
+            if ($prior === null || $row['id'] > $prior['id']) {
+                if ($prior !== null && $prior['check_suite_id'] !== $row['check_suite_id']) {
+                    $superseded[] = $prior['check_suite_id'];
+                }
+                $latest[$key] = $row;
+            } elseif ($prior['check_suite_id'] !== $row['check_suite_id']) {
+                $superseded[] = $row['check_suite_id'];
+            }
+        }
+
+        return [
+            'superseded' => array_values(array_unique($superseded)),
+            'pull_request' => array_values(array_map(static fn (array $row): int => $row['check_suite_id'],
+                array_filter($latest, static fn (array $row): bool => $row['event'] === 'pull_request'))),
+        ];
     }
 
     /** @throws TaskPullRequestException */
