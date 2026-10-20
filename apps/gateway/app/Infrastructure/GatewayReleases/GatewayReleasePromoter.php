@@ -32,12 +32,6 @@ use Throwable;
 final readonly class GatewayReleasePromoter
 {
     /**
-     * The default for the most releases kept, the current and the previous one included. The rest of the room goes to
-     * the newest other releases. It is at least 2, so the previous release stays as the way back.
-     */
-    public const int KeptReleases = 3;
-
-    /**
      * Pruning removes a release directory without `REVISION` once it is this many seconds old. Every prepare runs
      * under the release lock that pruning holds too, so no prepare writes to it; the age is a margin on top.
      */
@@ -55,7 +49,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
-        private int $keptReleases = self::KeptReleases,
+        private int $keptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
         private ?FleetConvergeUnits $fleet = null,
         private ?GatewayReleaseTickConfirmation $ticks = null,

@@ -36,7 +36,7 @@ use function Pest\Laravel\mock;
  */
 function consumption_group(?array $reviews = null, ?TaskPullRequestHealth $health = null): array
 {
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $group = Fixtures::group();
     $group->project->update(['task_check' => 'composer check']);
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Operator work', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
@@ -119,7 +119,7 @@ describe('once-only GitHub review consumption', function (): void {
         [$group, $source] = consumption_group();
         $source->beforeAppend = function () use ($change, $group): void {
             match ($change) {
-                'trust' => config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [7]]]),
+                'trust' => config(['orbit.tasks.github_reviewers' => 'acme/orbit:7']),
                 'status' => $group->update(['status' => TaskGroupStatus::Cancelled]),
                 'todo' => Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Human override', 'brief' => 'Do this.', 'status' => TaskStatus::Todo]),
                 'cap' => [consumption_fixup($group, 'review:42'), consumption_fixup($group, 'review:42')],

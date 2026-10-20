@@ -820,7 +820,7 @@ describe('merge on green', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
         $repository = GitHubRepository::fromOrigin('https://github.com/acme/orbit.git');
-        $trust = TaskReviewTrust::fromConfig($repository, ['acme/orbit' => [123]]);
+        $trust = TaskReviewTrust::fromConfig($repository, 'acme/orbit:123');
         $review = new GitHubReview(91, 123, 'maintainer', GitHubReviewState::ChangesRequested, str_repeat('9', 40), new DateTimeImmutable('2026-10-08T10:00:00Z'), 'https://github.com/acme/orbit/pull/42#pullrequestreview-91', 'Please change it.');
         rm_watch(rm_open(RM_HEAD), new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, 42, $trust, null, [$review], TaskReviewSelection::select([$review], $trust, RM_HEAD, true)));
 
@@ -1080,7 +1080,7 @@ describe('incoming pull requests', function (): void {
 describe('incoming pull request watch', function (): void {
     it('creates one review task for each eligible pull request of a listed author', function (): void {
         $project = rm_project();
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [
             rm_listed(1),
@@ -1117,7 +1117,7 @@ describe('incoming pull request watch', function (): void {
 
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toBe([]);
 
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toHaveCount(1);
 
         $runtime->open = [rm_listed(2)];
@@ -1126,7 +1126,7 @@ describe('incoming pull request watch', function (): void {
 
     it('runs on every scheduler tick', function (): void {
         $project = rm_project();
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [rm_listed(1)];
 
@@ -1137,7 +1137,7 @@ describe('incoming pull request watch', function (): void {
 
     it('ignores a Project without the flow', function (): void {
         rm_project(flow: false);
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [rm_listed(1)];
 

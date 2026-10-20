@@ -13,8 +13,25 @@ use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\RunAutomaticDeploysAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Nodes\AssignRoleAction;
+use App\Console\Commands\AgentViewCommand;
+use App\Console\Commands\AgentViewPublishCommand;
+use App\Console\Commands\AutoDeployCommand;
+use App\Console\Commands\BootstrapGatewayCommand;
+use App\Console\Commands\CaddyBuildCommand;
+use App\Console\Commands\CheckNodeDnsCommand;
+use App\Console\Commands\ConvergeGatewayWebCommand;
+use App\Console\Commands\ConvergeNodeRecipeCommand;
+use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
+use App\Console\Commands\MachineRecipeCommand;
+use App\Console\Commands\MigrateDockerCommand;
+use App\Console\Commands\ProvisionNodeCommand;
+use App\Console\Commands\ReconcilePeerDnsCommand;
+use App\Console\Commands\RenderNodeProgramsCommand;
+use App\Console\Commands\RepairNodeDnsCommand;
+use App\Console\Commands\RetargetNodeCommand;
+use App\Console\Commands\RuntimeHibernatorCommand;
+use App\Console\Commands\ServePrivateDnsCommand;
 use App\Console\GatewayBoostInstallCommand;
-use App\Domain\Activity\ActivityBroadcastObserver;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
@@ -189,7 +206,6 @@ use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
-use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
@@ -392,7 +408,6 @@ use App\Infrastructure\WireGuard\NativeWireGuardPeerDnsRepairer;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
-use App\Models\Activity;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 use Illuminate\Broadcasting\BroadcastManager;
@@ -925,8 +940,28 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->alias(NativeWireGuardPeerDnsRepairer::class, WireGuardPeerDnsRepairer::class);
     }
 
-    public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
+    public function boot(): void
     {
+        $this->commands([
+            AgentViewCommand::class,
+            AgentViewPublishCommand::class,
+            AutoDeployCommand::class,
+            BootstrapGatewayCommand::class,
+            CaddyBuildCommand::class,
+            CheckNodeDnsCommand::class,
+            ConvergeGatewayWebCommand::class,
+            ConvergeNodeRecipeCommand::class,
+            FinalizeInterruptedActivitiesCommand::class,
+            MachineRecipeCommand::class,
+            MigrateDockerCommand::class,
+            ProvisionNodeCommand::class,
+            ReconcilePeerDnsCommand::class,
+            RenderNodeProgramsCommand::class,
+            RepairNodeDnsCommand::class,
+            RetargetNodeCommand::class,
+            RuntimeHibernatorCommand::class,
+            ServePrivateDnsCommand::class,
+        ]);
         $cache = config('cache');
         if (! is_array($cache)) {
             throw new \UnexpectedValueException('The Gateway cache configuration is invalid.');
@@ -935,8 +970,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         if (! $this->app->runningConsoleCommand(GatewayCacheStore::RecoveryCommands)) {
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }
-        Activity::observe($activityPropertiesObserver);
-        Activity::observe(ActivityBroadcastObserver::class);
         // Reverb event bodies carry text as UTF-8, so non-ASCII log lines keep their length (ADR 0153).
         $this->app->make(BroadcastManager::class)->extend(
             'reverb',

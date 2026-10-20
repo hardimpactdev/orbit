@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\CollectProblemsCommand;
+use App\Console\Commands\FileProblemsCommand;
+use App\Console\Commands\JevReportCommand;
+use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
+use App\Console\Commands\RenderTaskPromptCommand;
+use App\Console\Commands\TaskGitHubReviewsCommand;
+use App\Console\Commands\TickTaskSessionsCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\BriefCoverageLabeler;
@@ -137,6 +144,15 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 
     public function boot(): void
     {
+        $this->commands([
+            CollectProblemsCommand::class,
+            FileProblemsCommand::class,
+            JevReportCommand::class,
+            ReleaseTaskWorkspaceLeaseCommand::class,
+            RenderTaskPromptCommand::class,
+            TaskGitHubReviewsCommand::class,
+            TickTaskSessionsCommand::class,
+        ]);
         // Observers are declared on the models with ObservedBy. Calling observe() here would load those
         // models during every boot, so test impact analysis would rerun unrelated tests after a model edit.
 

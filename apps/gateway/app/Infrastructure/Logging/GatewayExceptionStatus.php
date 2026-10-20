@@ -17,6 +17,7 @@ use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
+use App\Http\Responses\RendersApiError;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -72,18 +73,7 @@ final class GatewayExceptionStatus
 
     private static function hasApiExceptionRenderer(Throwable $exception): bool
     {
-        return $exception instanceof InstanceRemovalException
-            || $exception instanceof FirewallOperationException
-            || $exception instanceof NodeProvisioningException
-            || $exception instanceof NodeRemovalException
-            || $exception instanceof NodeRoleOperationException
-            || $exception instanceof NodeRoleValidationException
-            || $exception instanceof ProcessOperationException
-            || $exception instanceof ResourceOperationException
-            || $exception instanceof RoleAssignmentException
-            || $exception instanceof RuntimeConvergenceException
-            || $exception instanceof ScheduleOperationException
-            || $exception instanceof ToolOperationException
+        return $exception instanceof RendersApiError
             || $exception instanceof ValidationException
             || $exception instanceof AuthenticationException
             || $exception instanceof AuthorizationException

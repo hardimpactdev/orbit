@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Activity\ActivityBroadcastObserver;
+use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Support\Collection;
 use Spatie\Activitylog\Models\Activity as SpatieActivity;
 
@@ -17,6 +20,7 @@ use Spatie\Activitylog\Models\Activity as SpatieActivity;
  * @property string|null $error_code
  * @property Collection<array-key, mixed>|null $properties
  */
+#[ObservedBy([ActivityPropertiesObserver::class, ActivityBroadcastObserver::class])]
 final class Activity extends SpatieActivity
 {
     /** @return array<string, string> */

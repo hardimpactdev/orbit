@@ -225,7 +225,7 @@ describe('durable approval evidence', function (): void {
 describe('watcher persistence without repair dispatch', function (): void {
     it('reports a pending default uncached read as unverified before it can finish', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $group = Fixtures::group();
         $records = new TaskGitHubReviewObservations;
         $records->finish($group, $records->begin($group), Fixtures::observation([Fixtures::review()]));
@@ -261,7 +261,7 @@ describe('watcher persistence without repair dispatch', function (): void {
 
     it('persists complete uncached approvals through health and marks failed pagination unverified', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $group = Fixtures::group();
         $source = GitHubTestSupport::review();
         $source['state'] = 'APPROVED';

@@ -29,6 +29,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\ProjectLifecycleStep;
+use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -193,9 +194,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             errorCode: 'instance.branch_resolution_failed',
         );
 
-        if (! $taskVm && ProjectLifecycleStep::query()
-            ->where('project_id', $instance->project_id)
-            ->where('command', LifecycleStep::ImportCiCaches)->exists()) {
+        if (! $taskVm && $this->importsCiCaches($instance)) {
             try {
                 $project = $instance->project;
                 $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($context['repository'], $project->source_access), 'instance.ci_caches_unavailable');
@@ -328,6 +327,11 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return TaskVm::forNode($instance->node) instanceof TaskVm;
     }
 
+    private function importsCiCaches(Instance $instance): bool
+    {
+        return ProjectLifecycleStep::query()->where('project_id', $instance->project_id)->where('command', LifecycleStep::ImportCiCaches)->exists();
+    }
+
     private function readAccess(Instance $instance, string $repository, bool $taskVm): GitReadEnvironment
     {
         return $taskVm ? GitReadEnvironment::none() : $this->access->for($repository, $instance->project->source_access);
@@ -344,7 +348,11 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         if ($tips[$defaultBranch] === null) {
             throw new RuntimeConvergenceException('app-instance-source-resolve', 'instance.branch_resolution_failed', "The repository of Instance [{$instance->name}] has no default branch [{$defaultBranch}].");
         }
-        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed');
+        $owner = Task::topLevel()->find($instance->task_workspace_owner_id);
+        $selectBaseline = $owner instanceof Task && ! $owner->reviewsIncomingPullRequest()
+            && $instance->seed_commit === null && $tips[$this->selectedBranch($instance)] === null
+            && $this->importsCiCaches($instance);
+        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
     }
 
     private function defaultBranch(Instance $instance): string

@@ -28,6 +28,7 @@ use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Throwable;
@@ -89,9 +90,8 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
     private function requestReviewers(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubOpenedPullRequest $opened): void
     {
-        $configured = config('orbit.tasks.review_request_logins');
         $logins = TaskReviewRequestLogins::withoutAuthor(
-            is_array($configured) ? array_values(array_filter($configured, is_string(...))) : [],
+            TaskReviewRequestLogins::parseEnv(Config::string('orbit.tasks.review_request_logins')),
             $opened->authorLogin,
         );
         if ($logins === []) {

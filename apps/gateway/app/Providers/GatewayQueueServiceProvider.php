@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\SweepOperationsCommand;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -33,6 +34,9 @@ final class GatewayQueueServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->commands([
+            SweepOperationsCommand::class,
+        ]);
         // The dashboard admits the WireGuard peers with Gateway access, the same peers the Gateway API admits.
         Horizon::auth(static function (Request $request): bool {
             $peer = RequireActiveWireGuardPeer::activePeer($request);
@@ -40,21 +44,19 @@ final class GatewayQueueServiceProvider extends ServiceProvider
             return $peer instanceof Node && app(NodeAccessAuthorizer::class)->hasGatewayAuthority($peer);
         });
 
-        if (GatewayQueueRedis::configured()) {
-            // The registered connection decides host and port, read once, before a process first uses Redis.
-            // Every Artisan command resolves Redis for the Horizon commands, so a missing connection only logs here; a
-            // dispatch then fails on the unresolvable host.
-            $this->app->beforeResolving('redis', static function (mixed $abstract, array $parameters, Application $app): void {
-                if ($app->resolved('redis')) {
-                    return;
-                }
+        // The registered connection decides host and port, read once, before a process first uses Redis.
+        // Every Artisan command resolves Redis for the Horizon commands, so a missing connection only logs here; a
+        // dispatch then fails on the unresolvable host.
+        $this->app->beforeResolving('redis', static function (mixed $abstract, array $parameters, Application $app): void {
+            if ($app->resolved('redis') || ! GatewayQueueRedis::configured()) {
+                return;
+            }
 
-                try {
-                    GatewayQueueRedis::configure();
-                } catch (Throwable $exception) {
-                    Log::error('The Gateway queue has no Redis server.', ['error' => $exception->getMessage()]);
-                }
-            });
-        }
+            try {
+                GatewayQueueRedis::configure();
+            } catch (Throwable $exception) {
+                Log::error('The Gateway queue has no Redis server.', ['error' => $exception->getMessage()]);
+            }
+        });
     }
 }
