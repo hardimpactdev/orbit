@@ -86,6 +86,14 @@ def deb(name, version):
     return f'{name} {version} amd64\n'.encode()
 
 
+def package_pin(state, name, version):
+    content = deb(name, version)
+    digest = hashlib.sha256(content).hexdigest()
+    url = f'https://packages.sury.org/php/pool/{name}_{version}_amd64.deb'
+    (state / 'served' / url.removeprefix('https://').replace('/', '_')).write_bytes(content)
+    return {'name': name, 'version': version, 'architecture': 'amd64', 'url': url, 'sha256': digest}
+
+
 class InstallBuildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -112,6 +120,8 @@ class InstallBuildTest(unittest.TestCase):
         for module in ('gd', 'intl'):
             for sapi in ('cli', 'fpm'):
                 (root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(f'/mods/{module}.ini')
+        cls.fixture_pins = {name: package_pin(state, name, '8.5.12-1')
+                            for name in ('php8.5-cli', 'php8.5-pcov', 'php-common')}
 
     def setUp(self):
         # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
@@ -122,16 +132,10 @@ class InstallBuildTest(unittest.TestCase):
         self.state = Path(self.directory.name) / 'state'
         self.environment = {'PATH': f'{self.directory.name}/bin:{os.environ["PATH"]}', 'STATE': str(self.state),
                             'ROOT': str(self.root)}
-        self.pins = {}
-        for name in ('php8.5-cli', 'php8.5-pcov', 'php-common'):
-            self.pin(name, '8.5.12-1')
+        self.pins = {name: dict(pin) for name, pin in self.fixture_pins.items()}
 
     def pin(self, name, version):
-        content = deb(name, version)
-        digest = hashlib.sha256(content).hexdigest()
-        url = f'https://packages.sury.org/php/pool/{name}_{version}_amd64.deb'
-        (self.state / 'served' / url.removeprefix('https://').replace('/', '_')).write_bytes(content)
-        self.pins[name] = {'name': name, 'version': version, 'architecture': 'amd64', 'url': url, 'sha256': digest}
+        self.pins[name] = package_pin(self.state, name, version)
 
     def install(self, name, version):
         (self.state / 'installed' / name).write_text(version + '\n')
