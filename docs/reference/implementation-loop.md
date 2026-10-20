@@ -184,6 +184,8 @@ A Gateway test that needs root or another Unix identity belongs to `privileged`.
 
 Gateway's default `phpunit.xml` excludes that group, so full, affected, subprocess, and focused ordinary runs all leave it out. The XML exclusion keeps Pest TIA enabled and gives its saved graph the same selection and fingerprint in CI and local checks; a command-line exclusion would disable TIA. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. The shard coverage checks list each group separately with the same selection as its test command.
 
+On macOS, `LinuxHost::delegate()` keeps the selected case's privilege group when it runs that case on `ORBIT_LINUX_TEST_HOST`. Ordinary delegation keeps the default exclusion. A deliberately selected privileged case adds `--group=privileged` for the child and needs a disposable Linux host with the case's privileged prerequisites. Delegation still requires exactly one passed case.
+
 Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
 Before ordinary Gateway checks or tests, after system setup, one CI step denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all four PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.

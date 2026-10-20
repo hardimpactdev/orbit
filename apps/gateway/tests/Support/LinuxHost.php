@@ -19,7 +19,8 @@ use Symfony\Component\Process\Process;
  * Linux SSH host that ORBIT_LINUX_TEST_HOST names, runs the same test there, and asserts that it passed. The host
  * needs the tools used by the delegated case. Ordinary cases need no sudo. Only deliberately selected
  * `privileged` cases need a disposable host with sudo and the `caddy` account; the default XML selection
- * excludes them. See docs/reference/implementation-loop.md, Gateway tests and privilege. When the variable
+ * excludes them. Delegation forwards `--group=privileged` only for an already-selected privileged case.
+ * See docs/reference/implementation-loop.md, Gateway tests and privilege. When the variable
  * is unset, `delegate()` skips the test and names the variable.
  *
  * Each test process copies the Gateway once and reuses the copy for every test it delegates. The copy holds only
@@ -64,19 +65,9 @@ final class LinuxHost
 
         self::requireHost();
         $root = base_path();
-        // Pest compiles each test file into a class that records its source file.
-        $file = $test::$__filename ?? throw new RuntimeException('The test does not name its Pest source file.');
-
-        if (! str_starts_with($file, $root.'/')) {
-            throw new RuntimeException("The test file [{$file}] is outside the Gateway directory [{$root}].");
-        }
-
+        $command = self::caseCommand($test, $root);
         $directory = self::directory($root);
         $gateway = $directory.'/gateway';
-        $command = self::testCommand([
-            '--colors=never', '--display-warnings', '--display-notices', '--display-deprecations',
-            '--filter', self::filter($test), substr($file, strlen($root) + 1),
-        ]);
         $process = self::ssh(
             sprintf('touch %s && cd %s && %s', escapeshellarg($directory.'/alive'), escapeshellarg($gateway), $command),
             self::timeoutSeconds() + self::LocalGraceSeconds,
@@ -109,6 +100,23 @@ final class LinuxHost
         );
 
         return true;
+    }
+
+    /** Builds the destination command for the already-selected Pest case. */
+    public static function caseCommand(TestCase $test, string $root): string
+    {
+        // Pest compiles each test file into a class that records its source file.
+        $file = $test::$__filename ?? throw new RuntimeException('The test does not name its Pest source file.');
+
+        if (! str_starts_with($file, $root.'/')) {
+            throw new RuntimeException("The test file [{$file}] is outside the Gateway directory [{$root}].");
+        }
+
+        return self::testCommand([
+            '--colors=never', '--display-warnings', '--display-notices', '--display-deprecations',
+            '--filter', self::filter($test), substr($file, strlen($root) + 1),
+            ...in_array('privileged', $test->groups(), true) ? ['--group=privileged'] : [],
+        ]);
     }
 
     /**

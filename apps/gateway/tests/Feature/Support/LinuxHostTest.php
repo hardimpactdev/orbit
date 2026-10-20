@@ -7,6 +7,8 @@ use PHPUnit\Framework\SkippedWithMessageException;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 
+pest()->group('subprocess');
+
 function linux_host_temporary_directory(): string
 {
     $directory = realpath(sys_get_temp_dir()).'/orbit-linux-host-test-'.bin2hex(random_bytes(6));
@@ -57,6 +59,19 @@ it('builds delegated commands with the toolchain from the copied Gateway', funct
         $files->deleteDirectory($directory);
     }
 });
+
+it('preserves the selected case privilege when building a real Pest delegation', function (bool $privileged): void {
+    $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never'];
+
+    if ($privileged) {
+        $arguments[] = '--group=privileged';
+    }
+
+    $process = linux_host_run([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path());
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toMatch('/Tests:\s+1 passed/');
+})->with(['ordinary exclusion' => false, 'explicit privileged selection' => true]);
 
 describe('the Linux test host copy', function (): void {
     it('holds only the files Git would track and vendor', function (): void {
