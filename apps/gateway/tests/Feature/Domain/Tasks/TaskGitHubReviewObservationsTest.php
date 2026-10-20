@@ -267,8 +267,8 @@ describe('watcher persistence without repair dispatch', function (): void {
         $source['state'] = 'APPROVED';
         $response = (object) ['status' => 200, 'incomplete' => false];
         Http::fake([
-            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_read'], 201),
+            'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_read', 'permissions' => ['actions' => 'read']], 201),
             'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
                 'state' => 'open', 'merged' => false, 'mergeable' => true,
                 'head' => ['sha' => $source['commit_id']], 'base' => ['ref' => 'main'],
@@ -281,6 +281,7 @@ describe('watcher persistence without repair dispatch', function (): void {
                 return Http::response([$source], $response->status, $response->incomplete
                     ? ['Link' => '<https://api.github.com/repos/acme/orbit/pulls/42/reviews?per_page=100&page=2>; rel="next"'] : []);
             },
+            'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         ]);

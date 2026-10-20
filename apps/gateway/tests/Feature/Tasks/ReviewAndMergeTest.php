@@ -323,7 +323,7 @@ function rm_runtime(array $receipts = []): object
         {
             return ['runs' => $this->checkRuns($group, $sha) ?? [], 'suites' => $this->check === RequiredCheckState::Missing ? [] : [new GitHubCheckSuite(1,
                 $this->check === RequiredCheckState::Pending ? 'in_progress' : 'completed',
-                $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)]];
+                $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)], 'pull_request_suites' => []];
         }
 
         public function checkRuns(Task $group, string $sha): ?array
