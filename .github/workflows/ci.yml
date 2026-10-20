@@ -26,9 +26,9 @@ env:
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # On PRs this Gateway job checks quality while all four shards run independently.
-    # Main keeps one full recording run. Fork PRs never run on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    # On PRs this Gateway job checks quality on any orbit-shard runner while all four shards run independently.
+    # Main keeps one full six-worker recording run on Sabre. Fork PRs never run on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' && fromJSON('["self-hosted", "sabre"]') || github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,8 +175,6 @@ jobs:
         run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
-        env:
-          ORBIT_CHECK_PROCESSES: ${{ runner.environment == 'self-hosted' && 6 || 4 }}
         run: composer check
 
       - name: Check classification fakes
