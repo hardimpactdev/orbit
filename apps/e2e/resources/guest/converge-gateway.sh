@@ -8,7 +8,7 @@ orbit_env=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit O
 gateway_prerequisites() {
   local package
   local -a missing=()
-  for package in caddy dnsmasq; do
+  for package in caddy dnsmasq sqlite3; do
     if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != 'install ok installed' ]]; then
       missing+=("$package")
     fi
