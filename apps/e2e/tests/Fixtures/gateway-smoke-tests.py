@@ -1,4 +1,5 @@
 """Exercise bin/gateway-smoke against a fake Gateway: an HTTP server, an Orbit CLI, and systemctl."""
+import io
 import json
 import os
 import runpy
@@ -10,11 +11,12 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 REPOSITORY = Path(__file__).resolve().parents[4]
 SMOKE = REPOSITORY / 'bin/gateway-smoke'
@@ -232,13 +234,12 @@ class SmokeWorld:
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def smoke_argv(self, *arguments):
-        # Scale the polling interval and read limit together. Keep the real CLI entry point for other cases.
+        # Shorten only the polling interval. Command deadlines still use the real total budget.
         command = [str(SMOKE)]
         if '--wait-for-tick' in arguments:
             command = [sys.executable, '-c',
                        'import runpy, sys; smoke = runpy.run_path(sys.argv.pop(1)); '
                        'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.25; '
-                       'smoke["main"].__globals__["COMMAND_LIMIT"] = 1; '
                        'sys.exit(smoke["main"]())', str(SMOKE)]
         return [*command, '--sha', SHA,
                 '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
@@ -489,8 +490,29 @@ class GatewaySmokeTest(unittest.TestCase):
             {'stdout': self.world.tick(seconds_ago=0), 'sleep': 30},
         ])
 
-        checks = self.assert_only_failed(self.world.smoke('--timeout', '1', '--wait-for-tick'), ['tasks_tick'])
+        smoke = runpy.run_path(str(SMOKE))
+        options = smoke['build_parser']().parse_args([
+            '--sha', SHA, '--orbit', str(self.world.bin / 'orbit'), '--timeout', '1', '--wait-for-tick',
+        ])
+        unrelated = {
+            name: Mock(return_value=('Unrelated read succeeded.', {}))
+            for name in READ_CHECKS if name != 'tasks_tick'
+        }
+        stdout, stderr = io.StringIO(), io.StringIO()
 
+        # Keep the real tick runner, CLI subprocesses, budget, and JSON/exit result. Other checks have separate coverage.
+        with patch.dict(os.environ, self.world.smoke_environment()), \
+                patch.dict(smoke['run'].__globals__, {'TICK_POLL_SECONDS': 0.25}), \
+                patch.dict(smoke['RUNNERS'], unrelated), \
+                redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = smoke['run'](options)
+
+        process = SimpleNamespace(returncode=exit_code, json=json.loads(stdout.getvalue()), stderr=stderr.getvalue())
+        checks = self.assert_only_failed(process, ['tasks_tick'])
+        for runner in unrelated.values():
+            runner.assert_called_once()
+        self.assertEqual(process.json['timeout_seconds'], 1)
+        self.assertEqual(process.json['summary'], {'passed': 6, 'failed': 1, 'timeout': 0, 'skipped': 1})
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertEqual(checks['tasks_tick']['detail']['last_tick_at'], stale_tick['last_tick_at'])
         self.assertEqual(checks['tasks_tick']['detail']['reads'], 1)
