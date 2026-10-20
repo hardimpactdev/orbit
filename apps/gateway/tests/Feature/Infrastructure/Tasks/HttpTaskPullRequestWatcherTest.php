@@ -36,16 +36,17 @@ function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): T
 function watcher_fake_health(array $pullRequest, array $checkRuns = [], int $checksTokenStatus = 201, int $checkRunsStatus = 200, int $pullRequestStatus = 200): void
 {
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => static fn (Request $request) => match (true) {
-            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch'], 201),
-            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks'], 201),
+            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
+            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks', 'permissions' => ['actions' => 'read']], 201),
             default => Http::response(['message' => 'The permissions requested are not granted to this installation.'], $checksTokenStatus),
         },
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'], ...$pullRequest,
         ], $pullRequestStatus),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => count($checkRuns), 'check_runs' => $checkRuns], $checkRunsStatus),
     ]);
@@ -593,12 +594,13 @@ it('starts a new pending clock when the check run id changes and clears one that
     ];
     $success = ['id' => 1, 'name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/1'];
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
         ]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [$pending(1)]])
@@ -627,11 +629,12 @@ describe('bounded pending clocks', function (): void {
         $this->freezeTime();
         $pending = ['id' => 11, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null];
         Http::fake([
-            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
             'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
                 ->push(['state' => 'open', 'head' => ['sha' => 'old-head']])
                 ->push(['state' => 'open', 'head' => ['sha' => 'new-head']]),
+            'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [$pending]]),
         ]);

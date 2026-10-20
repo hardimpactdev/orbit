@@ -1527,7 +1527,7 @@ Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-m
 
 The green-commit rules need at least one run of that name. Every such run must be for that SHA, completed with `success`, and created by `github-actions`.
 
-The merge gate counts only merge-check runs of a `pull_request` workflow run for exactly the head. That run tests the pull request's merge ref, so the merge with the current base is tested before it lands. A `push` run on the same commit, such as the [handoff](#handoff-ci) push of the last handoff commit, never counts. Until the pull request's own run reports, the gate waits.
+The merge gate counts only merge-check runs of a `pull_request` workflow run for exactly the head. A run superseded by a newer run of the same workflow, event, and branch on that commit does not count. That run tests the pull request's merge ref, so the merge with the current base is tested before it lands. A `push` run on the same commit, such as the [handoff](#handoff-ci) push of the last handoff commit, never counts. Until the pull request's own run reports, the gate waits.
 
 The App merges with a merge commit and `sha` set to the head, so GitHub refuses when the head moved. The repository must allow merge commits. The merge is a push by the App, so GitHub runs the `push` workflows on the default branch. The next tick sees the merge and completes the task. The checks of one head come from the shared check-run read, at most once a minute. GitHub limits writes, so Orbit sends the merge of one head at most once a minute.
 
