@@ -747,10 +747,6 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-26.04
-    # Match apps/web/package.json: the image includes both engines and their system libraries.
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble
-      options: --ipc=host
 
     defaults:
       run:
@@ -773,6 +769,9 @@ jobs:
 
       - name: Check formatting, lint, and types
         run: bun run check
+
+      - name: Install the test browsers
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Run unit and verification tests
         run: bun run test:unit

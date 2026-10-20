@@ -191,7 +191,7 @@ The page-operation tests start one real Bun daemon and demo server in shared set
 
 Vitest bounds browser-file concurrency to two. It runs the daemon integration files sequentially in their own project, before the other projects launch the persistent browser-test provider. This avoids overlapping the idle test's independent Vite server with the page-operation server. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
 
-The CLI parses commands, validates maps, and dispatches socket requests without loading Playwright or Vite. Only the daemon loads those libraries, so repeated commands do not initialize them again. CI uses the official Playwright image at the package's exact version, with both engines and their system libraries already installed. It reports Node and verification tests separately from browser tests.
+The CLI parses commands, validates maps, and dispatches socket requests without loading Playwright or Vite. Only the daemon loads those libraries, so repeated commands do not initialize them again. [CI](/reference/implementation-loop#ci) installs both engines and their system libraries on the hosted runner. It reports Node and verification tests separately from browser tests.
 
 ### Browser coverage
 

@@ -51,7 +51,7 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps. The verification project runs before the other projects so its real Chromium and WebKit processes exit before the browser-test provider starts. Install the browsers once with `bunx playwright install webkit chromium`; CI uses the official Playwright image at the package's exact version.
+`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps. The verification project runs before the other projects so its real Chromium and WebKit processes exit before the browser-test provider starts. Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs both engines and their system libraries directly on the hosted runner.
 
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
