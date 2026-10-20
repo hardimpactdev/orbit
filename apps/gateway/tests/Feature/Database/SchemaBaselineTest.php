@@ -105,11 +105,18 @@ it('preserves configured singleton rows when deploying over the applied migratio
 it('records the complete squashed history exactly once and leaves no pending migrations', function (): void {
     $history = DB::table('migrations')->orderBy('id')->pluck('migration')->all();
 
-    expect($history)->toHaveCount(263)
-        ->and(array_unique($history))->toHaveCount(263)
+    $migrations = array_map(
+        static fn (string $path): string => basename($path, '.php'),
+        glob(database_path('migrations/*.php')),
+    );
+    // The baseline restores 261 earlier records; Laravel then records it and each later migration.
+    $expectedCount = 261 + count($migrations);
+
+    expect($history)->toHaveCount($expectedCount)
+        ->and(array_unique($history))->toHaveCount($expectedCount)
         ->and($history[0])->toBe('2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table')
         ->and($history[261])->toBe('2026_12_03_000000_allow_cold_recipe_image_rebuilds')
-        ->and($history[262])->toBe('2026_12_04_000000_seed_schema_baseline_reference_rows');
+        ->and(array_slice($history, 261))->toBe($migrations);
     $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
     expect(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($history);
 });
