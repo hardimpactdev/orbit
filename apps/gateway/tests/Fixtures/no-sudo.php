@@ -42,3 +42,7 @@ it('rejects ignored sudo through the native runner', function (): void {
 it('keeps the guard when a fixture pins its toolchain path', function (): void {
     (new Process(['bash', '-c', 'sudo -n true || true'], env: ['PATH' => TestToolchain::path()]))->mustRun();
 });
+
+it('keeps the guard when a fixture clears the environment and pins its toolchain path', function (): void {
+    (new Process(['env', '-i', 'PATH='.TestToolchain::path(), 'bash', '-c', 'sudo -n true || true']))->mustRun();
+});

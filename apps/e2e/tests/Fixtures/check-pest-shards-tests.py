@@ -158,22 +158,88 @@ class PrivilegedShardsTest(unittest.TestCase):
         self.assertEqual('ubuntu-26.04', job['runs-on'])
         self.assertNotIn('if', job)
         self.assertFalse(job['strategy']['fail-fast'])
-        self.assertEqual([1, 2, 3, 4], job['strategy']['matrix']['shard'])
+        self.assertEqual([1, 2], job['strategy']['matrix']['shard'])
         commands = [step['run'] for step in job['steps'] if 'run' in step]
         execution = next(command for command in commands if command.startswith('vendor/bin/pest '))
         for option in ('--no-tia', '--group=privileged', '--fail-on-empty-test-suite',
                        '--shard=${{ matrix.shard }}/${{ strategy.job-total }}'):
             self.assertIn(option, execution)
-        check = next(step for step in job['steps'] if 'check-pest-shards' in step.get('run', ''))
-        self.assertEqual('matrix.shard == 1', check['if'])
-        self.assertIn('--group=privileged', check['run'])
-        self.assertIn('--shards=${{ strategy.job-total }}', check['run'])
+        self.assertFalse(any('check-pest-shards' in command for command in commands))
+        quality = workflow['jobs']['project']['steps']
+        check = next(step for step in quality if '--group=privileged' in step.get('run', ''))
+        self.assertEqual("matrix.project.directory == 'apps/gateway'", check['if'])
+        self.assertIn(f"--shards={len(job['strategy']['matrix']['shard'])}", check['run'])
         self.assertEqual('1', next(step for step in job['steps'] if step.get('run') == execution)['env']['ORBIT_TEST_DOCKER'])
         self.assertIn('privileged', workflow['jobs']['required']['needs'])
         self.assertIn('PRIVILEGED_RESULT', json.dumps(workflow['jobs']['required']['steps']))
         self.assertFalse(any('Homebrew' in step.get('uses', '') or 'setup-node' in step.get('uses', '')
                              for step in job['steps']))
         self.assertFalse(any('brew install' in command or 'docker pull' in command for command in commands))
+
+
+class NoSudoRunnerTest(unittest.TestCase):
+    def test_every_ordinary_gateway_lane_requires_no_sudo_after_setup(self):
+        repository = HELPER.parent.parent
+        workflow = json.loads(subprocess.run([
+            'php', '-r', 'require $argv[1]; echo json_encode(Symfony\\Component\\Yaml\\Yaml::parseFile($argv[2]));',
+            str(repository / 'apps/e2e/vendor/autoload.php'), str(repository / '.github/workflows/ci.yml'),
+        ], check=True, capture_output=True, text=True).stdout)
+        commands = []
+        for lane, first_check in (('project', 'Verify Gateway shard coverage'),
+                                  ('gateway-shards', 'Run Gateway shard ${{ matrix.shard }}')):
+            steps = workflow['jobs'][lane]['steps']
+            index = next(i for i, step in enumerate(steps) if step['name'] == first_check)
+            guard = steps[index - 1]
+            self.assertEqual('Require no sudo for ordinary Gateway tests', guard['name'])
+            self.assertNotIn('continue-on-error', guard)
+            self.assertEqual('${{ runner.environment }}', guard['env']['RUNNER_ENVIRONMENT'])
+            self.assertIn('if sudo -n true; then', guard['run'])
+            self.assertLess(next(i for i, step in enumerate(steps)
+                                 if step.get('name') == 'Install Gateway system dependencies'), index - 1)
+            if lane == 'project':
+                self.assertEqual("matrix.project.directory == 'apps/gateway'", guard['if'])
+                redaction = next(step for step in steps if step.get('name') == 'Run redaction cases without PCRE JIT')
+                self.assertIn("steps.gateway-no-sudo.outcome == 'success'", redaction['if'])
+                self.assertEqual('gateway-no-sudo', guard['id'])
+            else:
+                self.assertNotIn('if', guard)
+            commands.append(guard['run'])
+        self.assertEqual(commands[0], commands[1])
+
+        # Exercise the actual step: only a hosted runner may mutate policy, and
+        # a broken revocation or a sudo-enabled self-hosted runner must fail closed.
+        with tempfile.TemporaryDirectory(prefix='orbit-no-sudo-step-') as directory:
+            root = Path(directory)
+            sudo = root / 'sudo'
+            sudo.write_text('''#!/bin/sh
+printf '%s\\n' "$*" >> "$CALLS"
+if [ "$1" = sh ]; then
+    test "$REVOKE_WORKS" = 1 && touch "$DENIED"
+    exit 0
+fi
+test "$SUDO_WORKS" = 1 && test ! -f "$DENIED"
+''')
+            sudo.chmod(0o700)
+            for environment, works, revokes, expected in (
+                ('self-hosted', '1', '1', 1), ('self-hosted', '0', '1', 0),
+                ('github-hosted', '1', '1', 0), ('github-hosted', '1', '0', 1),
+            ):
+                with self.subTest(environment=environment, works=works, revokes=revokes):
+                    calls, denied = root / 'calls', root / 'denied'
+                    calls.unlink(missing_ok=True)
+                    denied.unlink(missing_ok=True)
+                    env = dict(os.environ, PATH=f'{root}:/usr/bin:/bin', CALLS=str(calls),
+                               DENIED=str(denied), SUDO_WORKS=works, REVOKE_WORKS=revokes,
+                               RUNNER_ENVIRONMENT=environment)
+                    result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', commands[0]],
+                                            env=env, capture_output=True, text=True)
+                    self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                    logged = calls.read_text()
+                    self.assertEqual(environment == 'github-hosted', 'sh -c' in logged)
+                    if environment == 'github-hosted':
+                        self.assertIn('ALL=(ALL:ALL) !ALL', logged)
+                        self.assertIn('/etc/sudoers.d/zz-orbit-no-sudo', logged)
+                        self.assertIn('chmod 0440', logged)
 
 
 class GatewaySelectionTest(unittest.TestCase):

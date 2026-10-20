@@ -24,6 +24,40 @@ function linux_host_run(array $arguments, ?string $directory = null): Process
     return $process;
 }
 
+it('builds delegated commands with the toolchain from the copied Gateway', function (): void {
+    $directory = linux_host_temporary_directory();
+    $files = new Filesystem;
+
+    try {
+        $files->ensureDirectoryExists($directory.'/tests');
+        $files->ensureDirectoryExists($directory.'/remote-bin');
+        $files->put($directory.'/tests/bootstrap.php', <<<'PHP'
+            <?php
+            namespace Tests\Support;
+            final class TestToolchain
+            {
+                public static function path(string $path): string
+                {
+                    return getcwd().'/remote-bin:'.$path;
+                }
+            }
+            PHP);
+        $files->put($directory.'/remote-bin/timeout', "#!/bin/sh\nprintf '%s\\n' \"\$PATH\" \"\$@\"\n");
+        chmod($directory.'/remote-bin/timeout', 0o700);
+        $arguments = ['--filter', 'a case with spaces; $literal', 'tests/ExampleTest.php'];
+
+        $process = linux_host_run(['sh', '-c', LinuxHost::testCommand($arguments)], $directory);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(explode("\n", trim($process->getOutput())))->toBe([
+                $directory.'/remote-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                '--kill-after=10', (string) LinuxHost::timeoutSeconds(), 'php', 'vendor/bin/pest', ...$arguments,
+            ]);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
 describe('the Linux test host copy', function (): void {
     it('holds only the files Git would track and vendor', function (): void {
         $root = linux_host_temporary_directory();

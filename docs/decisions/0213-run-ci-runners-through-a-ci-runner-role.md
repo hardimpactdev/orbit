@@ -24,12 +24,12 @@ Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runn
 | `ci-beast-1`, `ci-beast-2` | Beast | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Online |
 | `ci-shark-1` | Shark | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Offline, its container stopped |
 
-- Sabre has no role. Its runners run on the host as `github-runner`, which has passwordless `sudo`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. A job that runs `sudo` bypasses that rule and can act as Sabre toward the Gateway. The implementation loop describes [the setup](/reference/implementation-loop#self-hosted-gateway-runner).
+- Sabre has no role. Its runners run on the host as `github-runner`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. A job with sudo bypasses that rule and acts as Sabre toward the Gateway. The implementation loop owns [the setup and removal of the hand-made sudo grant](/reference/implementation-loop#self-hosted-gateway-runner).
 - Beast and Shark are `app-dev` Nodes. Their runners run in unprivileged Incus containers in the project `orbit-ci`, with a `runner` user that has no `sudo`. [`tools/ci-runners/setup.sh`](https://github.com/nckrtl/orbit/blob/main/tools/ci-runners/setup.sh) builds them by hand. Both Nodes list `orbit-ci/*` in `task_vms.operator_owned`, so the task VM stray report ignores those containers. The implementation loop describes [those runners](/reference/implementation-loop#self-hosted-shard-runners).
 
 Doctor sees none of this state, registration tokens pass through an operator's shell, and removal is a manual recipe.
 
-Every CI step that calls `sudo` runs only on GitHub-hosted runners. The `privileged` test group runs in its own job on a GitHub-hosted runner, and shards already leave it out. Only Sabre's unsharded Gateway job can still select a privileged test.
+[Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege) defines the test and runner boundary. The default XML selection excludes privileged cases from both the unsharded Gateway job and its PR shards. Disposable GitHub-hosted jobs run the privileged group. Ordinary jobs reject a runner with working sudo, including Sabre until the orchestrator removes its hand-made grant.
 
 GitHub's repository registration-token endpoint needs the App permission `Administration: write`.
 

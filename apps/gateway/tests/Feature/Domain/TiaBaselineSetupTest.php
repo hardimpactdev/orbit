@@ -94,10 +94,10 @@ describe('TIA baseline setup', function (): void {
         mkdir($target);
         tia_setup_checkout($target);
         $lock = $this->sandbox.'/.orbit-tia-'.hash('sha256', $target).'.lock';
-        $holder = new Process(['python3', '-c', 'import fcntl, sys, time; lock=open(sys.argv[1], "w"); fcntl.flock(lock, fcntl.LOCK_EX); print("ready", flush=True); time.sleep(30)', $lock]);
+        $holder = new Process(['python3', '-c', 'import fcntl, signal, sys; lock=open(sys.argv[1], "w"); fcntl.flock(lock, fcntl.LOCK_EX); print("ready", flush=True); signal.pause()', $lock]);
         $holder->start();
         try {
-            $holder->waitUntil(fn (): bool => str_contains($holder->getOutput(), 'ready'));
+            expect($holder->waitUntil(fn (): bool => str_contains($holder->getOutput(), 'ready')))->toBeTrue();
             $command = app(TiaBaselineSetup::class)->command(new Project, 30);
             $process = new Process(['bash', '-c', $command], $this->sandbox);
             $process->run();

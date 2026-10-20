@@ -170,9 +170,28 @@ jobs:
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
             ${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
 
+      # docs/reference/implementation-loop.md: runner policy, not PATH, is the sudo boundary.
+      - name: Require no sudo for ordinary Gateway tests
+        id: gateway-no-sudo
+        if: matrix.project.directory == 'apps/gateway'
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
+            sudo sh -c 'printf "%s ALL=(ALL:ALL) !ALL\n" "$1" > /etc/sudoers.d/zz-orbit-no-sudo; chmod 0440 /etc/sudoers.d/zz-orbit-no-sudo' sh "$(id -un)"
+          fi
+          if sudo -n true; then
+            echo 'Ordinary Gateway tests require a runner without sudo.' >&2
+            exit 1
+          fi
+
       - name: Verify Gateway shard coverage
         if: matrix.project.directory == 'apps/gateway' && github.event_name == 'pull_request'
         run: ../../bin/check-pest-shards
+
+      - name: Verify privileged shard coverage
+        if: matrix.project.directory == 'apps/gateway'
+        run: ../../bin/check-pest-shards --group=privileged --shards=2
 
       - name: Run project quality checks
         env:
@@ -217,7 +236,7 @@ jobs:
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
       - name: Run redaction cases without PCRE JIT
-        if: always() && matrix.project.directory == 'apps/gateway'
+        if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
@@ -349,6 +368,18 @@ jobs:
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       # Four workers per shard leave room for other jobs on these shared hosts.
+      - name: Require no sudo for ordinary Gateway tests
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          if [ "$RUNNER_ENVIRONMENT" = github-hosted ]; then
+            sudo sh -c 'printf "%s ALL=(ALL:ALL) !ALL\n" "$1" > /etc/sudoers.d/zz-orbit-no-sudo; chmod 0440 /etc/sudoers.d/zz-orbit-no-sudo' sh "$(id -un)"
+          fi
+          if sudo -n true; then
+            echo 'Ordinary Gateway tests require a runner without sudo.' >&2
+            exit 1
+          fi
+
       - name: Run Gateway shard ${{ matrix.shard }}
         run: vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact
 
@@ -360,7 +391,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     defaults:
       run:
         working-directory: apps/gateway
@@ -383,9 +414,6 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      - name: Check the privileged shards cover exactly the group
-        if: matrix.shard == 1
-        run: ../../bin/check-pest-shards --group=privileged --shards=${{ strategy.job-total }}
       # Only the shard with Valkey tests pulls its image, on the first real docker run.
       - name: Run privileged shard ${{ matrix.shard }}
         env:
