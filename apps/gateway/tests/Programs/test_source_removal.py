@@ -28,6 +28,18 @@ def git(*arguments, cwd=None):
 class Sandbox(unittest.TestCase):
     """An apps root with one Project directory, a bare origin, and a Git config that sends the Project origin there."""
 
+    @classmethod
+    def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory(prefix='orbit-source-fixture-')
+        cls.addClassCleanup(directory.cleanup)
+        cls.origin_fixture = f'{directory.name}/origin.git'
+        git('init', '--quiet', '--bare', '--initial-branch=main', cls.origin_fixture)
+        seed = f'{directory.name}/seed'
+        git('clone', '--quiet', cls.origin_fixture, seed)
+        git('-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test',
+            'commit', '--quiet', '--allow-empty', '-m', 'Initial', cwd=seed)
+        git('push', '--quiet', 'origin', 'HEAD:main', cwd=seed)
+
     def setUp(self):
         self.base = os.path.realpath(tempfile.mkdtemp(prefix='orbit-remote-programs-'))
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
@@ -35,7 +47,7 @@ class Sandbox(unittest.TestCase):
         self.project = f'{self.root}/acme'
         os.makedirs(self.project)
         self.origin = f'{self.base}/origin.git'
-        git('init', '--quiet', '--bare', '--initial-branch=main', self.origin)
+        shutil.copytree(self.origin_fixture, self.origin)
         config = f'{self.base}/gitconfig'
         with open(config, 'w') as handle:
             handle.write(f'[url "{self.origin}"]\n\tinsteadOf = {ORIGIN}\n[user]\n\tname = Orbit\n\temail = orbit@example.test\n')
@@ -43,10 +55,6 @@ class Sandbox(unittest.TestCase):
         self.saved = {name: os.environ.get(name) for name in self.environment}
         os.environ.update(self.environment)
         self.addCleanup(self.restore)
-        seed = f'{self.base}/seed'
-        git('clone', '--quiet', self.origin, seed)
-        git('commit', '--quiet', '--allow-empty', '-m', 'Initial', cwd=seed)
-        git('push', '--quiet', 'origin', 'HEAD:main', cwd=seed)
 
     def restore(self):
         for name, value in self.saved.items():

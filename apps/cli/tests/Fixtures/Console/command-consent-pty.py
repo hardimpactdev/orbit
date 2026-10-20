@@ -34,7 +34,7 @@ awaiting_output = False
 idle_timeout = configuration.get('idle_timeout', 10)
 last_output = time.monotonic()
 while process.poll() is None:
-    if select.select([master], [], [], 0.02)[0]:
+    if select.select([master], [], [], 0.002)[0]:
         try:
             chunk = os.read(master, 65536)
             if chunk:
@@ -80,7 +80,7 @@ while process.poll() is None:
         finally:
             os.kill(process.pid, signal.SIGCONT)
         awaiting_output = True
-while select.select([master], [], [], 0.02)[0]:
+while select.select([master], [], [], 0)[0]:
     try:
         chunk = os.read(master, 65536)
     except OSError as error:

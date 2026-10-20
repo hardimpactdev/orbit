@@ -211,7 +211,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
             $checks = app(TaskCheckRunner::class);
@@ -445,6 +445,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
             ->push($conflict)->push($conflict)
             ->push([...$clean, 'mergeable_state' => 'unstable'])
             ->push($clean),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
@@ -1559,6 +1560,7 @@ it('waits for the checks on a new head to complete before the next fixup', funct
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_open_pull(['head' => ['sha' => 'def456']])),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
             ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
             ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),

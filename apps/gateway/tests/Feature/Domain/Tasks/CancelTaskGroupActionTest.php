@@ -18,6 +18,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -32,6 +34,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +121,24 @@ function cancel_recording_publisher(int $failures = 0): object
             $this->transactionLevels[] = DB::transactionLevel();
             if ($this->failures-- > 0) {
                 throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+        }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('Cancel pushes no handoff.');
+        }
+
+        /** @var list<array{0: int, 1: bool}> each deleted group and whether its workspace Instance still existed */
+        public array $deletedHandoffBranches = [];
+
+        public bool $deleteFails = false;
+
+        public function deleteHandoffBranch(Task $group): void
+        {
+            $this->deletedHandoffBranches[] = [$group->id, Instance::query()->where('task_workspace_owner_id', $group->id)->exists()];
+            if ($this->deleteFails) {
+                throw new TaskPullRequestException('The handoff branch could not be deleted: GitHub refused the request.');
             }
         }
     };
@@ -798,3 +819,79 @@ it('clears removal assistance once when a refused cancellation succeeds on retry
         ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)
             ->where('description', 'assistance cleared')->count())->toBe(1);
 });
+
+it('deletes the handoff branch of a group it cancels once its workspace is gone, and only after a handoff pushed one', function (bool $handedOff): void {
+    app(TaskExtensionState::class)->enable();
+    cancel_recording_remover();
+    $publisher = cancel_recording_publisher();
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $subtask = cancel_subtask($group, TaskStatus::Running);
+    TaskCheck::query()->create([
+        'task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+        'commit_sha' => $handedOff ? str_repeat('c', 40) : null,
+        'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+
+    expect(app(CancelTaskGroupAction::class)->execute($group)->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($publisher->deletedHandoffBranches)->toBe($handedOff ? [[$group->id, false]] : []);
+})->with(['after a handoff CI' => true, 'without one' => false]);
+
+it('asks for assistance once when the handoff branch cannot be deleted, and still removes the workspace', function (bool $retry): void {
+    app(TaskExtensionState::class)->enable();
+    $remover = cancel_recording_remover();
+    $publisher = cancel_recording_publisher();
+    $publisher->deleteFails = true;
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    if ($retry) {
+        // An earlier cancel could not remove the workspace and asked for assistance; this cancel retries the removal.
+        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node did not answer.');
+    }
+    $subtask = cancel_subtask($group, TaskStatus::Running);
+    TaskCheck::query()->create([
+        'task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'commit_sha' => str_repeat('c', 40),
+        'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+    // The request replaces the earlier removal failure, because the workspace is gone and only the branch is left.
+    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($remover->calls)->toHaveCount(1)
+        ->and($cancelled->fresh()?->taskable_id)->toBeNull()
+        ->and($publisher->deletedHandoffBranches)->toBe([[$group->id, false]])
+        ->and($cancelled->fresh()?->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+        ->and($cancelled->fresh()?->assistance_reason)->toBe(cancel_branch_left_reason($group))
+        ->and(Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())
+        ->toBe($retry ? ['assistance requested', 'assistance changed'] : ['assistance requested']);
+})->with(['a first cancel' => false, 'a cancel that retries a failed removal' => true]);
+
+it('deletes a handoff branch left by an earlier cancel when the task is cancelled again, and then clears the request', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $remover = cancel_recording_remover();
+    $publisher = cancel_recording_publisher();
+    $publisher->deleteFails = true;
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $subtask = cancel_subtask($group, TaskStatus::Running);
+    TaskCheck::query()->create([
+        'task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'commit_sha' => str_repeat('c', 40),
+        'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+    app(CancelTaskGroupAction::class)->execute($group);
+    expect($group->fresh()?->assistance_reason)->toBe(cancel_branch_left_reason($group));
+
+    // The operator restored the App access; the repeated cancel tries the delete once more.
+    $publisher->deleteFails = false;
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+    expect($remover->calls)->toHaveCount(1)
+        ->and($publisher->deletedHandoffBranches)->toBe([[$group->id, false], [$group->id, false]])
+        ->and($cancelled->fresh()?->assistance_requested)->toBeFalse()
+        ->and(Activity::query()->where('subject_id', $group->id)->where('command', 'tasks:assistance')->pluck('description')->all())
+        ->toBe(['assistance requested', 'assistance cleared']);
+});
+
+function cancel_branch_left_reason(Task $group): string
+{
+    return RemoveTaskWorkspaceAction::HandoffBranchLeftPrefix.'The handoff branch could not be deleted: GitHub refused the request. Delete task-'
+        .$group->id.'-handoff on GitHub or restore the App access, then cancel or complete the task again.';
+}

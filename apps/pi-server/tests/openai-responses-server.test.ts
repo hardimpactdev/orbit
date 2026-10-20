@@ -1,3 +1,4 @@
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +32,10 @@ it("publishes and reloads streamed task-VM provider failures using the deployed 
                 },
             },
         }),
+    );
+    const inMemory = SettingsManager.inMemory.bind(SettingsManager);
+    vi.spyOn(SettingsManager, "inMemory").mockImplementation((settings) =>
+        inMemory({ ...settings, retry: { enabled: false } }),
     );
     harness = await startHarness({
         root,

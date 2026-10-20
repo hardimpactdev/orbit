@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Documentation\DocsImpact;
+use Illuminate\Filesystem\Filesystem;
 
 $GLOBALS['docsImpactFixtureRoots'] = [];
 
@@ -42,10 +43,15 @@ afterEach(function (): void {
     $GLOBALS['docsImpactFixtureRoots'] = [];
 });
 
-function docsImpactFixture(): string
+function docsImpactTemplate(): string
 {
-    $root = sys_get_temp_dir().'/docs-impact-'.bin2hex(random_bytes(6));
-    $GLOBALS['docsImpactFixtureRoots'][] = $root;
+    static $template = null;
+    if ($template !== null) {
+        return $template;
+    }
+
+    $root = sys_get_temp_dir().'/orbit-docs-impact-template-'.bin2hex(random_bytes(6));
+    register_shutdown_function(static fn () => removeDocsImpactFixturePath($root));
     mkdir($root.'/docs/reference', 0777, true);
     mkdir($root.'/docs/cli', 0777, true);
     mkdir($root.'/apps/gateway/routes', 0777, true);
@@ -90,6 +96,17 @@ function docsImpactFixture(): string
     exec('git -C '.escapeshellarg($root).' config maintenance.auto false');
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm fixture');
+
+    $template = $root;
+
+    return $template;
+}
+
+function docsImpactFixture(): string
+{
+    $root = sys_get_temp_dir().'/orbit-docs-impact-'.bin2hex(random_bytes(6));
+    $GLOBALS['docsImpactFixtureRoots'][] = $root;
+    expect(new Filesystem()->copyDirectory(docsImpactTemplate(), $root))->toBeTrue();
 
     return $root;
 }

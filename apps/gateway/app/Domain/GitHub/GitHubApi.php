@@ -124,6 +124,13 @@ interface GitHubApi
     public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array;
 
     /**
+     * Deletes a branch on GitHub. A branch that is already gone, a 422 or a 404, counts as deleted.
+     *
+     * @throws GitHubApiException
+     */
+    public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void;
+
+    /**
      * Opens the pull request, or returns the open one that already has this head.
      *
      * @throws GitHubApiException
@@ -160,6 +167,16 @@ interface GitHubApi
      * @throws GitHubApiException
      */
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array;
+
+    /**
+     * Every check suite on the commit, every page up to 1,000 suites. A longer list, or one that changes or ends
+     * before its `total_count`, fails.
+     *
+     * @return list<GitHubCheckSuite>
+     *
+     * @throws GitHubApiException
+     */
+    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
 
     /**
      * The first 100 commits reachable from the branch head, newest first, in GitHub's history order.

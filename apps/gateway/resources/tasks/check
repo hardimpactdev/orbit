@@ -722,17 +722,8 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
         if failed_step is None and command:
             log.write(f"$ {command}\n".encode())
             log.flush()
-            environment = dict(os.environ)
-            environment.pop('ORBIT_TASK_CHECK_BASE', None)
-            if deliverables:
-                with open(deliverables) as source:
-                    test_base = json.load(source).get('test_base')
-                if test_base is not None:
-                    if not isinstance(test_base, str) or not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', test_base):
-                        raise ValueError('Invalid task test base.')
-                    environment['ORBIT_TASK_CHECK_BASE'] = test_base
             exit_code = subprocess.run(['bash', '-lc', command], cwd=checkout, stdin=subprocess.DEVNULL,
-                                       stdout=log, stderr=subprocess.STDOUT, env=environment).returncode
+                                       stdout=log, stderr=subprocess.STDOUT).returncode
             log.flush()
         if failed_step is None and deliverables and exit_code == 0:
             evidence = verify_deliverables(checkout, head, tree, deliverables, log)

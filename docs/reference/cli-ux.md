@@ -164,6 +164,8 @@ Measure ordinary terminal cells without assuming emoji sequences collapse into o
 
 Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
 
+An initially unstarted nested progress panel starts and settles while the outer callback is active. It shares the surrounding renderer without moving either callback to a child process.
+
 Prompt, progress, and interruption state belong to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, terminal settings, and interrupt intent. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
 
 An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.

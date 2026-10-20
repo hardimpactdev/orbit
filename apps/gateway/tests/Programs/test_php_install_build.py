@@ -87,17 +87,18 @@ def deb(name, version):
 
 
 class InstallBuildTest(unittest.TestCase):
-    def setUp(self):
-        # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
-        self.directory = tempfile.TemporaryDirectory(dir='/tmp', prefix='orbit-php-')
-        self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name) / 'root'
-        self.state = Path(self.directory.name) / 'state'
-        bin_directory = Path(self.directory.name) / 'bin'
-        for path in (self.state / 'installed', self.state / 'served', bin_directory,
-                     self.root / 'etc/apt/sources.list.d', self.root / 'usr/share/keyrings', self.root / 'usr/sbin',
-                     self.root / 'usr/bin', self.root / 'etc/php/8.5/cli/conf.d', self.root / 'etc/php/8.5/fpm/conf.d',
-                     self.root / 'etc/php/8.5/fpm/pool.d'):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = tempfile.TemporaryDirectory(dir='/tmp', prefix='orbit-php-fixture-')
+        cls.addClassCleanup(cls.fixture.cleanup)
+        # Build the immutable Node image once; each case gets its own writable copy.
+        root = Path(cls.fixture.name) / 'root'
+        state = Path(cls.fixture.name) / 'state'
+        bin_directory = Path(cls.fixture.name) / 'bin'
+        for path in (state / 'installed', state / 'served', bin_directory,
+                     root / 'etc/apt/sources.list.d', root / 'usr/share/keyrings', root / 'usr/sbin',
+                     root / 'usr/bin', root / 'etc/php/8.5/cli/conf.d', root / 'etc/php/8.5/fpm/conf.d',
+                     root / 'etc/php/8.5/fpm/pool.d'):
             path.mkdir(parents=True)
         for name, body in FAKES.items():
             (bin_directory / name).write_text(f'#!/usr/bin/env bash\n{body}\n')
@@ -106,12 +107,20 @@ class InstallBuildTest(unittest.TestCase):
             # PHP-FPM also loads the extensions that Orbit requires of every pool.
             required = '' if sapi == 'cli' else 'printf "%s\\n" bcmath curl gd imagick intl mbstring mysqli pdo_mysql ' \
                 'pdo_pgsql pdo_sqlite redis simplexml xml zip\n'
-            (self.root / binary).write_text(PHP.replace('{sapi}', sapi).replace('true\n', required + 'true\n'))
-            (self.root / binary).chmod(0o755)
+            (root / binary).write_text(PHP.replace('{sapi}', sapi).replace('true\n', required + 'true\n'))
+            (root / binary).chmod(0o755)
         for module in ('gd', 'intl'):
             for sapi in ('cli', 'fpm'):
-                (self.root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(f'/mods/{module}.ini')
-        self.environment = {'PATH': f'{bin_directory}:{os.environ["PATH"]}', 'STATE': str(self.state),
+                (root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(f'/mods/{module}.ini')
+
+    def setUp(self):
+        # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
+        self.directory = tempfile.TemporaryDirectory(dir='/tmp', prefix='orbit-php-')
+        self.addCleanup(self.directory.cleanup)
+        shutil.copytree(self.fixture.name, self.directory.name, dirs_exist_ok=True, symlinks=True)
+        self.root = Path(self.directory.name) / 'root'
+        self.state = Path(self.directory.name) / 'state'
+        self.environment = {'PATH': f'{self.directory.name}/bin:{os.environ["PATH"]}', 'STATE': str(self.state),
                             'ROOT': str(self.root)}
         self.pins = {}
         for name in ('php8.5-cli', 'php8.5-pcov', 'php-common'):

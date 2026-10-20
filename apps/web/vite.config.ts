@@ -167,6 +167,16 @@ export default defineConfig({
                     name: "unit",
                     environment: "node",
                     include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
+                    exclude: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                },
+            },
+            // Real daemon lifecycles with independent temporary homes and servers.
+            {
+                extends: true,
+                test: {
+                    name: "verification",
+                    include: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                    environment: "node",
                 },
             },
             // The whole app in a real browser against the demo Gateway: keyboard, menus, forms, screens.

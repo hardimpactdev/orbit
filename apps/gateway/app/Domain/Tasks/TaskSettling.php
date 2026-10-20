@@ -260,7 +260,7 @@ final readonly class TaskSettling
             $group->save();
         }
 
-        $this->workspaces->clearFailure($group);
+        $this->workspaces->finishRemoval($group);
     }
 
     /**
@@ -345,8 +345,8 @@ final readonly class TaskSettling
     }
 
     /**
-     * Cancels a todo subtask without starting anything, or cancels a running subtask and starts the next
-     * one. `$stop` makes the remote calls that stop a running subtask's implementer and check. It runs
+     * Cancels a todo subtask without starting anything or re-settling a group already waiting for review,
+     * or cancels a running subtask and starts the next one. `$stop` stops its implementer and check. It runs
      * outside any database transaction, so a slow Node or agent never holds the Gateway's SQLite write
      * lock. An exception from `$stop` leaves the subtask and its check running. The state change then
      * applies only when the subtask is still running: when it moved on while `$stop` ran, its new state
@@ -385,7 +385,7 @@ final readonly class TaskSettling
                 $assistanceReason = $this->markSubtaskCancelled($locked);
                 $tasks = $this->runner->lockedTasks($group);
                 $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
-                if (! $this->hasOpenSubtask($tasks)) {
+                if (! $this->hasOpenSubtask($tasks) && $group->status !== TaskGroupStatus::WaitingForReview) {
                     $group->status = TaskGroupStatus::Settling;
                 }
                 $group->save();
@@ -393,7 +393,7 @@ final readonly class TaskSettling
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             });
 
-            if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            if ($group->status === TaskGroupStatus::Settling) {
                 return $this->settle($scheduler, $group, requestMissingPullRequest: false, checkReturningPullRequest: false);
             }
 

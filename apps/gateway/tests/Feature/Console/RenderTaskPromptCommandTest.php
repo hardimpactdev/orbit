@@ -389,9 +389,9 @@ it('renders the blocking rule and follow-up policy for opening and continued rev
     $continuedPayload['review_packet'] = render_task_prompt_review_packet(continued: true);
 
     expect(render_task_prompt('reviewer', $payload)['prompt'])
-        ->toContain('Do not edit or commit the code; Orbit commits after you approve. '.$sentence.' ');
+        ->toContain('Do not edit or commit the code; Orbit commits the work itself. '.$sentence.' ');
     expect(render_task_prompt('reviewer-continue', $continuedPayload)['prompt'])
-        ->toContain('Do not edit or commit the code; Orbit commits after you approve. '.$sentence.' ');
+        ->toContain('Do not edit or commit the code; Orbit commits the work itself. '.$sentence.' ');
     expect(render_task_prompt('implementer', [
         'group' => render_task_prompt_group(),
         'subtask' => render_task_prompt_subtask(),

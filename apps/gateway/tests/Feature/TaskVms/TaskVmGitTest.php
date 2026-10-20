@@ -232,6 +232,22 @@ describe('publish from the VM', function (): void {
         expect($this->sent)->toHaveCount(0);
     });
 
+    it('replaces a branch whose history moved only over the tip it fetched', function (): void {
+        tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main:task-7']);
+        tvm_git_commit($this->root.'/upstream', 'other.php');
+        tvm_git($this->root.'/upstream', ['push', '--quiet', '--force', $this->root.'/origin.git', 'HEAD:task-7']);
+        $this->git->fetch($this->project, ['main', 'task-7'], $this->access, 'tasks.push_failed');
+
+        $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true);
+
+        expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved);
+
+        // Someone else moved the branch after the fetch: the lease refuses the replacement.
+        tvm_git($this->root.'/upstream', ['push', '--quiet', '--force', $this->root.'/origin.git', 'HEAD:task-7']);
+        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true))
+            ->toThrow(RuntimeConvergenceException::class);
+    });
+
     it('reports GitHub refusing the push with the push result', function (): void {
         tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main:task-7']);
         tvm_git_commit($this->root.'/upstream', 'other.php');

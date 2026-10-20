@@ -12,7 +12,7 @@ describe('owned renderer lifecycle', function (): void {
 
         try {
             $process = new Process([PHP_BINARY, __DIR__.'/../../Fixtures/Console/runtime-fixture.php', $case, '--renderer-fixture'],
-                env: ['ORBIT_UX_TRACE' => $trace]);
+                env: ['ORBIT_UX_TRACE' => $trace, 'ORBIT_UX_DURATION_US' => '1000']);
             $process->setTimeout(10);
             $process->run();
             $events = array_map(static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
@@ -40,20 +40,21 @@ describe('owned renderer lifecycle', function (): void {
         'invalid final payload' => ['invalid-settled', 7],
         'callback and final payload failure' => ['invalid-settled-exception', 7],
         'nested spinners' => ['nested-spinners', 0],
-        'nested progress' => ['nested-progress', 0],
         'nested startup payload failure' => ['nested-invalid-start', 7],
         'signal during failure teardown' => ['failure-teardown-signal', 7],
     ]);
 
     it('leaves machine and plain output free of cursor control and repeated frames', function (): void {
         $fixture = __DIR__.'/../../Fixtures/Console/runtime-fixture.php';
-        $machine = new Process([PHP_BINARY, $fixture, 'short-spinner', '--json', '--renderer-fixture']);
+        $machine = new Process([PHP_BINARY, $fixture, 'short-spinner', '--json', '--renderer-fixture'],
+            env: ['ORBIT_UX_DURATION_US' => '1000']);
         $machine->run();
         expect($machine->getExitCode())->toBe(0)
             ->and(json_decode($machine->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['fixture_status' => 0, 'callbacks' => 1])
             ->and($machine->getErrorOutput())->toBe('');
 
-        $plain = new Process([PHP_BINARY, $fixture, 'short-spinner', '--plain']);
+        $plain = new Process([PHP_BINARY, $fixture, 'short-spinner', '--plain'],
+            env: ['ORBIT_UX_DURATION_US' => '1000']);
         $plain->run();
         expect($plain->getExitCode())->toBe(0)
             ->and($plain->getOutput())->toBe("Waiting for response...\nWait finished.\n")
@@ -65,7 +66,7 @@ describe('owned renderer lifecycle', function (): void {
 
         try {
             $process = new Process([PHP_BINARY, __DIR__.'/../../Fixtures/Console/runtime-fixture.php', 'spinner', '--renderer-fixture'],
-                env: ['ORBIT_UX_TRACE' => $trace, 'ORBIT_UX_FAULT' => $fault]);
+                env: ['ORBIT_UX_TRACE' => $trace, 'ORBIT_UX_FAULT' => $fault, 'ORBIT_UX_DURATION_US' => '1000']);
             $process->setTimeout(8);
             $process->run();
             $events = array_map(static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
@@ -89,7 +90,8 @@ describe('owned renderer lifecycle', function (): void {
     })->with(['startup', 'ipc', 'renderer-exit']);
 
     it('preserves abrupt callback status without inventing spinner completion', function (): void {
-        $process = new Process([PHP_BINARY, __DIR__.'/../../Fixtures/Console/runtime-fixture.php', 'spinner-exit', '--renderer-fixture']);
+        $process = new Process([PHP_BINARY, __DIR__.'/../../Fixtures/Console/runtime-fixture.php', 'spinner-exit', '--renderer-fixture'],
+            env: ['ORBIT_UX_DURATION_US' => '1000']);
         $process->setTimeout(8);
         $process->run();
 

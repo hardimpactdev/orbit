@@ -15,7 +15,7 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
         private TaskWorkspaceExecutor $ssh,
     ) {}
 
-    public function commit(Instance $instance, string $message): ?string
+    public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
     {
         $instance->loadMissing('node');
 
@@ -28,14 +28,14 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
                 $instance,
                 new RemoteCommand(
                     arguments: ['bash', '-seu', '--', $instance->checkout_path],
-                    input: "checkout=\$1\nmessage='".base64_encode($message)."'\n".<<<'BASH'
+                    input: "checkout=\$1\nmessage='".base64_encode($message)."'\nempty='".($allowEmpty ? '1' : '')."'\n".<<<'BASH'
                     export GIT_AUTHOR_NAME=orbit
                     export GIT_AUTHOR_EMAIL=tasks@orbit
                     export GIT_COMMITTER_NAME=orbit
                     export GIT_COMMITTER_EMAIL=tasks@orbit
                     git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" add -A
-                    if ! git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" diff --cached --quiet; then
-                        printf '%s' "$message" | base64 -d | git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" commit --quiet --file=-
+                    if [ -n "$empty" ] || ! git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" diff --cached --quiet; then
+                        printf '%s' "$message" | base64 -d | git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" commit --quiet --allow-empty --file=-
                     fi
                     git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --verify HEAD^{commit}
                     BASH,

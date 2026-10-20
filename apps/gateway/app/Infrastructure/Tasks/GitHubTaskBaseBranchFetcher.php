@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
@@ -22,6 +23,7 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use Throwable;
 
@@ -144,6 +146,12 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $head = trim($result->stdout);
         if (preg_match('/\\A[0-9a-f]{40}\\z/', $head) !== 1) {
             throw new TaskPullRequestException('The baseline workspace start commit could not be read.');
+        }
+
+        if (ProjectLifecycleStep::query()->where('project_id', $group->project_id)->where('command', LifecycleStep::ImportCiCaches)->exists()) {
+            $this->git->send($group->project, $instance->checkout_path, [$default => $head],
+                fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-baseline-caches', 'tasks.baseline_reset_failed', mutates: true),
+                'tasks.baseline_reset_failed', cachesOnly: true, selectBaseline: true);
         }
 
         return $head;

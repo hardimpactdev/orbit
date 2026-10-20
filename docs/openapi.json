@@ -33642,6 +33642,12 @@
               "string",
               "null"
             ]
+          },
+          "commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

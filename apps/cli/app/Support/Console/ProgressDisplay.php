@@ -24,6 +24,7 @@ final class ProgressDisplay
         private readonly ConsoleMode $mode,
         private readonly OutputInterface $output,
         private readonly string $title,
+        private readonly float $frameIntervalSeconds = Animation::FRAME_INTERVAL_SECONDS,
     ) {
         $this->region = new TerminalRegion($mode, $output);
     }
@@ -105,6 +106,7 @@ final class ProgressDisplay
                 implode("\n", TerminalText::wrap($this->steps[$id]['running'].'...', $this->mode->columns))."\n",
                 $this->region,
                 fn (): string => $this->frame(),
+                $this->frameIntervalSeconds,
             );
 
             try {

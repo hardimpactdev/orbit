@@ -1,12 +1,12 @@
 ---
 title: "ADR 0223: Run one gate from handoff to merge"
 sidebarTitle: "0223 One gate"
-description: "In progress. The Gateway runs one local gate per handoff, from the subtask start commit. The implementer runs only the affected tests. CI on the pull request merge ref is the only integration gate, so the local main-merge gate goes. One definition of the checks, one cache transport, and one process rule serve CI and the local gate."
+description: "In progress. The Gateway runs one local gate per handoff with the fast checks only, and the handoff's full test suite runs in CI on the handoff commit. The implementer runs only the affected tests. CI on the pull request merge ref is the only integration gate, so the local main-merge gate goes. One definition of the checks, one cache transport, and one process rule serve CI and the local gate."
 ---
 
 # ADR 0223: Run one gate from handoff to merge
 
-Between "the implementer says done" and "the pull request merged", a task change passes up to five gates that repeat the same work. This ADR keeps two: one local gate per handoff, which the Gateway runs, and CI `Required checks` on the pull request merge ref. The implementer runs only the affected tests of the projects it changed. The handoff tests from the subtask start commit. The local main-merge gate, the `project-check` deliverable, the artifact cache worker, and the copied check lists go.
+Between "the implementer says done" and "the pull request merged", a task change passes up to five gates that repeat the same work. This ADR keeps two: one local gate per handoff, which the Gateway runs, and CI `Required checks` on the pull request merge ref. The implementer runs only the affected tests of the projects it changed. The local gate runs the fast checks only; the handoff's full suite runs in CI on the handoff commit. The local main-merge gate, the `project-check` deliverable, the artifact cache worker, and the copied check lists go.
 
 ## Status
 
@@ -16,7 +16,13 @@ Principle: [One way, one name](/mission#principles). One local gate, one integra
 
 Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/nckrtl/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/nckrtl/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
 
-Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chooses the subtask start commit, from the data below.
+Nick amended this decision again on 2026-10-20:
+
+- A handoff's full test suite runs in sharded GitHub Actions CI on the pushed handoff commit, not in the task VM. [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule.
+- The reason: on 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and TIA selected a median of the whole suite once its selection was correct.
+- It replaces item 3 and the local `composer test:affected` of item 4. Build step 4 deletes the test base instead of building it.
+
+Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chose the subtask start commit, from the data below, until the 2026-10-20 amendment removed the local test run.
 
 ## Context
 
@@ -107,7 +113,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 - The Gateway handoff check is the only local run of the Project check in a task.
 - `TaskTurnInstructions::implementer` no longer says "and `<check>` passes". It says that Orbit runs the Project check when the implementer hands off.
 - The engine stays generic. The Orbit repository's guidance tells a task implementer to run `composer test:affected` in each project it changed, and not to run `composer check` or `bin/review-check`. Work outside a task keeps the full checks, because no Gateway gate runs for it.
-- A failed handoff check returns to the implementer as a reminder with the end of the output, as today.
+- A failed handoff check returns to the implementer as a reminder with the end of the output, as today. A failed handoff CI result returns the same way, with the failed jobs and their log excerpts.
 - A failed handoff check gets its own failed-check budget: three failed handoff checks in a row for one subtask. The fourth asks for assistance. A passing check resets the count. Today one reminder per `completion_attempt` is allowed, so without this failed-check budget two failed handoffs in a row would stop the group.
 - The `project-check` deliverable goes. Every settling fixup gets the `review` deliverable `fixup-review`, also when the Project has a task check. A final-review fixup and a GitHub-review fixup keep their `review` deliverable. Their handoff check runs the Project check, as every handoff does.
 
@@ -134,47 +140,35 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 
 When main moves after CI ran on a merge ref, the App can merge a head whose merged tree CI did not test. Today the same gap exists after the last local merge gate. The `push` run of CI on `main` tests the merge commit, and [Failures on main](/reference/implementation-loop#failures-on-main) and the red-main [baseline retry](/reference/tasks#baseline-check) handle a red result.
 
-### 3. Test each handoff from the subtask start commit
+### 3. Each handoff's tests run in CI on the handoff commit
 
-Every handoff of a subtask, first or rework, tests from the start commit of that subtask. Orbit uses no handoff tree as a test base.
+This item replaced, on 2026-10-20, the start-commit test base that it chose on 2026-10-18.
 
-The Pest fork that Orbit owns gets one documented option, `--tia-base`, with two forms:
+- The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
+- After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
+- Handoff CI applies only to a review-and-merge Project, whose CI Orbit owns. Other Projects keep the task check alone, also with a `merge_check`.
+- Once the workspace at the end of the task is gone, Orbit deletes `task-{id}-handoff`. A 404 or 422 counts as deleted; any other failure asks for assistance once and never holds the removal. Only a repeated cancel or completion tries the delete again.
+- The handoff commit message holds no GitHub skip directive. A commit with no GitHub Actions suite 10 minutes after its push asks for assistance once.
+- The merge gate counts only merge-check runs of the pull request's own `pull_request` workflow run for the head, so CI on the merge ref stays the integration gate. A handoff push run on the same commit never counts.
+- The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
+- The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
+- The handoff stays blocking: the reviewer starts only after CI passed.
+- Every handoff gets its own commit, an empty one when nothing changed, so every handoff is pushed and tested the same way.
+- While no merge-check run exists, the commit's GitHub Actions check suites decide. No suite yet, or an unfinished one, is pending. Orbit pushes the commit once, so GitHub makes no new suite for it after every suite completed, and every completed state is final: `startup_failure` or `failure` fails the check, `cancelled` asks for assistance as infrastructure, and any other conclusion asks for assistance that names the suites.
+- A merge-check run that did not fail, such as a skipped one, or a run of that name from another App, asks for assistance and is not charged to the implementer.
+- A conflict with main is not a handoff concern. The task's pull request, opened after the last approval, merges against the latest main through the full-suite merge gate.
+- One enum classifies GitHub's conclusions for check runs and suites, and states where the two differ.
+- The approval stores the commit CI passed and commits nothing. A HEAD that left that commit, or an Orbit-owned HEAD change during the review, reopens the handoff with its reason; the CI result stays as it is.
+- The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
+- `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base. `composer test:affected` stays for the implementer.
 
-- `--tia-base=graph` selects the tests that the graph's edges link to files changed since the commit at which the graph was recorded.
-- `--tia-base=COMMIT` selects the tests that the graph's edges link to files changed since `COMMIT`.
-- Both forms include uncommitted and untracked files.
-- Both forms read only the graph's edges. They ignore every stored branch baseline, its `lastRunTree`, and its results. So the implementer's own `composer test:affected`, which writes a branch baseline into the graph, cannot narrow the gate.
-- The fork already computes the changed files of a commit in `ChangedFiles::since`. The option names the commit and skips the baseline replay.
-
-`--tia-base=COMMIT` is valid only when the graph's edges are current at `COMMIT`. A graph recorded at an older commit has stale edges for the files changed between that commit and `COMMIT`. So `bin/review-check` chooses the form:
-
-- It passes `--tia-base=COMMIT` only when its graph comes from a passed run on the tree of `COMMIT`. That graph is the handoff cache entry for that tree.
-- In every other case it passes `--tia-base=graph`. That covers the baseline check, a handoff without a matching cache entry, and a local `composer check`.
-- So the baseline check selects every change since the imported graph's commit. Its run refreshes the edges for those changes.
-- When the imported graph is older than the start commit, the baseline runs the tests of the changes between them. A red main shows there.
-- When the imported graph is at the start commit, the delta is empty and the baseline runs no tests. That is correct: CI publishes a cache ref only after `Required checks` passed on that exact commit.
-- A red main commit gets no cache ref, so its baseline imports an older ancestor and tests the changes since then.
-- When no graph fits, the fork records a fresh graph with the full suite, as today.
-- `bin/review-check` no longer writes Pest's graph.
-
-The handoff cache keeps only the subtask start tree and the tree just published, holding the graph after a passed run, as [The candidate gate](/reference/implementation-loop#the-candidate-gate) specifies. If these trees match or no start commit was supplied, it keeps one entry.
-
-- A passed baseline fills it for the start commit's tree, so the first handoff can test from the start commit.
-- A passed handoff adds an entry for its tree without replacing the start entry. When subtask N+1 starts at the tree of subtask N's last passed handoff, the cache gives it current edges for the code the group added.
-- After item 1, only the Gateway's checks write it, because the implementer no longer runs `bin/review-check`.
-
-The data does not show what a tree base saves. The only rework measured after #1335 is one sample, on one process, with an unread selection. So the choice rests on simplicity and a bounded cost:
-
-- A rework selects the set of its first handoff plus the files that the rework changed.
-- The first-handoff median is 480 s (n=68). Most of those ran before the override, with 2 processes on a normal VM.
-- At that median, the 32 reworks of the measured 3.5 days cost about 4.3 h in total. A correct tree base saves at most part of that 4.3 h. No data shows how much.
-- The commit base needs one option on code that exists in the fork. A tree base needs content-hash snapshots of a tree inside the fork, more fork code, and more fork tests.
+The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selection needed a test base, a cache and fork internals, and once correct it selected a median of the whole suite.
 
 ### 4. One definition of the checks
 
 - One file, `tools/checks.json`, lists each check: its project directory, its commands and their `budget_seconds`, its architecture tests, the paths that select it, and where it runs; the same file holds stage time budgets in `stage_budgets`.
 - A check runs locally, in CI, or in both. The Rust agent runs only in CI.
-- For a PHP project, the file holds `composer validate --strict`, `composer check`, and the architecture tests, which both gates run. It also holds `composer test:affected`, which only the local gate runs.
+- For a PHP project, the file holds `composer validate --strict` and `composer check`, which both gates run. The tests, architecture tests included, run only in CI.
 - The test step of a PHP project in CI stays in `ci.yml`, because CI runs full sharded Pest on pull requests and selects tests separately on main.
 - `bin/review-check` reads it.
 - The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
@@ -220,9 +214,9 @@ The data does not show what a tree base saves. The only rework measured after #1
 - The Orbit Project's task check goes back to `composer check`.
 - `ORBIT_TEST_PROCESSES` goes.
 
-### 7. Every Project gets the test base
+### 7. No Project gets a test base
 
-`TaskSubtaskRunner::handoffCheck` exports `ORBIT_TASK_CHECK_BASE`, the subtask start commit, to the handoff check of every Project. The `slug === 'orbit'` case goes. A Project that does not read the variable is unaffected.
+The `slug === 'orbit'` case goes. Since the 2026-10-20 amendment, no handoff check gets `ORBIT_TASK_CHECK_BASE`: the local gate runs no tests, so it needs no test base. The handoff's tests run in CI for every review-and-merge Project.
 
 ### 8. Check results and evidence
 
@@ -285,10 +279,10 @@ Each step is one small pull request. Docs change with the code in the same pull 
    - Delete the `behind` branch of `mergeWhenReady`.
    - Rename the `main_merge` lease kind of `prepareResumedWorkspace`, which then only fast-forwards.
    - Delete the docs of the main-merge gate in these sections of [Tasks](/reference/tasks): Final review, Every push is reviewed, Records and status, Fix a settling pull request, Review fixup lifecycle, the opening rules of Review and merge, item 1 of Merge on green, and "Orbit merges only what it reviewed".
-4. **Start-commit test base.** First merge the Pest fork with `--tia-base=COMMIT` and its tests, including one with a dirty branch baseline. Then bump the fork in each `composer.lock`, and pass the subtask start commit to every Project.
+4. **Handoff tests in CI.** Built on 2026-10-20 instead of the start-commit test base; [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule. The local gate runs no test suite, and the start-commit plumbing below is deleted rather than kept.
    - Delete the tree case of `task_test_base`, `scope_tia_graph`, `scope_tree_baseline`, `comparison_tree_snapshot`, the `TREE_BASELINE_*` messages, and the embedded PHP program in `bin/review-check`.
    - Delete `keep_main_baseline`, because both forms of `--tia-base` ignore branch baselines.
-   - Fill the handoff cache after a passed baseline too.
+   - Delete what the 2026-10-20 amendment made dead: the start-commit selection, the handoff cache, the architecture-test step and the changed-test runs of `bin/review-check`, `test_base` in `TaskSubtaskRunner::handoffCheck` and the check program, and `ORBIT_TASK_CHECK_BASE`.
    - Delete the passed-handoff-tree rule of `TaskReviewBase::testBase` and the `slug === 'orbit'` case.
    - Delete the "A handoff tree is not a Pest commit" and "The gate selects against main" sections of [Feature delivery](/reference/implementation-loop#why-it-works-this-way).
 5. **One check definition.** Add `tools/checks.json`, including report-only `budget_seconds` per command and `stage_budgets` for the Gateway, and the `run` and `architecture` commands.
@@ -329,13 +323,11 @@ Each step is one small pull request. Docs change with the code in the same pull 
 
 - In the measured week, this removes the 16.8 hours of `base_merge` gates and the implementer's run of the full gate before each handoff.
 - It removes the last main merge that Orbit makes in a workspace. The lease and #1297 to #1314 already fixed the incident in which groups 1632 and 1692 lost about 19 hours, so this saves no more of those hours.
-- A typical subtask costs one handoff gate and one review. CI adds 6 to 15 minutes once for each pushed head.
-- A rework costs about one first handoff.
+- A typical subtask costs one fast handoff gate, one CI run on the handoff commit, and one review. The Gateway CI runs as four shards in about five minutes, and the final head needs no extra run.
 - A formatting or static-analysis failure now reaches the implementer as a reminder after the handoff check, not before. That can cost one more correction turn, inside the new failed-check budget.
-- A conflict fixup selects every main change since its start commit.
+- Each handoff push runs CI on the branch commit, not on a merge with main. The task's pull request tests the merge with main before it merges.
 - A semantic conflict between two pull requests that both passed CI can reach main. The `push` run of CI on main finds it.
 - Review and merge refuses to merge into a base branch that requires an up-to-date branch.
-- Orbit depends on one documented option of its Pest fork. The fork's tests cover it.
 
 ## Affects
 
@@ -345,11 +337,9 @@ Each step is one small pull request. Docs change with the code in the same pull 
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.
   - In apps/e2e, the `review-check`, `ci-cache-ref`, and CI configuration tests.
-  - In the Pest fork, the `--tia-base` tests, including a dirty branch baseline.
-  - In apps/e2e, baseline cases of `bin/review-check` for an older graph (the changes since it run), a graph at the start commit (no tests run), and a missing graph (the full suite runs).
+  - In apps/gateway, `HandoffCiTest`: green, red, pending, every final suite state, an unchanged handoff, and a passed result on an earlier handoff commit that must not count. `ReviewAndMergeTest`: a moved HEAD and one commit from handoff to merge. In apps/e2e, the gate runs no test suite, and `ci.yml` treats only a `task-*-handoff` push as a change run, besides a pull request.
   - In apps/gateway, the `project:update` preflight cases: a strict ruleset, strict classic protection, no protection, and an unreadable source.
   - On the live Gateway, after the build, no new `base_merge` check row appears.
-  - The median rework handoff stays within 1.2 times the median first handoff.
   - No baseline records a fresh graph while an ancestor cache ref with the same TIA fingerprint exists.
   - The check row of each handoff holds its command list.
   - A time budget overrun leaves the check status unchanged and writes exactly one `_over_budget` Activity row for that overrun in the run.

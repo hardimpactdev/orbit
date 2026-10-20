@@ -258,3 +258,42 @@ it('refuses an incoming pull request branch that is not a valid branch name', fu
     expect(fn () => publisher(new AppDevFakeSshExecutor)->push($group, str_repeat('a', 40)))->toThrow(TaskPullRequestException::class);
     Queue::assertNothingPushed();
 });
+
+it('pushes a handoff commit once to task-{id}-handoff, also for an incoming pull request, and touches no pull request', function (?string $incoming): void {
+    GitHubTestSupport::storeApp();
+    Queue::fake();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $group->update(['pr_branch' => $incoming]);
+    $commit = str_repeat('a', 40);
+
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->pushHandoff($group, $commit))
+        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit '.$commit.' to task-'.$group->id.'-handoff.');
+    Queue::assertPushed(PublishTaskVmCommit::class, static fn (PublishTaskVmCommit $job): bool => $job->commit === $commit && $job->branch === 'task-'.$group->id.'-handoff');
+
+    publisher_pushed($group, $commit, 'task-'.$group->id.'-handoff');
+    publisher(new AppDevFakeSshExecutor)->pushHandoff($group, $commit);
+
+    Queue::assertPushed(PublishTaskVmCommit::class, 1);
+    Http::assertNothingSent();
+})->with(['own branch' => [null], 'incoming pull request' => ['cursor/login-throttle']]);
+
+it('deletes the handoff branch on origin, and counts a branch or repository that is already gone as deleted', function (int $status, ?string $failure): void {
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
+        'https://api.github.com/repos/acme/shop/git/refs/heads/*' => Http::response($status === 422 ? ['message' => 'Reference does not exist'] : null, $status),
+    ]);
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $delete = fn () => publisher(new AppDevFakeSshExecutor)->deleteHandoffBranch($group);
+
+    $failure === null ? $delete() : expect($delete)->toThrow(TaskPullRequestException::class, $failure);
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://api.github.com/repos/acme/shop/git/refs/heads/task-'.$group->id.'-handoff');
+})->with([
+    'deleted' => [204, null],
+    'already gone' => [422, null],
+    'repository gone' => [404, null],
+    'refused' => [403, 'The handoff branch could not be deleted: GitHub refused the request.'],
+    'unavailable' => [502, 'The handoff branch could not be deleted: GitHub could not be reached or refused the Project credential.'],
+]);

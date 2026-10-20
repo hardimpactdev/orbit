@@ -1397,22 +1397,20 @@ if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
             directory = self.root / project
             directory.mkdir(parents=True)
             (directory / '.gitkeep').write_text('')
+            # A gate that runs Pest fails: CI runs the test suites.
             pest = directory / 'vendor/bin/pest'
             pest.parent.mkdir(parents=True)
-            pest.write_text('#!/bin/sh\nexit 0\n')
+            pest.write_text('#!/bin/sh\necho "The candidate gate runs no tests."\nexit 1\n')
             pest.chmod(0o755)
-        (self.root / '.gitignore').write_text('.orbit-tia/\n')
         self.commit_change('gate fixture')
         fake_bin = Path(self.temporary.name) / 'fake-bin'
         fake_bin.mkdir()
         composer = fake_bin / 'composer'
         composer.write_text("""#!/bin/sh
 printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_CALLS"
-if [ "$1" = test:affected ]; then
-    tia_directory="${ORBIT_TIA_DIRECTORY:-.orbit-tia}"
-    mkdir -p "$tia_directory"
-    printf '[]\n' > "$tia_directory/affected.json"
-fi
+case "$1" in
+    test|test:affected) echo "The candidate gate runs no tests."; exit 1 ;;
+esac
 if [ "$1" = check ]; then
     printf '%s|%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_SCOPE:-}" "${ORBIT_CHECK_BASE:-}" >> "$GATE_TEST_SCOPES"
     printf '%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_PROCESSES:-}" >> "$GATE_TEST_PROCESSES"
@@ -1450,12 +1448,11 @@ fi
             self.gate_env.pop(name, None)
         return runner
 
-    def test_gate_seeds_quality_and_test_caches_before_checks(self):
+    def test_gate_seeds_quality_caches_but_no_test_caches_before_checks(self):
         runner = self.gate_fixture()
         result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        root = self.root.resolve()
-        self.assertEqual([f'worktree-cache --worktree {root}', f'tia-cache seed --repository {root}'],
+        self.assertEqual([f'worktree-cache --worktree {self.root.resolve()}'],
                          (self.common / 'seeds').read_text().splitlines())
 
     def test_gate_runs_all_five_projects_and_records_builder_and_exact_candidate(self):
@@ -1466,20 +1463,6 @@ fi
         self.assertTrue(report['passed'])
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
-        architecture_tests = {
-            'apps/cli': ['tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php'],
-            'apps/gateway': ['tests/Unit/Architecture',
-                             'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
-                             'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
-            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
-                         'tests/Feature/Configuration/ComposerConfigurationTest.php',
-                         'tests/Feature/Configuration/SubprocessTestGroupTest.php',
-                         'tests/Feature/Configuration/DocsWorkflowTest.php'],
-            'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
-                                 'tests/Unit/RepositoryGuidanceTest.php',
-                                 'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
-                                 'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php'],
-        }
         self.assertEqual(self.commit, report['base'])
         expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
                     ('repository', ['bin/project-vocabulary']),
@@ -1487,10 +1470,7 @@ fi
                     ('repository', ['bin/tooling-baseline']),
                     ('repository', ['bin/docs-nav'])]
         for project in cache.PROJECTS:
-            expected.extend((project, command) for command in [
-                ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected', '--', '--tia-base=graph']])
-            expected.extend((project, ['vendor/bin/pest', path])
-                            for path in architecture_tests.get(project, []))
+            expected.extend((project, command) for command in [['composer', 'validate', '--strict'], ['composer', 'check']])
         expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))
         expected.append(('repository', ['bin/api-fixtures', '--check']))
         self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
@@ -1499,7 +1479,7 @@ fi
                           result.stdout)
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
                          (self.common / 'docs').read_text().splitlines())
-        self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(10, len((self.common / 'calls').read_text().splitlines()))
 
     def test_gate_scopes_pint_and_rector_to_the_merge_base_in_composer_check_only(self):
         runner = self.gate_fixture()
@@ -1519,88 +1499,6 @@ fi
         gate = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
         loader.exec_module(gate)
         return gate
-
-    def test_handoff_selects_the_start_tree_graph_without_metadata(self):
-        gate = self.gate_module(self.gate_fixture())
-        tree = cache.git(self.root, 'rev-parse', self.commit + '^{tree}')
-        entry = gate.handoff_cache(self.root) / tree / 'apps/gateway'
-        entry.mkdir(parents=True)
-        (entry / 'graph.json').write_text('start graph')
-        destination = self.root / 'selected'
-
-        self.assertEqual(self.commit, gate.prepare_tia_directory(self.root, 'apps/gateway', destination, self.commit))
-        self.assertEqual('start graph', (destination / 'graph.json').read_text())
-
-    def test_handoff_entries_publish_atomically_without_old_or_missing_graphs(self):
-        gate = self.gate_module(self.gate_fixture())
-        run = self.root / 'run'
-        source = run / 'tia/apps-gateway'
-        source.mkdir(parents=True)
-        (source / 'graph.json').write_text('start graph')
-        first = cache.git(self.root, 'rev-parse', self.commit + '^{tree}')
-        second = 'b' * 40
-        gate.publish_handoff_cache(self.root, run, first)
-        cache_root = gate.handoff_cache(self.root)
-        first_graph = cache_root / first / 'apps/gateway/graph.json'
-        self.assertEqual('start graph', first_graph.read_text())
-        (source / 'graph.json').write_text('new graph')
-        graphless = run / 'tia/apps-cli'
-        graphless.mkdir()
-        (graphless / 'affected.json').write_text('{}')
-        original_copy = gate.shutil.copytree
-
-        def interrupted_copy(*args, **kwargs):
-            original_copy(*args, **kwargs)
-            self.assertFalse((cache_root / second).exists())
-            raise OSError('interrupted publication')
-
-        with patch.object(gate.shutil, 'copytree', side_effect=interrupted_copy):
-            with self.assertRaisesRegex(OSError, 'interrupted publication'):
-                gate.publish_handoff_cache(self.root, run, second, self.commit)
-        self.assertEqual([first], sorted(path.name for path in cache_root.iterdir()))
-        self.assertEqual('start graph', first_graph.read_text())
-        original_rename = Path.rename
-
-        def observe_publication(staged, destination):
-            self.assertFalse(destination.exists())
-            self.assertEqual('new graph', (staged / 'apps/gateway/graph.json').read_text())
-            self.assertFalse((staged / 'apps/cli').exists())
-            return original_rename(staged, destination)
-
-        with patch.object(Path, 'rename', observe_publication):
-            gate.publish_handoff_cache(self.root, run, second, self.commit)
-        self.assertEqual('new graph', (cache_root / second / 'apps/gateway/graph.json').read_text())
-        self.assertEqual('start graph', first_graph.read_text())
-        # A later same-tree run without a fresh graph cannot relabel or merge into the complete entry.
-        (source / 'graph.json').unlink()
-        gate.publish_handoff_cache(self.root, run, second, self.commit)
-        self.assertEqual('new graph', (cache_root / second / 'apps/gateway/graph.json').read_text())
-        gate.publish_handoff_cache(self.root, run, 'c' * 40)
-        self.assertFalse((cache_root / ('c' * 40) / 'apps/gateway').exists())
-
-    def test_handoff_cache_keeps_only_the_start_and_just_published_trees(self):
-        gate = self.gate_module(self.gate_fixture())
-        run = self.root / 'run'
-        source = run / 'tia/apps-gateway'
-        source.mkdir(parents=True)
-        (source / 'graph.json').write_text('start graph')
-        start_tree = cache.git(self.root, 'rev-parse', self.commit + '^{tree}')
-        gate.publish_handoff_cache(self.root, run, start_tree)
-        cache_root = gate.handoff_cache(self.root)
-        entries = []
-        for index in range(4):
-            tree = f'{index:040x}'
-            entries.append(tree)
-            gate.publish_handoff_cache(self.root, run, tree, self.commit)
-        self.assertEqual({start_tree, entries[-1]},
-                         {path.name for path in cache_root.iterdir()})
-        destination = self.root / 'selected'
-        self.assertEqual(self.commit, gate.prepare_tia_directory(self.root, 'apps/gateway', destination, self.commit))
-        self.assertEqual('start graph', (destination / 'graph.json').read_text())
-        gate.publish_handoff_cache(self.root, run, start_tree, self.commit)
-        self.assertEqual({start_tree}, {path.name for path in cache_root.iterdir()})
-        gate.publish_handoff_cache(self.root, run, 'f' * 40)
-        self.assertEqual({'f' * 40}, {path.name for path in cache_root.iterdir()})
 
     def test_gate_keeps_every_tool_within_the_process_budget(self):
         runner = self.gate_fixture()
@@ -1702,7 +1600,7 @@ fi
         self.assertTrue(report['passed'])
         self.assertFalse(report['committed'])
         self.assertNotEqual(cache.git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
-        self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(10, len((self.common / 'calls').read_text().splitlines()))
         self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
 
     def test_generated_checks_follow_inputs_and_outputs_without_running_for_unrelated_paths(self):
@@ -1803,32 +1701,6 @@ fi
         self.assertIn('-{"stale": true}', result.stdout)
         self.assertEqual('{"stale": true}\n', document.read_text())
         self.assertEqual(navigation, (fixture / 'docs/docs.json').read_bytes())
-
-    def test_cross_project_contract_failures_block_even_when_tia_selects_nothing(self):
-        runner = self.gate_fixture()
-        failures = {'apps/e2e': 'tests/Feature/Configuration/SubprocessTestGroupTest.php'}
-        for project, contract in failures.items():
-            pest = self.root / project / 'vendor/bin/pest'
-            pest.write_text(f'#!/bin/sh\n[ "$1" != "{contract}" ] || exit 19\n')
-        base = self.commit_change('contract fixtures')
-        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', base)
-        source = self.root / 'apps/gateway/app/Example.php'
-        source.parent.mkdir()
-        source.write_text('<?php // candidate')
-        candidate = self.commit_change('gateway candidate')
-        # This fixture exercises a local handoff; CI deliberately ignores the task test base.
-        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_TASK_CHECK_BASE': candidate,
-                                                  'CI': '', 'GITHUB_ACTIONS': ''},
-                                capture_output=True, text=True)
-        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
-        self.assertEqual(['apps/gateway/app/Example.php'], report['changed_paths'])
-        self.assertEqual(candidate, report['test_base'])
-        for project, contract in failures.items():
-            check = next(item for item in report['checks'] if item['project'] == project
-                         and item['command'] == ['vendor/bin/pest', contract])
-            self.assertEqual(19, check['exit_code'])
-        self.assertFalse(report['passed'])
 
     @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
     def test_review_directory_keeps_named_acl_entries_effective(self):
