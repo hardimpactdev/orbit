@@ -252,15 +252,14 @@ Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower
 
 Dependency downloads use stock `actions/cache`. The shared PHP setup caches only Composer's download directory, keyed by runner OS, architecture, Composer version, and all Composer lockfiles. Bun jobs cache only `~/.bun/install/cache`, keyed by OS, architecture, Bun version, and all Bun lockfiles. Only non-PR runs on `refs/heads/main` write these entries; all other runs restore without saving. Installs still run with the lockfile in each job. Jobs never share installed `vendor/` or `node_modules/` trees, and Playwright browsers are not cached.
 
-Each Composer project job also caches three sets of quality and test files in GitHub Actions cache.
+Each Composer project job also caches two sets of quality files in GitHub Actions cache.
 
 | Cache | Key inputs |
 | --- | --- |
 | PHPStan result cache, `vendor/phpstan/cache/resultCache.php` | `composer.lock`, `phpstan.neon` |
 | Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
-| Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
 
-A run on main restores quality caches for its branch, then the project. A PR restores quality caches only from main and saves none. CI does not restore a TIA graph: every main run records a fresh full graph. Runs outside PRs save caches only after passing; each graph gets a run-and-attempt key so a later full run on the same commit can publish a newer graph. Shard timings are committed source, not a cache. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
+A run on main restores quality caches for its branch, then the project. A PR restores quality caches only from main and saves none. CI does not cache TIA graphs in Actions cache: every main run records a fresh full graph. Runs outside PRs save quality caches only after passing. Shard timings are committed source, not a cache. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
 
 A passing project job on `main` also stages the [cache files](#ci-artifacts) for the main cache store and the [SHA-bound Git ref](#ci-cache-refs) used by workspaces.
 

@@ -61,7 +61,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/.github/actions/*"]
     patterns: ["*"]
     multi-ecosystem-group: daily
     cooldown:

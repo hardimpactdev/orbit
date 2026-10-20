@@ -270,14 +270,6 @@ describe('Composer configuration', function (): void {
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
             ->toContain('actions/cache/restore@')
             ->toContain('actions/cache/save@')
-            ->toContain('path: ${{ matrix.project.directory }}/.orbit-tia')
-            ->toContain("format('{0}/composer.lock', matrix.project.directory)")
-            ->toContain("format('{0}/tests/Pest.php', matrix.project.directory)")
-            ->toContain("format('{0}/phpunit.xml', matrix.project.directory)")
-            ->toContain("format('{0}/phpunit.xml.dist', matrix.project.directory)")
-            ->toContain('orbit-tia-php8.5-${{ matrix.project.directory }}-')
-            // Each run on main saves its own graph, so a full run on an already tested commit still refreshes the cache.
-            ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
             ->toContain("github.event_name == 'pull_request'")
@@ -286,8 +278,9 @@ describe('Composer configuration', function (): void {
             ->not->toContain('tia-baseline.yml')
             ->not->toContain('vendor/.orbit-guidance-tia');
 
-        expect(strpos($workflow, 'Run full PR test suite'))
-            ->toBeLessThan(strpos($workflow, 'Save Pest TIA graph'));
+        foreach (['Compute Pest TIA cache prefix', 'Save Pest TIA graph', 'orbit-tia-php'] as $deadCache) {
+            expect($workflow)->not->toContain($deadCache);
+        }
 
         $ignored = new Process(
             ['git', 'check-ignore', '-q', 'apps/cli/.orbit-tia/graph.json'],
@@ -351,7 +344,7 @@ describe('Composer configuration', function (): void {
 
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
-        foreach (['Save PHPStan result cache', 'Save Pint cache', 'Save Pest TIA graph'] as $name) {
+        foreach (['Save PHPStan result cache', 'Save Pint cache'] as $name) {
             expect($steps[$name]['if'])->toBe("success() && github.event_name != 'pull_request'");
         }
     });

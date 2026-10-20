@@ -196,13 +196,6 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
-      - name: Compute Pest TIA cache prefix
-        if: github.event_name != 'pull_request'
-        id: orbit-tia-key
-        working-directory: .
-        run: |
-          printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/tests/Pest.php', matrix.project.directory), format('{0}/phpunit.xml', matrix.project.directory), format('{0}/phpunit.xml.dist', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
-
       - name: Run full PR test suite
         if: matrix.project.directory != 'apps/gateway' && github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
@@ -228,13 +221,6 @@ jobs:
           PCRE_JIT: '0'
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
         run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
-
-      - name: Save Pest TIA graph
-        if: success() && github.event_name != 'pull_request'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ matrix.project.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A full run records this commit in the graph.
       # Stage the same-run exports for the cache-ref publisher and the background main cache store.

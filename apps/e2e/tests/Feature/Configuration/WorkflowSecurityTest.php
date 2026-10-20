@@ -138,7 +138,9 @@ it('groups all five Composer projects, three Bun projects and action pins with a
 
     expect($config['multi-ecosystem-groups']['daily']['schedule'])->toBe(['interval' => 'daily']);
     foreach ($config['updates'] as $update) {
-        $projects[] = $update['package-ecosystem'].':'.$update['directory'];
+        foreach ($update['directories'] ?? [$update['directory']] as $directory) {
+            $projects[] = $update['package-ecosystem'].':'.$directory;
+        }
         expect($update['multi-ecosystem-group'])->toBe('daily');
         expect($update['patterns'])->toBe(['*']);
         expect($update['cooldown'])->toBe(['default-days' => 7]);
@@ -154,5 +156,6 @@ it('groups all five Composer projects, three Bun projects and action pins with a
         'bun:/apps/pi-server',
         'bun:/apps/desktop',
         'github-actions:/',
+        'github-actions:/.github/actions/*',
     ]);
 });
