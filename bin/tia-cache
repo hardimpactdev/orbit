@@ -707,7 +707,8 @@ def ci_jobs(common, repository, run_id):
 def job_result(jobs, project):
     """Return success, failure, or None when the run did not finish the project's jobs."""
     names = CI_JOBS[project]
-    found = {job.get('name'): job.get('conclusion') for job in jobs if job.get('name') in names}
+    found = {job['name']: job.get('conclusion') for job in jobs
+             if any(job.get('name', '') == name or job.get('name', '').startswith(name + ' (') for name in names)}
     failed = sorted(name for name, conclusion in found.items() if conclusion in ('failure', 'timed_out'))
     if failed:
         return 'failure', failed

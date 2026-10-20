@@ -6,7 +6,8 @@ commit the graph describes, or the full suite when the graph is unusable, the ch
 test-impact analysis cannot see, or the newest full run on main failed. `finish` runs after a passing test run and requires the graph to describe the
 tested commit, with a result for every test file it links. `subprocess` decides whether a run that is not full also runs
 the project's `subprocess` group, which TIA cannot select. `shards` runs in the Gateway plan job of a pull request: it
-lists the full suite with TIA disabled and balances its classes using recorded times only.
+lists the full suite with TIA disabled and balances its classes using recorded times only. `privileged-shards`
+checks that the stock Pest shards partition the entire privileged group exactly.
 """
 import argparse
 import json
@@ -245,11 +246,13 @@ def listed_tests(pest, *options):
                             errors='replace')
     if result.returncode:
         raise SystemExit(f'Pest cannot list the full suite:\n{result.stdout}{result.stderr}')
+    # Pest renders the listing as an INFO sentence: its final period is not part of the last test's identity.
+    lines = result.stdout.rstrip().removesuffix('.').splitlines()
     # A test that no shard names would run nowhere, so every listed test must parse.
-    unparsed = [line for line in result.stdout.splitlines() if line.startswith(' - ') and not LISTED_TEST.match(line)]
+    unparsed = [line for line in lines if line.startswith(' - ') and not LISTED_TEST.match(line)]
     if unparsed:
         raise SystemExit(f'Cannot read the class of {len(unparsed)} listed tests, such as: {unparsed[0]}')
-    return {line[3:] for line in result.stdout.splitlines() if line.startswith(' - ')}
+    return {line[3:] for line in lines if line.startswith(' - ')}
 
 
 def test_class(test):
@@ -329,6 +332,39 @@ def shard_plan(arguments):
                        f'matrix={json.dumps(list(range(2, plan["shards"] + 1)))}\n')
 
 
+def privileged_shards(arguments):
+    """Check the actual stock Pest selections, not a second implementation of its sharding rule."""
+    if arguments.shards < 1:
+        raise SystemExit('The privileged shard count must be positive.')
+    options = ('--no-tia', '--group=privileged', '--fail-on-empty-test-suite')
+    whole = listed_tests(arguments.pest, *options)
+    if not whole:
+        raise SystemExit('The privileged group is empty.')
+    union = set()
+    rows = []
+    for index in range(1, arguments.shards + 1):
+        shard = f'{index}/{arguments.shards}'
+        selected = listed_tests(arguments.pest, *options, f'--shard={shard}')
+        if not selected:
+            raise SystemExit(f'Privileged shard {shard} is empty.')
+        overlap = selected & union
+        if overlap:
+            raise SystemExit(f'Privileged shard {shard} overlaps an earlier shard: {min(overlap)}')
+        union.update(selected)
+        rows.append(f'| {shard} | {len(selected)} |')
+    missing, extra = whole - union, union - whole
+    if missing or extra:
+        raise SystemExit(f'Privileged shard union differs from the group: {len(missing)} missing, {len(extra)} extra.\n'
+                         + '\n'.join(sorted(missing | extra)))
+    report = ('## Privileged shard coverage\n\n| Shard | Tests |\n| --- | ---: |\n'
+              + '\n'.join(rows) + f'\n\nUnion: {len(union)} / {len(whole)} privileged tests, no overlap.\n')
+    print(report)
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a') as file:
+            file.write(report)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -346,7 +382,14 @@ def main():
     shards_command = commands.add_parser('shards', help='balance the full Gateway suite of a pull request')
     shards_command.add_argument('--plan', required=True, help='the file that receives the plan as JSON')
     shards_command.add_argument('--pest', default='vendor/bin/pest', help='the Pest binary')
+    privileged_command = commands.add_parser('privileged-shards', help='check the exact union of stock privileged shards')
+    privileged_command.add_argument('--shards', type=int, required=True, help='the privileged matrix size')
+    privileged_command.add_argument('--pest', default='vendor/bin/pest', help='the Pest binary')
     arguments = parser.parse_args()
+
+    if arguments.command == 'privileged-shards':
+        privileged_shards(arguments)
+        return
 
     if arguments.command == 'shards':
         shard_plan(arguments)

@@ -16,6 +16,11 @@ import unittest
 REPOSITORY = Path(sys.argv.pop(1)).resolve()
 HELPER = REPOSITORY / 'bin/ci-tia'
 PROJECT = 'apps/gateway'
+# Two identifiers recorded from the real privileged listing, including PHPUnit's dataset suffix.
+PRIVILEGED_LISTING = [
+    r'P\Tests\Feature\Infrastructure\Tasks\RemoteTaskCheckRunnerTest::__pest_evaluable_it_keeps_a_lost_managed_supervisor_fenced_until_its_surviving_descendant_terminates',
+    r'P\Tests\Feature\Infrastructure\Tasks\GitHubTaskBaseBranchFetcherTest::__pest_evaluable_it_retains_uncertainty_for_a_checkout_move_but_not_a_timed_out_merge_base_read"(true)"',
+]
 PEST = '''<?php
 
 pest()->tia()->watch([
@@ -330,6 +335,83 @@ class CiTiaTest(unittest.TestCase):
         result = self.run_helper('shards', '--plan', str(plan), '--pest', str(pest))
         outputs = dict(line.split('=', 1) for line in self.output.read_text().splitlines())
         return result, outputs, json.loads(plan.read_text()) if plan.exists() else None
+
+    def privileged_shards(self, shards, whole=None, status=0):
+        # Use Pest's real listing shape, including a dataset case. The stand-in only serves discovery, never selection.
+        listings = {'whole': PRIVILEGED_LISTING if whole is None else whole, **shards}
+        pest = self.root / 'pest'
+        pest.write_text('#!/usr/bin/env python3\nimport json, sys\n'
+                        f'listings = {listings!r}\n'
+                        'assert all(option in sys.argv for option in '
+                        '["--no-tia", "--group=privileged", "--fail-on-empty-test-suite", '
+                        '"--list-tests", "--colors=never"])\n'
+                        'key = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--shard=")), "whole")\n'
+                        'print("   INFO  Available tests:\\n")\n'
+                        # Pest's INFO sentence appends a period to its final listed test, not to the test name.
+                        'print("\\n".join(" - " + test for test in listings[key]) + ".")\n'
+                        f'sys.exit({status})\n')
+        pest.chmod(0o755)
+        summary = self.root / 'summary.md'
+        result = self.run_helper('privileged-shards', '--shards=2', '--pest', str(pest),
+                                 environment={'GITHUB_STEP_SUMMARY': str(summary)})
+        return result, summary.read_text() if summary.exists() else ''
+
+    def test_checks_the_exact_union_of_stock_privileged_shards(self):
+        root, acl = PRIVILEGED_LISTING
+
+        result, summary = self.privileged_shards({'1/2': [root], '2/2': [acl]})
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('2 privileged tests', result.stdout)
+        self.assertIn('| 1/2 | 1 |', summary)
+        self.assertIn('| 2/2 | 1 |', summary)
+        self.assertIn('Union: 2 / 2', summary)
+
+    def test_rejects_incomplete_extra_overlapping_and_empty_privileged_shards(self):
+        root, acl = PRIVILEGED_LISTING
+        for shards, message in (
+            ({'1/2': [root], '2/2': []}, 'empty'),
+            ({'1/2': [root], '2/2': [root]}, 'overlap'),
+            ({'1/2': [root], '2/2': [acl + ' changed']}, 'missing'),
+            ({'1/2': [root], '2/2': [acl, acl + ' extra']}, 'extra'),
+        ):
+            with self.subTest(message=message):
+                result, summary = self.privileged_shards(shards)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(message, result.stderr)
+                self.assertEqual('', summary)
+
+    def test_rejects_empty_or_failed_privileged_group_discovery(self):
+        for whole, status, message in (([], 0, 'empty'), (None, 3, 'cannot list')):
+            with self.subTest(message=message):
+                result, summary = self.privileged_shards({}, whole=whole, status=status)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(message, result.stderr)
+
+    def test_privileged_workflow_runs_every_shard_on_disposable_runners(self):
+        workflow = json.loads(subprocess.run([
+            'php', '-r', 'require $argv[1]; echo json_encode(Symfony\\Component\\Yaml\\Yaml::parseFile($argv[2]));',
+            str(REPOSITORY / 'apps/e2e/vendor/autoload.php'), str(REPOSITORY / '.github/workflows/ci.yml'),
+        ], check=True, capture_output=True, text=True).stdout)
+        job = workflow['jobs']['privileged']
+        self.assertEqual('ubuntu-26.04', job['runs-on'])
+        self.assertNotIn('if', job)
+        self.assertFalse(job['strategy']['fail-fast'])
+        self.assertEqual([1, 2, 3, 4], job['strategy']['matrix']['shard'])
+        commands = [step['run'] for step in job['steps'] if 'run' in step]
+        execution = next(command for command in commands if command.startswith('vendor/bin/pest '))
+        for option in ('--no-tia', '--group=privileged', '--fail-on-empty-test-suite',
+                       '--shard=${{ matrix.shard }}/${{ strategy.job-total }}'):
+            self.assertIn(option, execution)
+        check = next(step for step in job['steps'] if 'privileged-shards' in step.get('run', ''))
+        self.assertEqual('matrix.shard == 1', check['if'])
+        self.assertIn('--shards=${{ strategy.job-total }}', check['run'])
+        self.assertEqual('1', next(step for step in job['steps'] if step.get('run') == execution)['env']['ORBIT_TEST_DOCKER'])
+        self.assertIn('privileged', workflow['jobs']['required']['needs'])
+        self.assertIn('PRIVILEGED_RESULT', json.dumps(workflow['jobs']['required']['steps']))
+        self.assertFalse(any('Homebrew' in step.get('uses', '') or 'setup-node' in step.get('uses', '')
+                             for step in job['steps']))
+        self.assertFalse(any('brew install' in command or 'docker pull' in command for command in commands))
 
     def test_plans_every_test_without_tia_even_for_a_narrow_diff(self):
         self.change(f'{PROJECT}/app/Covered.php', '<?php // first')

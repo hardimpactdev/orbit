@@ -573,10 +573,14 @@ jobs:
           vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --compact --filter "$filter"
 
   privileged:
-    name: Gateway privileged
-    # A GitHub-hosted runner gives every run a fresh machine with passwordless sudo and leaves Sabre to the Gateway suite.
+    name: Gateway privileged (${{ matrix.shard }})
+    # Only disposable hosted runners may run this group: each has passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: apps/gateway
@@ -588,39 +592,24 @@ jobs:
         uses: ./.github/actions/php
         with:
           coverage: none
-      - uses: actions/setup-node@v7
-        if: runner.environment == 'self-hosted'
-        with:
-          node-version: '24'
-      - uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
-        if: runner.environment == 'github-hosted'
-      - name: Install hosted runner prerequisites
-        if: runner.environment == 'github-hosted'
+      # The tests need ACL tools and the caddy Unix identity, not the Caddy binary or a package manager.
+      - name: Install privileged test prerequisites
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
-          brew install caddy openssl@3
-          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
       - name: Install Gateway dependencies
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      # ORBIT_TEST_DOCKER runs the Valkey Database server tests against a real valkey/valkey:8.1 in Docker.
-      - name: Pull the current Valkey test image
-        run: |
-          docker pull valkey/valkey:8.1
-          docker run --rm valkey/valkey:8.1 valkey-server --version
-      - name: Run every privileged test
+      - name: Check the privileged shards cover exactly the group
+        if: matrix.shard == 1
+        run: ../../bin/ci-tia privileged-shards --shards=${{ strategy.job-total }}
+      # Only the shard with Valkey tests pulls its image, on the first real docker run.
+      - name: Run privileged shard ${{ matrix.shard }}
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
-      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
-      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
-      - name: Remove root-owned files from the workspace
-        if: always() && runner.environment == 'self-hosted'
-        working-directory: ${{ github.workspace }}
-        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:

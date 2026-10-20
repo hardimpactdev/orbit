@@ -87,6 +87,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Gateway subprocess, E2E subprocess (non-PR runs only) | The project's `subprocess` group on affected main runs; full suites include it already |
 | Gateway plan | Pull requests only: lists the full Gateway suite and balances its classes across four shards |
 | Gateway shards (2), (3), (4) | Every pull request: full Gateway shards after the first |
+| Gateway privileged (1)–(4) | Every CI event: stock Pest shards of the privileged group, with an exact union check |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -199,11 +200,17 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
 
-A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged job. Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
+A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged jobs. Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
 Stock PHPUnit `Before` and `After` fixture hooks put a denying `sudo` shim first on PATH for ordinary tests and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
 
 Composer supervisor and check-runner fixtures set `COMPOSER_ALLOW_SUPERUSER=1` so Composer does not run its unrelated `sudo -K` credential cleanup. The check-runner fixture sets it in its account's login profile, which loads after the real check program filters its environment, including for authenticated setup and nested Composer scripts. The guard regression runs failing fixture cases through Pest to prove that a new sudo call fails the suite.
+
+The privileged group runs on four disposable GitHub-hosted runners with passwordless sudo. Each matrix job uses stock Pest `--shard=N/4`, four parallel processes, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. Shard 1 also runs `bin/ci-tia privileged-shards --shards=4`: it lists the whole group and each stock shard, rejects empty shards, missing or extra tests, and overlapping selections, and reports the counts in the job summary. The matrix size supplies the denominator to both the check and the test command. `Required checks` requires the whole matrix to pass.
+
+Privileged jobs install the recipe PHP build, Composer dependencies, ACL tools, and the `caddy` Unix account. They do not install Homebrew, Caddy, OpenSSL, WireGuard tools, or Node. The Valkey tests keep `ORBIT_TEST_DOCKER=1`; Docker pulls their image when their shard first starts a container. No other shard pulls it.
+
+Implementation review may use local evidence before Orbit publishes the approved commit. Before merge, the orchestrator reads all four complete privileged job durations, including setup and union validation, and the Gateway shard durations from the same PR CI run. It records the run URL, tested commit, and comparison, and verifies that every privileged shard finishes under the Gateway shard time. Local test timings do not establish the hosted-runner budget.
 
 The plan assigns classes longest first using recorded timings plus 0.2 seconds per test for application boot. Unknown classes use the median class time. PR selection follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
 
@@ -221,7 +228,7 @@ The Gateway job fails when the plan job fails, or when the plan does not end wit
 
 A pull request holds one Sabre runner and three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. At `9eb3a4da`, the plan listed 846 non-privileged classes. The four shards ran 13,756 cases in total, including one skipped case; the privileged job ran 599, giving 14,355 cases, the same as main. The shard test steps took 252, 235, 132 and 153 seconds; the privileged step took 139 seconds. `Required checks` completed 365 seconds after the run started.
 
-Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. The six-process full-run reference is about 510 seconds.
+The ordinary suite on `main` never shards; the privileged matrix runs on every CI event. A push or a full run there keeps one ordinary Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. The six-process full-run reference is about 510 seconds.
 
 ### Self-hosted Gateway runner
 
@@ -568,7 +575,7 @@ The worker uses `git` and the GitHub CLI with the login of the user who runs it.
 4. finds the newest commit on which the project's jobs passed;
 5. downloads, checks, and publishes that commit's graph and quality caches.
 
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has three jobs: `Gateway`, `Gateway subprocess`, and `Gateway privileged`. E2E has two, `E2E` and `E2E subprocess`. The other projects have one job each. A failure in any of a project's jobs counts as a failure of the project.
+The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has `Gateway`, `Gateway subprocess`, and the four `Gateway privileged (N)` matrix jobs. E2E has two, `E2E` and `E2E subprocess`. The other projects have one job each. A failure in any of a project's jobs counts as a failure of the project.
 
 Before it publishes, the worker checks that:
 
