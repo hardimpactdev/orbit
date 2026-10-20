@@ -149,8 +149,10 @@ A `todo` subtask appended to a `settling` task returns the task to `running` on 
 
 `tasks:subtask:cancel` cancels a `todo` or a `running` subtask.
 
-- A `todo` subtask in a `todo`, `running`, `reviewing`, or `settling` task becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
+- A `todo` subtask becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
 - A `running` subtask stops first. Orbit interrupts its implementer, then stops its running [task check](#project-check).
+
+Orbit accepts a `todo` subtask cancellation in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task. A task already `waiting_for_review` stays there without settling again or reading its workspace; its VM can stay parked.
 
 Orbit holds no database lock while it stops a `running` subtask. When a stop fails, the call returns HTTP 502 `tasks.subtask_interrupt_failed`. The subtask then stays `running`, so retry, or cancel the task.
 
@@ -501,7 +503,9 @@ Steps 1 and 2 run each task on its own. A failure in one task does not stop the 
 
 The subtask phase takes the group's execution hold in `tick()`, before advancing its subtasks, rather than taking separate holds for implementer completion, reviewer outcomes, and baseline results. Other entry points keep their admission holds. This split does not change the state machine, events, database writes, or tick interval.
 
-When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
+When the task fails on two ticks in a row, the task and its `running` or `reviewing` subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself.
+
+For recovery, see [Resolve a request](#resolve-a-request). A tick in which the task succeeds resets the count.
 
 ### Claim and provision
 
@@ -546,7 +550,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
-A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. Merge-ready publication does not leave a waiter when admission fails: the settling tick can resume a review-fix subtask and stop calling merge-ready while the group is running. It tries admission again only when the scheduler next reaches merge-ready, without passing earlier waiters. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
+A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 
 After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
 
@@ -892,6 +896,8 @@ The record's `task_id` is the parent task id and its `subtask_id` is the asking 
 #### Resolve a request
 
 A reason that starts with `Watched pull request ended: ` is the exception. Orbit stores the resolution comment and does not send it. It does not clear the flag, and it does not start a subtask. [Watch the branch while subtasks are open](#watch-the-branch-while-subtasks-are-open) defines that reason and the one notice Orbit sends.
+
+For a tick failure, fix the cause and post a non-empty `resolution` on any subtask, even one that is not asking. Orbit clears the request from the task and every open subtask carrying the same request. It does not send the resolution to an agent: a tick failure is an operator-level problem. The next tick retries the task's work. Other assistance requests keep their normal resolution rules.
 
 A `resolution` comment with a non-empty body resumes a subtask that asks for assistance. On a direction request, the route depends on the subtask. None of these routes starts a new implementer attempt, so the consult records of the current `completion_attempt` still count.
 
@@ -1445,7 +1451,7 @@ The App can review the pull request because the pull request author is a person,
 
 ### Merge on green
 
-Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
+Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. This gate reads GitHub state and recorded review evidence, not the workspace. A parked task VM stays parked while Orbit waits for review and checks or merges a reviewed head. It merges when all of these hold on the current head:
 
 1. The head SHA has recorded final-review evidence, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
