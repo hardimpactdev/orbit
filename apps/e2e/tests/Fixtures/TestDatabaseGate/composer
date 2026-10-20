@@ -31,7 +31,8 @@ if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') ===
     }
 
     chdir($source);
-    passthru(escapeshellarg($composer).' guidance:check', $exitCode);
+    // Exercise the real bootstrap, database guard and renderer, not unrelated guidance cases a second time.
+    passthru(escapeshellarg($composer).' guidance:check -- --filter='.escapeshellarg('regenerates strict guidance'), $exitCode);
 
     exit($exitCode);
 }

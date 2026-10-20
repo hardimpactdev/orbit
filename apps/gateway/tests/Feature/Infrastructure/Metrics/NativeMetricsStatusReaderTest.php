@@ -14,9 +14,6 @@ use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('reports disabled state when no metrics assignment exists', function (): void {
     $reader = new NativeMetricsStatusReader(

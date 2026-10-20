@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
+use Tests\Support\TemporaryPaths;
 
 pest()->group('subprocess');
 
@@ -48,7 +49,42 @@ function orb277_gate_fixture(
     ?string $mainTestPath = null,
     string $changedProject = 'apps/gateway',
 ): array {
+    static $template = null;
+    $template ??= orb277_build_gate_template();
     $root = temporaryPath('orbit-builder-gate-', 6);
+    (new Process(['cp', '-a', $template['root'].'/.', $root]))->mustRun();
+    $fixture = [...$template, 'root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
+    $candidatePath ??= $changedProject === 'apps/gateway' ? 'apps/gateway/app/Example.php' : $changedProject.'/changed.txt';
+
+    if ($candidatePath === 'apps/gateway/app/Example.php' && $mainTestPath === null) {
+        return $fixture;
+    }
+
+    (new Process(['git', 'checkout', '--quiet', 'main'], $root))->mustRun();
+    if ($mainTestPath !== null) {
+        $path = $root.'/'.$mainTestPath;
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o700, true);
+        }
+        file_put_contents($path, "<?php\n\nit('legacy test', fn () => expect(true)->toBeTrue());\n");
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        (new Process(['git', 'commit', '--quiet', '--amend', '--no-edit'], $root))->mustRun();
+        $fixture['main'] = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+    }
+    (new Process(['git', 'checkout', '--quiet', '-B', 'orb-277-candidate'], $root))->mustRun();
+    orb277_write_candidate($root, $candidatePath);
+    (new Process(['git', 'add', '.'], $root))->mustRun();
+    (new Process(['git', 'commit', '--quiet', '-m', 'candidate'], $root))->mustRun();
+    $fixture['candidate'] = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+
+    return $fixture;
+}
+
+/** @return array{root: string, main: string, candidate: string, path: string} */
+function orb277_build_gate_template(): array
+{
+    // Keep only the immutable template until process shutdown; each test's writable copy is cleaned normally.
+    $root = TemporaryPaths::directory().'/builder-gate-template';
 
     mkdir($root.'/bin', 0o700, true);
     mkdir($root.'/tooling', 0o700, true);
@@ -89,10 +125,11 @@ SH);
     chmod($root.'/bin/pest-plain', 0o700);
 
     mkdir($root.'/tools', 0700, true);
-    copy(base_path('../../tools/check_budget.py'), $root.'/tools/check_budget.py');
-    copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
-    copy(base_path('../../bin/check-processes'), $root.'/bin/check-processes');
-    copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');
+    $repository = dirname(__DIR__, 5);
+    copy($repository.'/tools/check_budget.py', $root.'/tools/check_budget.py');
+    copy($repository.'/bin/review-check', $root.'/bin/review-check');
+    copy($repository.'/bin/check-processes', $root.'/bin/check-processes');
+    copy($repository.'/bin/check-classification-fakes', $root.'/bin/check-classification-fakes');
     file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
@@ -105,7 +142,7 @@ SH);
     mkdir($root.'/apps/web/dist', 0o700, true);
     file_put_contents($root.'/apps/web/dist/index.html', '<html></html>');
     file_put_contents($root.'/apps/web/dist/version.json', '{}');
-    copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
+    copy(dirname(__DIR__, 2).'/Fixtures/BuilderGate/composer', $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     foreach (['bun', 'vp'] as $tool) {
         file_put_contents($root.'/tooling/'.$tool, <<<'SH'
@@ -142,14 +179,6 @@ SH);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 
-    if ($mainTestPath !== null) {
-        $path = $root.'/'.$mainTestPath;
-        if (! is_dir(dirname($path))) {
-            mkdir(dirname($path), 0o700, true);
-        }
-        file_put_contents($path, "<?php\n\nit('legacy test', fn () => expect(true)->toBeTrue());\n");
-    }
-
     foreach ([
         ['git', 'init', '--quiet', '--initial-branch=main'],
         ['git', 'config', 'user.name', 'Orbit test'],
@@ -162,9 +191,26 @@ SH);
 
     $main = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
 
-    $candidatePath ??= $changedProject === 'apps/gateway'
-        ? 'apps/gateway/app/Example.php'
-        : $changedProject.'/changed.txt';
+    orb277_write_candidate($root, 'apps/gateway/app/Example.php');
+
+    foreach ([
+        ['git', 'checkout', '--quiet', '-b', 'orb-277-candidate'],
+        ['git', 'add', '.'],
+        ['git', 'commit', '--quiet', '-m', 'candidate'],
+    ] as $arguments) {
+        (new Process($arguments, $root))->mustRun();
+    }
+
+    return [
+        'root' => $root,
+        'main' => $main,
+        'candidate' => trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput()),
+        'path' => $root.'/tooling:'.getenv('PATH'),
+    ];
+}
+
+function orb277_write_candidate(string $root, string $candidatePath): void
+{
     if ($candidatePath === 'apps/gateway/app/Example.php') {
         mkdir($root.'/apps/gateway/app', 0o700, true);
         if (! is_dir($root.'/apps/gateway/tests')) {
@@ -182,20 +228,6 @@ SH);
         file_put_contents($path, "candidate change\n");
     }
 
-    foreach ([
-        ['git', 'checkout', '--quiet', '-b', 'orb-277-candidate'],
-        ['git', 'add', '.'],
-        ['git', 'commit', '--quiet', '-m', 'candidate'],
-    ] as $arguments) {
-        (new Process($arguments, $root))->mustRun();
-    }
-
-    return [
-        'root' => $root,
-        'main' => $main,
-        'candidate' => trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput()),
-        'path' => $root.'/tooling:'.getenv('PATH'),
-    ];
 }
 
 /** @return array{process: Process, receipt: array<string, mixed>} */
@@ -319,6 +351,23 @@ PHP);
 }
 
 describe('Builder gate', function (): void {
+    it('copies the common history without sharing writable fixture state', function (): void {
+        $first = orb277_gate_fixture();
+        file_put_contents($first['root'].'/tooling/composer', 'changed');
+        file_put_contents($first['root'].'/.git/config', "\n# changed only in this fixture\n", FILE_APPEND);
+        file_put_contents($first['root'].'/untracked', 'changed');
+        $second = orb277_gate_fixture();
+
+        expect($second['root'])->not->toBe($first['root']);
+        expect($second['main'])->toBe($first['main']);
+        expect($second['candidate'])->toBe($first['candidate']);
+        expect(file_get_contents($second['root'].'/tooling/composer'))->not->toBe('changed');
+        expect(is_executable($second['root'].'/tooling/composer'))->toBeTrue();
+        expect(file_get_contents($second['root'].'/.git/config'))->not->toContain('changed only in this fixture');
+        expect(file_exists($second['root'].'/untracked'))->toBeFalse();
+        expect((new Process(['git', 'status', '--porcelain'], $second['root']))->mustRun()->getOutput())->toBe('');
+    });
+
     it('removes its own reports older than a day from the shared Git directory before it writes a new one', function (): void {
         $fixture = orb277_gate_fixture();
         $checks = $fixture['root'].'/.git/orbit-checks';
@@ -493,7 +542,7 @@ SH);
 
         expect($composer['scripts']['guidance:check'])->toBe('../../bin/guidance-check');
         expect(orb277_tia_directory($root, 'vendor/.orbit-guidance-tia'))->toBe($guidance);
-        expect(orb277_tia_directory($root, false))->not->toStartWith($guidance);
+        expect(orb277_tia_directory($root, false))->toBe($root.'/.orbit-tia');
 
         $ignored = new Process(['git', 'check-ignore', '-q', $project.'/vendor/.orbit-guidance-tia/graph.json'], $repository);
         $ignored->run();
@@ -960,13 +1009,14 @@ function widget_value(): int
 }
 
 PHP);
-    file_put_contents($root.'/apps/gateway/tests/WidgetTest.php', <<<PHP
+    file_put_contents($root.'/apps/gateway/src/expected.php', "<?php\n\nreturn {$expected};\n");
+    file_put_contents($root.'/apps/gateway/tests/WidgetTest.php', <<<'PHP'
 <?php
 
 require_once __DIR__.'/../src/Widget.php';
 
 it('reads the widget', function () {
-    expect(widget_value())->toBe({$expected});
+    expect(widget_value())->toBe(require __DIR__.'/../src/expected.php');
 });
 
 PHP);
@@ -978,14 +1028,14 @@ function orb1803_install_native_pest(string $root): void
     $vendor = $project.'/vendor';
     mkdir($project.'/src', 0700, true);
     mkdir($project.'/tests', 0700, true);
-    $pest = base_path('vendor/nckrtl/pestphp-monorepo/bin/pest');
-    $autoload = base_path('vendor/autoload.php');
+    $pest = dirname(__DIR__, 3).'/vendor/nckrtl/pestphp-monorepo/bin/pest';
+    $autoload = dirname(__DIR__, 3).'/vendor/autoload.php';
     file_put_contents($root.'/.gitignore', ".orbit-tia/\nvendor/\n.phpunit.result.cache\n.phpunit.cache/\n");
     file_put_contents($vendor.'/autoload.php', "<?php\n\nrequire '{$autoload}';\n");
-    file_put_contents($vendor.'/pest-plugins.json', (string) file_get_contents(base_path('vendor/pest-plugins.json')));
+    file_put_contents($vendor.'/pest-plugins.json', (string) file_get_contents(dirname(__DIR__, 3).'/vendor/pest-plugins.json'));
     file_put_contents($vendor.'/bin/pest', <<<'SH'
 #!/usr/bin/env sh
-cd "$(dirname "$0")/../.." || exit 1
+cd "${0%/*}/../.." || exit 1
 for argument in "$@"; do
     case "$argument" in
         tests/*)
@@ -995,8 +1045,8 @@ for argument in "$@"; do
             ;;
     esac
 done
-project=$(pwd)
-repo=$(CDPATH= cd -- "$project/../.." && pwd)
+project=$PWD
+repo=${project%/apps/gateway}
 exec php -d "pcov.directory=$repo" -d pcov.enabled=1 "$project/vendor/bin/pest-native.php" "$@"
 SH);
     file_put_contents($vendor.'/bin/pest-native.php', <<<PHP
@@ -1028,39 +1078,31 @@ $directory = getenv('ORBIT_TIA_DIRECTORY');
 pest()->tia()->directory(is_string($directory) && $directory !== '' ? $directory : dirname(__DIR__).'/.orbit-tia');
 
 PHP);
-    file_put_contents($root.'/tooling/composer', <<<'PHP'
-#!/usr/bin/env php
-<?php
-
-declare(strict_types=1);
-
-$command = $argv[1] ?? '';
-$cwd = str_replace('\\', '/', getcwd() ?: '');
-if ($command === 'test:affected' && str_ends_with($cwd, 'apps/gateway')) {
-    $arguments = array_values(array_filter(array_slice($argv, 2), static fn (string $argument): bool => $argument !== '--'));
-    $process = proc_open(['vendor/bin/pest', '--tia', '--colors=never', '--compact', ...$arguments], [1 => STDOUT, 2 => STDOUT], $pipes, $cwd);
-    exit(is_resource($process) ? proc_close($process) : 1);
-}
-
-$segments = explode('/', $cwd);
-$project = implode('/', array_slice($segments, -2));
-$unselected = array_filter(explode(',', (string) getenv('ORBIT_GATE_UNSELECTED')));
-if ($command === 'test:affected') {
-    $selectedTests = in_array($project, $unselected, true) ? [] : ['tests/ExampleTest.php'];
-    $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
-    $tiaDirectory = is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : '.orbit-tia';
-    if (! str_starts_with($tiaDirectory, DIRECTORY_SEPARATOR)) {
-        $tiaDirectory = getcwd().DIRECTORY_SEPARATOR.$tiaDirectory;
-    }
-    if (! is_dir($tiaDirectory)) {
-        mkdir($tiaDirectory, 0700, true);
-    }
-    file_put_contents($tiaDirectory.'/affected.json', json_encode($selectedTests, JSON_THROW_ON_ERROR));
-    fwrite(STDOUT, $selectedTests === [] ? "\n  INFO  No affected tests found.\n\n" : "\n  Tests:    3 passed (9 assertions)\n\n");
-}
-
-exit(0);
-PHP);
+    file_put_contents($root.'/tooling/composer', <<<'SH'
+#!/usr/bin/env sh
+[ "${1:-}" = test:affected ] || exit 0
+shift
+case "$PWD" in
+    */apps/gateway)
+        [ "${1:-}" != -- ] || shift
+        exec vendor/bin/pest --tia --colors=never --compact "$@" 2>&1
+        ;;
+esac
+parent=${PWD%/*}
+project=${parent##*/}/${PWD##*/}
+cache=${ORBIT_TIA_DIRECTORY:-.orbit-tia}
+mkdir -m 700 -p "$cache"
+case ",${ORBIT_GATE_UNSELECTED:-}," in
+    *",$project,"*)
+        printf '[]' > "$cache/affected.json"
+        printf '\n  INFO  No affected tests found.\n\n'
+        ;;
+    *)
+        printf '["tests/ExampleTest.php"]' > "$cache/affected.json"
+        printf '\n  Tests:    3 passed (9 assertions)\n\n'
+        ;;
+esac
+SH);
     chmod($root.'/tooling/composer', 0700);
 }
 
@@ -1107,18 +1149,66 @@ it('reads the other value', function () {
 PHP);
 }
 
+/** @return array{root: string, main: string, candidate: string, path: string, original: string, start: string} */
+function orb1803_native_template(bool $withLock): array
+{
+    static $templates = [];
+    $key = (int) $withLock;
+    if (isset($templates[$key])) {
+        return $templates[$key];
+    }
+    $fixture = orb277_gate_fixture('docs/handoff.md');
+    $root = TemporaryPaths::directory().'/native-gate-template-'.$key;
+    (new Process(['cp', '-a', $fixture['root'].'/.', $root]))->mustRun();
+    $fixture = [...$fixture, 'root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
+    orb1803_install_native_pest($root);
+    orb1803_widget($root, 1, 1);
+    orb1803_other($root, 1);
+    if ($withLock) {
+        file_put_contents($root.'/apps/gateway/composer.lock', '{"packages":[]}');
+    }
+    (new Process(['git', 'add', '.'], $root))->mustRun();
+    (new Process(['git', 'commit', '-m', 'Graph origin'], $root))->mustRun();
+    (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
+    $fixture['start'] = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
+    $fixture['original'] = orb1803_record_pest($root);
+    if ($withLock) {
+        orb1803_run($fixture, null, 0);
+    }
+
+    return $templates[$key] = $fixture;
+}
+
+/** @return array{root: string, main: string, candidate: string, path: string, original: string, start: string} */
+function orb1803_native_fixture(bool $withLock = false): array
+{
+    $template = orb1803_native_template($withLock);
+    $root = temporaryPath('orbit-native-gate-', 6);
+    (new Process(['cp', '-a', $template['root'].'/.', $root]))->mustRun();
+
+    return [...$template, 'root' => $root, 'path' => $root.'/tooling:'.getenv('PATH')];
+}
+
+beforeAll(function (): void {
+    orb1803_native_template(false);
+    orb1803_native_template(true);
+});
+
 describe('native start commit selection', function (): void {
-    it('runs baseline changes since an older graph and fills the passed cache', function (string $shape, int $selected): void {
-        $fixture = orb277_gate_fixture('docs/handoff.md');
+    it('selects and fails the real test when only its expected value changes', function (): void {
+        $fixture = orb1803_native_fixture();
         $root = $fixture['root'];
-        orb1803_install_native_pest($root);
-        orb1803_widget($root, 1, 1);
-        orb1803_other($root, 1);
-        foreach (['add', 'commit'] as $operation) {
-            (new Process($operation === 'add' ? ['git', 'add', '.'] : ['git', 'commit', '-m', 'Start'], $root))->mustRun();
-        }
-        (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
-        orb1803_record_pest($root);
+        orb1803_widget($root, 1, 2);
+        $changed = trim((new Process(['git', 'diff', '--name-only'], $root))->mustRun()->getOutput());
+        expect($changed)->toBe('apps/gateway/src/expected.php');
+
+        $run = orb1803_run($fixture, null, 1);
+        expect(orb1803_log($run['receipt'], 'apps/gateway', 'test:affected'))->toContain('1 failed');
+    });
+
+    it('runs baseline changes since an older graph and fills the passed cache', function (string $shape, int $selected): void {
+        $fixture = orb1803_native_fixture();
+        $root = $fixture['root'];
         if ($shape === 'older') {
             orb1803_widget($root, 2, 2);
             (new Process(['git', 'add', '.'], $root))->mustRun();
@@ -1137,15 +1227,8 @@ describe('native start commit selection', function (): void {
     })->with(['older graph' => ['older', 1], 'current graph' => ['current', 0], 'missing graph' => ['missing', 2]]);
 
     it('preserves the start graph after a passed handoff so rework stays narrow', function (): void {
-        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $fixture = orb1803_native_fixture();
         $root = $fixture['root'];
-        orb1803_install_native_pest($root);
-        orb1803_widget($root, 1, 1);
-        orb1803_other($root, 1);
-        (new Process(['git', 'add', '.'], $root))->mustRun();
-        (new Process(['git', 'commit', '-m', 'Graph origin'], $root))->mustRun();
-        (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
-        orb1803_record_pest($root);
         orb1803_other($root, 2);
         (new Process(['git', 'add', '.'], $root))->mustRun();
         (new Process(['git', 'commit', '-m', 'Subtask start'], $root))->mustRun();
@@ -1168,18 +1251,10 @@ describe('native start commit selection', function (): void {
     });
 
     it('uses the graph rewritten by a full-suite handoff for the next subtask', function (): void {
-        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $fixture = orb1803_native_fixture(withLock: true);
         $root = $fixture['root'];
-        orb1803_install_native_pest($root);
-        orb1803_widget($root, 1, 1);
-        orb1803_other($root, 1);
-        file_put_contents($root.'/apps/gateway/composer.lock', '{"packages":[]}');
-        (new Process(['git', 'add', '.'], $root))->mustRun();
-        (new Process(['git', 'commit', '-m', 'Subtask start'], $root))->mustRun();
-        (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
-        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
-        $original = orb1803_record_pest($root);
-        orb1803_run($fixture, null, 0);
+        $start = $fixture['start'];
+        $original = $fixture['original'];
         (new Process(['git', 'checkout', '-b', 'implementation'], $root))->mustRun();
         file_put_contents($root.'/apps/gateway/composer.lock', '{"packages":[],"content-hash":"changed"}');
         (new Process(['git', 'add', '.'], $root))->mustRun();
@@ -1204,18 +1279,9 @@ describe('native start commit selection', function (): void {
     });
 
     it('uses a start commit only with its passed graph and keeps lock drift visible after a local warm run', function (string $cacheShape): void {
-        $fixture = orb277_gate_fixture('docs/handoff.md');
+        $fixture = orb1803_native_fixture(withLock: true);
         $root = $fixture['root'];
-        orb1803_install_native_pest($root);
-        orb1803_widget($root, 1, 1);
-        orb1803_other($root, 1);
-        file_put_contents($root.'/apps/gateway/composer.lock', '{"packages":[]}');
-        (new Process(['git', 'add', '.'], $root))->mustRun();
-        (new Process(['git', 'commit', '-m', 'Subtask start'], $root))->mustRun();
-        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $root))->mustRun()->getOutput());
-        (new Process(['git', 'checkout', '-B', 'main'], $root))->mustRun();
-        orb1803_record_pest($root);
-        orb1803_run($fixture, null, 0);
+        $start = $fixture['start'];
         $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $root))->mustRun()->getOutput());
         $cache = $root.'/.git/orbit-handoff-tia/'.$tree;
         if ($cacheShape === 'missing') {

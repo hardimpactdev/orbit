@@ -152,7 +152,7 @@ class SmokeWorld:
         self.server.block_on_close = False
         self.routes = self.server.RequestHandlerClass.routes
         self.url = f'http://127.0.0.1:{self.server.server_port}'
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True).start()
 
         self.now = datetime.now(timezone.utc)
         self.routes.update({
@@ -229,7 +229,14 @@ class SmokeWorld:
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def smoke_argv(self, *arguments):
-        return [str(SMOKE), '--sha', SHA,
+        # Only polling tests need a shorter interval. Keep the real CLI entry point for other cases.
+        command = [str(SMOKE)]
+        if '--wait-for-tick' in arguments:
+            command = [sys.executable, '-c',
+                       'import runpy, sys; smoke = runpy.run_path(sys.argv.pop(1)); '
+                       'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.02; '
+                       'sys.exit(smoke["main"]())', str(SMOKE)]
+        return [*command, '--sha', SHA,
                 '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
                 '--web-url', f'{self.url}/', '--web-dir', str(self.web), '--checkout', str(self.checkout),
                 '--orbit', str(self.bin / 'orbit'), *arguments]
@@ -444,9 +451,9 @@ class GatewaySmokeTest(unittest.TestCase):
 
         world.unit('orbit-agent-view.service', argv='/usr/bin/php artisan orbit:agent-view', directory=world.checkout / 'apps/gateway', started_seconds_ago=7)
         world.orbit('tasks:status', world.tick(seconds_ago=20))
-        process = world.smoke('--since', since, '--timeout', '3')
+        process = world.smoke('--since', since, '--timeout', '1')
         self.assertEqual(process.returncode, 0, process.stdout)
-        checks = self.assert_only_failed(world.smoke('--since', since, '--timeout', '3', '--wait-for-tick'), ['tasks_tick'])
+        checks = self.assert_only_failed(world.smoke('--since', since, '--timeout', '1', '--wait-for-tick'), ['tasks_tick'])
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertEqual(checks['tasks_tick']['detail']['tick_after'], since[:19] + 'Z')
 
@@ -465,7 +472,7 @@ class GatewaySmokeTest(unittest.TestCase):
     def test_tasks_tick_fails_when_no_tick_started_within_the_limit(self):
         self.world.orbit('tasks:status', self.world.tick(seconds_ago=None))
 
-        checks = self.assert_only_failed(self.world.smoke('--timeout', '4', '--wait-for-tick'), ['tasks_tick'])
+        checks = self.assert_only_failed(self.world.smoke('--timeout', '1', '--wait-for-tick'), ['tasks_tick'])
 
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
@@ -572,11 +579,12 @@ class GatewaySmokeTest(unittest.TestCase):
         (world.fake / 'systemctl/sleep').write_text('30')
         (world.fake / 'php/sleep').write_text('30')
 
-        process = world.smoke('--timeout', '3', '--write-check', '--smoke-project', 'gateway-smoke')
+        process = world.smoke('--timeout', '1', '--write-check', '--smoke-project', 'gateway-smoke')
 
         names = [*READ_CHECKS, 'documents']
         checks = self.assert_only_failed(process, names, status='timeout')
-        self.assertLess(process.elapsed, 10)
+        self.assertGreaterEqual(process.elapsed, 1)
+        self.assertLess(process.elapsed, 2)
         self.assertEqual(process.json['summary'], {'passed': 0, 'failed': 0, 'timeout': 8, 'skipped': 0})
         for name in names:
             self.assertEqual(checks[name]['error'], 'timeout', checks[name])
