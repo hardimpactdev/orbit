@@ -130,8 +130,7 @@ final readonly class SmokeGatewayReleaseAction
         $version = GatewayVersion::resolve(null, $this->layout->currentPath().'/REVISION');
 
         if ($version === 'dev') {
-            $configured = Config::get('app.version');
-            $version = is_string($configured) ? strtolower($configured) : 'dev';
+            $version = strtolower(GatewayVersion::current());
         }
 
         if (preg_match('/\A[0-9a-f]{7,40}\z/D', $version) !== 1) {
