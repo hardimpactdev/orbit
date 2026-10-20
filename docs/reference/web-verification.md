@@ -185,7 +185,7 @@ Exit 0 means `"ok": true`. Exit 1 means the command ran and failed. Exit 2 means
 
 The command tests call the same `execute` dispatcher as the CLI to check argument and route errors in-process. Real CLI cases still check JSON output, exit codes, a successful screenshot, a screenshot-write failure, and explicit stop.
 
-The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 500 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
+The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 300 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
 
 ### Scheduling and dependencies
 
@@ -195,7 +195,9 @@ The CLI parses commands, validates maps, and dispatches socket requests without 
 
 ### Browser coverage
 
-PNG generation, first-use state, and viewport dimensions are checked for both phone and desktop on both engines. Repeated screenshots also check reuse with WebKit on a phone and Chromium on desktop. Real control clicks check the active page for each pairing. WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. Both engines remain installed and covered.
+PNG generation, first-use state, and viewport dimensions are checked for both phone and desktop on both engines. Repeated screenshots also check reuse with WebKit on a phone and Chromium on desktop. Real control clicks check the active page for each pairing.
+
+WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. The confinement test uses the same Playwright API for both engines, but request aborts and fulfilled responses pass through different browser-protocol backends. It checks that neither engine contacts a disallowed host, including through redirects or a WebSocket. Both engines remain installed and covered; CI installs only the headless shell for Chromium, not the unused full browser.
 
 ## Limits
 

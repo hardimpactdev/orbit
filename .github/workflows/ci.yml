@@ -530,7 +530,7 @@ jobs:
         run: bun run check
 
       - name: Install the test browsers
-        run: bunx playwright install --with-deps chromium webkit
+        run: bunx playwright install --with-deps --only-shell chromium webkit
 
       - name: Run unit and verification tests
         run: bun run test:unit

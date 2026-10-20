@@ -20,7 +20,7 @@ import {
 it("exits after the idle timeout and leaves no child processes", async () => {
     const home = mkdtempSync(join(tmpdir(), "orbit-web-verify-idle-"));
     try {
-        const opened = runCLI(home, ["open", "/activity"], { ORBIT_WEB_VERIFY_IDLE_MS: "500" });
+        const opened = runCLI(home, ["open", "/activity"], { ORBIT_WEB_VERIFY_IDLE_MS: "300" });
         expect(opened.status).toBe(0);
         const pid = sessionPid(home);
         expect(pid).not.toBeNull();
