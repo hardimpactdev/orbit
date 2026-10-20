@@ -39,5 +39,8 @@ opt-level = 3
 [profile.dev.package.regex-automata]
 opt-level = 3
 
+[profile.dev.package.regex-syntax]
+opt-level = 3
+
 [dev-dependencies]
 axum = { version = "0.8", features = ["ws"] }
