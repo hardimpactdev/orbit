@@ -159,14 +159,28 @@ export default defineConfig({
         fs: { allow: [".", "../../packages/php-sdk/fixtures"] },
     },
     test: {
+        maxWorkers: 2,
         projects: [
             // Pure logic: health rules, event application, log and uptime formatting.
             {
                 extends: true,
                 test: {
                     name: "unit",
+                    sequence: { groupOrder: 2 },
                     environment: "node",
                     include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
+                    exclude: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                },
+            },
+            // Finish real daemon lifecycles before Vitest starts its persistent browser provider.
+            {
+                extends: true,
+                test: {
+                    name: "verification",
+                    sequence: { groupOrder: 1 },
+                    include: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                    environment: "node",
+                    fileParallelism: false,
                 },
             },
             // The whole app in a real browser against the demo Gateway: keyboard, menus, forms, screens.
@@ -174,6 +188,7 @@ export default defineConfig({
                 extends: true,
                 test: {
                     name: "browser",
+                    sequence: { groupOrder: 2 },
                     include: ["tests/browser/**/*.test.tsx"],
                     browser: {
                         enabled: true,

@@ -2,7 +2,7 @@ import { type Paths, type ToolResult } from "./contract";
 import { daemonAlive, dispatch, stopDaemon } from "./daemon";
 import { loadFeatureMap, mapInvalidMessage } from "./map";
 import { parseCommand } from "./parse";
-import { assessRoute } from "./session";
+import { assessRoute } from "./route";
 
 /** Browser commands go to the shared daemon; map and argument checks stay in-process. */
 export async function execute(paths: Paths, argv: readonly string[]): Promise<ToolResult> {

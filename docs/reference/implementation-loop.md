@@ -89,16 +89,18 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Gateway shards (2), (3), (4) | Every pull request: full Gateway shards after the first |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
-| Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
+| Web | Generated API types, formatting, lint, types, separate `bun run test:unit` and `bun run test:browser` steps, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
-| Remote programs | Installs shellcheck and ruff 0.17.0, then runs `bin/remote-programs-check`: the lint and direct tests of the Gateway's [remote programs](/reference/remote-programs#lint-and-direct-tests) |
+| Remote programs | Installs shellcheck, ruff 0.17.0, and the pinned pytest requirements, then runs `bin/remote-programs-check`: the lint and direct tests of the Gateway's [remote programs](/reference/remote-programs#lint-and-direct-tests) |
 | Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. A pull request that changes neither `apps/desktop` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes, as described below |
 
 Gateway project, subprocess, and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
 The Docs project job also supplies Bun 1.4.2 and installs the Gateway's Composer dependencies and the web app's locked Bun dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including during the subprocess test run.
+
+The Web job uses the official Playwright image at the version pinned in `apps/web/package.json`, with both engines and their system libraries installed. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time; their combined time can exceed either step's budget.
 
 ### One PHP build in CI
 
@@ -193,7 +195,7 @@ The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP
 
 The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change.
 
-Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
+Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run. Jobs that run directly on the host use the same uutils coreutils as a Node; the Web job uses the Playwright container's tools.
 
 ### Gateway shards
 

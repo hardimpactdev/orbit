@@ -33,6 +33,8 @@ Public Routes, custom proxy Routes, app Routes, and analytics tracking hosts gra
 
 For disposable UI work, [run the web app against a topology](/reference/web-app#run-against-a-topology) with `bin/e2e-topology web ISSUE`. Its proxy runs inside the topology's operator VM as that topology's WireGuard peer, with a Gateway access grant. It pins the selected Gateway URL and CA for Gateway, realtime, and metrics traffic. It does not fall back to the caller's live profile. Loopback publication and SSH forwarding expose the development page, not a new Gateway origin or an exception to the browser-origin policy.
 
+The `bin/web-verify` tests use a demo Gateway and real Chromium and WebKit to check that off-origin requests, redirects, and WebSockets cannot reach another server. A blocked WebSocket must close or report an error; a timeout does not pass. This tool's confinement is separate from the live Gateway's origin policy above and grants no additional browser access.
+
 ## Refusal response
 
 A refused request receives this JSON body with HTTP 403.

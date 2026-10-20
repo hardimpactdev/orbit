@@ -97,7 +97,9 @@ A program that reads a private repository receives the [Git read environment](/r
 
 - shellcheck checks each Bash file.
 - ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
-- `python3 -m unittest` runs the direct tests in `apps/gateway/tests/Programs`. They run programs with the same assembly and bootstrap against temporary directories.
+- pytest runs the `unittest` cases in `apps/gateway/tests/Programs` with four pytest-xdist workers and `--dist=loadfile`.
+
+Each file stays on one worker, so its `setUpClass` fixture is built once. The tests run programs with the same assembly and bootstrap against temporary directories. In a virtual environment, install Ruff at the version above and the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt`. Use `python3 -m unittest discover -s apps/gateway/tests/Programs` for serial diagnosis.
 
 The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
 
@@ -109,7 +111,7 @@ The check lints these programs exactly as sent, including the Python heredoc ins
 
 The Docker migration has an opt-in test against a real engine: `sudo env ORBIT_DOCKER_NETWORK_TEST=1 python3 apps/gateway/tests/Programs/test_docker_migration_network.py -v`. Run it only in a disposable task environment with Docker API 1.52, iproute2, ping and util-linux. It creates private network, mount and PID namespaces, sockets and data roots. It checks packet reachability through a surviving custom bridge after fallback and resume. It never uses the host's Docker socket or networks. The normal unprivileged suite skips this test.
 
-A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job installs shellcheck and ruff and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
+A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job pins Ruff in its install command, installs shellcheck and the pytest requirements, and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
 
 ## Inline scripts
 

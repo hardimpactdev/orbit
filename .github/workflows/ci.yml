@@ -643,12 +643,12 @@ jobs:
         uses: ./.github/actions/php
         with:
           coverage: none
-      - name: Install shellcheck and ruff
+      - name: Install shellcheck and Python test tools
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
           python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
@@ -747,6 +747,10 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-26.04
+    # Match apps/web/package.json: the image includes both engines and their system libraries.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --ipc=host
 
     defaults:
       run:
@@ -770,11 +774,11 @@ jobs:
       - name: Check formatting, lint, and types
         run: bun run check
 
-      - name: Install the test browsers
-        run: bunx playwright install --with-deps chromium webkit
+      - name: Run unit and verification tests
+        run: bun run test:unit
 
-      - name: Run tests
-        run: bun run test
+      - name: Run browser tests
+        run: bun run test:browser
 
       # Open pages compare their build with version.json, so the published build must hold it beside index.html.
       - name: Build

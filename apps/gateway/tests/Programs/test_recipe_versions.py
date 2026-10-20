@@ -907,7 +907,7 @@ class RecipeVersionsTest(unittest.TestCase):
             (target, os.getuid() + 1, False, 'not owned by UID'),
         ]
         for path, uid, replace_link, reason in cases:
-            with self.subTest(path=path, uid=uid, replace_link=replace_link), self.assertRaises(recipe.RecipeFailure) as failed:
+            with self.subTest(path=str(path), uid=uid, replace_link=replace_link), self.assertRaises(recipe.RecipeFailure) as failed:
                 recipe.publish(path, b'replacement', uid=uid, replace_link=replace_link)
             self.assertIn(str(path), failed.exception.detail)
             self.assertIn(reason, failed.exception.detail)

@@ -91,7 +91,7 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
 {
     $directory = sys_get_temp_dir().'/orbit-consent-'.Str::uuid();
     new Filesystem()->makeDirectory($directory);
-    $configuration = [...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
+    $configuration = ['isolate_command' => true, ...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
         'keys' => array_map(base64_encode(...), $keys)];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
     $fixtures = __DIR__.'/../../Fixtures/Console/';
@@ -153,6 +153,7 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
 describe('Node and firewall native consent', function (): void {
     it('admits only affirmative consent and restores the terminal', function (string $family, array $keys, bool $accepted): void {
         $case = node_firewall_consent_case($family, purge: $family === 'role');
+        $case['isolate_command'] = ! $accepted;
         $case['arguments'][] = '--no-ansi';
         $result = run_node_firewall_fixture($case, $keys);
         expect($result['status'])->toBe($accepted ? 0 : 1)

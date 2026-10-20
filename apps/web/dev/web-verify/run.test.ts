@@ -544,11 +544,13 @@ it("blocks a direct request and each redirect hop before another host is contact
                             const finish = (value: string) => resolve(value);
                             ws.onopen = () => finish("open");
                             ws.onerror = () => finish("error");
+                            ws.onclose = () => finish("closed");
                             setTimeout(() => finish("timeout"), 2_000);
                         }),
                     `ws://127.0.0.1:${sinkPort}/socket`,
                 );
                 expect(socket).not.toBe("open");
+                expect(socket).not.toBe("timeout");
                 expect(sinkHits).toEqual([]);
 
                 const direct = await context.newPage();

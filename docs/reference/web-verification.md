@@ -187,6 +187,14 @@ The command tests call the same `execute` dispatcher as the CLI to check argumen
 
 The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 500 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
 
+### Scheduling and dependencies
+
+Vitest bounds browser-file concurrency to two. It runs the daemon integration files sequentially in their own project, before the other projects launch the persistent browser-test provider. This avoids overlapping the idle test's independent Vite server with the page-operation server. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
+
+The CLI parses commands, validates maps, and dispatches socket requests without loading Playwright or Vite. Only the daemon loads those libraries, so repeated commands do not initialize them again. CI uses the official Playwright image at the package's exact version, with both engines and their system libraries already installed. It reports Node and verification tests separately from browser tests.
+
+### Browser coverage
+
 PNG generation, first-use state, and viewport dimensions are checked for both phone and desktop on both engines. Repeated screenshots also check reuse with WebKit on a phone and Chromium on desktop. Real control clicks check the active page for each pairing. WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. Both engines remain installed and covered.
 
 ## Limits

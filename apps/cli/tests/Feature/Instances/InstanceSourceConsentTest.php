@@ -78,7 +78,7 @@ function run_instance_source_consent(array $case, array $keys, bool $pty = true)
 {
     $directory = sys_get_temp_dir().'/orbit-instance-consent-'.Str::uuid();
     new Filesystem()->makeDirectory($directory);
-    $configuration = [...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
+    $configuration = ['isolate_command' => true, ...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
         'keys' => array_map(base64_encode(...), $keys)];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
     $fixtures = __DIR__.'/../../Fixtures/Console/';
@@ -139,6 +139,7 @@ function run_instance_source_consent(array $case, array $keys, bool $pty = true)
 
 it('requires default-No native consent and restores the terminal before returning', function (string $family, array $keys, bool $accepted): void {
     $case = instance_source_consent_case($family);
+    $case['isolate_command'] = ! $accepted;
     $case['arguments'][] = '--no-ansi';
     $result = run_instance_source_consent($case, $keys);
     expect($result['status'])->toBe($accepted ? 0 : 1)->and($result['prompt_seen'])->toBeTrue()

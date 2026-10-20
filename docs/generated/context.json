@@ -1574,7 +1574,8 @@
             "concepts": [
                 "Access grant",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool"
             ],
             "governing_adrs": []
         },
