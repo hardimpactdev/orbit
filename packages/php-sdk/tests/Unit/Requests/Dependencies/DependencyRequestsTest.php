@@ -7,6 +7,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\ScanInstanceDependenciesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceDependenciesRequest;
 use Orbit\Sdk\Responses\Dependencies\InstanceDependencyInventoryResponse;
+use Orbit\Sdk\Support\DependencyInventoryDecoder;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -268,11 +269,26 @@ describe('dependency inventory payloads', function (): void {
             $g = &$e['data']['javascript']['snapshot']['graph'];
             $g['resolutions'] = array_map(static fn (int $id): array => [...$g['resolutions'][0], 'id' => (string) $id], range(1, 50001));
         }],
-        'oversized requirements' => [static function (array &$e): void {
-            $g = &$e['data']['javascript']['snapshot']['graph'];
-            $g['requirements'] = array_fill(0, 200001, ['from' => null, 'to' => null, 'name' => 'a', 'constraint' => '*', 'kind' => 'peer', 'scope' => 'regular', 'optional' => true]);
-        }],
     ]);
+
+    it('rejects oversized requirements as a whole with safe correlation', function (): void {
+        $envelope = dependency_envelope();
+        $envelope['data']['javascript']['snapshot']['graph']['requirements'] = ['requirements-placeholder'];
+        $item = json_encode(['from' => null, 'to' => null, 'name' => 'a', 'constraint' => '*', 'kind' => 'peer', 'scope' => 'regular', 'optional' => true], JSON_THROW_ON_ERROR);
+        $body = str_replace('"requirements-placeholder"', str_repeat($item.',', 200000).$item, json_encode($envelope, JSON_THROW_ON_ERROR));
+
+        try {
+            // The resolutions ceiling also exercises Saloon. Test the larger requirements
+            // ceiling directly instead of parsing this 200,001-item body twice in transport.
+            DependencyInventoryDecoder::decode($body, 17, '11111111-1111-4111-8111-111111111111', false);
+            $this->fail('Malformed inventory was accepted.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->getMessage())->toBe('Gateway response contains invalid dependency inventory data.')
+                ->and($exception->requestId())->toBe('11111111-1111-4111-8111-111111111111')
+                ->and($exception->getPrevious())->toBeNull()
+                ->and((string) $exception)->not->toContain('sdk-secret-13');
+        }
+    });
 
     it('rejects duplicate escaped keys and truncated JSON', function (string $kind): void {
         $body = json_encode(dependency_envelope(), JSON_THROW_ON_ERROR);

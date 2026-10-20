@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
@@ -161,16 +162,14 @@ it('includes the supplied constraint in the consent question and the request', f
 });
 
 it('does not prompt for consent when --yes is explicit', function (bool $json): void {
-    $arguments = ['tool:adopt', 'jq', '--node=2', '--manager=apt', '--yes', '--no-ansi'];
-    if ($json) {
-        $arguments[] = '--json';
-    }
-    $result = run_tool_adopt_consent($arguments, [], [tool_adopt_consent_reply()]);
-
-    expect($result['status'])->toBe(0)
-        ->and($result['prompt_seen'])->toBeFalse()
-        ->and($result['requests'])->toHaveCount(1)
-        ->and($result['requests'][0]['class'])->toBe(AdoptToolRequest::class);
+    $reply = tool_adopt_consent_reply();
+    $mock = MockClient::global([AdoptToolRequest::class => MockResponse::make($reply['body'], $reply['status'])]);
+    $this->artisan('tool:adopt', [
+        'package' => 'jq', '--node' => '2', '--manager' => 'apt', '--yes' => true,
+        '--no-ansi' => true, '--json' => $json,
+    ])->doesntExpectOutputToContain('Take ownership of package')->assertSuccessful();
+    $mock->assertSentCount(1);
+    expect($mock->getLastRequest())->toBeInstanceOf(AdoptToolRequest::class);
 })->with([
     'human' => [false],
     'json' => [true],
@@ -194,7 +193,7 @@ it('refuses JSON consent from a terminal without sending the adoption request', 
  * @param  list<array<string, mixed>>  $replies
  * @return array<string, mixed>
  */
-function run_tool_adopt_consent(array $arguments, array $keys, array $replies, bool $pty = true): array
+function run_tool_adopt_consent(array $arguments, array $keys, array $replies): array
 {
     $directory = sys_get_temp_dir().'/orbit-tool-adopt-consent-'.Str::uuid();
     new Filesystem()->makeDirectory($directory);
@@ -212,16 +211,12 @@ function run_tool_adopt_consent(array $arguments, array $keys, array $replies, b
     $argv = [PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'];
 
     try {
-        $process = new Process($pty ? ['python3', $fixtures.'command-consent-pty.py', ...$argv] : $argv, env: ['PAO_DISABLE' => '1']);
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', ...$argv], env: ['PAO_DISABLE' => '1']);
         $process->setTimeout(15);
         $process->run();
-        if ($pty) {
-            expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $result['output'] = base64_decode((string) $result['raw']);
-        } else {
-            $result = ['status' => $process->getExitCode(), 'output' => $process->getOutput(), 'stderr' => $process->getErrorOutput()];
-        }
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $result['output'] = base64_decode((string) $result['raw']);
         $result['requests'] = is_file($configuration['trace']) ? array_map(
             static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
             file($configuration['trace'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],

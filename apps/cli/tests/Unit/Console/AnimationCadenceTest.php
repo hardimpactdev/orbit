@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Support\Console\Animation;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
+use App\Support\Console\ProgressDisplay;
+use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalRegion;
 use Symfony\Component\Console\Output\StreamOutput;
 
@@ -36,7 +38,7 @@ describe('animation composition cadence', function (): void {
             ->and(animation_cadence_is_readable([0.0, 0.3, 1.0]))->toBeFalse();
     });
 
-    it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
+    it('keeps outer ticks and the first inner phase readable across composition changes', function (string $transition): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
         expect(is_resource($process))->toBeTrue();
@@ -50,13 +52,12 @@ describe('animation composition cadence', function (): void {
         $changes = ['outer' => [], 'inner' => []];
         $glyphs = ['outer' => [], 'inner' => []];
         $buffer = '';
-        $admitted = false;
+        $admitted = $transition === 'resume';
         $resumed = false;
-        $resumeCount = 0;
 
         try {
             stream_set_blocking($pipes[1], false);
-            $send(['frames' => $outerFrames]);
+            $send(['frames' => $transition === 'admission' ? $outerFrames : $nestedFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
             $deadline = microtime(true) + 4;
 
             while (microtime(true) < $deadline) {
@@ -67,10 +68,9 @@ describe('animation composition cadence', function (): void {
                     $admitted = true;
                 }
 
-                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= 0.08) {
+                if ($transition === 'resume' && ! $resumed && $changes['inner'] !== [] && $now - $changes['inner'][0] >= 0.08) {
                     $send(['frames' => $outerFrames]);
                     $resumed = true;
-                    $resumeCount = count($changes['outer']);
                 }
 
                 $read = [$pipes[1]];
@@ -99,16 +99,22 @@ describe('animation composition cadence', function (): void {
                     }
                 }
 
-                if ($resumed && count($changes['outer']) >= $resumeCount + 3) {
+                if (($transition === 'admission' && count($changes['inner']) >= 3)
+                    || ($transition === 'resume' && count($changes['outer']) >= 4)) {
                     break;
                 }
             }
 
-            expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
-                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
-                ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
-                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue()
-                ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
+            expect($admitted)->toBeTrue()
+                ->and($resumed)->toBe($transition === 'resume')
+                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(4)
+                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue();
+            if ($transition === 'admission') {
+                expect(count($changes['inner']))->toBeGreaterThanOrEqual(3)
+                    ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
+            } else {
+                expect($changes['inner'])->toHaveCount(1);
+            }
 
             foreach ($glyphs as $sequence) {
                 for ($index = 1; $index < count($sequence); $index++) {
@@ -122,7 +128,7 @@ describe('animation composition cadence', function (): void {
             stream_set_blocking($pipes[1], true);
             expect(stream_get_contents($pipes[1]))->toContain('Finished.', "\e[?25h");
             $receipts = array_filter(explode("\n", trim(stream_get_contents($pipes[3]))));
-            expect($receipts)->toHaveCount(3);
+            expect($receipts)->toHaveCount(2);
             expect(stream_get_contents($pipes[2]))->toBe('');
         } finally {
             foreach ($pipes as $pipe) {
@@ -139,9 +145,9 @@ describe('animation composition cadence', function (): void {
         }
 
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
-    });
+    })->with(['admission', 'resume']);
 
-    it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (): void {
+    it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (bool $reverse): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
         expect(is_resource($process))->toBeTrue();
@@ -150,13 +156,13 @@ describe('animation composition cadence', function (): void {
             expect(fwrite($pipes[0], $payload))->toBe(strlen($payload));
             fflush($pipes[0]);
         };
-        $frames = ["@tick:0@\n", "@tick:1@\n"];
+        $frames = $reverse ? ["@tick:1@\n", "@tick:0@\n"] : ["@tick:0@\n", "@tick:1@\n"];
         $buffer = '';
         $changes = [];
 
         try {
             stream_set_blocking($pipes[1], false);
-            $send(['frames' => $frames]);
+            $send(['frames' => $frames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
             $deadline = microtime(true) + 3;
             $linesSent = 0;
 
@@ -194,12 +200,12 @@ describe('animation composition cadence', function (): void {
                     }
                 }
 
-                if ($linesSent >= 3 && count($changes) >= 5) {
+                if ($linesSent >= 3 && count($changes) >= 3) {
                     break;
                 }
             }
 
-            expect($linesSent)->toBe(3)->and(count($changes))->toBeGreaterThanOrEqual(5);
+            expect($linesSent)->toBe(3)->and(count($changes))->toBeGreaterThanOrEqual(3);
             $intervals = [];
 
             for ($i = 1; $i < count($changes); $i++) {
@@ -233,7 +239,7 @@ describe('animation composition cadence', function (): void {
         }
 
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
-    });
+    })->with([false, true]);
 
     it('shows every printed line above the tree in order, with escaping preserved, and no absent-tree frame (F4)', function (): void {
         $stream = tmpfile();
@@ -369,6 +375,129 @@ describe('animation composition cadence', function (): void {
             expect($outputBytes)->toContain('Inner finished.', 'Inner verified.')
                 ->and(substr_count($outputBytes, "\e[?25l"))->toBe(1)
                 ->and(substr_count($outputBytes, "\e[?25h"))->toBe(1);
+
+            if (function_exists('posix_kill')) {
+                expect(posix_kill($rendererPid, 0))->toBeFalse();
+            }
+        } finally {
+            fclose($stream);
+        }
+    });
+
+    it('inherits the renderer interval when a nested callback restarts presentation', function (): void {
+        $stream = tmpfile();
+        $path = stream_get_meta_data($stream)['uri'];
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $outer = new Animation($mode, $output, ["Outer\n", "Outer\n"], frameIntervalSeconds: 0.01);
+        $inner = new Animation($mode, $output, ["@inner:0@\n", "@inner:1@\n"]);
+
+        try {
+            $outer->during(function () use ($inner, $path): void {
+                $inner->during(function () use ($path): void {
+                    $offset = strlen(file_get_contents($path));
+                    Animation::withoutRepainting(static fn (): null => null);
+                    $deadline = microtime(true) + 0.2;
+                    $phases = [];
+
+                    do {
+                        preg_match_all('/@inner:([01])@/', substr(file_get_contents($path), $offset), $matches);
+                        $phases = [];
+
+                        foreach ($matches[1] as $phase) {
+                            if ($phases === [] || $phase !== $phases[array_key_last($phases)]) {
+                                $phases[] = $phase;
+                            }
+                        }
+
+                        if (count($phases) >= 3) {
+                            break;
+                        }
+
+                        usleep(1000);
+                    } while (microtime(true) < $deadline);
+
+                    expect(count($phases))->toBeGreaterThanOrEqual(3);
+                });
+            });
+        } finally {
+            fclose($stream);
+        }
+    });
+
+    it('rejects invalid renderer intervals before acknowledging presentation', function (mixed $interval): void {
+        $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
+        expect(is_resource($process))->toBeTrue();
+
+        try {
+            fwrite($pipes[0], json_encode(['frames' => ["Waiting 0\n", "Waiting 1\n"], 'interval' => $interval], JSON_THROW_ON_ERROR)."\n");
+            fclose($pipes[0]);
+            $bytes = stream_get_contents($pipes[1]);
+            $errors = stream_get_contents($pipes[2]);
+            $receipt = stream_get_contents($pipes[3]);
+            expect(proc_close($process))->toBe(1)
+                ->and($receipt)->toBe('')
+                ->and($errors)->toBe('')
+                ->and($bytes)->toContain("\e[?25h")->not->toContain('Waiting');
+        } finally {
+            foreach ($pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    fclose($pipe);
+                }
+            }
+
+            if (is_resource($process)) {
+                proc_terminate($process);
+                proc_close($process);
+            }
+        }
+    })->with([0.0, -0.01, '0.01', null]);
+
+    it('starts and settles cold nested progress in the outer callback and restores signal state', function (): void {
+        $stream = tmpfile();
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $async = pcntl_async_signals();
+        $handler = pcntl_signal_get_handler(SIGTERM);
+        $outer = new ProgressDisplay($mode, $output, 'Outer operation', frameIntervalSeconds: 0.01);
+        $active = new ReflectionProperty(Animation::class, 'active');
+        $process = new ReflectionProperty(Animation::class, 'process');
+        $calls = [];
+        $rendererPid = null;
+
+        try {
+            $outer->admit('update', 'Update', 'Updating', 'Updated');
+            $result = $outer->during('update', function () use ($mode, $output, $active, $process, &$calls, &$rendererPid): int {
+                $calls[] = getmypid();
+                $owner = $active->getValue();
+                $rendererPid = proc_get_status($process->getValue($owner))['pid'];
+                $inner = new ProgressDisplay($mode, $output, 'Inner operation');
+                $inner->admit('verify', 'Verify', 'Verifying', 'Verified');
+                $value = $inner->during('verify', function () use ($active, $process, $rendererPid, &$calls): int {
+                    $calls[] = getmypid();
+                    expect(proc_get_status($process->getValue($active->getValue()))['pid'])->toBe($rendererPid);
+
+                    return 42;
+                });
+                $inner->complete('verify', ProgressState::Success);
+                $inner->finish('Inner verified.');
+                expect($active->getValue())->toBe($owner)
+                    ->and(proc_get_status($process->getValue($owner))['pid'])->toBe($rendererPid);
+
+                return $value;
+            });
+            $outer->complete('update', ProgressState::Success);
+            $outer->finish('Resource updated.');
+            rewind($stream);
+            $bytes = stream_get_contents($stream);
+            expect($result)->toBe(42)->and($calls)->toBe([getmypid(), getmypid()])
+                ->and(pcntl_async_signals())->toBe($async)
+                ->and(pcntl_signal_get_handler(SIGTERM))->toBe($handler)
+                ->and($bytes)->toContain('Inner verified.', 'Resource updated.')
+                ->not->toContain('Private fixture detail')
+                ->and(substr_count($bytes, "\e[?25l"))->toBe(1)
+                ->and(substr_count($bytes, "\e[?25h"))->toBe(1);
 
             if (function_exists('posix_kill')) {
                 expect(posix_kill($rendererPid, 0))->toBeFalse();

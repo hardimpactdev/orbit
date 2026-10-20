@@ -4,15 +4,25 @@ declare(strict_types=1);
 
 namespace App\Services\Profile;
 
+use Closure;
+use CurlHandle;
+
 final readonly class CurlProfileRequestProfiler implements ProfileRequestProfiler
 {
     private const int DEFAULT_TIMEOUT_SECONDS = 30;
 
     private const int CONNECT_TIMEOUT_SECONDS = 2;
 
+    /** @var Closure(CurlHandle, int, mixed): bool */
+    private Closure $setOption;
+
+    /** @param (Closure(CurlHandle, int, mixed): bool)|null $setOption */
     public function __construct(
         private int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS,
-    ) {}
+        ?Closure $setOption = null,
+    ) {
+        $this->setOption = $setOption ?? curl_setopt(...);
+    }
 
     /**
      * @param  array<string, string>  $headers
@@ -34,16 +44,16 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
 
         $responseHeaders = [];
 
-        curl_setopt($handle, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($handle, CURLOPT_FOLLOWLOCATION, false);
-        curl_setopt($handle, CURLOPT_HTTPGET, true);
-        curl_setopt($handle, CURLOPT_TIMEOUT, $this->profileTimeoutSeconds());
-        curl_setopt($handle, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
-        curl_setopt($handle, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($handle, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($handle, CURLOPT_ENCODING, '');
-        curl_setopt($handle, CURLOPT_HTTPHEADER, $this->formatHeaders($headers));
-        curl_setopt($handle, CURLOPT_HEADERFUNCTION, function ($handle, string $header) use (&$responseHeaders): int {
+        ($this->setOption)($handle, CURLOPT_RETURNTRANSFER, true);
+        ($this->setOption)($handle, CURLOPT_FOLLOWLOCATION, false);
+        ($this->setOption)($handle, CURLOPT_HTTPGET, true);
+        ($this->setOption)($handle, CURLOPT_TIMEOUT, $this->profileTimeoutSeconds());
+        ($this->setOption)($handle, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
+        ($this->setOption)($handle, CURLOPT_SSL_VERIFYPEER, true);
+        ($this->setOption)($handle, CURLOPT_SSL_VERIFYHOST, 2);
+        ($this->setOption)($handle, CURLOPT_ENCODING, '');
+        ($this->setOption)($handle, CURLOPT_HTTPHEADER, $this->formatHeaders($headers));
+        ($this->setOption)($handle, CURLOPT_HEADERFUNCTION, function ($handle, string $header) use (&$responseHeaders): int {
             $parts = explode(':', $header, 2);
 
             if (count($parts) === 2) {
@@ -54,7 +64,7 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
         });
 
         if ($caPath !== null) {
-            curl_setopt($handle, CURLOPT_CAINFO, $caPath);
+            ($this->setOption)($handle, CURLOPT_CAINFO, $caPath);
         }
 
         $response = curl_exec($handle);
