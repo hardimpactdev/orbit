@@ -14,29 +14,30 @@ on:
 permissions:
   contents: read
 
-# A change run, as env.CHANGE_RUN defines it below, keeps only its newest run: a pull request per merge ref, a handoff
-# branch per branch, so neither cancels the other. GitHub allows no env here, so the test is spelled out. Pushes to
-# main share one group: a running main run always finishes, and a newer push replaces only the waiting one, so after
-# a burst of merges the newest commit is tested next. Every main run tests every project in full. Scheduled and
-# manual runs get a group per commit, so a push never cancels a full run.
+# Scheduled and manual runs get a group per commit, so a push never cancels a full run. Every other run groups by its
+# ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the newest
+# commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge ref or
+# a handoff branch, keeps only its newest run, so neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}', github.event_name, github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
-  # A handoff push is Orbit's push of a task handoff commit to task-*-handoff, never a manual run.
+  # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
+  # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
+  # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
+  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
-  # A change run tests a change before it merges: a pull request or a handoff push. Every job treats both alike, and
-  # every step reads these two values. A job-level `if` cannot read env, so the shards job spells the test out.
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # On PRs this Gateway job checks quality on any orbit-shard runner while all four shards run independently.
-    # Main keeps one full six-worker recording run on Sabre. Fork PRs never run on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' && fromJSON('["self-hosted", "sabre"]') || github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
+    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
+    # all four shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
+    # on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -288,7 +289,7 @@ jobs:
   # Change runs use four stock shards. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
-    # A job-level `if` cannot read env: this is env.CHANGE_RUN.
+    # env.CHANGE_RUN, spelled out.
     if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}

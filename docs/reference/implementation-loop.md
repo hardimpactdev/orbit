@@ -187,7 +187,7 @@ Runs on main never shard. Each keeps one full Gateway recording run, because Pes
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs, the Gateway quality job and each of the four shards take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main uses one runner with the labels `self-hosted` and `sabre` for the full Gateway suite, because its six workers do not fit a [shard runner](#self-hosted-shard-runners) container with four CPUs and 8 GiB. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each of the four shards take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite, because its six workers do not fit a [shard runner](#self-hosted-shard-runners) container with four CPUs and 8 GiB. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 

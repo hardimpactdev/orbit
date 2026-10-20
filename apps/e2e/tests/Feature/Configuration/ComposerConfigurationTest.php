@@ -250,10 +250,10 @@ describe('Composer configuration', function (): void {
             'Choose the main test selection', 'Run tests affected since the main graph',
             'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
         ]);
-        // PR quality checks share the orbit-shard pool; main keeps Sabre for its six-worker recording run.
+        // Change-run quality checks share the orbit-shard pool; a full run keeps Sabre for its six-worker recording run.
         expect($project['runs-on'])->toContain(
-            "github.event_name != 'pull_request' && fromJSON('[\"self-hosted\", \"sabre\"]')",
-            "github.event.pull_request.head.repo.full_name == github.repository && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
+            "(!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('[\"self-hosted\", \"sabre\"]')",
+            "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
             "|| 'ubuntu-26.04' }}",
         );
     });
@@ -497,27 +497,29 @@ it('builds the agent and desktop app on a handoff push only when it changes them
         ->toContain('echo "'.$output.'=true"');
 })->with([['agent', 'agent'], ['desktop', 'desktop']]);
 
-it('defines a handoff push and a change run once, and spells out the same test only where GitHub allows no env', function (): void {
+it('defines a handoff push and a change run once, and spells out the change run only where GitHub reads no env', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $handoff = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')";
     $change = "github.event_name == 'pull_request' || ".$handoff;
 
-    // A manual run or a push to another task-* branch is neither a handoff push nor a change run.
+    // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Steps read env; a
+    // job's `if` and `runs-on` cannot, so the shards job and the project job's runner choice spell out the change run.
     expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
         ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
         ->and($workflow['jobs']['gateway-shards']['if'])->toBe($change)
-        ->and($workflow['concurrency']['cancel-in-progress'])->toBe('${{ '.$change.' }}')
-        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), "startsWith(github.ref, 'refs/heads/task-')"))->toBe(5);
+        ->and($workflow['jobs']['project']['runs-on'])->toContain('!('.$change.')')
+        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(4);
 });
 
 it('keeps a running main push, only the newest waiting one, and every full run', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
 
-    // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run.
-    // Scheduled and manual full runs keep a group per commit, so a push never replaces one.
+    // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run. A pull
+    // request's merge ref and a handoff branch each keep only their newest run. Scheduled and manual full runs keep
+    // a group per commit, so a push never replaces one.
     expect($workflow['concurrency'])->toBe([
-        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}",
-        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}",
+        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}', github.event_name, github.sha) || github.ref }}",
+        'cancel-in-progress' => "\${{ github.ref != 'refs/heads/main' }}",
     ]);
     // A task-*-handoff push is a handoff commit; a newer one on the same branch cancels it, and never a main or pull request run.
     expect($workflow['on']['push']['branches'])->toBe(['main', 'task-*-handoff']);
