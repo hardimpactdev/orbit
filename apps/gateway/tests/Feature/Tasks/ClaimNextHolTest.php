@@ -862,6 +862,13 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
+            public function pushHandoff(Task $group, string $commit): void
+            {
+                throw new LogicException('This fake pushes no handoff.');
+            }
+
+            public function deleteHandoffBranch(Task $group): void {}
+
             public function push(Task $group, string $commit): void
             {
                 $this->commits[] = $commit;
@@ -894,6 +901,13 @@ describe('the abandoned workspace sweep', function (): void {
             {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
+
+            public function pushHandoff(Task $group, string $commit): void
+            {
+                throw new LogicException('This fake pushes no handoff.');
+            }
+
+            public function deleteHandoffBranch(Task $group): void {}
 
             public function push(Task $group, string $commit): void
             {

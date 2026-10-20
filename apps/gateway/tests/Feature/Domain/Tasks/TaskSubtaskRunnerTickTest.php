@@ -360,7 +360,7 @@ describe('topology paths at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-            ->and($checks->deliverables)->toBe([['start' => str_repeat('5', 40), 'commands' => [], 'test_base' => str_repeat('5', 40), 'topology' => true]]);
+            ->and($checks->deliverables)->toBe([['start' => null, 'commands' => [], 'topology' => true]]);
     });
 
     it('refuses a handoff when its topology diff cannot be read', function (): void {
@@ -402,7 +402,6 @@ describe('subtask deliverables at handoff', function (): void {
                 ['id' => 'export-test', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
                 ['id' => 'web-tests', 'command' => 'bun test', 'directory' => 'apps/web'],
             ],
-            'test_base' => str_repeat('5', 40),
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
             ->and($task->comments()->sole()->deliverables)->toBe(tick_all_confirmations())
@@ -416,7 +415,7 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
 
-        expect($checks->deliverables)->toBe([['start' => str_repeat('5', 40), 'commands' => [], 'test_base' => str_repeat('5', 40)]])
+        expect($checks->deliverables)->toBe([null])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
     });
 
@@ -530,7 +529,6 @@ describe('subtask deliverables at handoff', function (): void {
                     'fails_on_base' => true,
                     'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
                 ]],
-                'test_base' => str_repeat('5', 40),
             ]])
             ->and(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('also exited 0 on the start commit');
     });
@@ -1071,59 +1069,6 @@ it('waits visibly without a fixup when a branch update is refused without a merg
     'permission' => [403, 'Resource not accessible by integration'],
     'outage' => [503, 'Service Unavailable'],
 ]);
-
-it('scopes every Project handoff test run to the subtask start', function (int $position, bool $later, bool $orbit): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
-    $group->project->update(['slug' => $orbit ? 'orbit' : 'other']);
-    $task->update(['position' => $position, 'subtask_start_commit' => str_repeat('a', 40)]);
-    if ($position > 1) {
-        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
-    }
-    if ($later) {
-        Task::query()->create(['parent_id' => $group->id, 'position' => $position + 1, 'title' => 'Later', 'brief' => 'Next.', 'status' => TaskStatus::Todo]);
-    }
-
-    app(TaskScheduler::class)->tick();
-
-    expect($checks->starts)->toBe(1)
-        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe(str_repeat('a', 40));
-})->with([
-    'intermediate Orbit subtask' => [1, true, true],
-    'last Orbit subtask' => [2, false, true],
-    'single-subtask Orbit group' => [1, false, true],
-    'intermediate non-Orbit subtask' => [1, true, false],
-    'single-subtask non-Orbit group' => [1, false, false],
-]);
-
-it('keeps rework tests at the subtask start despite passed handoff trees', function (bool $fixup): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
-    $group->project->update(['slug' => 'orbit']);
-    $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
-        'fixup_problem' => $fixup ? 'final-review' : null]);
-    foreach ([TaskCheckStatus::Passed, TaskCheckStatus::Failed, TaskCheckStatus::Changed, TaskCheckStatus::Lost, TaskCheckStatus::Cancelled] as $index => $status) {
-        $historical = TaskCheck::query()->create([
-            'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => $status,
-            'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40),
-            'tree_before' => str_repeat('b', 40), 'tree_after' => str_repeat((string) ($index + 1), 40),
-            'started_at' => now(),
-        ]);
-        if ($status === TaskCheckStatus::Lost) {
-            // This historical process was confirmed stopped before the current rework attempt.
-            TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
-                'kind' => 'check', 'owner' => 'historical:'.$historical->id, 'check_id' => $historical->id,
-                'status' => 'released', 'released_at' => now()]);
-        }
-    }
-    $other = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Other', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
-    TaskCheck::query()->create(['task_id' => $other->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
-        'pid' => 1, 'process_started' => 'other', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('f', 40), 'started_at' => now()]);
-
-    app(TaskScheduler::class)->tick();
-
-    expect($checks->starts)->toBe(1)
-        ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('a', 40))
-        ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
-})->with(['requested changes' => false, 'final-review fixup' => true]);
 
 it('preserves another parent failure or sibling request when a baseline resolution completes', function (string $other): void {
     app(TaskExtensionState::class)->enable();

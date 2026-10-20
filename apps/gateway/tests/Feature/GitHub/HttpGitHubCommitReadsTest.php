@@ -90,6 +90,40 @@ describe('HttpGitHubApi check runs', function (): void {
     });
 });
 
+describe('HttpGitHubApi check suites', function (): void {
+    it('reads every page and maps the App, status, and conclusion', function (): void {
+        $sha = str_repeat('a', 40);
+        $suite = static fn (int $id, string $slug, string $status, ?string $conclusion): array => ['id' => $id, 'status' => $status, 'conclusion' => $conclusion, 'app' => ['slug' => $slug]];
+        Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-suites*" => Http::sequence()
+            ->push(['total_count' => 3, 'check_suites' => [$suite(1, 'github-actions', 'completed', 'cancelled'), $suite(2, 'mintlify', 'completed', 'success')]])
+            ->push(['total_count' => 3, 'check_suites' => [$suite(3, 'github-actions', 'in_progress', null)]])]);
+
+        $suites = app(GitHubApi::class)->checkSuites('ghs_checks', $this->repository, $sha);
+
+        expect(array_map(static fn ($suite): array => $suite->toArray(), $suites))->toBe([
+            ['id' => 1, 'status' => 'completed', 'conclusion' => 'cancelled', 'app_slug' => 'github-actions'],
+            ['id' => 2, 'status' => 'completed', 'conclusion' => 'success', 'app_slug' => 'mintlify'],
+            ['id' => 3, 'status' => 'in_progress', 'conclusion' => null, 'app_slug' => 'github-actions'],
+        ])->and($suites[0]->completed())->toBeTrue()->and($suites[2]->completed())->toBeFalse();
+        foreach ([1, 2] as $page) {
+            Http::assertSent(static fn (Request $request): bool => GreenCommitFixtures::query($request) === ['per_page' => '100', 'page' => (string) $page]
+                && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
+        }
+    });
+
+    it('fails when the list moves, ends early, or holds a suite without an id', function (array $second): void {
+        $sha = str_repeat('a', 40);
+        Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-suites*" => Http::sequence()
+            ->push(['total_count' => 2, 'check_suites' => [['id' => 1, 'status' => 'completed', 'conclusion' => 'success']]])->push($second)]);
+
+        expect(fn () => app(GitHubApi::class)->checkSuites('ghs_checks', $this->repository, $sha))->toThrow(GitHubApiException::class);
+    })->with([
+        'count changed' => [['total_count' => 3, 'check_suites' => [['id' => 2, 'status' => 'queued']]]],
+        'early empty page' => [['total_count' => 2, 'check_suites' => []]],
+        'a suite without an id' => [['total_count' => 2, 'check_suites' => [['status' => 'queued']]]],
+    ]);
+});
+
 describe('HttpGitHubApi branch commits', function (): void {
     it('lists the branch head by its full ref with parents in order', function (): void {
         $commits = GreenCommitFixtures::commits();

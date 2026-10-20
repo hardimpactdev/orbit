@@ -564,6 +564,8 @@ function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 
     foreach ($checks as $sha => $runs) {
         $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['total_count' => count($runs), 'check_runs' => $runs]);
     }
+    $fake['https://api.github.com/repos/acme/orbit/actions/runs*'] = static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]);
+    $fake['https://api.github.com/repos/acme/orbit/commits/*/check-suites*'] = Http::response(['total_count' => 0, 'check_suites' => []]);
     Http::preventStrayRequests();
     Http::fake($fake);
 }
@@ -733,7 +735,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public bool $fails = false;
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
             if ($this->fails) {
@@ -765,6 +767,13 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -835,6 +844,13 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
             return 'https://github.com/acme/orbit/pull/42';
         }
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            throw new LogicException('This fake pushes no handoff.');
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {
@@ -990,14 +1006,16 @@ function tick_red_main_baseline(string $slug, string $failed, string $tip, strin
     ]]];
     Http::preventStrayRequests();
     Http::fake([
-        "https://api.github.com/repos/acme/{$slug}/installation" => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_read'], 201),
+        "https://api.github.com/repos/acme/{$slug}/installation" => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_read', 'permissions' => ['actions' => 'read']], 201),
         "https://api.github.com/repos/acme/{$slug}/commits?*" => Http::response([['sha' => $tip, 'parents' => [['sha' => $failed]]]]),
         "https://api.github.com/repos/acme/{$slug}/compare/{$failed}...{$tip}*" => Http::response([
             'status' => $status, 'base_commit' => ['sha' => $failed], 'merge_base_commit' => ['sha' => $status === 'ahead' ? $failed : str_repeat('d', 40)],
         ]),
         "https://api.github.com/repos/acme/{$slug}/commits/{$failed}/check-runs*" => Http::response($runs($failed, $failedConclusion)),
         "https://api.github.com/repos/acme/{$slug}/commits/{$tip}/check-runs*" => Http::response($runs($tip, $tipConclusion)),
+        "https://api.github.com/repos/acme/{$slug}/actions/runs*" => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        "https://api.github.com/repos/acme/{$slug}/commits/*/check-suites*" => Http::response(['total_count' => 0, 'check_suites' => []]),
     ]);
 
     return [$group, $task, $runner];

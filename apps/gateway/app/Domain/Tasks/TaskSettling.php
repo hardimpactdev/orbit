@@ -260,7 +260,7 @@ final readonly class TaskSettling
             $group->save();
         }
 
-        $this->workspaces->clearFailure($group);
+        $this->workspaces->finishRemoval($group);
     }
 
     /**

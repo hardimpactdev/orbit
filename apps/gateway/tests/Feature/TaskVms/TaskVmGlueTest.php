@@ -14,6 +14,9 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -152,7 +155,24 @@ describe('publish and fetch', function (): void {
         ]);
     });
 
-    it('fetches and pushes for the ready task VM in the Gateway mirror, and no VM command carries the token', function (): void {
+    it('pushes once from the Gateway mirror even when the tick and publish job repeat, without sending a token to the VM', function (bool $handoff): void {
+        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+        {
+            /** @var list<list<string>> */
+            public array $pushes = [];
+
+            public function __construct(private ProcessRunner $runner) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                if (in_array('push', $invocation->arguments, true)) {
+                    $this->pushes[] = $invocation->arguments;
+                }
+
+                return $this->runner->run($invocation);
+            }
+        };
+        app()->instance(ProcessRunner::class, $runner);
         $root = TestOrbitHome::scratch('tvm-glue');
         mkdir($root, 0700, true);
         $git = static fn (string $directory, string ...$arguments): string => trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
@@ -178,11 +198,13 @@ describe('publish and fetch', function (): void {
             $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
             Queue::fake();
             $publisher = app(GitHubTaskPullRequestPublisher::class);
+            $branch = 'task-'.$group->id.($handoff ? '-handoff' : '');
+            $push = fn () => $handoff ? $publisher->pushHandoff($group, $commit) : $publisher->push($group, $commit);
 
             // The tick only queues the push and sees it pending, and asking again queues nothing new.
             foreach ([1, 2] as $attempt) {
                 try {
-                    $publisher->push($group, $commit);
+                    $push();
                     $this->fail('The push did not wait for its job.');
                 } catch (TaskPullRequestException $exception) {
                     expect($exception->pending)->toBeTrue();
@@ -191,15 +213,19 @@ describe('publish and fetch', function (): void {
             Queue::assertPushedOn(GatewayQueue::Tasks->value, PublishTaskVmCommit::class);
             Queue::assertPushed(PublishTaskVmCommit::class, 1);
             $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
-            expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, 'task-'.$group->id])
+            expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, $branch])
                 // Required source objects arrive first; the optional cache/baseline transfer follows.
                 ->and($transport->sent)->toHaveCount(4);
 
             $job->handle($publisher);
             expect(TaskVm::query()->where('group_id', $group->id)->sole()->publish_started_at)->not->toBeNull();
-            $publisher->push($group, $commit);
+            $job->handle($publisher);
+            $push();
+            Queue::assertPushed(PublishTaskVmCommit::class, 1);
 
-            expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit)
+            expect($runner->pushes)->toHaveCount(1)
+                ->and(array_slice($runner->pushes[0], -2))->toBe(['https://github.com/acme/shop.git', $commit.':refs/heads/'.$branch])
+                ->and($git($root.'/origin.git', 'rev-parse', 'refs/heads/'.$branch))->toBe($commit)
                 ->and(TaskVm::query()->where('group_id', $group->id)->sole()->publish_state)->toBe(TaskVmPublishState::Pushed)
                 ->and($transport->sent)->not->toBeEmpty();
             foreach ($transport->sent as [$connection, $command]) {
@@ -212,7 +238,7 @@ describe('publish and fetch', function (): void {
             GitRemoteRedirect::clear();
             TestOrbitHome::clearScratch();
         }
-    });
+    })->with(['task branch' => false, 'handoff branch' => true]);
 
     it('reports a failed or lost publish job once, then queues the push again', function (array $row, string $reason): void {
         tvm_glue_ssh();

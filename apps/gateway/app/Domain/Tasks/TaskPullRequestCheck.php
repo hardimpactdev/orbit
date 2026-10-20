@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GitHub\GitHubCheckRun;
+
 /** One failed check run on an open settling pull request (ADR 0140, ADR 0164). */
 final readonly class TaskPullRequestCheck
 {
@@ -25,5 +27,38 @@ final readonly class TaskPullRequestCheck
     public function rollup(): bool
     {
         return in_array($this->name, self::ROLLUP_NAMES, true);
+    }
+
+    /**
+     * The failed runs of one check-run read, as settling and the handoff CI both judge them: completed without
+     * passing, with an explained rollup dropped. A failure whose run {@see GitHubCheckRun::infrastructure()}
+     * did not run to completion; it is not a result of the code.
+     *
+     * @param  list<GitHubCheckRun>  $runs
+     * @return list<GitHubCheckRun>
+     */
+    public static function failures(array $runs): array
+    {
+        return self::withoutExplainedRollups(array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->failed())));
+    }
+
+    public static function fromRun(GitHubCheckRun $run): self
+    {
+        return new self($run->name, $run->url, $run->id, $run->appSlug, $run->outputTitle, $run->outputSummary);
+    }
+
+    /**
+     * Drops rollup checks, such as `Required checks`, when another failed run explains the failure.
+     * A rollup that fails alone stays.
+     *
+     * @param  list<GitHubCheckRun>  $failed
+     * @return list<GitHubCheckRun>
+     */
+    public static function withoutExplainedRollups(array $failed): array
+    {
+        $rollup = static fn (GitHubCheckRun $run): bool => in_array($run->name, self::ROLLUP_NAMES, true);
+        $explained = array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run)) !== [];
+
+        return $explained ? array_values(array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run))) : $failed;
     }
 }

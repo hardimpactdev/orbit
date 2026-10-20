@@ -6,6 +6,7 @@ use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskReviewReadStatus;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\Project;
 use App\Models\Task;
@@ -36,16 +37,18 @@ function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): T
 function watcher_fake_health(array $pullRequest, array $checkRuns = [], int $checksTokenStatus = 201, int $checkRunsStatus = 200, int $pullRequestStatus = 200): void
 {
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => static fn (Request $request) => match (true) {
-            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch'], 201),
-            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks'], 201),
+            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
+            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks', 'permissions' => ['actions' => 'read']], 201),
             default => Http::response(['message' => 'The permissions requested are not granted to this installation.'], $checksTokenStatus),
         },
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'], ...$pullRequest,
         ], $pullRequestStatus),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => count($checkRuns), 'check_runs' => $checkRuns], $checkRunsStatus),
     ]);
 }
@@ -592,12 +595,14 @@ it('starts a new pending clock when the check run id changes and clears one that
     ];
     $success = ['id' => 1, 'name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/1'];
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
         ]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [$pending(1)]])
             ->push(['total_count' => 1, 'check_runs' => [$success]])
@@ -625,11 +630,13 @@ describe('bounded pending clocks', function (): void {
         $this->freezeTime();
         $pending = ['id' => 11, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null];
         Http::fake([
-            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
             'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
                 ->push(['state' => 'open', 'head' => ['sha' => 'old-head']])
                 ->push(['state' => 'open', 'head' => ['sha' => 'new-head']]),
+            'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+            'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [$pending]]),
         ]);
         $watcher = app(HttpTaskPullRequestWatcher::class);
@@ -674,17 +681,33 @@ describe('malformed watcher cache values', function (): void {
         Http::assertSentCount(3);
     })->with(['unknown outcome' => ['invalid'], 'wrong scalar type' => [false], 'wrong container type' => [[]]]);
 
-    it('reads incomplete check arrays safely and reloads a non-array cache value', function (mixed $value): void {
+    it('reads GitHub again when the shared check-run cache holds a value it did not write', function (mixed $value): void {
         GitHubTestSupport::storeApp();
-        watcher_fake_health([]);
-        Cache::put('tasks:pull-request-checks:v3:acme/orbit#42@abc123', $value, 60);
+        watcher_fake_health([], [
+            ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ]);
+        $group = watcher_group();
+        $before = Cache::getStore()->all();
+        app(GitHubTaskPullRequestMerger::class)->commitChecks($group, 'abc123');
+        $written = array_diff_key(Cache::getStore()->all(), $before);
+        expect($written)->toHaveCount(1);
+        Cache::put(array_key_first($written), $value, 60);
 
-        $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+        $health = app(HttpTaskPullRequestWatcher::class)->health($group);
 
         expect($health?->state)->toBe('open')
-            ->and($health?->problems)->toBe([])
-            ->and($health?->checksPending)->toBeFalse();
-    })->with(['missing both lists' => [[]], 'missing failed list' => [['pending' => []]], 'missing pending list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
+            ->and($health?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.']);
+        expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/check-runs')))->toHaveCount(2);
+    })->with([
+        'a run without a name' => [['runs' => [['conclusion' => 'failure']], 'suites' => [], 'pull_request_suites' => []]],
+        'runs are not a list' => [['runs' => ['failed' => []], 'suites' => [], 'pull_request_suites' => []]],
+        'wrong container type' => ['invalid'],
+        'missing pull request suites' => [['runs' => [], 'suites' => []]],
+        'null pull request suites' => [['runs' => [], 'suites' => [], 'pull_request_suites' => null]],
+        'pull request suites have the wrong container type' => [['runs' => [], 'suites' => [], 'pull_request_suites' => 'invalid']],
+        'pull request suites are not a list' => [['runs' => [], 'suites' => [], 'pull_request_suites' => ['suite' => 5]]],
+        'pull request suite id is not an integer' => [['runs' => [], 'suites' => [], 'pull_request_suites' => [5, '6']]],
+    ]);
 });
 
 it('preserves failed check evidence through cached health reads', function (): void {
