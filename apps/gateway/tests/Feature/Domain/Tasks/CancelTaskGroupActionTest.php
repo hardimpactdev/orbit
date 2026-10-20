@@ -18,6 +18,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -32,6 +34,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -124,6 +127,14 @@ function cancel_recording_publisher(int $failures = 0): object
         public function pushHandoff(Task $group, string $commit): void
         {
             throw new LogicException('Cancel pushes no handoff.');
+        }
+
+        /** @var list<int> */
+        public array $deletedHandoffBranches = [];
+
+        public function deleteHandoffBranch(Task $group): void
+        {
+            $this->deletedHandoffBranches[] = $group->id;
         }
     };
     app()->instance(TaskPullRequestPublisher::class, $publisher);
@@ -803,3 +814,19 @@ it('clears removal assistance once when a refused cancellation succeeds on retry
         ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)
             ->where('description', 'assistance cleared')->count())->toBe(1);
 });
+
+it('deletes the handoff branch of a group it cancels, and only after a handoff pushed one', function (bool $handedOff): void {
+    app(TaskExtensionState::class)->enable();
+    cancel_recording_remover();
+    $publisher = cancel_recording_publisher();
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $subtask = cancel_subtask($group, TaskStatus::Running);
+    TaskCheck::query()->create([
+        'task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+        'commit_sha' => $handedOff ? str_repeat('c', 40) : null,
+        'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+
+    expect(app(CancelTaskGroupAction::class)->execute($group)->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($publisher->deletedHandoffBranches)->toBe($handedOff ? [$group->id] : []);
+})->with(['after a handoff CI' => true, 'without one' => false]);

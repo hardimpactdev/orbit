@@ -1002,6 +1002,8 @@ The handoff reads and writes no pull request. No pull request has a handoff bran
 
 The handoff branch holds only commits for CI, and the workspace can leave its history, as when it follows an [incoming pull request](#incoming-pull-requests). So a handoff replaces the branch with `--force-with-lease`, only over the tip that Orbit just fetched.
 
+When the task ends, completed or cancelled, the removal of its workspace deletes `task-{id}-handoff` on origin, after any final push. A branch that is already gone counts as deleted. A failed delete fails the workspace removal, as a failed push does, so the task keeps its workspace until a [removal retry](#cancel-a-stuck-task) succeeds.
+
 | Merge check on the handoff commit | Result |
 | --- | --- |
 | Passed | The handoff passes, and the reviewer starts. |
@@ -1479,7 +1481,7 @@ It converts the gate’s reviewed heads to `orbit_push`, preserving their eviden
 
 Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
-Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace; handoff commits that CI tested stay on `task-{id}-handoff`.
+Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace, and so is `task-{id}-handoff`.
 
 ### Incoming pull requests
 

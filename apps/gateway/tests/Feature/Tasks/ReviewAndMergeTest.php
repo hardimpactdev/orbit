@@ -292,6 +292,8 @@ function rm_runtime(array $receipts = []): object
             }
         }
 
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function push(Task $group, string $commit): void
         {
             if ($this->pushFailures-- > 0) {

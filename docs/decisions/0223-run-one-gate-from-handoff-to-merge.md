@@ -146,6 +146,7 @@ This item replaced, on 2026-10-20, the start-commit test base that it chose on 2
 
 - The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
 - After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
+- The workspace removal at the end of the task deletes `task-{id}-handoff`; a missing branch counts as deleted.
 - The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
 - The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
 - The handoff stays blocking: the reviewer starts only after CI passed.

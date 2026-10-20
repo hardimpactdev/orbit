@@ -133,6 +133,19 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         $this->pushBranch($group, $instance, TaskRemoteBranch::handoff($group), $commit);
     }
 
+    public function deleteHandoffBranch(Task $group): void
+    {
+        $group->loadMissing('project');
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url)
+            ?? throw new TaskPullRequestException('The Project repository is not on github.com.');
+
+        try {
+            $this->github->deleteBranch($this->access->token($repository), $repository, TaskRemoteBranch::handoff($group));
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('The handoff branch could not be deleted: '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
     /**
      * @return array{GitHubRepository, Instance, string}
      *

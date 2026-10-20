@@ -125,6 +125,8 @@ function ci_github(?string $commit = CI_HANDOFF): object
             }
         }
 
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function read(Task $group, TaskPullRequestCheck $check): string
         {
             return "This is the CI evidence (a redacted excerpt of the failed check output):\n\n```\nFAILED Tests\\Feature\\ExportTest > it exports\n```";

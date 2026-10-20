@@ -124,6 +124,13 @@ interface GitHubApi
     public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array;
 
     /**
+     * Deletes a branch on GitHub. A branch that is already gone counts as deleted.
+     *
+     * @throws GitHubApiException
+     */
+    public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void;
+
+    /**
      * Opens the pull request, or returns the open one that already has this head.
      *
      * @throws GitHubApiException

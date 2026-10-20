@@ -323,6 +323,18 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $opened;
     }
 
+    public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->delete($this->repositoryPath($repository).'/git/refs/heads/'.$branch));
+        // GitHub answers 422 "Reference does not exist" for a branch that is already gone.
+        if ($response->successful() || $response->status() === 422) {
+            return;
+        }
+
+        throw $response->serverError() ? GitHubApiException::unavailable() : GitHubApiException::refused();
+    }
+
     public function requestPullRequestReviewers(
         #[SensitiveParameter] string $token,
         GitHubRepository $repository,

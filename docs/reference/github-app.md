@@ -114,7 +114,7 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
 
-A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request.
+A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. GitHub's 422 for a missing reference counts as deleted.
 
 It reads the check runs and check suites of the handoff commit with the `checks: read` token: every run on that commit, every suite with `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`, and a failed job's log as [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) does. The merge gate, the settling watch, and the handoff share the runs and suites of one commit for 60 seconds.
 

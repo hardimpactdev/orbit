@@ -36,4 +36,11 @@ interface TaskPullRequestPublisher
      * @throws TaskPullRequestException pending while the push job waits or runs
      */
     public function pushHandoff(Task $group, string $commit): void;
+
+    /**
+     * Deletes `task-{id}-handoff` on origin when the group ends. A branch that is already gone counts as deleted.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function deleteHandoffBranch(Task $group): void;
 }

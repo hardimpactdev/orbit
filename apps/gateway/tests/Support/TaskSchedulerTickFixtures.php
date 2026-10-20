@@ -747,6 +747,8 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
             throw new LogicException('This fake pushes no handoff.');
         }
 
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
@@ -821,6 +823,8 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
         {
             throw new LogicException('This fake pushes no handoff.');
         }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {

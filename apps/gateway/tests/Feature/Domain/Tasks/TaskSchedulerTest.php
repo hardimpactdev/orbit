@@ -2133,6 +2133,8 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             throw new LogicException('This fake pushes no handoff.');
         }
 
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
@@ -2745,6 +2747,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
         {
             throw new LogicException('This fake pushes no handoff.');
         }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void {}
     });
@@ -3406,6 +3410,8 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
             throw new LogicException('This fake pushes no handoff.');
         }
 
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function push(Task $group, string $commit): void
         {
             $this->commits[] = $commit;
@@ -3482,6 +3488,8 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         {
             throw new LogicException('This fake pushes no handoff.');
         }
+
+        public function deleteHandoffBranch(Task $group): void {}
 
         public function push(Task $group, string $commit): void
         {

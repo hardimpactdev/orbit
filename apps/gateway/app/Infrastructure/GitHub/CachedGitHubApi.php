@@ -109,6 +109,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->reviewComments($token, $repository, $number, $reviewId);
     }
 
+    public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void
+    {
+        $this->github->deleteBranch($token, $repository, $branch);
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest
     {
         return $this->github->openPullRequest($token, $repository, $draft);
