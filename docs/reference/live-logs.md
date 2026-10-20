@@ -189,7 +189,9 @@ Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_no
 
 The agent's Laravel controller integration reads real log files, checks redaction, and ends the stream when a link replaces the source. It uses Tokio's paused clock to advance polling and flush intervals without waiting for wall time.
 
-Journal fixture tests wait for expected output instead of sleeping for startup. To check silence, they send a barrier through the follower's real stdout pipe and the line sink. Receiving it proves that earlier records were consumed; unexpected lines or an early stream end still fail the test. Process cleanup checks wait until the child has been reaped. The ignored real-journal integration keeps its real observation intervals because it has no fixture barrier. [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent) lists the agent test commands.
+Journal fixture tests wait for expected output instead of sleeping for startup. To check silence, they send a barrier through the follower's real stdout pipe and the line sink. Receiving it proves that earlier records were consumed; unexpected lines or an early stream end still fail the test. Process cleanup checks wait until the child has been reaped. Large-entry fixtures build their text without wide `awk` formatting, which exceeds the default buffer on some Nodes.
+
+Both real-journal tests keep their real observation intervals because they have no fixture barrier. The test that follows a real unit remains ignored by default. [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent) lists the agent test commands.
 
 ## Why it works this way
 

@@ -797,7 +797,7 @@ while :; do i=$((i + 1)); echo "2026-09-25T10:15:02+00:00 beast queue[4242]: ent
     async fn first_lines_hold_at_most_256_kib_of_the_newest_entries() {
         let fake = Fake::new(
             "",
-            r#"awk 'BEGIN { x = sprintf("%20000s", ""); gsub(/ /, "x", x); for (i = 99; i >= 0; i--) printf "2026-09-25T10:15:02+00:00 beast queue[4242]: %03d %s\n", i, x }'"#,
+            r#"awk 'BEGIN { for (j = 0; j < 20000; j++) x = x "x"; for (i = 99; i >= 0; i--) printf "2026-09-25T10:15:02+00:00 beast queue[4242]: %03d %s\n", i, x }'"#,
             "",
         );
         let lines = first_lines(&fake.program(), UNIT, "c1", 1000)
