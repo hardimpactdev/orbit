@@ -136,9 +136,11 @@ fi
 echo "deb [signed-by=$caddy_key] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   > /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
+# actions/cache puts the compression method in the cache version: without zstd, every zstd entry from Sabre and
+# hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
-  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils libkrb5-3 zlib1g gpgv >/dev/null
+  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
 # A shard container runs only CI jobs, so it purges PHP packages and sources outside the recipe.
 python3 /root/orbit-php-build/bin/php-build install --profile=ci-runner --purge-extras --no-composer >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
