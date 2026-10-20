@@ -45,11 +45,18 @@ it('rejects an empty readiness line from a running fixture', function (): void {
 
 it('uses the process deadline when a fixture never becomes ready', function (): void {
     $input = new InputStream;
-    $server = new Process([PHP_BINARY, '-r', 'fread(STDIN, 1);'], input: $input, timeout: 0.05);
-    $server->start();
+    $server = new Process([PHP_BINARY, '-r', 'fread(STDIN, 1);'], input: $input, timeout: 10);
 
     try {
-        expect(fn () => SubprocessFixture::line($server))->toThrow(RuntimeException::class, 'Fixture server timed out before readiness.');
+        $server->start();
+        $server->setTimeout(0.05);
+
+        expect(fn () => SubprocessFixture::line($server))->toThrow(function (RuntimeException $exception): void {
+            expect($exception::class)->toBe(RuntimeException::class);
+            expect($exception->getMessage())->toContain('Fixture server timed out before readiness.');
+            expect($exception->getPrevious())->toBeInstanceOf(ProcessTimedOutException::class);
+        });
+        expect($server->isRunning())->toBeFalse();
     } finally {
         $input->close();
         $server->stop();
