@@ -33,7 +33,7 @@ Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference
 
 Bootstrap also installs the [merge driver for generated files](/contributor-guide#merging-generated-files). Contributors who merge branches need the Docs and Gateway Composer dependencies and the web dependencies (`--with-bun`); a source alpha trial does not need to merge branches.
 
-Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. Guidance checks run in parallel after all installs succeed.
+Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. Guidance checks run in parallel after all installs succeed. CI uses `--dependencies-only` when it needs only the installed projects: this stops before the merge driver, Gateway key, cache seeding, and guidance checks. A source alpha trial needs the normal bootstrap instead.
 
 ## Limits
 

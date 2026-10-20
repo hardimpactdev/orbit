@@ -144,7 +144,7 @@ Then the pull request's CI runs, and `main` stays green after the merge. After t
 
 The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among four shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
 
-Full suites include architecture and subprocess tests. CI has no subprocess-only lanes or affected-test selector. A test that starts PHP still declares `pest()->group('subprocess')` so the coverage limitation stays explicit: runtime coverage cannot link the child process's code to its parent test. The workflow contract lists each project's full suite and subprocess group with Pest and requires every subprocess case to be present in the full listing.
+Full suites include architecture and subprocess tests. CI has no subprocess-only lanes or affected-test selector. A test that starts PHP still declares `pest()->group('subprocess')` so the coverage limitation stays explicit: runtime coverage cannot link the child process's code to its parent test. The workflow contract uses Pest's stock XML test listing once per configured suite. It checks both full-suite inclusion and subprocess-group membership from that listing, including each source file that starts PHP.
 
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
@@ -170,7 +170,7 @@ Repository admins bypass the status rule automatically, so the maintainer can pu
 
 Each Composer project job checks out full history and follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
 
-The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
+The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --dependencies-only` to install every Composer project, because its integration tests use the other projects. It does not install a merge driver, create a Gateway key, seed development caches, or run other projects' guidance checks. Each project's own job checks its guidance. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
 
 The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP process with PCRE JIT disabled, independently of TIA and shard selection. The test checks that PHP received the step's `PCRE_JIT` setting. Once the no-sudo step passes, this step runs even if an earlier test step fails and keeps the large-value redaction regressions in `Required checks`.
 
@@ -314,6 +314,20 @@ Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
+The E2E tests for gate selection build one Git repository per file, with two commits. Each test gets an independent copy. Cases that need a different history change only their copy. Real Pest checks every project's default guidance cache path and its override. The gate-selection fixtures make Pest fail if the local gate tries to run a test suite; handoff suites run in CI.
+
+Gateway feature tests use Laravel's `LazilyRefreshDatabase`: the first query or transaction triggers the same real migrations and transaction setup. A test that inspects its ambient transaction level first issues a query to establish the test transaction. Guidance rendering does not use a database, so it pays no migration cost.
+
+The E2E checks for unusable caches and inherited databases run the Gateway's real renderer for strict guidance. They do not repeat its unrelated guidance tests. The inherited-database check also runs the real feature database test: its first query triggers migrations, and the caller's sentinel database must remain unchanged.
+
+Subprocess-group checks share one stock full-project PHPUnit XML listing across the configured suites. They prepare these listings once per file, with PCOV disabled because discovery needs no coverage. Every project except PHP SDK must list subprocess tests.
+
+Gateway smoke cases use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a 0.25-second interval in the test process; the production poll interval and 20-second command limit stay unchanged. The run's total budget also caps each command. Timeout cases still expire real deadlines, including the total run limit. The no-tick and total-timeout tests keep their four- and three-second total limits so concurrent scheduler, agent-view, and CLI checks have time to finish under load.
+
+The slow-Orbit case runs the real smoke result aggregation and tick check with a one-second total budget and real CLI subprocesses. Unrelated read checks use immediate successful doubles, each asserted to run once; their real behavior has separate coverage. The first tick read returns a stale tick immediately, and the second stalls past the total limit. The test keeps the JSON, exit-status, read-count, and last-seen-tick assertions without requiring unrelated subprocesses to finish within that second. A shorter poll interval does not reserve time for the next read.
+
+The worker-budget test keeps a locked count of active shares, including overlap between waves. It lets the first lane acquire its share before later lanes register, so later allocations must respect shares already held. Signals report when each active lane has either acquired a share or entered the allocator's real condition wait. Workers stay on sockets until all granted workers in that wave have connected; no observation sleep determines completion. `TiaCacheTest` keeps its separate real-time cache coverage.
+
 ### Parallel processes
 
 Pest, PHPStan, Rector, and Pint use one process rule in `bin/check-processes`. At check start it reserves 640 MiB for gate overhead, then divides the remaining available memory by the measured allocation of 1664 MiB per worker, takes the smaller of that count and the available CPU count, and allows at least one worker.
@@ -452,7 +466,7 @@ The command reuses what already exists.
 
 It refuses a path that exists but is not a registered worktree. Then it runs `bin/bootstrap` in the worktree.
 
-`bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
+`bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation. `bin/bootstrap --dependencies-only` stops after dependency installation, including any requested Bun and Rust dependencies; it prepares no development state and runs no checks.
 
 `bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh and removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 

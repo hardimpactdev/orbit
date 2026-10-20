@@ -1,6 +1,8 @@
 """Exercise bin/gateway-smoke against a fake Gateway: an HTTP server, an Orbit CLI, and systemctl."""
+import io
 import json
 import os
+import runpy
 import shutil
 import signal
 import subprocess
@@ -9,11 +11,14 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-REPOSITORY = Path(sys.argv.pop(1)).resolve()
+REPOSITORY = Path(__file__).resolve().parents[4]
 SMOKE = REPOSITORY / 'bin/gateway-smoke'
 SHA = '2f214816deaed1d961f4a64c7f40762088c64226'
 RELEASE = SHA[:12]
@@ -152,7 +157,7 @@ class SmokeWorld:
         self.server.block_on_close = False
         self.routes = self.server.RequestHandlerClass.routes
         self.url = f'http://127.0.0.1:{self.server.server_port}'
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True).start()
 
         self.now = datetime.now(timezone.utc)
         self.routes.update({
@@ -229,7 +234,14 @@ class SmokeWorld:
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def smoke_argv(self, *arguments):
-        return [str(SMOKE), '--sha', SHA,
+        # Shorten only the polling interval. Command deadlines still use the real total budget.
+        command = [str(SMOKE)]
+        if '--wait-for-tick' in arguments:
+            command = [sys.executable, '-c',
+                       'import runpy, sys; smoke = runpy.run_path(sys.argv.pop(1)); '
+                       'smoke["main"].__globals__["TICK_POLL_SECONDS"] = 0.25; '
+                       'sys.exit(smoke["main"]())', str(SMOKE)]
+        return [*command, '--sha', SHA,
                 '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
                 '--web-url', f'{self.url}/', '--web-dir', str(self.web), '--checkout', str(self.checkout),
                 '--orbit', str(self.bin / 'orbit'), *arguments]
@@ -471,6 +483,131 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
         self.assertGreaterEqual(checks['tasks_tick']['detail']['reads'], 2)
 
+    def test_tasks_tick_reports_stale_instead_of_timing_out_with_a_slow_orbit(self):
+        stale_tick = self.world.tick(seconds_ago=600)
+        self.world.orbit('tasks:status', None, sequence=[
+            {'stdout': stale_tick},
+            {'stdout': self.world.tick(seconds_ago=0), 'sleep': 30},
+        ])
+
+        smoke = runpy.run_path(str(SMOKE))
+        options = smoke['build_parser']().parse_args([
+            '--sha', SHA, '--orbit', str(self.world.bin / 'orbit'), '--timeout', '1', '--wait-for-tick',
+        ])
+        unrelated = {
+            name: Mock(return_value=('Unrelated read succeeded.', {}))
+            for name in READ_CHECKS if name != 'tasks_tick'
+        }
+        stdout, stderr = io.StringIO(), io.StringIO()
+
+        # Keep the real tick runner, CLI subprocesses, budget, and JSON/exit result. Other checks have separate coverage.
+        with patch.dict(os.environ, self.world.smoke_environment()), \
+                patch.dict(smoke['run'].__globals__, {'TICK_POLL_SECONDS': 0.25}), \
+                patch.dict(smoke['RUNNERS'], unrelated), \
+                redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = smoke['run'](options)
+
+        process = SimpleNamespace(returncode=exit_code, json=json.loads(stdout.getvalue()), stderr=stderr.getvalue())
+        checks = self.assert_only_failed(process, ['tasks_tick'])
+        for runner in unrelated.values():
+            runner.assert_called_once()
+        self.assertEqual(process.json['timeout_seconds'], 1)
+        self.assertEqual(process.json['summary'], {'passed': 6, 'failed': 1, 'timeout': 0, 'skipped': 1})
+        self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
+        self.assertEqual(checks['tasks_tick']['detail']['last_tick_at'], stale_tick['last_tick_at'])
+        self.assertEqual(checks['tasks_tick']['detail']['reads'], 1)
+        self.assertEqual(self.world.orbit_calls().count(['tasks:status', '--json']), 2)
+
+    def test_tasks_tick_keeps_polling_near_the_total_limit_with_production_constants(self):
+        smoke = runpy.run_path(str(SMOKE))
+        wait_for_tick = smoke['wait_for_tick']
+        options = SimpleNamespace(since=self.world.now, tick_within=60)
+        stale_tick = self.world.tick(seconds_ago=120)['last_tick_at']
+
+        for late_tick in (False, True):
+            with self.subTest(late_tick=late_tick):
+                clock = SimpleNamespace(now=0)
+                reads = []
+
+                def advance(seconds):
+                    clock.now += seconds
+
+                def read_status(*_args, **_kwargs):
+                    reads.append(clock.now)
+                    tick = utc_iso(self.world.now) if late_tick and clock.now >= 58 else stale_tick
+                    return {'enabled': True, 'last_tick_at': tick}
+
+                # Only time and the CLI are fake: the production limits and Budget stay unchanged.
+                with patch.dict(wait_for_tick.__globals__, {
+                    'time': SimpleNamespace(monotonic=lambda: clock.now, sleep=advance),
+                    'orbit_json': read_status,
+                }):
+                    budget = smoke['Budget'](60, 60)
+                    if late_tick:
+                        _message, detail = wait_for_tick(options, budget)
+                        self.assertEqual(detail['last_tick_at'], utc_iso(self.world.now))
+                    else:
+                        with self.assertRaises(smoke['CheckFailed']) as failure:
+                            wait_for_tick(options, budget)
+                        self.assertEqual(failure.exception.error, 'tick_stale')
+                        self.assertEqual(failure.exception.detail['last_tick_at'], stale_tick)
+
+                self.assertEqual(reads, list(range(0, 60, 2)))
+                self.assertEqual(clock.now, 58)
+
+    def test_tasks_tick_preserves_the_last_seen_tick_when_the_total_limit_cuts_short_a_read(self):
+        smoke = runpy.run_path(str(SMOKE))
+        wait_for_tick = smoke['wait_for_tick']
+        options = SimpleNamespace(since=self.world.now, tick_within=60)
+        stale_tick = self.world.tick(seconds_ago=120)['last_tick_at']
+        clock = SimpleNamespace(now=0)
+        reads = []
+
+        def advance(seconds):
+            clock.now += seconds
+
+        def read_status(_options, budget, *_args, **_kwargs):
+            reads.append(clock.now)
+            if clock.now < 58:
+                return {'enabled': True, 'last_tick_at': stale_tick}
+            clock.now += budget.remaining()
+            raise smoke['CheckTimedOut']('The total limit cut short tasks:status.')
+
+        with patch.dict(wait_for_tick.__globals__, {
+            'time': SimpleNamespace(monotonic=lambda: clock.now, sleep=advance),
+            'orbit_json': read_status,
+        }):
+            with self.assertRaises(smoke['CheckFailed']) as failure:
+                wait_for_tick(options, smoke['Budget'](60, 60))
+
+        self.assertEqual(failure.exception.error, 'tick_stale')
+        self.assertEqual(failure.exception.detail['last_tick_at'], stale_tick)
+        self.assertEqual(failure.exception.detail['reads'], 29)
+        self.assertEqual(reads, list(range(0, 60, 2)))
+        self.assertEqual(clock.now, 60)
+
+    def test_tasks_tick_keeps_a_read_timeout_before_the_total_limit_as_timeout(self):
+        smoke = runpy.run_path(str(SMOKE))
+        wait_for_tick = smoke['wait_for_tick']
+        options = SimpleNamespace(since=self.world.now, tick_within=60, orbit='orbit')
+        clock = SimpleNamespace(now=0)
+        limits = []
+
+        def timeout(_argv, budget, limit, _what):
+            limits.append(budget.cap(limit))
+            clock.now += budget.cap(limit)
+            raise smoke['CheckTimedOut']('tasks:status exceeded its read limit.')
+
+        with patch.dict(wait_for_tick.__globals__, {
+            'time': SimpleNamespace(monotonic=lambda: clock.now),
+            'run_command': timeout,
+        }):
+            with self.assertRaises(smoke['CheckTimedOut']):
+                wait_for_tick(options, smoke['Budget'](60, 60))
+
+        self.assertEqual(limits, [20])
+        self.assertEqual(clock.now, 20)
+
     def test_tasks_tick_fails_on_a_gateway_without_the_tick_record(self):
         self.world.orbit('tasks:status', {'enabled': True, 'assistance': [], 'request_id': 'r'})
 
@@ -576,6 +713,7 @@ class GatewaySmokeTest(unittest.TestCase):
 
         names = [*READ_CHECKS, 'documents']
         checks = self.assert_only_failed(process, names, status='timeout')
+        self.assertGreaterEqual(process.elapsed, 3)
         self.assertLess(process.elapsed, 10)
         self.assertEqual(process.json['summary'], {'passed': 0, 'failed': 0, 'timeout': 8, 'skipped': 0})
         for name in names:
