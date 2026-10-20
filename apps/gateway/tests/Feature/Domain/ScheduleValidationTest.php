@@ -54,7 +54,14 @@ it('rejects invalid calendar bytes and size', function (string $calendar): void 
 it('rejects invalid command encoding lines and size', function (string $command): void {
     expect(fn () => new ScheduleSpecificationValidator()->validate(schedule_validation_data(command: $command)))
         ->toThrow(ResourceOperationException::class, 'Schedule command is invalid');
-})->with(['', "a\0b", "a\rb", "a\nb", "\xC3\x28", str_repeat('a', 4097)]);
+})->with([
+    'empty' => '',
+    'null byte' => "a\0b",
+    'carriage return' => "a\rb",
+    'line feed' => "a\nb",
+    'invalid UTF-8' => "\xC3\x28",
+    'too long' => str_repeat('a', 4097),
+]);
 
 it('rejects timeout values outside the closed range', function (int $timeout): void {
     expect(fn () => new ScheduleSpecificationValidator()->validate(schedule_validation_data(timeout: $timeout)))

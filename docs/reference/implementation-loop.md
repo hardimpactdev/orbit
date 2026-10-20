@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/*.yml,actions/php/action.yml}
-  - apps/gateway/{phpunit.xml,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Unit/Configuration/TestTimeLimitTest.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
+  - apps/gateway/{phpunit.xml,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Unit/Configuration/TestTimeLimitTest.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
 ---
 
 # Feature delivery
@@ -656,6 +656,8 @@ Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultT
 The 42-second default is the smallest whole number at least three times the slowest unsized case in a full parallel run on the four-CPU task VM under CPU contention: 13.979728 seconds. Remeasure the full parallel suite on a loaded host before changing the default, and keep that minimum three-times margin. Fix unexpectedly slow or risky cases at their cause rather than weakening the tests or bypassing the limit.
 
 Timeouts fail the run. `stopOnRisky` prevents later cases in the same worker from consuming state left by interrupted cleanup; it does not guarantee cleanup completes. The Gateway PHP recipe requires `pcntl`, and the shared CI PHP action verifies the recipe before running suites. Keep that requirement in the recipe, not individual jobs.
+
+Give datasets containing invalid UTF-8 readable names. This keeps JUnit test names valid without changing the input bytes that the test validates.
 
 Process fixtures acknowledge readiness from their final executable before a case acts on them; a PID alone does not prove startup finished. Tests of leftover cleanup after `SIGKILL` first observe that the check is lost, then cancel it. Sending a signal does not mean the process has exited.
 
