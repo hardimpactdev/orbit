@@ -6,6 +6,8 @@ use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -270,23 +272,30 @@ it('times out after five seconds without an unlocked write', function (): void {
     $original = file_get_contents($this->configPath);
     $lock = gateway_config_test_lock($this->configPath);
     $exception = null;
-    $startedAt = hrtime(true);
+    Carbon::setTestNow(Carbon::now());
+    Sleep::fake(syncWithCarbon: true);
+    $startedAt = Carbon::now();
 
     try {
         $repository->add(new GatewayProfile('waiting', 'https://10.80.0.1'));
     } catch (GatewayConfigException $caught) {
         $exception = $caught;
     } finally {
-        $elapsedSeconds = (hrtime(true) - $startedAt) / 1_000_000_000;
-        flock($lock, LOCK_UN);
-        fclose($lock);
+        $elapsedSeconds = $startedAt->diffInSeconds(Carbon::now());
+        try {
+            Sleep::assertSequence(array_fill(0, 500, Sleep::usleep(10_000)));
+        } finally {
+            Sleep::fake(false);
+            Carbon::setTestNow();
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
 
     expect($exception?->getMessage())
         ->toBe('Timed out after 5 seconds waiting to update Orbit gateway configuration.')
         ->and($elapsedSeconds)
-        ->toBeGreaterThanOrEqual(4.9)
-        ->toBeLessThan(7.0)
+        ->toBe(5.0)
         ->and(file_get_contents($this->configPath))
         ->toBe($original)
         ->and($repository->find('waiting'))

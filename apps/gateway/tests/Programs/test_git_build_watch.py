@@ -50,7 +50,7 @@ class GitBuildWatchTest(unittest.TestCase):
 
     def test_network_or_malformed_data_fail_the_check_instead_of_reporting_no_updates(self):
         for error in (OSError('network down'), ValueError('invalid JSON'), KeyError('entries')):
-            with self.subTest(error=error), patch.object(watch, 'fetch_json', side_effect=error):
+            with self.subTest(error=str(error)), patch.object(watch, 'fetch_json', side_effect=error):
                 with self.assertRaises(type(error)):
                     watch.check(RECIPE)
 

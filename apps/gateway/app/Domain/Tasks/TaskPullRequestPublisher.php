@@ -27,4 +27,21 @@ interface TaskPullRequestPublisher
      * @throws TaskPullRequestException
      */
     public function push(Task $group, string $commit): void;
+
+    /**
+     * Pushes a handoff commit to Orbit's branch `task-{id}-handoff`, where CI runs on the push
+     * ([Handoff CI](/reference/tasks#handoff-ci)). No pull request has that branch as head, and this call reads and
+     * writes none. A commit that Orbit pushed there before is not pushed again.
+     *
+     * @throws TaskPullRequestException pending while the push job waits or runs
+     */
+    public function pushHandoff(Task $group, string $commit): void;
+
+    /**
+     * Deletes `task-{id}-handoff` on origin when the group ends. A branch or repository that is already gone counts
+     * as deleted.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function deleteHandoffBranch(Task $group): void;
 }

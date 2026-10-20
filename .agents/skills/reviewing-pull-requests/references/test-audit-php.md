@@ -35,7 +35,7 @@ Prefer datasets for cases sharing setup and assertions. Move duplicate validatio
 
 ## Validate
 
-Follow the root `AGENTS.md` check policy. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` and `bin/review-check` for those invocations rather than silently changing test scripts.
+Follow the root `AGENTS.md` check policy. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` for those invocations rather than silently changing test scripts; `bin/review-check` runs no tests.
 
 For a fresh baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI uses `--tia --fresh` to discard the selection graph and execute every test in the selected configuration. Preserve plain output through `bin/pest-plain` and take the process count from `bin/check-processes`. From a PHP project, a typical run is:
 

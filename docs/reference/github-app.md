@@ -26,7 +26,7 @@ The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway s
 
 The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
-[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header.
+[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The [merge gate](/reference/tasks#merge-on-green) uses it to find the pull request's own `pull_request` workflow run.
 
 The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) instead receives SHA-bound Git refs through the Gateway mirror. Its repository read uses `Contents: read`, not the Actions API. Only the successful main CI publisher needs `Contents: write`; the workspace receives cache objects without a GitHub token.
 
@@ -114,6 +114,10 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
 
+A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
+
+It reads the check runs and check suites of the handoff commit with the `checks: read` token: every run on that commit, every suite with `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`, and a failed job's log as [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) does. The merge gate, the settling watch, and the handoff share the runs and suites of one commit for 60 seconds.
+
 After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
@@ -149,9 +153,10 @@ A Project with [review and merge](/reference/tasks#review-and-merge) on uses the
 | List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
 | Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
 | Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}`, every page | `checks: read` |
+| Find the pull request's own runs | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}&event=pull_request`, one page of 100 | `actions: read` |
 | Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
 
-The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. So the flow needs no new App permission, no maintainer credential, and no webhook.
+The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. So the flow needs no new App permission, no maintainer credential, and no webhook.
 
 A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
 

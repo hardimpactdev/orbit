@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Http\Responses\ApiErrorResponse;
+use App\Http\Responses\RendersApiError;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Processes\CommandResult;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use RuntimeException;
 use Throwable;
 
-final class NodeRoleOperationException extends RuntimeException
+final class NodeRoleOperationException extends RuntimeException implements RendersApiError
 {
     public readonly ?CommandResult $result;
 
@@ -64,5 +70,22 @@ final class NodeRoleOperationException extends RuntimeException
             'errorCode' => $this->errorCode,
             'underlyingErrorCode' => $this->underlyingErrorCode,
         ];
+    }
+
+    #[\Override]
+    public function apiErrorCode(): string
+    {
+        return $this->errorCode;
+    }
+
+    /** The API error envelope, which the exception handler returns for this exception. */
+    #[\Override]
+    public function render(Request $request): JsonResponse
+    {
+        $request->attributes->set('orbit.error_code', $this->apiErrorCode());
+        $request->attributes->set('orbit.error_message', $this->getMessage());
+        $request->attributes->set('orbit.command_result', $this->result);
+
+        return ApiErrorResponse::make($request, $this->apiErrorCode(), $this->getMessage(), ['step' => $this->step, ...self::detailsIn($this), ...NodeCaddyBuildException::detailsIn($this)], GatewayExceptionStatus::for($this));
     }
 }

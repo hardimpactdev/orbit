@@ -82,11 +82,11 @@ function task_signer_admitted(SshExecutor $transport): object
     {
         public function __construct(private RemoteTaskWorkspaceSigner $signer) {}
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
 
-            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message));
+            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message, $allowEmpty));
         }
     };
 }
@@ -111,6 +111,24 @@ it('commits every workspace change with the message from stdin and returns the n
             ->and(task_signer_git($checkout, ['log', '-1', '--format=%B']))->toBe($message)
             ->and(task_signer_git($checkout, ['log', '-1', '--format=%an <%ae>']))->toBe('orbit <tasks@orbit>')
             ->and(task_signer_git($checkout, ['status', '--porcelain']))->toBe('');
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+});
+
+it('makes a new commit for a handoff without changes when asked to', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-task-signer-'.bin2hex(random_bytes(6));
+    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
+    $start = task_signer_git($checkout, ['rev-parse', 'HEAD']);
+
+    try {
+        $sha = task_signer_admitted(new LocalShellSshExecutor)->commit(task_signer_instance($checkout), 'Models', allowEmpty: true);
+
+        expect($sha)->not->toBe($start)
+            ->and($sha)->toBe(task_signer_git($checkout, ['rev-parse', 'HEAD']))
+            ->and(task_signer_git($checkout, ['rev-parse', 'HEAD^']))->toBe($start)
+            ->and(task_signer_git($checkout, ['rev-parse', 'HEAD^{tree}']))->toBe(task_signer_git($checkout, ['rev-parse', $start.'^{tree}']));
     } finally {
         File::deleteDirectory($checkout);
     }

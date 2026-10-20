@@ -4,24 +4,12 @@
 declare(strict_types=1);
 
 $command = $argv[1] ?? '';
-$segments = explode('/', str_replace('\\', '/', getcwd() ?: ''));
-$project = implode('/', array_slice($segments, -2));
-$unselected = array_filter(explode(',', (string) getenv('ORBIT_GATE_UNSELECTED')));
 
-if ($command === 'test:affected') {
-    $selectedTests = in_array($project, $unselected, true) ? [] : ['tests/ExampleTest.php'];
-    $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
-    $tiaDirectory = is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : '.orbit-tia';
-    if (! str_starts_with($tiaDirectory, DIRECTORY_SEPARATOR)) {
-        $tiaDirectory = getcwd().DIRECTORY_SEPARATOR.$tiaDirectory;
-    }
-    if (! is_dir($tiaDirectory)) {
-        mkdir($tiaDirectory, 0700, true);
-    }
-    file_put_contents($tiaDirectory.'/affected.json', json_encode($selectedTests, JSON_THROW_ON_ERROR));
-    fwrite(STDOUT, $selectedTests === []
-        ? "\n  INFO  No affected tests found.\n\n"
-        : "\n  Tests:    3 passed (9 assertions)\n\n");
+// CI runs the test suites, so a gate that runs one fails.
+if (in_array($command, ['test', 'test:affected'], true)) {
+    fwrite(STDOUT, "The candidate gate runs no tests.\n");
+
+    exit(1);
 }
 
 exit(0);

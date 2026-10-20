@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Documentation\DocumentationRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
@@ -24,8 +26,21 @@ function docsMergeCommit(string $root, string $message): void
 
 function docsMergeIndex(string $root): void
 {
-    $process = new Process(['php', base_path('artisan'), 'orbit:docs-index'], $root, ['ORBIT_DOCS_ROOT' => $root.'/docs']);
-    $process->mustRun();
+    $previous = [
+        'librarian.path' => config('librarian.path'),
+        'orbit-docs.index_path' => config('orbit-docs.index_path'),
+    ];
+    config()->set([
+        'librarian.path' => $root.'/docs',
+        'orbit-docs.index_path' => $root.'/docs/generated/context.json',
+    ]);
+    app()->forgetInstance(DocumentationRepository::class);
+    try {
+        expect(Artisan::call('orbit:docs-index'))->toBe(0, Artisan::output());
+    } finally {
+        config()->set($previous);
+        app()->forgetInstance(DocumentationRepository::class);
+    }
 }
 
 /**
@@ -40,9 +55,14 @@ function docsMergeRun(string $root, array $arguments, array $environment = []): 
     return $process;
 }
 
-function withDocsMergeFixture(Closure $test): void
+function docsMergeTemplate(): string
 {
-    $root = sys_get_temp_dir().'/orbit-docs-merge-fixture-'.bin2hex(random_bytes(8));
+    static $template = null;
+    if ($template !== null) {
+        return $template;
+    }
+
+    $root = sys_get_temp_dir().'/orbit-docs-merge-template-'.bin2hex(random_bytes(8));
     mkdir($root.'/docs/decisions', 0777, true);
     mkdir($root.'/docs/domains', 0777, true);
     mkdir($root.'/docs/reference', 0777, true);
@@ -73,6 +93,22 @@ function withDocsMergeFixture(Closure $test): void
         docsMergeIndex($root);
         docsMergeCommit($root, 'retire 0197 on base');
         docsMergeGit($root, ['checkout', '-q', 'pr']);
+        $template = $root;
+        register_shutdown_function(static fn (): bool => new Filesystem()->deleteDirectory($root));
+    } finally {
+        if ($template === null) {
+            new Filesystem()->deleteDirectory($root);
+        }
+    }
+
+    return $template;
+}
+
+function withDocsMergeFixture(Closure $test): void
+{
+    $root = sys_get_temp_dir().'/orbit-docs-merge-fixture-'.bin2hex(random_bytes(8));
+    try {
+        expect(new Filesystem()->copyDirectory(docsMergeTemplate(), $root))->toBeTrue();
         $test($root);
     } finally {
         new Filesystem()->deleteDirectory($root);

@@ -223,6 +223,8 @@ Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_
 
 Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. Many tests call `setfacl` to set up workspaces as a Node does, so they fail without it. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
 
+Tests that provoke a provider failure disable Pi's auto-retry in their in-memory settings as well as the provider's HTTP retries. They still send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff. Workspace TMPDIR tests call the workspace bash tool in-process with a private inherited TMPDIR; the worker ACL test still crosses the real user boundary.
+
 The test copies the Bun runtime and the tool-output module into its temporary fixture. It invokes the runtime by absolute path with a restricted `PATH` and uses the fixture as its working directory. This keeps the worker independent of sudo's executable search path and of access to the test runner's home or source checkout. Cleanup removes both copies and the checkout; the test does not change home permissions or sudo policy.
 
 ## Why it works this way

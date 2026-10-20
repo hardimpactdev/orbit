@@ -51,7 +51,11 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node and the browser tests in headless Chromium. Both need Playwright's browsers, because the web verification tests in the unit project launch Chromium and WebKit. Install them once with `bunx playwright install webkit chromium`. After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
+`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps. Vitest uses its default parallel scheduling for all three projects. The verification files own separate temporary sessions, so they can run alongside each other and the browser tests. Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs both engines and their system libraries directly on the hosted runner.
+
+[Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
+
+After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
 
 ## Pi server
 
@@ -88,6 +92,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --release --locked
 ```
+
+[Node agent](/reference/node-agent#checks) explains the dev-profile optimization for redaction tests. [Live logs](/reference/live-logs#stream-tests) describes paused-clock coverage and real-process fixture waits.
 
 Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
 

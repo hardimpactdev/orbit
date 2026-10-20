@@ -198,7 +198,7 @@ final readonly class CompleteTaskGroupAction
 
         $this->workspace->remove($group);
 
-        $this->workspace->clearFailure($group);
+        $this->workspace->finishRemoval($group);
 
         if ($instanceId !== null && ! Instance::query()->whereKey($instanceId)->exists()) {
             $group->refresh();

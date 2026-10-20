@@ -295,7 +295,7 @@ describe('Project Documents CLI', function (): void {
         $mock = cli_document_mock($operation);
         $keys = [];
         foreach (['../bad', '.', ' trailing ', str_repeat('x', 256)] as $invalid) {
-            array_push($keys, $invalid, Key::ENTER, ...array_fill(0, strlen($invalid), Key::BACKSPACE));
+            array_push($keys, $invalid, Key::ENTER, str_repeat(Key::BACKSPACE, strlen($invalid)));
         }
         array_push($keys, 'corrected.txt', Key::ENTER);
         $arguments = $operation === 'create' ? ['project' => '1', '--kind' => 'folder'] : ['project' => '1', 'entry' => '1', '--expected-revision' => '1'];
@@ -316,7 +316,7 @@ describe('Project Documents CLI', function (): void {
         $keys = [];
         $paths = [$this->documentHome.'/missing', $oversized, ...($operation === 'write' ? [$binary] : [])];
         foreach ($paths as $invalid) {
-            array_push($keys, $invalid, Key::ENTER, ...array_fill(0, strlen($invalid), Key::BACKSPACE));
+            array_push($keys, $invalid, Key::ENTER, str_repeat(Key::BACKSPACE, strlen($invalid)));
         }
         array_push($keys, $valid, Key::ENTER);
         [$status, $display] = cli_document_prompt_run($operation, ['project' => '1', 'entry' => '1', '--expected-revision' => '2'], $keys);
@@ -339,7 +339,7 @@ describe('Project Documents CLI', function (): void {
         $existing = $this->documentHome.'/existing';
         $path = $this->documentHome.'/corrected-download';
         file_put_contents($existing, 'keep');
-        [$status] = cli_document_prompt_run('download', ['project' => '1', 'entry' => '1'], [$existing, Key::ENTER, ...array_fill(0, strlen($existing), Key::BACKSPACE), $path, Key::ENTER]);
+        [$status] = cli_document_prompt_run('download', ['project' => '1', 'entry' => '1'], [$existing, Key::ENTER, str_repeat(Key::BACKSPACE, strlen($existing)), $path, Key::ENTER]);
         expect($status)->toBe(0)->and(file_get_contents($path))->toBe("first\n")->and(file_get_contents($existing))->toBe('keep');
         expect(fileperms($path) & 0777)->toBe(0600)->and(glob($this->documentHome.'/.orbit-document-*'))->toBe([]);
         $mock->assertSentCount(1);

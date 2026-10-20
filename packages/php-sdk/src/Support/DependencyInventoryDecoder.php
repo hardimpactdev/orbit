@@ -54,7 +54,12 @@ final class DependencyInventoryDecoder
         $decoder = new self(GatewayRequestId::fromTransport($headerRequestId));
         $data = $decoder->envelope($body)->data;
 
-        return $decoder->inventoryResponse($data, $instanceId, $scan);
+        $inventory = $decoder->inventoryResponse($data, $instanceId, $scan);
+        if (! JsonObjectKeys::areUnique($body)) {
+            $decoder->invalid();
+        }
+
+        return $inventory;
     }
 
     public static function decodeFromResponse(
@@ -102,6 +107,10 @@ final class DependencyInventoryDecoder
             $decoder->invalid();
         }
 
+        if (! JsonObjectKeys::areUnique($body)) {
+            $decoder->invalid();
+        }
+
         return new InstanceDependencyUpdateResponse(
             $instanceId, $data->succeeded, $errorCode, $data->may_have_mutated,
             $composer, $javascript, $inventory, $decoder->requestId ?? $decoder->invalid(),
@@ -123,9 +132,6 @@ final class DependencyInventoryDecoder
             $this->invalid();
         }
         $this->requestId = $requestId;
-        if (! JsonObjectKeys::areUnique($body)) {
-            $this->invalid();
-        }
 
         return $envelope;
     }
@@ -260,9 +266,11 @@ final class DependencyInventoryDecoder
     private function graph(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyGraphResponse
     {
         $data = $this->object($value, ['resolutions', 'requirements']);
+        $resolutionItems = $this->items($data->resolutions, 50_000);
+        $requirementItems = $this->items($data->requirements, 200_000);
         $resolutions = [];
         $ids = [];
-        foreach ($this->items($data->resolutions, 50_000) as $item) {
+        foreach ($resolutionItems as $item) {
             $item = $this->object($item, ['id', 'ecosystem', 'name', 'version', 'regular', 'development', 'source_reference', 'integrity']);
             $id = $this->text($item->id);
             if (isset($ids[$id]) || $item->ecosystem !== $ecosystem) {
@@ -274,7 +282,7 @@ final class DependencyInventoryDecoder
                 $this->nullableText($item->source_reference), $this->nullableText($item->integrity));
         }
         $requirements = [];
-        foreach ($this->items($data->requirements, 200_000) as $item) {
+        foreach ($requirementItems as $item) {
             $item = $this->object($item, ['from', 'to', 'name', 'constraint', 'kind', 'scope', 'optional']);
             $from = $this->nullableText($item->from);
             $to = $this->nullableText($item->to);
