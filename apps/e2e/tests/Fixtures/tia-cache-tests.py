@@ -933,6 +933,9 @@ class CiImportTest(CacheFixture):
             'apps/gateway'))
         self.assertEqual((None, []), cache.job_result([{'name': 'Gateway privileged', 'conclusion': 'success'}],
                                                       'apps/gateway'))
+        self.assertEqual(('success', []), cache.job_result(
+            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged', 'conclusion': 'success'}],
+            'apps/gateway'))
         self.assertEqual(('failure', ['Gateway']), cache.job_result(
             [{'name': 'Gateway', 'conclusion': 'timed_out'}], 'apps/gateway'))
         self.assertEqual(('Gateway', 'Gateway privileged'), cache.CI_JOBS['apps/gateway'])

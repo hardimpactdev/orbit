@@ -525,12 +525,14 @@ it('requires the lint and direct tests of the Gateway remote programs in CI', fu
         ->and($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$REMOTE_PROGRAMS_RESULT" = success');
 });
 
-it('keeps privileged tests required in CI on a hosted runner', function (): void {
+it('keeps the whole privileged group required in one disposable CI job', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['privileged'];
     expect($job['runs-on'])->toBe('ubuntu-26.04');
-    $commands = array_column($job['steps'], 'run');
-    expect(implode("\n", $commands))->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite');
+    expect($job)->not->toHaveKey('strategy')->not->toHaveKey('if');
+    $commands = implode("\n", array_column($job['steps'], 'run'));
+    expect($commands)->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite')
+        ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
 });

@@ -26,7 +26,7 @@ use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\ResolvedVp;
 
-pest()->group('privileged', 'subprocess');
+pest()->group('subprocess');
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
@@ -107,15 +107,6 @@ function tmpdir_check_directory(string $checkout): string
     test()->allocated = [...(is_array($allocated) ? $allocated : []), $path];
 
     return $path;
-}
-
-function tmpdir_can_switch_to_nobody(): bool
-{
-    if ((new Process(['bash', '-c', 'command -v setfacl && command -v getfacl']))->run() !== 0) {
-        return false;
-    }
-
-    return (new Process(['sudo', '-n', '-u', 'nobody', 'true']))->run() === 0;
 }
 
 function tmpdir_instance(string $checkout, string $name): Instance
@@ -284,7 +275,7 @@ describe('workspace TMPDIR', function (): void {
         (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
 
         expect((new Process(['sudo', '-n', '-u', 'nobody', 'test', '-r', $child.'/file']))->run())->toBe(0);
-    })->skip(fn (): bool => ! tmpdir_can_switch_to_nobody(), 'setfacl and passwordless sudo -n -u nobody are required.');
+    })->group('privileged');
 
     it('removes the allocated TMPDIR after a passing check', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'pass');
