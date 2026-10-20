@@ -536,14 +536,23 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($taskRequests))
             ->toEqualCanonicalizing($taskRequests);
+
+        foreach ([
+            '.ai/rules/public-contract.md' => '/The SDK models exactly (\d+) concrete public Gateway API operations:/',
+            'README.md' => '/The SDK exposes exactly (\d+) public Gateway operations\./',
+        ] as $path => $pattern) {
+            preg_match($pattern, repository_guidance_contents($path), $matches);
+
+            expect((int) ($matches[1] ?? 0))->toBe($expectedOperationCount);
+        }
     });
 
-    it('documents the 210-operation SDK surface including Project Documents', function (): void {
+    it('documents the SDK surface including Project Documents and Reverb apps', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 214 concrete public Gateway API operations:')
+            ->toContain('- Reverb apps: create, list, show, and destroy; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -618,7 +627,6 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 214 public Gateway operations.',
                 'The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

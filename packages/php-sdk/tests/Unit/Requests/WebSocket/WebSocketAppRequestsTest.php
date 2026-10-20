@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
@@ -63,6 +64,69 @@ describe('websocket app requests', function (): void {
             ->and(new AddInstanceWebSocketAppRequest(7, 'hauzer'))->not->toBeInstanceOf(HasBody::class)
             ->and(new RemoveInstanceWebSocketAppRequest(7, 'hauzer'))->not->toBeInstanceOf(HasBody::class);
     });
+
+    it('encodes selectors as single path segments without applying Gateway validation', function (GatewayRequest $request, string $endpoint): void {
+        expect($request->resolveEndpoint())->toBe($endpoint);
+    })->with([
+        'show' => [new ShowWebSocketAppRequest('app/name'), '/api/v1/websocket-apps/app%2Fname'],
+        'destroy' => [new DestroyWebSocketAppRequest('app/name'), '/api/v1/websocket-apps/app%2Fname'],
+        'add' => [new AddInstanceWebSocketAppRequest('route/name', 'app/name'), '/api/v1/instances/route%2Fname/websocket-apps/app%2Fname'],
+        'remove' => [new RemoveInstanceWebSocketAppRequest('route/name', 'app/name'), '/api/v1/instances/route%2Fname/websocket-apps/app%2Fname'],
+    ]);
+
+    it('maps mutation responses without retaining secret or environment values', function (GatewayRequest $request, array $payload, string $responseClass, int $status): void {
+        $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $secret = 'websocket-sdk-secret-sentinel-7f9b3';
+        $connector = new GatewayConnector('https://10.44.0.1', '/tmp/orbit-ca.pem');
+        $connector->withMockClient(new MockClient([
+            $request::class => MockResponse::make([
+                'data' => [...$payload, 'secret' => $secret, 'values' => ['REVERB_APP_SECRET' => $secret]],
+                'meta' => ['request_id' => $requestId],
+            ], $status),
+        ]));
+
+        $result = $connector->send($request)->dto();
+
+        expect($result)->toBeInstanceOf($responseClass)
+            ->and($result->toArray())->toBe([...$payload, 'request_id' => $requestId])
+            ->and(print_r($result, true))->not->toContain($secret)
+            ->and(serialize($result))->not->toContain($secret);
+    })->with([
+        'create' => [new CreateWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(), WebSocketAppResponse::class, 201],
+        'destroy' => [new DestroyWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(['instance_ids' => []]), WebSocketAppResponse::class, 200],
+        'remove' => [new RemoveInstanceWebSocketAppRequest('hauzer.test', 'hauzer'), websocket_attachment_sdk_payload(['operation' => 'detach', 'key_count' => 0]), WebSocketAppAttachmentResponse::class, 200],
+    ]);
+
+    it('maps an empty app collection', function (): void {
+        $connector = new GatewayConnector('https://10.44.0.1', '/tmp/orbit-ca.pem');
+        $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $connector->withMockClient(new MockClient([
+            ListWebSocketAppsRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => $requestId]]),
+        ]));
+
+        expect($connector->send(new ListWebSocketAppsRequest)->dto()->toArray())
+            ->toBe(['apps' => [], 'request_id' => $requestId]);
+    });
+
+    it('preserves structured Gateway refusals', function (GatewayRequest $request, string $code, int $status): void {
+        $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $connector = new GatewayConnector('https://10.44.0.1', '/tmp/orbit-ca.pem');
+        $connector->withMockClient(new MockClient([
+            $request::class => MockResponse::make([
+                'error' => ['code' => $code, 'message' => 'App request refused.'],
+            ], $status, ['X-Orbit-Request-Id' => $requestId]),
+        ]));
+
+        expect(fn () => $connector->send($request))->toThrow(function (GatewayApiException $exception) use ($code, $requestId): void {
+            expect($exception->errorCode())->toBe($code)
+                ->and($exception->requestId())->toBe($requestId)
+                ->and($exception->getMessage())->toBe('App request refused.');
+        });
+    })->with([
+        'reserved app' => [new AddInstanceWebSocketAppRequest(7, 'gateway'), 'websocket.app_reserved', 409],
+        'app in use' => [new DestroyWebSocketAppRequest('hauzer'), 'websocket.app_in_use', 409],
+        'missing attachment' => [new RemoveInstanceWebSocketAppRequest(7, 'hauzer'), 'websocket.attachment_missing', 404],
+    ]);
 
     it('maps an app, a list of apps, and an attachment', function (): void {
         $meta = ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'];
