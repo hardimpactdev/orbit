@@ -229,7 +229,7 @@ describe('Composer configuration', function (): void {
         expect($steps['Run project quality checks'])
             ->toMatchArray([
                 'run' => 'composer check',
-                'env' => ['ORBIT_CHECK_PROCESSES' => '${{ runner.environment == \'self-hosted\' && 6 || 4 }}'],
+                'env' => ['ORBIT_CHECK_PROCESSES' => '${{ github.event_name != \'pull_request\' && runner.environment == \'self-hosted\' && 6 || 4 }}'],
             ]);
         // Every non-Gateway Composer suite runs in full on pull requests.
         expect($steps['Run full PR test suite'])
@@ -253,10 +253,11 @@ describe('Composer configuration', function (): void {
             'Choose the main test selection', 'Run tests affected since the main graph',
             'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
         ]);
-        expect($project['runs-on'])
-            ->toContain("matrix.project.directory == 'apps/gateway'", "vars.ORBIT_SABRE_RUNNER == 'true'")
-            ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
-            ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')", "'ubuntu-26.04'");
+        // PR quality checks share the orbit-shard pool; main keeps Sabre for its six-worker recording run.
+        expect($project['runs-on'])->toBe('${{ matrix.project.directory == \'apps/gateway\' && vars.ORBIT_SABRE_RUNNER == \'true\''
+            .' && (github.event_name != \'pull_request\' && fromJSON(\'["self-hosted", "sabre"]\')'
+            .' || github.event.pull_request.head.repo.full_name == github.repository && fromJSON(\'["self-hosted", "orbit-shard"]\'))'
+            .' || \'ubuntu-26.04\' }}');
     });
 
     it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {

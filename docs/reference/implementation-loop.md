@@ -185,9 +185,9 @@ Runs on main never shard. Each keeps one full Gateway recording run, because Pes
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards run on the [shard runners](#self-hosted-shard-runners) under the same condition. The Gateway privileged job always runs on a GitHub-hosted runner. PRs can use any four runners with `orbit-shard`, including Sabre; main uses one `sabre` runner for the full Gateway suite.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs, the Gateway quality job and each of the four shards take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included, and the quality checks use four workers. Main uses one runner with the labels `self-hosted` and `sabre` for the full Gateway suite, because its six workers do not fit a [shard runner](#self-hosted-shard-runners) container with four CPUs and 8 GiB. The Gateway privileged job always runs on a GitHub-hosted runner.
 
-Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
 On Sabre the job skips the Homebrew and system package steps, because Sabre already has Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP step only [verifies](#one-php-build-in-ci) that Sabre runs the recipe's PHP build. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
 
