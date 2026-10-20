@@ -546,7 +546,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
-A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. Merge-ready publication does not leave a waiter when admission fails: the settling tick can resume a review-fix subtask and stop calling merge-ready while the group is running. It tries admission again only when the scheduler next reaches merge-ready, without passing earlier waiters. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
+A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 
 After release, the oldest eligible waiter is admitted when its durable scheduler workflow retries. A synchronous request that fails before it owns such a workflow withdraws its unconsumed waiter. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
 
@@ -1445,7 +1445,7 @@ The App can review the pull request because the pull request author is a person,
 
 ### Merge on green
 
-Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
+Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. This gate reads GitHub state and recorded review evidence, not the workspace. A parked task VM stays parked while Orbit waits for review and checks or merges a reviewed head. It merges when all of these hold on the current head:
 
 1. The head SHA has recorded final-review evidence, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).

@@ -36,13 +36,13 @@ it('admits later checks and receipts after merge-ready is attempted while a revi
     $health = new TaskPullRequestHealth('open');
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($group, 'check', 'prior-check');
-    expect(fn () => $scheduler->mergeWhenReady($group, $health, null))->toThrow(TaskWorkspaceWaiting::class);
+    $scheduler->mergeWhenReady($group, $health, null);
 
     $fixup = tick_appended_subtask($group);
     $fixup->update(['status' => TaskStatus::Running]);
     $group->update(['status' => TaskGroupStatus::Running]);
     // The settling tick still calls merge-ready after healing has resumed a fixup.
-    expect(fn () => $scheduler->mergeWhenReady($group->fresh(['taskable']), $health, null))->toThrow(TaskWorkspaceWaiting::class);
+    $scheduler->mergeWhenReady($group->fresh(['taskable']), $health, null);
     $leases->release($holder);
     $leases = new TaskWorkspaceLease;
     app()->instance(TaskWorkspaceLease::class, $leases);
@@ -58,7 +58,7 @@ it('admits later checks and receipts after merge-ready is attempted while a revi
     ]);
 });
 
-it('leaves no merge-ready waiter while settling and evaluates publication on its next eligible call', function (): void {
+it('evaluates merge-ready while the workspace is busy without joining its queue', function (): void {
     $group = tick_group();
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
@@ -67,20 +67,18 @@ it('leaves no merge-ready waiter while settling and evaluates publication on its
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($group, 'check', 'prior-check');
 
-    expect(fn () => $scheduler->mergeWhenReady($group, $health, null))->toThrow(TaskWorkspaceWaiting::class);
+    $scheduler->mergeWhenReady($group, $health, null);
 
     expect($leases->status($group)[0]['waiters'])->toBe([])
         ->and($holder->fresh()->status)->toBe('held');
-    $leases->release($holder);
-    $scheduler->mergeWhenReady($group, $health, null);
     expect($group->fresh()->merge_status)->toBe(TaskMergeStatus::Waiting)
         ->and($group->fresh()->merge_reason)->toBe('GitHub did not report the pull request head.');
-    $this->assertDatabaseHas('task_workspace_leases', [
-        'group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id, 'status' => 'released',
+    $this->assertDatabaseMissing('task_workspace_leases', [
+        'group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id,
     ]);
 });
 
-it('does not let non-queuing merge-ready admission pass an earlier durable waiter', function (): void {
+it('leaves earlier durable workspace waiters unchanged while evaluating merge-ready', function (): void {
     $group = tick_group();
     $group->update(['status' => TaskGroupStatus::Settling]);
     $leases = app(TaskWorkspaceLease::class);
@@ -89,7 +87,7 @@ it('does not let non-queuing merge-ready admission pass an earlier durable waite
     $earlier = TaskWorkspaceLeaseRecord::query()->where('owner', 'earlier-receipt')->sole();
     $leases->release($holder);
 
-    expect(fn () => app(TaskScheduler::class)->mergeWhenReady($group, new TaskPullRequestHealth('open'), null))->toThrow(TaskWorkspaceWaiting::class);
+    app(TaskScheduler::class)->mergeWhenReady($group, new TaskPullRequestHealth('open'), null);
 
     expect($earlier->fresh()->status)->toBe('queued')
         ->and($leases->status($group)[0]['waiters'])->toHaveCount(1)

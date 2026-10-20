@@ -54,6 +54,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Activity;
@@ -67,6 +68,7 @@ use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\AgentCommandDispatcher;
@@ -680,6 +682,33 @@ describe('final review before every push', function (): void {
 });
 
 describe('merge on green', function (): void {
+    it('ticks a WaitingForReview group with a Parked VM without reading its workspace', function (RequiredCheckState $check, TaskMergeStatus $expectedStatus, array $expectedMerges): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview_enabled' => false]);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $runtime = rm_runtime();
+        $runtime->check = $check;
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)
+            ->assistance_requested->toBeFalse()->merge_status->toBe($expectedStatus);
+        expect($runtime->merges)->toBe($expectedMerges);
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBeNull();
+        Queue::assertNotPushed(ResumeTaskVm::class);
+        $this->assertDatabaseMissing('task_workspace_leases', ['group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id]);
+    })->with([
+        'waiting for checks' => [RequiredCheckState::Pending, TaskMergeStatus::Waiting, []],
+        'green reviewed head' => [RequiredCheckState::Passed, TaskMergeStatus::Merged, [RM_HEAD]],
+    ]);
+
     it('merges a reviewed, green, mergeable head through the App', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
