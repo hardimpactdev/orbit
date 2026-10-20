@@ -8,7 +8,7 @@ covers:
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,generated-merge,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
-  - apps/gateway/{database/{schema/**,migrations/*_seed_schema_baseline_reference_rows.php},tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
+  - apps/gateway/{database/migrations/*,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
   - apps/docs/**
   - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
@@ -135,13 +135,11 @@ Gateway tests that need real commits or a database visible to subprocesses use `
 
 Before replacing this helper with a stock reset trait, compare complete Documents workloads, including setup and teardown, not repeated migration calls alone. Both setups must preserve real commits, subprocess visibility, reference defaults, and per-case isolation. `DatabaseTruncation` permits real commits; its seeder must restore reference rows and reset application ID counters left by empty tables that Laravel skips truncating.
 
-The Gateway loads its committed SQLite schema with Laravel's stock schema loader. Existing Gateways must finish the recorded migration chain before receiving the squash; Laravel loads the dump only when no migrations have run. Create the dump with `php artisan schema:dump --prune` on a disposable, fully migrated SQLite database. Remove applied extension migration files recorded in the dump too. Install the Ubuntu `sqlite3` package before writing a dump or loading it into a file database; in-memory loading needs only PDO SQLite.
+The Gateway's fresh-install schema is one squashed Laravel migration, followed by a migration that seeds required reference rows. The baseline keeps the last applied migration's name, `2026_12_03_000000_allow_cold_recipe_image_rebuilds`, so an existing Gateway that completed the recorded migration chain skips it. Fresh installations create the same tables, indexes, foreign keys, checks, and triggers and record the squashed history. Trigger diagnostics use the current Project and Instance names. Finish the recorded chain before deploying a squash. The baseline cannot be rolled back.
 
-Keep identifiers in the committed dump backtick-quoted, which both SQLite and Larastan's installed SQL parser understand. After generating a dump, normalize identifier quotes without changing string literals, and place `NOT NULL` before inline `PRIMARY KEY AUTOINCREMENT` or `CHECK` constraints so the SQL parser reads nullability before the SQLite-only constraint.
+Keep tables and columns in `Schema::create` calls so Larastan reads them through its normal migration scanner and fingerprints the PHP source. SQLite triggers and partial indexes stay SQL data in the migration. Do not add a separate schema dump: the [Node script ratchet](/decisions/0225-make-node-changes-through-agent-commands#the-ratchet-starts-at-this-merge) counts new non-PHP files, including SQL. `SchemaBaselineTest` compares the table names, column names, and nullability Larastan reads with the loaded SQLite schema.
 
-Gateway's `phpstan.neon` explicitly lists `database/schema` in `squashedMigrationsPath` so Larastan's migration cache fingerprints the dump before reading it. `SchemaBaselineTest` compares the table names, column names, and nullability Larastan reads with the loaded SQLite schema. After changing the dump, run `vendor/bin/phpstan clear-result-cache` before analysis; PHPStan's result cache does not track SQL changes.
-
-A separate named test connection passes `--schema-path=database/schema/sqlite-schema.sql` to the stock migrate command. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the post-dump migration, not in the schema file.
+Separate named test connections use the stock migrate command, with no schema-path override or SQLite CLI dependency. Point `queue.batching.database` at the same connection before migrating; Horizon's batch-metadata migration uses that setting. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the reference-row migration.
 
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 

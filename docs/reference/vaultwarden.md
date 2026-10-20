@@ -4,7 +4,7 @@ description: "How the Gateway publishes database credentials into a Vaultwarden 
 covers:
   - apps/gateway/app/Infrastructure/Certificates/OrbitCaCurlFactory.php
   - apps/gateway/extensions/vault/**
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
 ---
 
 # Vaultwarden

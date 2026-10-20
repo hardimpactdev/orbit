@@ -708,7 +708,6 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -721,7 +720,9 @@
                 "Task check",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0225"
+            ]
         },
         {
             "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",

@@ -13,12 +13,11 @@ parameters:
         - extensions
         - ../../tools/phpstan
         - ../../tools/boost
-    squashedMigrationsPath:
-        - database/schema
     # Each extension keeps its own migrations and configuration (docs/reference/extensions.md#layout).
     databaseMigrationsPath:
         - database/migrations
         - extensions/*/database/migrations
+        - vendor/nckrtl/horizon-new-dawn/database/migrations
     configDirectories:
         - config
         - extensions/*/config

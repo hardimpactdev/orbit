@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Actions/Instances/Dependencies/**
   - apps/gateway/app/Infrastructure/Instances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
   - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
   - packages/php-sdk/src/Requests/Instances/{Show,Scan,Update}InstanceDependenciesRequest.php
   - packages/php-sdk/src/Requests/Instances/{ResolveInstanceRequest,ResolveDirectoryInstanceRequest}.php

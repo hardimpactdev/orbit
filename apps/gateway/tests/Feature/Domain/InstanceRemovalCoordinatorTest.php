@@ -1240,14 +1240,14 @@ it('refuses removal evidence that hides a Route target or claims no Route for a 
     ]);
 
     expect(fn () => $member($removal($routed), $routed, null))
-        ->toThrow(QueryException::class, 'Invalid AppInstance removal member contract.');
+        ->toThrow(QueryException::class, 'Invalid Instance removal member contract.');
 
     $accepted = $member($removal($routeless), $routeless, null);
     $routeless->update(['status' => InstanceState::Removing]);
     $accepted->update(['source_prepared_at' => now()]);
 
     expect(fn () => $accepted->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']))
-        ->toThrow(QueryException::class, 'Invalid AppInstance removal member contract.');
+        ->toThrow(QueryException::class, 'Invalid Instance removal member contract.');
 
     $accepted->refresh()->update(['route_cleared_at' => now(), 'route_outcome' => 'none']);
 

@@ -21,16 +21,17 @@ it('serializes independent groups and preserves FIFO ownership across a process 
     $second->save();
     $second->setRelation('taskable', $first->taskable);
     $original = config('database.default');
+    $originalBatching = config('queue.batching.database');
     $database = tempnam(sys_get_temp_dir(), 'orbit-lease-concurrency-');
     $directory = $database.'-locks';
     mkdir($directory, 0o700);
     $children = [];
     config(['database.connections.lease_concurrency' => [
         ...config('database.connections.sqlite'), 'database' => $database,
-    ], 'database.default' => 'lease_concurrency']);
+    ], 'database.default' => 'lease_concurrency', 'queue.batching.database' => 'lease_concurrency']);
 
     try {
-        $this->artisan('migrate', ['--database' => 'lease_concurrency', '--force' => true, '--schema-path' => database_path('schema/sqlite-schema.sql')])->assertExitCode(0);
+        $this->artisan('migrate', ['--database' => 'lease_concurrency', '--force' => true])->assertExitCode(0);
         DB::table('tasks')->insert([
             ['id' => $first->id, 'parent_id' => null, 'title' => 'First', 'brief' => 'First contender', 'status' => 'running'],
             ['id' => $second->id, 'parent_id' => null, 'title' => 'Second', 'brief' => 'Second contender', 'status' => 'running'],
@@ -149,7 +150,7 @@ it('serializes independent groups and preserves FIFO ownership across a process 
             }
         }
         DB::purge('lease_concurrency');
-        config(['database.default' => $original]);
+        config(['database.default' => $original, 'queue.batching.database' => $originalBatching]);
         foreach ([$database, $database.'-wal', $database.'-shm'] as $file) {
             if (is_file($file)) {
                 unlink($file);

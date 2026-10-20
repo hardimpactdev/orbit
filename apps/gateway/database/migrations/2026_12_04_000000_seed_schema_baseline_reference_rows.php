@@ -9,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Schema dumps retain migration history, not the singleton rows created by that history.
+        // The schema baseline retains migration history, not its required singleton rows.
         DB::table('project_document_storages')->insertOrIgnore(['id' => 1]);
         DB::table('task_vm_image_recipe')->insertOrIgnore(['id' => 1]);
     }

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php

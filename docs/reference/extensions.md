@@ -8,7 +8,7 @@ covers:
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
-  - apps/gateway/{extensions/*/database/migrations/*_enable_*_extension_*.php,database/schema/sqlite-schema.sql}
+  - apps/gateway/{extensions/*/database/migrations/*_enable_*_extension_*.php,database/migrations/*}
   - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest,Feature/Http/Middleware/ValidateRequestBodySizeTest,Feature/Infrastructure/Gateway/GatewayServiceStartHookTest}.php
 ---
 

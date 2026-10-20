@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Domain/AppDev/{VitePortAllocator,VitePortRuntime,ViteProcessLifecycle,DevelopmentServerEndpoint}.php
   - apps/gateway/app/Infrastructure/AppDev/RemoteVitePortRuntime.php
   - apps/gateway/app/Domain/Processes/VpDevPreset.php
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
 ---
 
 # Assigned Vite ports

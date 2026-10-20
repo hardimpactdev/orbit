@@ -8,7 +8,7 @@ covers:
   - apps/gateway/{resources/remote/{lib/source-removal.py,instances/{inspect-source,check-publication,remove-source,prepare-source-removal,read-source-removal-state,read-removal-receipt,clean-removal-receipt,finalize-source-removal}.py},tests/Programs/test_source_removal.py}
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 

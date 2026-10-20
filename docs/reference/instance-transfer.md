@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/Transfer/**
   - apps/gateway/app/Infrastructure/Instances/{NativeInstanceTransferRuntime,RemoteInstanceTransferSource}.php
   - apps/gateway/app/Http/Controllers/Api/InstanceTransfersController.php
-  - apps/gateway/{app/Models/InstanceTransfer.php,database/schema/sqlite-schema.sql}
+  - apps/gateway/{app/Models/InstanceTransfer.php,database/migrations/*}
   - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/TransferInstanceRequest.php
 ---

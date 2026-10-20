@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
   - apps/gateway/app/Http/Controllers/Api/DatabaseServersController.php
   - apps/gateway/app/Http/Requests/DatabaseServers/**
-  - apps/gateway/{app/Models/DatabaseServer.php,database/schema/sqlite-schema.sql}
+  - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/*}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
 ---

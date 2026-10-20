@@ -3,7 +3,7 @@ title: "AI router"
 description: "The optional Orbit extension that collects CLIProxyAPI quota and its model list into shared Valkey, and publishes provider pools at collector.ai-router.orbit."
 covers:
   - apps/gateway/extensions/ai-router/**
-  - apps/gateway/database/schema/sqlite-schema.sql
+  - apps/gateway/database/migrations/*
   - apps/gateway/tests/{Feature,Unit}/Extensions/AiRouter/**
   - apps/web/src/extensions/ai-router/**
 ---

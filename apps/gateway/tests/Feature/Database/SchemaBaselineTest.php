@@ -4,38 +4,37 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Larastan\Larastan\Properties\Schema\MySqlDataTypeToPhpTypeConverter;
-use Larastan\Larastan\Properties\SquashedMigrationHelper;
-use Larastan\Larastan\SQL\IamcalSqlParser;
-use Larastan\Larastan\SQL\SqlParserFactory;
+use Larastan\Larastan\Properties\MigrationHelper;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
-use PHPStan\DependencyInjection\NeonAdapter;
-use PHPStan\File\FileHelper;
+use PHPStan\DependencyInjection\ContainerFactory;
 
-/** @param list<string> $paths */
-function schema_baseline_larastan(array $paths): SquashedMigrationHelper
+function schema_baseline_larastan(): MigrationHelper
 {
-    return new SquashedMigrationHelper(
-        $paths,
-        new FileHelper(base_path()),
-        new MySqlDataTypeToPhpTypeConverter,
-        new SqlParserFactory(new IamcalSqlParser)->create(),
-        false,
-    );
+    static $scanner = null;
+
+    // PHPStan's CLI normally sets this after booting the application; Pest already booted it.
+    if (! defined('LARAVEL_VERSION')) {
+        define('LARAVEL_VERSION', app()->version());
+    }
+
+    return $scanner ??= (new ContainerFactory(base_path()))->create(
+        sys_get_temp_dir().'/schema-baseline-phpstan',
+        [base_path('phpstan.neon')],
+        [],
+    )->getByType(MigrationHelper::class);
 }
 
-it('includes the schema dump in the Larastan migration cache inputs before scanning tables', function (): void {
-    $configuration = new NeonAdapter([])->load(base_path('phpstan.neon'));
-    $scanner = schema_baseline_larastan($configuration['parameters']['squashedMigrationsPath'] ?? []);
-    $files = array_map(static fn (SplFileInfo $file): string => $file->getRealPath(), $scanner->getSchemaFiles());
+it('includes the baseline in the Larastan migration cache inputs before scanning tables', function (): void {
+    $files = array_map(static fn (SplFileInfo $file): string => $file->getRealPath(), schema_baseline_larastan()->getMigrationFiles());
 
-    expect($files)->toContain(realpath(database_path('schema/sqlite-schema.sql')));
+    expect($files)->toContain(realpath(database_path('migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php')));
 });
 
 it('exposes every baseline table and column to Larastan with its SQLite name and nullability', function (): void {
-    $tables = schema_baseline_larastan([database_path('schema')])->initializeTables();
+    $tables = schema_baseline_larastan()->initializeTables();
+    // The migrations table belongs to Laravel's repository, not an application migration.
     $names = DB::table('sqlite_master')->where('type', 'table')->where('name', 'not like', 'sqlite_%')
-        ->orderBy('name')->pluck('name')->all();
+        ->where('name', '!=', 'migrations')->orderBy('name')->pluck('name')->all();
 
     expect(array_keys($tables))->toEqualCanonicalizing($names);
 
@@ -47,9 +46,15 @@ it('exposes every baseline table and column to Larastan with its SQLite name and
             expect($tables[$name]->columns[$column['name']]->nullable)->toBe($column['nullable'], $name.'.'.$column['name']);
         }
     }
+
+    $repository = Schema::getColumns('migrations');
+    expect(array_column($repository, 'name'))->toBe(['id', 'migration', 'batch']);
+    foreach ($repository as $column) {
+        expect($column['nullable'])->toBeFalse();
+    }
 });
 
-it('restores the reference rows omitted by the schema dump on a fresh install', function (): void {
+it('restores the reference rows omitted by the baseline on a fresh install', function (): void {
     expect((array) DB::table('project_document_storages')->sole())->toBe([
         'id' => 1,
         'endpoint' => null,
@@ -82,13 +87,29 @@ it('preserves configured singleton rows when deploying over the applied migratio
     ]);
     $storage = DB::table('project_document_storages')->get()->all();
     $recipe = DB::table('task_vm_image_recipe')->get()->all();
-    $migration = require database_path('migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php');
+    DB::table('migrations')->where('migration', '2026_12_04_000000_seed_schema_baseline_reference_rows')->delete();
 
-    $migration->up();
+    // The baseline must be skipped, not attempt to recreate these populated tables.
+    $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
+    $migration = require database_path('migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php');
+    $baseline = require database_path('migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php');
 
     expect(DB::table('project_document_storages')->get()->all())->toEqual($storage)
         ->and(DB::table('task_vm_image_recipe')->get()->all())->toEqual($recipe)
         ->and($storage[0]->secret_access_key)->not->toBe('existing-secret')
         ->and(ProjectDocumentStorage::query()->findOrFail(1)->secret_access_key)->toBe('existing-secret')
-        ->and(fn () => $migration->down())->toThrow(RuntimeException::class, 'cannot be rolled back');
+        ->and(fn () => $migration->down())->toThrow(RuntimeException::class, 'cannot be rolled back')
+        ->and(fn () => $baseline->down())->toThrow(RuntimeException::class, 'cannot be rolled back');
+});
+
+it('records the complete squashed history exactly once and leaves no pending migrations', function (): void {
+    $history = DB::table('migrations')->orderBy('id')->pluck('migration')->all();
+
+    expect($history)->toHaveCount(263)
+        ->and(array_unique($history))->toHaveCount(263)
+        ->and($history[0])->toBe('2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table')
+        ->and($history[261])->toBe('2026_12_03_000000_allow_cold_recipe_image_rebuilds')
+        ->and($history[262])->toBe('2026_12_04_000000_seed_schema_baseline_reference_rows');
+    $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
+    expect(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($history);
 });

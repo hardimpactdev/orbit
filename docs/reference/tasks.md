@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/schema/sqlite-schema.sql"
+  - "apps/gateway/database/migrations/*"
 ---
 
 # Tasks

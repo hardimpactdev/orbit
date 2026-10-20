@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
-  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/schema/sqlite-schema.sql}
+  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/*}
   - apps/gateway/resources/instances/{lifecycle.py,ci-caches.sh}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---

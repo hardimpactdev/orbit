@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "apps/gateway/database/schema/sqlite-schema.sql"
+  - "apps/gateway/database/migrations/*"
 ---
 
 # Projects

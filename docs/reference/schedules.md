@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
-  - apps/gateway/{app/Models/Schedule.php,database/schema/sqlite-schema.sql}
+  - apps/gateway/{app/Models/Schedule.php,database/migrations/*}
   - packages/php-sdk/src/{Requests,Responses}/Schedules/**
 ---
 

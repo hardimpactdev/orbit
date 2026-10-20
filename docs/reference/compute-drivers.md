@@ -9,7 +9,7 @@ covers:
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/{schema/sqlite-schema.sql,migrations/*_seed_schema_baseline_reference_rows.php}
+  - apps/gateway/database/migrations/*
 ---
 
 # Compute drivers
