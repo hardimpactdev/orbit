@@ -86,7 +86,7 @@ beforeEach(function (): void {
 });
 
 describe('trusted review observations', function (): void {
-    it('distinguishes absent trust from invalid trust without reading GitHub', function (mixed $trust, TaskReviewReadStatus $expected): void {
+    it('distinguishes absent trust from invalid trust without reading GitHub', function (string $trust, TaskReviewReadStatus $expected): void {
         config(['orbit.tasks.github_reviewers' => $trust]);
         $group = watcher_group();
 
@@ -95,16 +95,15 @@ describe('trusted review observations', function (): void {
         expect($observation->status)->toBe($expected);
         Http::assertNothingSent();
     })->with([
-        'default empty' => [[], TaskReviewReadStatus::Disabled],
-        'unrelated repository' => [['other/orbit' => [42]], TaskReviewReadStatus::Disabled],
-        'revoked' => [['acme/orbit' => []], TaskReviewReadStatus::Disabled],
-        'invalid entry' => [['acme/orbit' => [42, 'admin']], TaskReviewReadStatus::InvalidTrust],
-        'unreadable config' => [null, TaskReviewReadStatus::InvalidTrust],
+        'default empty' => ['', TaskReviewReadStatus::Disabled],
+        'unrelated repository' => ['other/orbit:42', TaskReviewReadStatus::Disabled],
+        'invalid entry' => ['acme/orbit:42,admin', TaskReviewReadStatus::InvalidTrust],
+        'no account' => ['acme/orbit:', TaskReviewReadStatus::InvalidTrust],
     ]);
 
     it('distinguishes complete empty reads from remote or malformed failures and never caches errors', function (array $rows, int $status, TaskReviewReadStatus $expected): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews($rows, status: $status);
         $watcher = app(TaskPullRequestReviewWatcher::class);
         $group = watcher_group();
@@ -124,7 +123,7 @@ describe('trusted review observations', function (): void {
 
     it('keeps an approval informational after comments and a pending review with null head and time', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         watcher_fake_reviews([
             watcher_review(['state' => 'APPROVED']),
             watcher_review(['id' => 102, 'state' => 'COMMENTED', 'submitted_at' => '2026-09-03T22:13:41Z']),
@@ -144,7 +143,7 @@ describe('trusted review observations', function (): void {
     it('caches bounded lists for no more than sixty seconds but not PR state', function (): void {
         $this->freezeTime();
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews([watcher_review()]);
         $group = watcher_group();
         $watcher = app(TaskPullRequestReviewWatcher::class);
@@ -165,7 +164,7 @@ describe('trusted review observations', function (): void {
         Cache::purge('file');
         try {
             GitHubTestSupport::storeApp();
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+            config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
             $source = watcher_fake_reviews([watcher_review()]);
             $group = watcher_group();
             $watcher = app(TaskPullRequestReviewWatcher::class);
@@ -191,13 +190,13 @@ describe('trusted review observations', function (): void {
 
     it('invalidates cached selection on head or trust changes and makes closed PR requests ineligible', function (string $change): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews([watcher_review()]);
         $group = watcher_group();
         $watcher = app(TaskPullRequestReviewWatcher::class);
         expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
         if ($change === 'trust') {
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [7]]]);
+            config(['orbit.tasks.github_reviewers' => 'acme/orbit:7']);
         }
         $source->reviews = [];
         $source->head = $change === 'head' ? str_repeat('a', 40) : null;
@@ -208,7 +207,7 @@ describe('trusted review observations', function (): void {
 
     it('isolates cached observations by repository and PR number', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42], 'other/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42;other/orbit:42']);
         watcher_fake_reviews([watcher_review()]);
         Http::fake([
             'https://api.github.com/repos/acme/orbit/pulls/43' => Http::response(['merged' => false, 'state' => 'open', 'head' => ['sha' => GitHubTestSupport::review()['commit_id']]]),
@@ -231,7 +230,7 @@ describe('trusted review observations', function (): void {
 
     it('revalidates unchanged sources with uncached PR list review and comment reads', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $comment = GitHubTestSupport::comment();
         watcher_fake_reviews([watcher_review()], comments: [$comment, array_replace($comment, ['id' => 1])]);
         $group = watcher_group();
@@ -252,7 +251,7 @@ describe('trusted review observations', function (): void {
 
     it('rejects changed candidates and distinguishes read failures during final revalidation', function (string $change, TaskReviewReadStatus $expected): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $review = watcher_review();
         $comment = GitHubTestSupport::comment();
         $source = watcher_fake_reviews([$review], comments: [$comment]);
@@ -272,7 +271,7 @@ describe('trusted review observations', function (): void {
         } elseif ($change === 'new decision') {
             $rows[] = watcher_review(['id' => 102, 'state' => 'DISMISSED']);
         } elseif ($change === 'trust') {
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => []]]);
+            config(['orbit.tasks.github_reviewers' => '']);
         } elseif ($change === 'removed') {
             $rows = [];
         }

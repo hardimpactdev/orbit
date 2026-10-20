@@ -208,7 +208,7 @@ final readonly class TaskPublication
      */
     public function mergeWhenReady(TaskScheduler $scheduler, Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
-        app(TaskWorkspaceLease::class)->run($group, 'publication', 'merge-ready:'.$group->id, fn () => $this->mergeWhenReadyWithWorkspace($scheduler, $group, $health, $reviews));
+        app(TaskWorkspaceLease::class)->run($group, 'publication', 'merge-ready:'.$group->id, fn () => $this->mergeWhenReadyWithWorkspace($scheduler, $group, $health, $reviews), queue: false);
     }
 
     private function mergeWhenReadyWithWorkspace(TaskScheduler $scheduler, Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void

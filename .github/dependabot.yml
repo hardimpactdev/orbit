@@ -25,6 +25,12 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: composer
+    directory: /apps/docs
+    patterns: ["*"]
+    multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
+  - package-ecosystem: composer
     directory: /apps/e2e
     patterns: ["*"]
     multi-ecosystem-group: daily
@@ -36,8 +42,26 @@ updates:
     multi-ecosystem-group: daily
     cooldown:
       default-days: 7
+  - package-ecosystem: bun
+    directory: /apps/web
+    patterns: ["*"]
+    multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
+  - package-ecosystem: bun
+    directory: /apps/pi-server
+    patterns: ["*"]
+    multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
+  - package-ecosystem: bun
+    directory: /apps/desktop
+    patterns: ["*"]
+    multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/.github/actions/*"]
     patterns: ["*"]
     multi-ecosystem-group: daily
     cooldown:

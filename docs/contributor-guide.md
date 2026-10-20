@@ -181,7 +181,7 @@ The wait applies only when Composer or Bun resolves a version. `composer install
 
 Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
-Dependabot is the automatic updater. Every entry in `.github/dependabot.yml` sets `cooldown.default-days: 7`, so its daily pull request proposes only releases that are at least seven days old. Security updates through Dependabot are not delayed.
+Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs, E2E and the PHP SDK; Bun in web, Pi server and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
 
 When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.
 
@@ -276,7 +276,7 @@ The command isolates Laravel's configuration-cache path in its private scratch d
 
 An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
 
-On pull requests, CI's `Docs (merge ref)` job checks out the base repository's `refs/pull/N/merge` and runs `composer check` in `apps/docs`. It logs the merge commit and fails with `Docs merge ref unavailable` if checkout fails; it never falls back to the PR head. `Required checks` requires this job to succeed on pull requests. Pushes to `main` and manual runs skip it and keep their existing checks.
+CI's Docs job in the project matrix checks out the immutable event SHA (`github.sha`) and runs `composer check` and the full Docs suite once. On pull requests, that SHA is the event's merge commit, not the moving `refs/pull/N/merge` ref or the PR head. `Required checks` requires this job on every event; there is no second Docs merge-ref job.
 
 The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 

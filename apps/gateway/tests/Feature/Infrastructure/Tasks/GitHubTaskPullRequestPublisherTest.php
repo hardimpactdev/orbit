@@ -100,7 +100,7 @@ function publisher_github(int $pullStatus = 201, int $reviewersStatus = 201): vo
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
-    config(['orbit.tasks.review_request_logins' => []]);
+    config(['orbit.tasks.review_request_logins' => '']);
 });
 
 it('queues the push from the task VM and reports it pending until GitHub has the commit', function (): void {
@@ -158,7 +158,7 @@ it('uses the open pull request that already has the task branch as its head', fu
 it('requests the configured reviewers after opening a pull request', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github();
-    config(['orbit.tasks.review_request_logins' => ['reviewbot', 'orbit-bot']]);
+    config(['orbit.tasks.review_request_logins' => 'reviewbot,orbit-bot']);
     $group = publisher_group('/srv/orbit/apps/shop/workspace');
     publisher_pushed($group, str_repeat('a', 40));
 
@@ -174,7 +174,7 @@ it('requests the configured reviewers after opening a pull request', function ()
 it('requests the configured reviewers when it reuses an open pull request', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github(422);
-    config(['orbit.tasks.review_request_logins' => ['reviewbot']]);
+    config(['orbit.tasks.review_request_logins' => 'reviewbot']);
     $group = publisher_group('/srv/orbit/apps/shop/workspace');
     publisher_pushed($group, str_repeat('a', 40));
 
@@ -187,7 +187,7 @@ it('requests the configured reviewers when it reuses an open pull request', func
 it('still publishes when the requested reviewers POST fails', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github(201, 422);
-    config(['orbit.tasks.review_request_logins' => ['reviewbot']]);
+    config(['orbit.tasks.review_request_logins' => 'reviewbot']);
     Log::spy();
     $group = publisher_group('/srv/orbit/apps/shop/workspace');
     publisher_pushed($group, str_repeat('a', 40));

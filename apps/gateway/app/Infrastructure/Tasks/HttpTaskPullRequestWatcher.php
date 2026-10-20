@@ -31,6 +31,7 @@ use App\Models\Task;
 use DateTimeImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
@@ -192,7 +193,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return new TaskReviewObservation(TaskReviewReadStatus::Unreadable);
         }
         [$repository, $number] = $target;
-        $trust = TaskReviewTrust::fromConfig($repository, config('orbit.tasks.github_reviewers', []));
+        $trust = TaskReviewTrust::fromConfig($repository, Config::string('orbit.tasks.github_reviewers'));
         if (! $trust->valid || $trust->accountIds === []) {
             return new TaskReviewObservation(
                 $trust->valid ? TaskReviewReadStatus::Disabled : TaskReviewReadStatus::InvalidTrust,

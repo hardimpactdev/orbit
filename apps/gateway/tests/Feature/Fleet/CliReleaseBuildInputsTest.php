@@ -13,7 +13,8 @@ it('lists every repository path the CLI build reads', function (): void {
         static fn (string $input): bool => $path === $input || str_starts_with($path, $input.'/'),
     );
     $builder = (string) file_get_contents($root.'/bin/orbit-build-cli-binary');
-    $workflow = (string) file_get_contents($root.'/.github/workflows/orbit-cli-binary.yml');
+    // Trigger paths also cover the host PHP setup, not just the source packed into a CLI binary.
+    $workflow = Yaml::dump(Yaml::parseFile($root.'/.github/workflows/orbit-cli-binary.yml')['jobs'], 10);
     preg_match_all('#\$repo_root/([A-Za-z0-9._/-]+)#', $builder, $fromBuilder);
     preg_match_all('#(?<![A-Za-z0-9_./-])((?:bin|apps|packages)/[A-Za-z0-9._/-]+)#', $workflow, $fromWorkflow);
     $paths = array_values(array_unique([...$fromBuilder[1], ...$fromWorkflow[1], '.github/workflows/orbit-cli-binary.yml']));

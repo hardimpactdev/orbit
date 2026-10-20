@@ -106,7 +106,7 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
 4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
 5. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
-6. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
+6. writes `REVISION`, which the release reads for its [version](#release-layout), then runs `php artisan config:cache` in the release. The cache holds `APP_KEY`, so it is mode `0600`.
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
