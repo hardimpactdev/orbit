@@ -300,7 +300,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             'head' => $draft->head,
             'base' => $draft->base,
             'body' => $draft->body,
-        ]));
+        ] + ($draft->draft ? ['draft' => true] : [])));
         $opened = $this->openedPullRequest($repository, $response);
         if ($opened instanceof GitHubOpenedPullRequest) {
             return $opened;
@@ -320,6 +320,27 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return $opened;
+    }
+
+    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, array $changes): void
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->patch($this->repositoryPath($repository).'/pulls/'.$number, $changes));
+        if (! $response->successful()) {
+            throw GitHubApiException::refused();
+        }
+    }
+
+    public function setPullRequestDraft(#[SensitiveParameter] string $token, string $nodeId, bool $draft): void
+    {
+        $mutation = $draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->post('/graphql', [
+            'query' => 'mutation($id: ID!) { '.$mutation.'(input: {pullRequestId: $id}) { pullRequest { isDraft } } }',
+            'variables' => ['id' => $nodeId],
+        ]));
+        if (! $response->successful() || $response->json('data.'.$mutation.'.pullRequest.isDraft') !== $draft) {
+            throw GitHubApiException::refused();
+        }
     }
 
     public function requestPullRequestReviewers(
@@ -385,6 +406,8 @@ final readonly class HttpGitHubApi implements GitHubApi
             body: is_string($response->json('body')) ? $response->json('body') : null,
             mergeCommitSha: $this->text($response->json('merge_commit_sha')),
             mergedAt: $this->text($response->json('merged_at')),
+            draft: $response->json('draft') === true,
+            nodeId: $this->text($response->json('node_id')),
         );
     }
 
@@ -648,7 +671,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         $number = is_int($number) && $number > 0 ? $number : $repository->pullRequestNumber($url);
         $author = $this->text($response->json($prefix.'user.login'));
 
-        return new GitHubOpenedPullRequest($url, $number, $author);
+        return new GitHubOpenedPullRequest($url, $number, $author, $response->json($prefix.'draft') === true, $this->text($response->json($prefix.'node_id')));
     }
 
     private function repositoryPath(GitHubRepository $repository): string

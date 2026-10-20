@@ -8,6 +8,7 @@ use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -50,6 +51,7 @@ final readonly class TaskSubtaskRunner
         private ResumeDeliverableCorrectionAction $correctionResume,
         private TaskObservationAvailability $availability,
         private TaskCheckOutputBuilder $outputBuilder,
+        private TaskHandoffCi $handoffCi,
     ) {}
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -130,6 +132,7 @@ final readonly class TaskSubtaskRunner
 
     /**
      * Runs the Project check for a handoff and acts on its state. The process state decides; no timer ends a check.
+     * With a merge check, a passed check then waits for that check in CI on the handoff commit (/reference/tasks#handoff-ci).
      */
     private function checkHandoff(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $implementer, TaskComment $receipt, TaskSessionObservation $observation): void
     {
@@ -172,15 +175,25 @@ final readonly class TaskSubtaskRunner
 
                 return;
             }
-            $handoff = ['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0];
-            if (is_string($implementer->turnId) && $implementer->turnId !== '') {
-                // The turn that handed off. A later implementer turn during review is a new handoff, not a reviewer edit.
-                $handoff['completion_handoff_turn_id'] = $implementer->turnId;
-            }
-            $task->update($handoff);
-            $scheduler->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer));
+            $mergeCheck = $group->project->mergeCheckName();
+            $ci = $mergeCheck === null ? RequiredCheckState::Passed
+                : $this->handoffCi->test($scheduler, $group, $task, $check, $receipt, $implementer->threadId, $mergeCheck);
+            if ($ci === RequiredCheckState::Passed) {
+                $handoff = ['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0];
+                if (is_string($implementer->turnId) && $implementer->turnId !== '') {
+                    // The turn that handed off. A later implementer turn during review is a new handoff, not a reviewer edit.
+                    $handoff['completion_handoff_turn_id'] = $implementer->turnId;
+                }
+                $task->update($handoff);
+                $scheduler->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer));
 
-            return;
+                return;
+            }
+            if ($ci !== RequiredCheckState::Failed) {
+                return;
+            }
+            // CI failed, and the check now records it: remind as for a failed check in the workspace.
+            $status = $check->status;
         }
         // The implementer cannot change deliverables, so an invalid project or file asks for assistance with no reminder.
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::INVALID_DELIVERABLE_STEP) {
@@ -202,6 +215,7 @@ final readonly class TaskSubtaskRunner
         $name = $command ?? 'the task check';
         $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === TaskHandoffCi::FailedStep => new TaskRubricItem('check_passed', false, "Orbit committed your work as {$check->commit_sha} after {$name} passed, and pushed it. Check ".($group->project->mergeCheckName() ?? '')." did not pass on that commit in CI. Your work stays committed: build on that commit, and do not reset or rewrite it.\n\n".$check->output."\n"),
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran {$name}, and it failed with exit code {$check->exit_code}. The end of its output:\n\n".$this->outputBuilder->build((string) $check->output)."\n"),
             $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled {$owned} before it finished."),
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed => new TaskRubricItem('check_passed', false, "The workspace changed while {$name} ran. Changed paths: ".implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
@@ -320,16 +334,12 @@ final readonly class TaskSubtaskRunner
     }
 
     /**
-     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool}|null
+     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, topology?: bool}|null
      */
     private function handoffCheck(Task $task): ?array
     {
         $check = $this->deliverableCheck($task);
         $group = $task->parent;
-        $start = TaskReviewBase::commit($task);
-        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
-            $check = [...($check ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
-        }
 
         $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
         if ($patterns !== [] && TaskTopology::forGroup($group)->isEmpty()) {

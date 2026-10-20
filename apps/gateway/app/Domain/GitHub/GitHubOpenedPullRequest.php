@@ -11,5 +11,7 @@ final readonly class GitHubOpenedPullRequest
         public string $url,
         public ?int $number,
         public ?string $authorLogin,
+        public bool $draft = false,
+        public ?string $nodeId = null,
     ) {}
 }

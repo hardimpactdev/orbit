@@ -125,7 +125,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return null;
         }
 
-        $failed = self::withoutExplainedRollups($failed);
+        $failed = TaskPullRequestCheck::withoutExplainedRollups($failed);
         $young = false;
         $stale = [];
         if ($pullRequest->headSha !== null) {
@@ -145,7 +145,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         foreach ($stale as $run) {
             $problems[] = 'Check '.$run->name.' is still pending'.($run->url !== null ? ': '.$run->url : '').'.';
         }
-        $check = static fn (GitHubCheckRun $run): TaskPullRequestCheck => new TaskPullRequestCheck($run->name, $run->url, $run->id, $run->appSlug, $run->outputTitle, $run->outputSummary);
+        $check = TaskPullRequestCheck::fromRun(...);
         $infrastructure = array_values(array_map($check, array_filter($failed, static fn (GitHubCheckRun $run): bool => $run->infrastructure())));
         foreach ($stale as $run) {
             $infrastructure[] = $check($run);
@@ -346,21 +346,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         }
 
         return $result;
-    }
-
-    /**
-     * Drops rollup checks, such as `Required checks`, when another failed run explains the failure.
-     * A rollup that fails alone stays.
-     *
-     * @param  list<GitHubCheckRun>  $failed
-     * @return list<GitHubCheckRun>
-     */
-    private static function withoutExplainedRollups(array $failed): array
-    {
-        $rollup = static fn (GitHubCheckRun $run): bool => in_array($run->name, TaskPullRequestCheck::ROLLUP_NAMES, true);
-        $explained = array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run)) !== [];
-
-        return $explained ? array_values(array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run))) : $failed;
     }
 
     /**

@@ -28,6 +28,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
@@ -111,6 +112,10 @@ final readonly class RemoveTaskWorkspaceAction
             if ($commit !== null) {
                 $this->publisher->push($group, $commit);
                 TaskFinalReview::recordRemovalPush($group, $commit);
+            }
+            if (TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->whereNotNull('commit_sha')->exists()) {
+                // A handoff made a pull request a draft for CI (/reference/tasks#handoff-ci). The group that ends gives it back.
+                $this->publisher->releaseHandoffDraft($group);
             }
             $lease = $leases->remoteStarted($instance);
             try {

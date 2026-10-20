@@ -46,6 +46,21 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         }
     }
 
+    public function checkRuns(Task $group, string $sha): array
+    {
+        $repository = $this->repository($group->project);
+        $token = $repository instanceof GitHubRepository ? $this->access->checksToken($repository) : null;
+        if (! $repository instanceof GitHubRepository || $token === null) {
+            throw new TaskPullRequestException('Orbit cannot read the check runs of '.$sha.': the Project has no GitHub App access to checks.');
+        }
+
+        try {
+            return $this->github->checkRuns($token, $repository, $sha);
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('Orbit could not read the check runs of '.$sha.': '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
     public function merge(Task $group, string $sha): GitHubMergeResult
     {
         [$repository, $number] = $this->pullRequest($group);

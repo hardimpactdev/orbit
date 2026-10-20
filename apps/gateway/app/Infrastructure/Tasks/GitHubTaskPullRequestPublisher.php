@@ -8,7 +8,9 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
+use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
@@ -58,6 +60,9 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      */
     private const int PublishUnstartedSeconds = 7200;
 
+    /** The body of the draft that the handoffs open. The publishing approval replaces it with the task's description. */
+    private const string HandoffDraftBody = 'Orbit runs CI here on each subtask handoff of this task. It stays a draft until the last approval publishes it with its description.';
+
     private const string WorkflowRefusal = 'GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.';
 
     public function __construct(
@@ -70,21 +75,65 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     public function publish(Task $group, string $body, string $commit): string
     {
         [$repository, $instance, $branch] = $this->target($group);
-        $base = $group->project->default_branch;
-        if (! is_string($base) || ! GitBranchName::isValid($base)) {
-            throw new TaskPullRequestException('The Project has no valid default branch.');
-        }
+        $base = $this->base($group);
 
         try {
             $token = $this->access->token($repository);
             $this->pushBranch($group, $instance, $branch, $token, $commit);
             $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
+            if ($opened->draft && $opened->number !== null && $opened->nodeId !== null) {
+                // The handoffs opened it for CI (/reference/tasks#handoff-ci). The task's own description replaces the draft's.
+                $this->github->updatePullRequest($token, $repository, $opened->number, ['title' => $group->title, 'body' => $body]);
+                $this->github->setPullRequestDraft($token, $opened->nodeId, false);
+            }
             $this->requestReviewers($token, $repository, $opened);
 
             return $opened->url;
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The pull request could not be opened: '.$exception->getMessage(), previous: $exception);
         }
+    }
+
+    public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+    {
+        [$repository, $instance, $branch] = $this->target($group);
+
+        try {
+            $token = $this->access->token($repository);
+            $stored = $this->storedPullRequest($group, $repository, $token);
+            if ($stored instanceof GitHubPullRequest) {
+                if ($stored->state !== GitHubPullRequestState::Open) {
+                    // A merged or closed pull request never carries the commit. The branch and settling watches hold the group.
+                    return $stored;
+                }
+                if (! $stored->draft && $stored->nodeId !== null) {
+                    // Unreviewed work must not sit on a pull request that is ready to merge. An approved push makes it ready again.
+                    $this->github->setPullRequestDraft($token, $stored->nodeId, true);
+                }
+            }
+            $this->pushBranch($group, $instance, $branch, $token, $commit);
+            $number = $stored instanceof GitHubPullRequest
+                ? $repository->pullRequestNumber((string) $group->pr_url)
+                : $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $this->base($group), $group->title, self::HandoffDraftBody, draft: true))->number;
+            if ($number === null) {
+                throw new TaskPullRequestException('The handoff commit was pushed, but Orbit could not resolve the number of its pull request.');
+            }
+
+            return $this->github->pullRequest($token, $repository, $number);
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('The handoff commit could not be published for CI: '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
+    /** @throws TaskPullRequestException */
+    private function base(Task $group): string
+    {
+        $base = $group->project->default_branch;
+        if (! is_string($base) || ! GitBranchName::isValid($base)) {
+            throw new TaskPullRequestException('The Project has no valid default branch.');
+        }
+
+        return $base;
     }
 
     private function requestReviewers(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubOpenedPullRequest $opened): void
@@ -126,10 +175,66 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         [$repository, $instance, $branch] = $this->target($group);
 
         try {
-            $this->pushBranch($group, $instance, $branch, $this->access->token($repository), $commit);
+            $token = $this->access->token($repository);
+            $this->pushBranch($group, $instance, $branch, $token, $commit);
+            $stored = $this->storedPullRequest($group, $repository, $token);
+            if ($stored instanceof GitHubPullRequest) {
+                // An approved commit is reviewed work.
+                $this->ready($token, $stored);
+            }
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
         }
+    }
+
+    public function releaseHandoffDraft(Task $group): void
+    {
+        $group->loadMissing('project');
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+        if (! $repository instanceof GitHubRepository) {
+            return;
+        }
+
+        try {
+            $token = $this->access->token($repository);
+            $stored = $this->storedPullRequest($group, $repository, $token);
+            if ($stored instanceof GitHubPullRequest) {
+                $this->ready($token, $stored);
+
+                return;
+            }
+            foreach ($this->github->pullRequestsByHead($token, $repository, TaskRemoteBranch::for($group)) as $listed) {
+                if ($listed->state === GitHubPullRequestState::Open && $this->github->pullRequest($token, $repository, $listed->number)->draft) {
+                    $this->github->updatePullRequest($token, $repository, $listed->number, ['state' => 'closed']);
+                }
+            }
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('The handoff draft could not be released: '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
+    /**
+     * Marks an open draft ready for review. A handoff made it a draft (/reference/tasks#handoff-ci).
+     *
+     * @throws GitHubApiException
+     */
+    private function ready(#[SensitiveParameter] string $token, GitHubPullRequest $pullRequest): void
+    {
+        if ($pullRequest->state === GitHubPullRequestState::Open && $pullRequest->draft && $pullRequest->nodeId !== null) {
+            $this->github->setPullRequestDraft($token, $pullRequest->nodeId, false);
+        }
+    }
+
+    /**
+     * The group's stored pull request, `pr_url`, as GitHub reports it now, or null without one.
+     *
+     * @throws GitHubApiException
+     */
+    private function storedPullRequest(Task $group, GitHubRepository $repository, #[SensitiveParameter] string $token): ?GitHubPullRequest
+    {
+        $number = is_string($group->pr_url) && $group->pr_url !== '' ? $repository->pullRequestNumber($group->pr_url) : null;
+
+        return $number === null ? null : $this->github->pullRequest($token, $repository, $number);
     }
 
     /**

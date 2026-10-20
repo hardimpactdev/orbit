@@ -131,6 +131,23 @@ interface GitHubApi
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest;
 
     /**
+     * Changes the title, body, or state of a pull request.
+     *
+     * @param  array{title?: string, body?: string, state?: 'closed'}  $changes
+     *
+     * @throws GitHubApiException
+     */
+    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, array $changes): void;
+
+    /**
+     * Converts an open pull request to a draft, or marks a draft ready for review. REST cannot change the draft
+     * state, so this is GraphQL's `convertPullRequestToDraft` or `markPullRequestReadyForReview`.
+     *
+     * @throws GitHubApiException
+     */
+    public function setPullRequestDraft(#[SensitiveParameter] string $token, string $nodeId, bool $draft): void;
+
+    /**
      * Requests reviewers on an open pull request. Re-requesting the same logins is safe.
      *
      * @param  list<string>  $reviewers

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
+use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewEvent;
@@ -273,6 +276,24 @@ function rm_runtime(array $receipts = []): object
             return RM_PR_URL;
         }
 
+        /** @var list<string> */
+        public array $handoffs = [];
+
+        public function publishHandoff(Task $group, string $commit): GitHubPullRequest
+        {
+            $this->handoffs[] = $commit;
+
+            return new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', $commit, 'main');
+        }
+
+        /** @var list<int> */
+        public array $released = [];
+
+        public function releaseHandoffDraft(Task $group): void
+        {
+            $this->released[] = $group->id;
+        }
+
         public function push(Task $group, string $commit): void
         {
             if ($this->pushFailures-- > 0) {
@@ -285,6 +306,19 @@ function rm_runtime(array $receipts = []): object
         public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
         {
             return $this->check;
+        }
+
+        public function checkRuns(Task $group, string $sha): array
+        {
+            return match ($this->check) {
+                RequiredCheckState::Missing => [],
+                RequiredCheckState::Unreadable => throw new TaskPullRequestException('GitHub is unavailable.'),
+                default => [new GitHubCheckRun('Required checks', match ($this->check) {
+                    RequiredCheckState::Passed => 'success',
+                    RequiredCheckState::Failed => 'failure',
+                    default => null,
+                }, null, 1, null, $this->check === RequiredCheckState::Pending ? 'in_progress' : 'completed', $sha, RequiredCheckState::CheckApp)],
+            };
         }
 
         public function merge(Task $group, string $sha): GitHubMergeResult
@@ -881,6 +915,7 @@ describe('incoming pull requests', function (): void {
 
         $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->sole();
         expect($runtime->pushes)->toBe([])
+            ->and($runtime->released)->toBe([$group->id])
             ->and($runtime->reviews)->toBe([[RM_PR_HEAD, 'APPROVE']])
             ->and($reviewed->source)->toBe(TaskReviewedCommitSource::PullRequestReview)
             ->and($reviewed->github_review_id)->toBe(7001)

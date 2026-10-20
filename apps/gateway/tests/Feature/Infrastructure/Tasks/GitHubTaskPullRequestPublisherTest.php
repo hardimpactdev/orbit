@@ -258,3 +258,152 @@ it('refuses an incoming pull request branch that is not a valid branch name', fu
     expect(fn () => publisher(new AppDevFakeSshExecutor)->push($group, str_repeat('a', 40)))->toThrow(TaskPullRequestException::class);
     Queue::assertNothingPushed();
 });
+
+/**
+ * GitHub with pull request #12 for the task branch: a new open answers 422, and the list finds #12. GraphQL answers
+ * each draft mutation with the state it asked for, or refuses it.
+ */
+function publisher_github_draft(bool $conflicting = false, bool $mutates = true, bool $draft = true, string $state = 'open'): void
+{
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
+        'https://api.github.com/repos/acme/shop/pulls?*' => Http::response([[
+            'html_url' => 'https://github.com/acme/shop/pull/12', 'number' => 12, 'user' => ['login' => 'orbit-bot'],
+            'state' => $state, 'draft' => $draft, 'node_id' => 'PR_kwDOdraft12',
+        ]]),
+        'https://api.github.com/repos/acme/shop/pulls' => Http::response(['message' => 'A pull request already exists'], 422),
+        'https://api.github.com/repos/acme/shop/pulls/12' => static fn (Request $request) => $request->method() === 'PATCH' ? Http::response([]) : Http::response([
+            'state' => $state, 'merged' => false, 'mergeable' => ! $conflicting, 'mergeable_state' => $conflicting ? 'dirty' : 'clean',
+            'head' => ['sha' => str_repeat('a', 40)], 'base' => ['ref' => 'main'], 'body' => 'Draft', 'draft' => $draft, 'node_id' => 'PR_kwDOdraft12',
+        ]),
+        'https://api.github.com/graphql' => static function (Request $request) use ($mutates) {
+            $mutation = str_contains((string) $request['query'], 'convertPullRequestToDraft') ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
+
+            return Http::response($mutates
+                ? ['data' => [$mutation => ['pullRequest' => ['isDraft' => $mutation === 'convertPullRequestToDraft']]]]
+                : ['errors' => [['message' => 'Resource not accessible by integration']]]);
+        },
+    ]);
+}
+
+/** The GraphQL draft mutations GitHub received, in order. @return list<string> */
+function publisher_draft_mutations(): array
+{
+    return array_values(array_map(
+        static fn (array $sent): string => str_contains((string) $sent[0]['query'], 'convertPullRequestToDraft') ? 'draft' : 'ready',
+        Http::recorded(static fn (Request $request): bool => $request->url() === 'https://api.github.com/graphql')->all(),
+    ));
+}
+
+it('opens a draft for the handoff commit and reports the pull request that runs its CI', function (): void {
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
+        'https://api.github.com/repos/acme/shop/pulls' => Http::response([
+            'html_url' => 'https://github.com/acme/shop/pull/11', 'number' => 11, 'user' => ['login' => 'orbit-bot'], 'draft' => true, 'node_id' => 'PR_11',
+        ], 201),
+        'https://api.github.com/repos/acme/shop/pulls/11' => Http::response([
+            'state' => 'open', 'merged' => false, 'mergeable' => null, 'head' => ['sha' => str_repeat('a', 40)], 'base' => ['ref' => 'main'], 'draft' => true,
+        ]),
+    ]);
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    publisher_pushed($group, str_repeat('a', 40));
+
+    $pullRequest = publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40));
+
+    expect($pullRequest->headSha)->toBe(str_repeat('a', 40))
+        ->and($pullRequest->conflicts())->toBeFalse()
+        ->and($group->fresh()?->pr_url)->toBeNull();
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
+        && $request['draft'] === true && $request['head'] === 'task-'.Task::topLevel()->sole()->id && $request['base'] === 'main');
+});
+
+it('makes the stored pull request a draft before a handoff pushes unreviewed work to it', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft(conflicting: true, draft: false);
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
+    publisher_pushed($group, str_repeat('a', 40));
+
+    expect(publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40))->conflicts())->toBeTrue()
+        ->and(publisher_draft_mutations())->toBe(['draft']);
+    Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls'));
+});
+
+it('pushes nothing for a stored pull request that already merged', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft(draft: false, state: 'closed');
+    Queue::fake();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
+
+    expect(publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40))->state->value)->toBe('closed')
+        ->and(publisher_draft_mutations())->toBe([]);
+    Queue::assertNothingPushed();
+});
+
+it('waits for the push before it opens the draft', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft();
+    Queue::fake();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40)))
+        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit');
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/pulls'));
+});
+
+it('publishes the task through the draft the handoffs opened instead of a second pull request', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    publisher_pushed($group, str_repeat('a', 40));
+
+    $url = publisher(new AppDevFakeSshExecutor)->publish($group, "Adds the export.\n", str_repeat('a', 40));
+
+    expect($url)->toBe('https://github.com/acme/shop/pull/12')
+        ->and(publisher_draft_mutations())->toBe(['ready']);
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PATCH' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls/12'
+        && $request->data() === ['title' => 'Export orders', 'body' => "Adds the export.\n"]);
+    Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/graphql' && $request['variables'] === ['id' => 'PR_kwDOdraft12']);
+    Http::assertSentCount(6);
+});
+
+it('fails the publication when GitHub keeps the pull request a draft', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft(mutates: false);
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    publisher_pushed($group, str_repeat('a', 40));
+
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->publish($group, 'Body', str_repeat('a', 40)))
+        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened');
+});
+
+it('makes the stored pull request ready again when it pushes an approved commit', function (bool $draft, array $mutations): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft(draft: $draft);
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/12']);
+    publisher_pushed($group, str_repeat('a', 40));
+
+    publisher(new AppDevFakeSshExecutor)->push($group, str_repeat('a', 40));
+
+    expect(publisher_draft_mutations())->toBe($mutations);
+})->with(['a draft from a handoff' => [true, ['ready']], 'a ready pull request' => [false, []]]);
+
+it('gives back the handoff draft: closes the one it opened, or makes a stored pull request ready', function (bool $stored, int $closes, array $mutations): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    $group->update(['pr_url' => $stored ? 'https://github.com/acme/shop/pull/12' : null]);
+
+    publisher(new AppDevFakeSshExecutor)->releaseHandoffDraft($group);
+
+    expect(Http::recorded(static fn (Request $request): bool => $request->method() === 'PATCH' && $request->data() === ['state' => 'closed'])->count())->toBe($closes)
+        ->and(publisher_draft_mutations())->toBe($mutations);
+})->with([
+    'a draft the handoffs opened' => [false, 1, []],
+    'a stored pull request a handoff made a draft' => [true, 0, ['ready']],
+]);

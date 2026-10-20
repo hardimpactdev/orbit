@@ -221,7 +221,7 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
-        // The counted records go into the approval, and so into its commit, for a person to audit.
+        // The counted records go into the approval for a person to audit, and into its commit when the approval commits the work.
         if (is_string($evidenceSummary) && ! str_contains($receipt->body, $evidenceSummary)) {
             $receipt->update(['body' => rtrim($receipt->body)."\n\n".$evidenceSummary]);
         }

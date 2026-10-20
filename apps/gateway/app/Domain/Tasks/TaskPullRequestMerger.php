@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubReviewEvent;
@@ -12,7 +13,7 @@ use App\Models\Project;
 use App\Models\Task;
 
 /**
- * The GitHub App operations of the review-and-merge flow (ADR 0203): read the merge check of one head,
+ * The GitHub App operations of the review-and-merge flow (ADR 0203): read the merge check of one head or handoff commit,
  * submit a review decision on an incoming pull request, merge,
  * and list a Project's open pull requests.
  * Every call mints its own token. No call holds a database lock.
@@ -21,6 +22,15 @@ interface TaskPullRequestMerger
 {
     /** The merge check on exactly this head. A failed read is `Unreadable`, never `Passed`. */
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState;
+
+    /**
+     * Every check run on exactly this commit. A handoff reads its merge check and its failed runs from one read.
+     *
+     * @return list<GitHubCheckRun>
+     *
+     * @throws TaskPullRequestException when the App or GitHub is unavailable
+     */
+    public function checkRuns(Task $group, string $sha): array;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.

@@ -14,11 +14,11 @@ covers:
 
 # Tasks
 
-Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check verifies the handoff, and a fresh reviewer approves it. Orbit commits and pushes each approved subtask. After the last approval, Orbit opens the pull request and watches it until it merges.
+Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check and CI verify the handoff, and a fresh reviewer approves it. Orbit commits and pushes the work, and it keeps the pull request a draft while unreviewed work is on it. After the last approval, Orbit opens the pull request and watches it until it merges.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
 
-A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
+A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything for review, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
 
 The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
@@ -967,8 +967,8 @@ Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `
 | Check state | Result |
 | --- | --- |
 | `running` | The tick waits. The subtask's `check` shows the start time. |
-| `passed` | Exit code 0, and HEAD and the tree did not change. Orbit [verifies the deliverables](#verify-deliverables), and the reviewer starts. |
-| `failed` | The exit code is not 0, or an invalid deliverable or an error in the check script stopped it. The reminder holds the exit code and the [redacted output tail](#check-output). |
+| `passed` | Exit code 0, and HEAD and the tree did not change. Orbit [verifies the deliverables](#verify-deliverables) and runs the [handoff CI](#handoff-ci) when it applies. Then the reviewer starts. |
+| `failed` | The exit code is not 0, an invalid deliverable or a check-script error stopped it, or the [handoff CI](#handoff-ci) failed. The reminder holds the [redacted output tail](#check-output). |
 | `changed` | HEAD or the tree changed. The check does not restart; a handoff requires implementer correction, and a baseline asks for assistance. |
 | `lost` | The supervisor left no terminal result. Its lease stays held because descendants may still run. No replacement check starts without authoritative completion. |
 | `cancelled` | An operator cancelled it. The reminder says so. |
@@ -979,11 +979,50 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. If Orbit cannot confirm termination, the call answers HTTP 502 `tasks.check_unreachable` and leaves the check status and workspace fence in place. Orbit marks the check cancelled only after termination is confirmed. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and a redacted output tail of at most 16 KiB.
 
-Every Project handoff receives the subtask start commit in `ORBIT_TASK_CHECK_BASE`, including rework and final-review fixups. A Project that does not read it is unaffected. Orbit's gate uses the [candidate gate's test-base rule](/reference/implementation-loop#the-candidate-gate). File deliverables and reproduction commands also use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base.
+File deliverables and reproduction commands use the subtask start commit. Documentation and topology checks keep their branch scope.
+
+### Handoff CI
+
+The fast checks run in the task VM. The handoff's full test suite runs in CI on the exact handoff commit. The merge still needs the full suite on the final head, as [Merge on green](#merge-on-green) states.
+
+This applies to a Project with a `merge_check`, such as `Required checks`. A Project without one keeps the task check alone. The Orbit Project's task check runs only fast quality checks, as [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists.
+
+After a handoff check passes and its deliverables verify, Orbit:
+
+1. Commits the checked tree in the workspace as `orbit <tasks@orbit>`, with the subtask title and the implementer's summary as the message. It stores that commit on the check as `commit_sha`.
+2. Pushes that commit to the group's branch: `task-{id}`, or the incoming pull request's branch. The push uses the [publication path](#pull-request-and-settle-metrics) and is never forced.
+3. Makes sure a draft pull request runs CI on that branch.
+4. Reads the `merge_check` runs on exactly that commit, by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
+
+A group without `pr_url` gets a draft pull request, or keeps the open one that the branch already has. Orbit does not store the draft in `pr_url`. A group with `pr_url`, such as a settling fixup or an incoming pull request, uses that pull request: Orbit converts it to a draft before it pushes. A merged or closed `pr_url` gets no push; the [branch watch](#watch-the-branch-while-subtasks-are-open) holds the group.
+
+A draft cannot merge, and Orbit's incoming-pull-request watch skips it. Every approved push to a stored pull request marks it ready again, because an approved commit is reviewed work. The approval that opens the pull request reuses the draft, as [Pull request and settle metrics](#pull-request-and-settle-metrics) describes.
+
+When the group's workspace is removed, such as on cancel, Orbit gives the draft back. It closes the draft it opened for a group without `pr_url`; the branch keeps its commits. It marks a stored `pr_url` pull request that a handoff made a draft ready again. A final review that approves an incoming pull request head without a push does the same.
+
+| Merge check on the handoff commit | Result |
+| --- | --- |
+| Passed | The handoff passes, and the reviewer starts. |
+| Pending, or no run yet | The subtask stays `running`. Each tick reads the result again, at most once a minute. Without a run, Orbit publishes the commit again. |
+| Failed | The check becomes `failed` with `failed_step` `ci`. Its output lists each failed job, its URL, and a [log excerpt](#check-output) of at most 16 KiB per job. The implementer gets it as a failed check. |
+
+A failed result counts toward the [failed-check budget](#rubric-and-reminders). Publishing again is safe: the push and the pull request open are idempotent.
+
+A result on another commit never counts. A rework hands off a new commit, and CI must pass on that commit.
+
+GitHub runs no `pull_request` workflow while the pull request conflicts with its base. When GitHub reports that conflict, the check fails with `failed_step` `ci`. The reminder asks the implementer to merge `origin/{base}` into the task branch and resolve the conflicts, without a rebase or a force-push.
+
+A handoff that changed nothing since the subtask start commits nothing. Its commit is the start commit, which an earlier handoff or main already tested, so it passes without a CI read.
+
+The author of an incoming pull request can push while a fixup runs. GitHub then refuses Orbit's push, because it is not a fast-forward. When the pull request head is a commit that no handoff, review, or fixup of the group knows, the check fails with `failed_step` `ci`. The reminder asks the implementer to merge `origin/{pr_branch}` and resolve the conflicts, without a rebase or a force-push. Any other refused push is a communication failure.
+
+The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. When the reviewer approves, Orbit finds nothing new to commit, so the approval stores the handoff commit. An unreadable check-run list, a failed push, or a failed pull request read is a communication failure; the fifth asks for assistance. Orbit adds no timeout: a pending run waits until CI reports a result.
+
+The `commit_sha` of the check shows which commit CI tests. A `passed` handoff check whose subtask is still `running` waits for CI on that commit.
 
 ### Check output
 
-Stored check output, API responses, check reminders, CI fixup briefs, and command-deliverable evidence for implementers and reviewers use the same output rule. Orbit removes timestamps and ANSI codes, redacts secrets with the [Activity text rule](/cli/activity#redaction), then keeps up to 16 KiB from the end of each output record. Agent briefs quote the excerpt with a Markdown fence long enough to contain any embedded backticks. Assistance reasons contain a short sentence that names the check and its stored output; they contain no log text.
+Stored check output, API responses, check reminders, CI fixup briefs, handoff CI failures, and command-deliverable evidence for implementers and reviewers use the same output rule. Orbit removes timestamps and ANSI codes, redacts secrets with the [Activity text rule](/cli/activity#redaction), then keeps up to 16 KiB from the end of each output record. Agent briefs quote the excerpt with a Markdown fence long enough to contain any embedded backticks. Assistance reasons contain a short sentence that names the check and its stored output; they contain no log text.
 
 Every raw output passes through one shared builder. It keeps at most the last 100 KiB, drops an incomplete first line when a later line exists, then removes timestamps and ANSI codes and redacts once before taking the 16 KiB tail. A final line longer than the window retains its last bounded bytes. Streamed CI logs use the same window. Stored tails are quoted for agents without redacting them again. If a window starts inside a PEM block, Orbit drops the orphan body through its END marker before redaction. Other multiline secrets can lose their identifying key when they cross the cut.
 
@@ -1098,13 +1137,17 @@ Parent and tree equality alone do not prove who committed. A failed workspace re
 
 `changes_requested` sends the findings to the implementer and returns the subtask to `running`, once the implementer has stopped. The implementer then needs a new receipt and a passing check.
 
-`approved` waits until the implementer has stopped, because Orbit commits the whole workspace. The Gateway commits every change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval. Then it [publishes](#pull-request-and-settle-metrics) that commit. When publication fails, the next attempt publishes the stored commit again only while HEAD is still that commit and the tree still matches. A reset back to the HEAD before the approval requires a fresh review, rather than publishing the dropped commit.
+`approved` waits until the implementer has stopped, because Orbit commits the whole workspace. The Gateway commits every uncommitted change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the resulting HEAD on the approval. After a [handoff CI](#handoff-ci), nothing is left to commit, so the approval stores the handoff commit that CI tested.
+
+Then it [publishes](#pull-request-and-settle-metrics) that commit. When publication fails, the next attempt publishes the stored commit again only while HEAD is still that commit and the tree still matches. A reset back to the HEAD before the approval requires a fresh review, rather than publishing the dropped commit.
 
 ## Pull request and settle metrics
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway imports the stored commit from the task VM into its Git mirror and pushes from that mirror, never from the agent's checkout. It runs `git push --quiet origin <commit_sha>:refs/heads/task-{id}`, using the stored commit, never `HEAD`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
+After each approval, the Gateway imports the stored commit from the task VM into its Git mirror and pushes from that mirror, never from the agent's checkout. It runs `git push --quiet origin <commit_sha>:refs/heads/task-{id}`, using the stored commit, never `HEAD`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes for review. A commit that the [handoff CI](#handoff-ci) already pushed is not pushed again.
+
+On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. When that pull request is the draft the handoffs opened, Orbit sets its title and description and marks it ready for review. GitHub's REST API cannot leave draft, so that step uses GraphQL's `markPullRequestReadyForReview`.
 
 Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. Orbit stores `pr_url`. During settling, it records `settled_at` and moves the task from `settling` to `waiting_for_review`. The `waiting_for_review` status uses the pull request watch, fixup, and completion rules of [Settling](#settling).
 
@@ -1363,7 +1406,7 @@ The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite
 
 A Project can opt in to review and merge. Orbit then holds three rules:
 
-1. Orbit pushes only a commit that a final review approved.
+1. Orbit opens or readies a pull request for review only with a head that a final review approved. Handoff commits reach the branch earlier, only so that [CI tests them](#handoff-ci).
 2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
 3. Orbit merges a pull request through the GitHub App. The head must have recorded final-review evidence, and CI must pass on that head.
 
@@ -1407,7 +1450,7 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 ### Every push is reviewed
 
-In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review.
+In a review-and-merge task, an approval does not push. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review. [Handoff CI](#handoff-ci) pushes each handoff commit before its review, on a draft pull request that cannot merge. The merge gate still requires a final-reviewed head.
 
 The migration that removes the integration gate refuses to run while one of its checks is running or a holder it would cancel has uncertain remote work or a pending workspace operation. It cancels the gate’s queued and held workspace leases before deleting its checks, and clears the delta-review fixup identities.
 
@@ -1415,7 +1458,7 @@ It converts the gate’s reviewed heads to `orbit_push`, preserving their eviden
 
 Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
-Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
+Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace; handoff commits that CI tested stay on the branch, and the removal gives back their draft.
 
 ### Incoming pull requests
 
@@ -1433,7 +1476,7 @@ For each eligible pull request, Orbit creates a task in `todo` titled `Review #{
 
 Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the head the pull request has at that moment, which can be newer than the head the task was created for. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes. The tracked-change check and the move run as the VM's managed user `orbit`, without a credential environment.
 
-The author can push while Orbit's reviewed fixups wait. Orbit's push is then not a fast-forward, and GitHub refuses it. Orbit then completes the final review and starts the final-review fixup `Merge origin/{pr_branch}`, so the author's commits are merged and reviewed before the next push.
+The author can push while Orbit's reviewed fixups wait. Orbit's push is then not a fast-forward, and GitHub refuses it. Orbit then completes the final review and starts the final-review fixup `Merge origin/{pr_branch}`, so the author's commits are merged and reviewed before the next push. When the refused push is a fixup's [handoff](#handoff-ci), the handoff check fails and asks the implementer for that merge instead.
 
 | Final review outcome | Orbit |
 | --- | --- |
@@ -1729,6 +1772,16 @@ One check decides for every driver, because it does not depend on tool output. I
 
 The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the workspace tree, and the check removes that exact directory when it ends. A private `0700` ancestor in that tree blocked cross-user fixtures even when children granted access.
 
+### The full suite runs in CI at each handoff
+
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite as four shards, and its `Required checks` finish in about five minutes.
+
+The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
+
+The draft pull request carries the CI run, because the workflow runs on `pull_request` and pushes to `main` only. Reusing it at the end, instead of opening a second pull request, keeps one pull request per task.
+
+A separate CI branch per handoff was rejected: it needs a pull request per branch, and the final head would be tested again on another pull request. Orbit commits at the handoff, so the approval stores the commit CI tested, and the final head needs no extra CI run. A side commit that leaves `HEAD` alone was rejected: the later approval commit would not descend from it, and the push would need force.
+
 ### Deliverables are checked, not read
 
 Orbit cannot check prose, so a subtask names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob, including `{a,b}` or `{php}` alternation. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
@@ -1795,7 +1848,9 @@ A poll returns a delta, because a transcript only grows: downloading it again on
 
 ### Orbit commits and pushes
 
-Orbit holds the branch, the receipts, and the GitHub App, so it commits after approval and publishes itself. It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds. Publication requests configured reviewers so GitHub emits `review_requested` and the fleet reviewer wakes. That request is optional and soft-fails, because an empty reviewer list must not block settle.
+Orbit holds the branch, the receipts, and the GitHub App, so it commits and publishes itself. With a merge check it commits at the handoff, so CI can test that exact commit; otherwise it commits after approval.
+
+It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds. Publication requests configured reviewers so GitHub emits `review_requested` and the fleet reviewer wakes. That request is optional and soft-fails, because an empty reviewer list must not block settle.
 
 ### A watched pull request is not the reviewed pull request
 

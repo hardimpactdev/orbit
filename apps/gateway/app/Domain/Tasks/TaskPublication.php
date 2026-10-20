@@ -157,6 +157,10 @@ final readonly class TaskPublication
         }
         if ($incoming && $reviewed->github_review_id === null) {
             try {
+                if ($pullRequestHead) {
+                    // Nothing is pushed, so give back a draft that a cancelled fixup's handoff left (/reference/tasks#handoff-ci).
+                    $this->publisher->releaseHandoffDraft($group);
+                }
                 $reviewId = $this->merger->review($group, $commit, GitHubReviewEvent::Approve, $this->approvalReviewBody($receipt, $commit));
             } catch (TaskPullRequestException $exception) {
                 $this->failPublication($scheduler, $group, $task, $exception->getMessage());
