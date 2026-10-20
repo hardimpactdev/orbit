@@ -358,7 +358,7 @@ On every nonempty candidate diff, the gate runs the E2E topology catalog and the
 
 When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
 
-Gateway fallback runs exclude `privileged` with Pest's group filter. For a changed Gateway test file, the gate first requires unfiltered discovery to find tests, then lists it with that filter. It runs the file only when ordinary cases remain. This keeps ordinary cases in mixed files covered without launching privileged-only files, including service rehearsals that require their own prepared disposable VM. The privileged CI job and explicit rehearsal runs remain responsible for those cases.
+Gateway fallback runs exclude `privileged` with Pest's group filter. For a changed Gateway test file, the gate first requires discovery with `--all` to find tests despite the XML group exclusion, then lists it with that filter. It runs the file only when ordinary cases remain. This keeps ordinary cases in mixed files covered without launching privileged-only files, including service rehearsals that require their own prepared disposable VM. The privileged CI job and explicit rehearsal runs remain responsible for those cases.
 
 #### Projects run at the same time
 

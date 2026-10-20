@@ -479,7 +479,8 @@ def main():
                         continue
                     relative = test[len(project) + 1:]
                     if (root / test).is_file() and relative not in selected_tests:
-                        commands.append(('vendor/bin/pest', '--list-tests', relative))
+                        discovery_options = ('--all',) if excluded_groups else ()
+                        commands.append(('vendor/bin/pest', '--list-tests', *discovery_options, relative))
                         if excluded_groups:
                             commands.append(('vendor/bin/pest', '--list-tests', *excluded_groups, relative))
                         else:

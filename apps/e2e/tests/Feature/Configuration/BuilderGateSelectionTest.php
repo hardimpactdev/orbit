@@ -505,7 +505,7 @@ SH);
         $fixture = orb277_gate_fixture();
         $run = orb277_run_gate($fixture, '', expectedExit: 1, discoverTests: false);
         $check = collect($run['receipt']['checks'])->first(
-            static fn (array $check): bool => $check['command'] === ['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'],
+            static fn (array $check): bool => $check['command'] === ['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php'],
         );
 
         expect($check)->not->toBeNull()
@@ -539,7 +539,7 @@ SH);
             ->toHaveKey('warning', $receipt['warnings'][0]['message']);
         expect(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
         expect(collect($receipt['checks'])->pluck('command')->all())
-            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php'])
             ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', '--exclude-group=privileged', 'tests/ExampleTest.php'])
             ->toContain(orb277_full_suite_command());
         $suite = collect($receipt['checks'])->first(
@@ -576,7 +576,7 @@ SH);
             ->and($suite['exit_code'])->toBe(0)
             ->and(file_exists($suite['log']))->toBeTrue();
         expect(collect($receipt['checks'])->pluck('command')->all())
-            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
+            ->not->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php']);
         expect(collect($receipt['checks'])->contains(
             static fn (array $check): bool => $check['project'] !== 'apps/gateway' && $check['command'] === $fullSuite,
         ))->toBeFalse();
@@ -615,9 +615,9 @@ SH);
         expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
             ->toHaveKey('selected_test_files', ['tests/ExampleTest.php']);
         expect($commands)
-            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/AdditionalTest.php'])
+            ->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/AdditionalTest.php'])
             ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', '--exclude-group=privileged', 'tests/AdditionalTest.php'])
-            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
+            ->not->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php']);
     });
 
     it('keeps privileged cases out of Gateway changed-file fallback runs', function (bool $hasOrdinaryCases): void {
@@ -627,13 +627,13 @@ SH);
 if [ "$1" = "--list-tests" ]; then
     echo 'Available tests:'
     case " $* " in
-        *" --exclude-group=privileged "*)
+        *" --all "*)
+            echo ' - PrivilegeTest::privileged'
             if [ "__ORDINARY__" = yes ]; then
                 echo ' - PrivilegeTest::ordinary'
             fi
             ;;
         *)
-            echo ' - PrivilegeTest::privileged'
             if [ "__ORDINARY__" = yes ]; then
                 echo ' - PrivilegeTest::ordinary'
             fi
@@ -661,7 +661,7 @@ SH;
         ];
 
         expect($receipt['passed'])->toBeTrue()
-            ->and($commands)->toContain(['vendor/bin/pest', '--list-tests', 'tests/PrivilegeTest.php'])
+            ->and($commands)->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/PrivilegeTest.php'])
             ->toContain(['vendor/bin/pest', '--list-tests', '--exclude-group=privileged', 'tests/PrivilegeTest.php'])
             ->and(in_array($pathRun, $commands, true))->toBe($hasOrdinaryCases);
     })->with(['privileged only' => false, 'mixed ordinary and privileged' => true]);
@@ -712,7 +712,7 @@ PHP);
         expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
             ->toHaveKey('selected_test_files', []);
         expect($commands)
-            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php'])
             ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', '--exclude-group=privileged', 'tests/ExampleTest.php']);
     });
 
@@ -724,7 +724,7 @@ PHP);
         $commands = collect($receipt['checks'])->pluck('command')->all();
 
         expect($receipt['passed'])->toBeTrue()
-            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/LegacyTest.php']);
+            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/LegacyTest.php']);
     });
 
     it('does not try to run a test under its old name after a rename', function (): void {
@@ -738,7 +738,7 @@ PHP);
         $commands = collect($receipt['checks'])->pluck('command')->all();
 
         expect($receipt['passed'])->toBeTrue()
-            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/LegacyTest.php']);
+            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/LegacyTest.php']);
     });
 
     it('configures existing E2E architecture paths with tests discoverable by real Pest without TIA', function (): void {
@@ -812,7 +812,7 @@ PHP);
         expect(orb277_check($executed, 'apps/gateway', 'test:affected'))
             ->toHaveKey('selected_test_files', ['tests/ExampleTest.php']);
         expect(collect($executed['checks'])->pluck('command')->all())
-            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->not->toContain(['vendor/bin/pest', '--list-tests', '--all', 'tests/ExampleTest.php'])
             ->not->toContain(orb277_full_suite_command());
 
         (new Process(['git', 'checkout', '--quiet', 'main'], $fixture['root']))->mustRun();
