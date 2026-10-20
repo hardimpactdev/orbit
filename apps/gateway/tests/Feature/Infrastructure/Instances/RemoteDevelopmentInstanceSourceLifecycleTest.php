@@ -453,13 +453,13 @@ describe('CheckoutProcesses', function (): void {
         copy((string) new ExecutableFinder()->find('bash'), $this->sandbox.'/tmux: server');
         chmod($this->sandbox.'/tmux: server', 0o755);
         $stopped = [
-            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'own cwd' => orb_checkout_process_spawn($checkout, 'bash'),
             'own executable' => orb_checkout_process_spawn($this->sandbox, $checkout.'/orbit-test-shell'),
         ];
         $kept = [
             'own tmux server' => orb_checkout_process_spawn($checkout, $this->sandbox.'/tmux: server'),
-            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep'),
-            'own outside' => orb_checkout_process_spawn($this->sandbox, 'sleep'),
+            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'bash'),
+            'own outside' => orb_checkout_process_spawn($this->sandbox, 'bash'),
         ];
 
         try {
@@ -502,7 +502,7 @@ describe('CheckoutProcesses', function (): void {
         }
         $checkout = (string) $instance->checkout_path;
         $kept = [
-            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'own cwd' => orb_checkout_process_spawn($checkout, 'bash'),
         ];
 
         try {
@@ -3425,25 +3425,34 @@ function orb76_run(array $arguments, ?string $input = null): CommandResult
     return $result;
 }
 
-/**
- * Start a detached process in $directory, optionally as $user, and return its PID. `sleep` sleeps 300 seconds;
- * any other executable is a copy of bash that waits up to 300 seconds on a FIFO without a child process.
- */
+/** Start a detached bash executable in $directory, ready and waiting on a FIFO without a child process. */
 function orb_checkout_process_spawn(string $directory, string $executable): int
 {
+    $executable = $executable === 'bash' ? (string) new ExecutableFinder()->find('bash') : $executable;
     $script = <<<'BASH'
+        set -eu
         cd -- "$1"
-        if [ "$2" = sleep ]; then
-            nohup sleep 300 >/dev/null 2>&1 </dev/null &
-        else
-            fifo=$(mktemp -u)
-            mkfifo -m 0600 -- "$fifo"
-            nohup "$2" -c 'exec 9<>"$0"; rm -f -- "$0"; read -t 300 -u 9 || true' "$fifo" >/dev/null 2>&1 </dev/null &
+        scratch=$(mktemp -d)
+        trap 'rm -rf -- "$scratch"' EXIT
+        mkfifo -m 0600 -- "$scratch/wait" "$scratch/ready"
+        exec 8<>"$scratch/ready"
+        nohup "$2" -c '
+            exec 9<>"$0/wait"
+            printf "%s\n" "$$" > "$0/ready"
+            read -t 300 -u 9 || true
+        ' "$scratch" >/dev/null 2>&1 </dev/null &
+        child=$!
+        # A PID exists before exec. Only the final executable can acknowledge readiness.
+        if ! read -r -t 5 -u 8 ready || [ "$ready" != "$child" ]; then
+            kill -KILL "$child" || true
+            exit 1
         fi
-        printf %s "$!"
+        printf %s "$child"
         BASH;
     $pid = (int) orb76_run(['bash', '-c', $script, '_', $directory, $executable])->stdout;
-    expect(orb_checkout_process_running($pid))->toBeTrue();
+    expect(orb_checkout_process_running($pid))->toBeTrue()
+        ->and(readlink("/proc/{$pid}/exe"))->toBe(realpath($executable))
+        ->and(is_link("/proc/{$pid}/fd/9"))->toBeTrue();
 
     return $pid;
 }

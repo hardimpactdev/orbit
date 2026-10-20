@@ -356,11 +356,16 @@ describe('workspace TMPDIR', function (): void {
             ->and(is_dir($path))->toBeTrue();
 
         posix_kill($process->pid, SIGKILL);
-        $runner->cancel($instance, $process);
+        // Cancellation cleans a leftover only after the killed process is gone, not while SIGKILL is pending.
         $reading = tmpdir_wait($runner, $instance, $process);
-
+        clearstatcache(true, $path);
         expect($reading->state)->toBe('lost')
-            ->and(is_dir($path))->toBeFalse();
+            ->and(is_dir($path))->toBeTrue();
+
+        $runner->cancel($instance, $process);
+
+        clearstatcache(true, $path);
+        expect(is_dir($path))->toBeFalse();
     });
 
     it('refuses to remove an unexpected TMPDIR path', function (): void {

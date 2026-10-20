@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/ci.yml,actions/php/action.yml}
-  - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
+  - apps/gateway/{phpunit.xml,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Unit/Configuration/TestTimeLimitTest.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
 ---
 
 # Feature delivery
@@ -700,6 +700,16 @@ Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of 
 The [declaration-data audit](/solutions/test-impact-declaration-data) found that enum cases, constants, property and parameter defaults, and attribute arguments can change behavior without per-test coverage edges for later readers. Its seven-case fixture produced a TIA false green while the full suite failed four cases. A general declaration selector would widen 496 of 580 entries on main’s first-parent history that changed app code (85.5%, about 86%). That selector is rejected. Handoffs, reworks and fixups keep fast TIA against the subtask start commit.
 
 Gateway retains time-balanced shards on one Sabre and three shard runners to keep the full PR run short. The plan lists the entire suite once; graph data affects only balance. Making every project job wait for the plan would delay unrelated jobs. Sharding on main remains rejected because Pest writes one whole graph per run.
+
+### Gateway test time limits
+
+Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="42"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. All cases remain unsized. The installed Pest cannot declare PHPUnit sizes; do not substitute size-named groups or add a custom sizing mechanism.
+
+The 42-second default is the smallest whole number at least three times the slowest unsized case in a full parallel run on the four-CPU task VM under CPU contention: 13.979728 seconds. Remeasure the full parallel suite on a loaded host before changing the default, and keep that minimum three-times margin. Fix unexpectedly slow or risky cases at their cause rather than weakening the tests or bypassing the limit.
+
+Timeouts fail the run. `stopOnRisky` prevents later cases in the same worker from consuming state left by interrupted cleanup; it does not guarantee cleanup completes. The Gateway PHP recipe requires `pcntl`, and the shared CI PHP action verifies the recipe before running suites. Keep that requirement in the recipe, not individual jobs.
+
+Process fixtures acknowledge readiness from their final executable before a case acts on them; a PID alone does not prove startup finished. Tests of leftover cleanup after `SIGKILL` first observe that the check is lost, then cancel it. Sending a signal does not mean the process has exited.
 
 ### CI caches stay separate
 
