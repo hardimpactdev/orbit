@@ -46,12 +46,13 @@ interface TaskPullRequestMerger
     public function checkSuites(Task $group, string $sha): ?array;
 
     /**
-     * The base branch that pull request `$number`, with head `$sha`, conflicts with, or null when it does not.
-     * GitHub runs no `pull_request` workflow while it conflicts. Shared for a minute like {@see checkRuns()}.
+     * What handoff pull request `$number` reports for commit `$sha`: whether it is open with that head, and the base it
+     * conflicts with. GitHub runs no `pull_request` workflow while it conflicts. A current answer is shared for a
+     * minute like {@see checkRuns()}. Any other is read again, so a republished commit is seen at once.
      *
      * @throws TaskPullRequestException
      */
-    public function conflictBase(Task $group, string $sha, int $number): ?string;
+    public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.

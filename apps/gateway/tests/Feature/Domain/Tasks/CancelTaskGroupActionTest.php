@@ -117,7 +117,7 @@ function cancel_recording_publisher(int $failures = 0): object
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

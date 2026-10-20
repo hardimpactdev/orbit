@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskHandoffCi;
+use App\Domain\Tasks\TaskHandoffPullRequest;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestCheckOutput;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -61,6 +62,16 @@ function ci_github(?string $commit = CI_HANDOFF): object
         public int $reads = 0;
 
         public bool $conflicts = false;
+
+        /** Whether the handoff pull request is open with the commit as its head. */
+        public bool $current = true;
+
+        public bool $pullRequestUnreadable = false;
+
+        public bool $republishFails = false;
+
+        /** @var list<bool> the `$again` of each publish */
+        public array $again = [];
 
         public bool $pending = false;
 
@@ -114,17 +125,25 @@ function ci_github(?string $commit = CI_HANDOFF): object
             return $this->suites[$sha] ?? [];
         }
 
-        public function conflictBase(Task $group, string $sha, int $number): ?string
+        public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest
         {
-            return $this->conflicts ? 'main' : null;
+            if ($this->pullRequestUnreadable) {
+                throw new TaskPullRequestException('Orbit could not read pull request #'.$number.': GitHub is unavailable.');
+            }
+
+            return new TaskHandoffPullRequest($this->current, $this->current && $this->conflicts ? 'main' : null);
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             if ($this->pending) {
                 throw TaskPullRequestException::pending('Orbit is pushing commit '.$commit.'.');
             }
+            if ($again && $this->republishFails) {
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
             $this->handoffs[] = $commit;
+            $this->again[] = $again;
 
             return 7;
         }
@@ -352,39 +371,83 @@ it('decides a missing merge-check run from the commit\'s GitHub Actions suites',
 
     $check = TaskCheck::query()->sole();
     $fresh = $task->fresh();
+    $waits = static fn () => expect($check->status)->toBe(TaskCheckStatus::Passed)->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
     match ($outcome) {
-        'pending' => expect($check->status)->toBe(TaskCheckStatus::Passed)->and($fresh?->assistance_requested)->toBeFalse()->and(app(AgentCommandDispatcher::class)->commands)->toBe([]),
+        'pending' => $waits()->and($fresh?->assistance_requested)->toBeFalse(),
         'implementer' => expect($check->failed_step)->toBe(TaskHandoffCi::FailedStep)
-            ->and(ci_reminder())->toContain('GitHub Actions ended on '.CI_HANDOFF.' with '.$conclusion.' before it ran check Required checks.')
+            ->and(ci_reminder())->toContain('GitHub Actions ended on '.CI_HANDOFF.' before it ran check Required checks: check suite 5 ('.$conclusion.').')
             ->and(ci_reminder())->toContain('https://github.com/acme/orbit/commit/'.CI_HANDOFF.'/checks'),
-        'assistance' => expect($check->status)->toBe(TaskCheckStatus::Passed)
-            ->and($fresh?->assistance_reason)->toBe('CI did not run to completion on handoff commit '.CI_HANDOFF.': GitHub Actions cancelled its workflow before check Required checks ran. Re-run it, then post a resolution so the implementer hands off again.')
-            ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]),
+        'infrastructure' => $waits()->and($fresh?->assistance_reason)->toBe('CI did not run to completion on handoff commit '.CI_HANDOFF
+            .': GitHub Actions cancelled check suite 5 (cancelled) before check Required checks ran. Re-run it, then post a resolution so the implementer hands off again.'),
+        'unexplained' => $waits()->and($fresh?->assistance_reason)->toBe('GitHub Actions completed every workflow on handoff commit '.CI_HANDOFF
+            .' without check Required checks: check suite 5 ('.$conclusion.'). A renamed or removed job, or a narrower workflow trigger, causes this. '
+            .'Fix the workflow or the Project merge check, then post a resolution so the implementer hands off again.'),
     };
     expect($fresh?->status)->toBe(TaskStatus::Running);
 })->with([
     'no Actions suite yet' => [null, null, 'pending'],
     'an unfinished suite' => ['in_progress', null, 'pending'],
-    'a suite of another workflow that passed' => ['completed', 'success', 'pending'],
-    'a cancelled suite with no runs' => ['completed', 'cancelled', 'assistance'],
+    'a cancelled suite' => ['completed', 'cancelled', 'infrastructure'],
     'a workflow GitHub could not start' => ['completed', 'startup_failure', 'implementer'],
     'a failed workflow' => ['completed', 'failure', 'implementer'],
+    // Each of these ran to an end without the merge check, such as after a renamed job or a narrower trigger.
+    'a passed workflow' => ['completed', 'success', 'unexplained'],
+    'a neutral workflow' => ['completed', 'neutral', 'unexplained'],
+    'a skipped workflow' => ['completed', 'skipped', 'unexplained'],
+    'a timed-out workflow' => ['completed', 'timed_out', 'unexplained'],
+    'a workflow that needs an action' => ['completed', 'action_required', 'unexplained'],
+    'a stale workflow' => ['completed', 'stale', 'unexplained'],
+    'a conclusion GitHub adds later' => ['completed', 'something_new', 'unexplained'],
 ]);
 
-it('asks the implementer to merge the base when the conflict keeps GitHub Actions from running', function (): void {
+it('lets a fault of the change decide over the other completed suites', function (): void {
+    $github = ci_github();
+    $github->suites[CI_HANDOFF] = [new GitHubCheckSuite(5, 'completed', 'success', RequiredCheckState::CheckApp),
+        new GitHubCheckSuite(6, 'completed', 'cancelled', RequiredCheckState::CheckApp), new GitHubCheckSuite(7, 'completed', 'failure', RequiredCheckState::CheckApp)];
+    ci_handoff();
+
+    ci_ticks();
+
+    expect(TaskCheck::query()->sole()->output)->toContain('before it ran check Required checks: check suite 7 (failure).');
+});
+
+it('publishes the commit again when its pull request is closed or no longer has it as head', function (): void {
+    $github = ci_github();
+    $github->current = false;
+    [, $task] = ci_handoff();
+
+    ci_ticks();
+
+    expect($github->handoffs)->toBe([CI_HANDOFF, CI_HANDOFF])
+        ->and($github->again)->toBe([false, true])
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+
+    $github->current = true;
+    $github->runs[CI_HANDOFF] = [ci_run('Required checks', 'success', CI_HANDOFF)];
+    ci_ticks(1);
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($github->handoffs)->toHaveCount(2);
+});
+
+it('asks the implementer to merge the base when the conflict keeps the merge check from running', function (GitHubCheckSuite $suite): void {
     $github = ci_github();
     $github->conflicts = true;
-    // Mintlify still reports on the conflicting commit; only GitHub Actions decides.
     $github->runs[CI_HANDOFF] = [new GitHubCheckRun('Mintlify Deployment', 'success', null, 9, null, 'completed', CI_HANDOFF, 'mintlify')];
-    $github->suites[CI_HANDOFF] = [new GitHubCheckSuite(8, 'completed', 'success', 'mintlify')];
-    [, $task] = ci_handoff();
+    $github->suites[CI_HANDOFF] = [$suite];
+    ci_handoff();
 
     ci_ticks();
 
     expect(TaskCheck::query()->sole()->failed_step)->toBe(TaskHandoffCi::FailedStep)
         ->and(ci_reminder())->toContain('GitHub reports that the task branch conflicts with main, so CI cannot run on '.CI_HANDOFF.'.')
         ->and(ci_reminder())->toContain('Merge origin/main into the task branch');
-});
+})->with([
+    // Mintlify still reports on the conflicting commit.
+    'another App only' => [new GitHubCheckSuite(8, 'completed', 'success', 'mintlify')],
+    // A workflow that runs on pushes still runs on the conflicting commit.
+    'a running push workflow' => [new GitHubCheckSuite(5, 'in_progress', null, RequiredCheckState::CheckApp)],
+]);
 
 it('fails the handoff when the commit does not hold the tree the check passed on, and publishes nothing', function (): void {
     $github = ci_github();
@@ -434,4 +497,27 @@ it('asks for assistance when the check suites stay unreadable while the merge ch
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($task->fresh()?->assistance_reason)->toContain('Orbit could not read the checks of '.CI_HANDOFF);
+});
+
+it('asks for assistance when the handoff pull request stays unreadable while the merge check has no run', function (): void {
+    $github = ci_github();
+    $github->pullRequestUnreadable = true;
+    [, $task] = ci_handoff();
+
+    ci_ticks(6);
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toContain('Orbit could not read pull request #7');
+});
+
+it('asks for assistance when the commit cannot be published again', function (): void {
+    $github = ci_github();
+    $github->current = false;
+    $github->republishFails = true;
+    [, $task] = ci_handoff();
+
+    ci_ticks(6);
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toContain('The task branch could not be pushed.');
 });

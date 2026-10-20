@@ -1007,7 +1007,7 @@ When the group's workspace is removed, such as on cancel, Orbit gives the draft 
 | Merge check on the handoff commit | Result |
 | --- | --- |
 | Passed | The handoff passes, and the reviewer starts. |
-| Pending, or no run yet | The subtask stays `running`, and each tick reads the result again. Orbit does not publish again. |
+| Pending, or no run yet | The subtask stays `running`, and each tick reads the result again. Orbit publishes again only as the next table says. |
 | Failed | The check becomes `failed` with `failed_step` `ci`. Its output lists each failed job, its URL, and a [log excerpt](#check-output) of at most 16 KiB per job. The implementer gets it as a failed check. |
 
 A failed result counts toward the [failed-check budget](#rubric-and-reminders).
@@ -1016,21 +1016,28 @@ A job that did not run to completion, such as one that was cancelled or could no
 
 Every handoff reads the merge check on its own commit. A result on another commit never counts. A rework hands off a new commit, and CI must pass on that commit.
 
-GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, its GitHub Actions check suites decide whether one can still come. GitHub Actions makes one suite per workflow run. Suites and runs of other Apps, such as Mintlify, never count.
+GitHub creates the merge check's run only after the jobs it needs finish. While the commit has no merge-check run, Orbit reads the handoff's pull request and the commit's GitHub Actions check suites. GitHub Actions makes one suite per workflow run when the event that starts it fires. So once every suite has completed, the merge-check run cannot come, and every completed state is final. Suites and runs of other Apps, such as Mintlify, never count. The rows apply in order.
 
-| GitHub Actions suites on the commit | Result |
+| While the merge-check run is missing | Result |
 | --- | --- |
-| None | Pending. A pull request that conflicts with its base gets no `pull_request` workflow, so Orbit reads the pull request: a conflict fails the check |
-| One not completed | Pending |
-| All completed, one `startup_failure` or `failure` | The workflow ended before the merge check, as for a workflow file that GitHub cannot start. The check fails with `failed_step` `ci` and a link to the commit's checks |
+| The pull request is closed, or its head is not the commit | Orbit publishes the commit again |
+| The pull request conflicts with its base | The check fails with `failed_step` `ci` |
+| No GitHub Actions suite yet, or one not completed | Pending |
+| All completed, one `startup_failure` or `failure` | The check fails with `failed_step` `ci` |
 | All completed, one `cancelled` | Infrastructure, as for a cancelled job: assistance |
-| All completed otherwise | Pending |
+| All completed otherwise | Assistance that names the suites |
 
-A conflict fails the check with `failed_step` `ci`. The reminder asks the implementer to merge `origin/{base}` into the task branch and resolve the conflicts, without a rebase or a force-push.
+A conflict fails the check. GitHub runs no `pull_request` workflow on a conflicting pull request, and a workflow that runs on pushes does not show the conflict, so Orbit always reads it. The reminder asks the implementer to merge `origin/{base}` into the task branch and resolve the conflicts, without a rebase or a force-push.
+
+A suite that completed with `startup_failure` or `failure` and no merge-check run ended before its jobs existed. GitHub does that for a workflow file it cannot parse or start, so the reminder names the suites and links the commit's checks.
+
+Any other completed suite, such as `success`, `skipped`, or `timed_out`, ran to an end without the merge check. A renamed or removed job, or a narrower workflow trigger, causes this. Orbit cannot tell a fault of the change from one of the Project setup, so it asks for assistance and charges the implementer nothing.
+
+Orbit classifies GitHub's conclusions in one place, for check runs and suites alike. The same conclusion can mean something different on each. A check run is one job, so a run that ended `startup_failure` never started on a runner: that is infrastructure. A suite is one workflow run, and one that ended `startup_failure` without the merge check is a fault of its workflow file.
 
 The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. The approval stores the commit that CI passed and commits nothing; the [reviewer outcomes](#reviewer-outcomes) describe how. An unreadable check-run list, a failed push, a merged or closed own pull request, or a failed pull request read is a communication failure; the fifth asks for assistance. Orbit adds no timeout: a pending run waits until CI reports a result.
 
-Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check runs, the check suites, and the conflict read of the handoff's pull request each follow that rule.
+Every reader of one commit's checks shares one read through the GitHub App, for 60 seconds: the handoff, the [merge gate](#merge-on-green), and the [settling watch](#fix-a-settling-pull-request). The check suites and check runs are read together, suites first, so a completed suite always comes with its final runs. The read of the handoff's pull request is shared only while its head is the commit. Any other answer is read again, so a republished commit is seen at once.
 
 In a Project with a merge check, an Orbit-owned change of HEAD during a subtask review, such as a workspace fast-forward, reopens the handoff at once instead of restarting the review. The passed CI result stays as it is. The implementer's next reminder names the reason, and its new handoff runs the check and CI on the new HEAD before any review.
 
@@ -1284,7 +1291,7 @@ A pull request **conflicts** when GitHub reports it as not mergeable, or its mer
 | Check conclusion | Kind |
 | --- | --- |
 | `failure`, `timed_out`, `action_required` | Genuine failure. It can get a fixup. |
-| `cancelled`, `startup_failure` | Infrastructure. It never gets a fixup. |
+| `cancelled`, `startup_failure` | Infrastructure. It never gets a fixup. [Handoff CI](#handoff-ci) classifies runs by the same rule. |
 | Not completed for more than 60 minutes | Infrastructure. The reason adds `Check {name} is still pending: {url}.` |
 | Not completed for 60 minutes or less | Pending. No check fixup starts yet, but a completed genuine failure is reported. |
 

@@ -742,7 +742,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -819,7 +819,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

@@ -9,11 +9,11 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubMergeResult;
-use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RequiredCheckState;
+use App\Domain\Tasks\TaskHandoffPullRequest;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Models\Project;
@@ -87,7 +87,9 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
             return null;
         }
         try {
-            $snapshot = ['runs' => $this->github->checkRuns($token, $repository, $sha), 'suites' => $this->github->checkSuites($token, $repository, $sha)];
+            // Suites first: GitHub completes a suite only after its runs, so a completed suite always comes with its final runs.
+            $suites = $this->github->checkSuites($token, $repository, $sha);
+            $snapshot = ['runs' => $this->github->checkRuns($token, $repository, $sha), 'suites' => $suites];
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read the checks of '.$sha.': '.$exception->getMessage(), previous: $exception);
         }
@@ -99,24 +101,25 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         return $snapshot;
     }
 
-    public function conflictBase(Task $group, string $sha, int $number): ?string
+    public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest
     {
         $repository = $this->githubRepository($group);
-        $key = $this->key($repository, $sha, 'conflict:'.$number);
+        $key = $this->key($repository, $sha, 'pull-request:'.$number);
         $cached = Cache::get($key);
-        if (is_array($cached) && array_key_exists('base', $cached) && (is_string($cached['base']) || $cached['base'] === null)) {
-            return $cached['base'];
+        if (is_array($cached) && array_key_exists('conflict_base', $cached) && (is_string($cached['conflict_base']) || $cached['conflict_base'] === null)) {
+            return new TaskHandoffPullRequest(true, $cached['conflict_base']);
         }
         try {
             $pullRequest = $this->github->pullRequest($this->access->token($repository), $repository, $number);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read pull request #'.$number.': '.$exception->getMessage(), previous: $exception);
         }
-        $base = $pullRequest->state === GitHubPullRequestState::Open && $pullRequest->headSha === $sha && $pullRequest->conflicts()
-            ? ($pullRequest->baseRef ?? 'the base branch') : null;
-        Cache::put($key, ['base' => $base], self::ReadSeconds);
+        $state = TaskHandoffPullRequest::of($pullRequest, $sha);
+        if ($state->current) {
+            Cache::put($key, ['conflict_base' => $state->conflictBase], self::ReadSeconds);
+        }
 
-        return $base;
+        return $state;
     }
 
     /** @throws TaskPullRequestException */

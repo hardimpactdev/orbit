@@ -27,13 +27,14 @@ interface TaskPullRequestPublisher
      * ([Handoff CI](/reference/tasks#handoff-ci)), and makes sure a draft pull request of that branch runs the CI:
      * the group's own `pr_url`, converted to a draft first, or else a draft Orbit opens, or the open pull request the
      * branch already has. An incoming pull request's branch and state are never touched. A merged or closed own
-     * pull request gets no push.
+     * pull request gets no push. A commit that Orbit pushed before is not pushed again, unless `$again` asks for it:
+     * the pull request lost the commit, so the earlier push no longer counts.
      *
      * @return int the number of the pull request that runs CI on the commit
      *
      * @throws TaskPullRequestException pending while the push job waits or runs
      */
-    public function publishHandoff(Task $group, string $commit): int;
+    public function publishHandoff(Task $group, string $commit, bool $again = false): int;
 
     /**
      * Pushes an approved `$commit` to the task branch without opening a pull request. When a handoff made the

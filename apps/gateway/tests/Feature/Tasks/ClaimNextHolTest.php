@@ -862,7 +862,7 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function publishHandoff(Task $group, string $commit): int
+            public function publishHandoff(Task $group, string $commit, bool $again = false): int
             {
                 throw new LogicException('This fake publishes no handoff.');
             }
@@ -902,7 +902,7 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function publishHandoff(Task $group, string $commit): int
+            public function publishHandoff(Task $group, string $commit, bool $again = false): int
             {
                 throw new LogicException('This fake publishes no handoff.');
             }

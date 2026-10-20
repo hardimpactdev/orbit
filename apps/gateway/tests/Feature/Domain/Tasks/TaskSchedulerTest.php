@@ -2128,7 +2128,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -2743,7 +2743,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -3405,7 +3405,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }
@@ -3484,7 +3484,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             throw new LogicException('This fake publishes no handoff.');
         }

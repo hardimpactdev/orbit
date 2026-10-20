@@ -94,7 +94,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
     }
 
-    public function publishHandoff(Task $group, string $commit): int
+    public function publishHandoff(Task $group, string $commit, bool $again = false): int
     {
         [$repository, $instance] = $this->target($group);
         $branch = TaskRemoteBranch::handoff($group);
@@ -111,7 +111,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     $this->github->setPullRequestDraft($token, $own->nodeId, true);
                 }
             }
-            $this->pushBranch($group, $instance, $branch, $token, $commit);
+            $this->pushBranch($group, $instance, $branch, $token, $commit, $again);
             $number = $own instanceof GitHubPullRequest
                 ? $repository->pullRequestNumber((string) $group->pr_url)
                 : $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $this->base($group), $group->title, self::HandoffDraftBody, draft: true))->number;
@@ -261,13 +261,13 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, TaskRemoteBranch::for($group)];
     }
 
-    private function pushBranch(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit, bool $again = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
         }
         $instance->loadMissing(['node', 'project']);
-        $this->publishFromVm($group, $branch, $commit);
+        $this->publishFromVm($group, $branch, $commit, $again);
     }
 
     /**
@@ -275,14 +275,16 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      * from there ([Git on a task VM](/reference/compute-drivers#publish-from-the-vm)). That transfer runs at the VM's
      * pace, so a queued job runs it ({@see PublishTaskVmCommit}) and this call only queues and observes it: it returns
      * once GitHub has the commit at the branch, reports a failed job once, and is pending in between. The task VM row
-     * holds the commit and branch of the push, so a repeated call queues nothing new.
+     * holds the commit and branch of the push, so a repeated call queues nothing new. `$again` queues a new push of a
+     * commit that this row already records as pushed.
      *
      * @throws TaskPullRequestException pending while the job waits or runs
      */
-    private function publishFromVm(Task $group, string $branch, string $commit): void
+    private function publishFromVm(Task $group, string $branch, string $commit, bool $again = false): void
     {
         $vm = TaskVm::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
-        if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState) {
+        if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState
+            && ! ($again && $vm->publish_state === TaskVmPublishState::Pushed)) {
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;
             }

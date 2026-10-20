@@ -26,6 +26,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHandoffPullRequest;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -285,7 +286,7 @@ function rm_runtime(array $receipts = []): object
         /** @var list<string> */
         public array $handoffs = [];
 
-        public function publishHandoff(Task $group, string $commit): int
+        public function publishHandoff(Task $group, string $commit, bool $again = false): int
         {
             $this->handoffs[] = $commit;
 
@@ -321,9 +322,9 @@ function rm_runtime(array $receipts = []): object
                 $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)];
         }
 
-        public function conflictBase(Task $group, string $sha, int $number): ?string
+        public function handoffPullRequest(Task $group, string $sha, int $number): TaskHandoffPullRequest
         {
-            return null;
+            return new TaskHandoffPullRequest(true, null);
         }
 
         public function checkRuns(Task $group, string $sha): ?array

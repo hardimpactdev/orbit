@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\GitHub;
 
 /**
- * One check suite on a commit, as the checks API reports it. GitHub Actions makes one suite per workflow run. A
- * suite can complete with no check runs: a run that a newer run cancelled, or a workflow GitHub could not start.
+ * One check suite on a commit, as the checks API reports it. GitHub Actions makes one suite per workflow run, when the
+ * event that starts it fires. A suite can complete with no check runs: a run that a newer run cancelled, or a workflow
+ * GitHub could not start.
  */
 final readonly class GitHubCheckSuite
 {
@@ -24,6 +25,21 @@ final readonly class GitHubCheckSuite
     public function completed(): bool
     {
         return $this->status === 'completed';
+    }
+
+    /**
+     * Who answers for the suite once it completed without the merge-check run, by
+     * {@see GitHubCheckConclusion::ofSuiteWithoutMergeCheck()}. A conclusion that GitHub adds later is unexplained.
+     */
+    public function faultWithoutMergeCheck(): GitHubCheckFault
+    {
+        return GitHubCheckConclusion::tryFrom((string) $this->conclusion)?->ofSuiteWithoutMergeCheck() ?? GitHubCheckFault::Unexplained;
+    }
+
+    /** The suite as a reason names it, such as `check suite 123 (success)`. */
+    public function label(): string
+    {
+        return 'check suite '.$this->id.' ('.($this->conclusion ?? 'no conclusion').')';
     }
 
     /** @return array{id: int, status: string|null, conclusion: string|null, app_slug: string|null} */

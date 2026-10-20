@@ -9,11 +9,6 @@ namespace App\Domain\GitHub;
  */
 final readonly class GitHubCheckRun
 {
-    private const array FAILED_CONCLUSIONS = ['failure', 'timed_out', 'cancelled', 'startup_failure', 'action_required'];
-
-    /** Conclusions that mean the run did not run to completion, such as a GitHub Actions outage, rather than a failed check. */
-    private const array INFRASTRUCTURE_CONCLUSIONS = ['cancelled', 'startup_failure'];
-
     /**
      * @param  string|null  $conclusion  null until the check run completes
      * @param  string|null  $url  the check run page, or the details page of the check's own service
@@ -64,16 +59,25 @@ final readonly class GitHubCheckRun
         return $this->headSha === $sha && $this->status === 'completed' && $this->conclusion === 'success';
     }
 
-    /** Whether the check run completed without passing. Neutral and skipped runs do not fail. */
-    public function failed(): bool
+    /**
+     * Who answers for the run, by {@see GitHubCheckConclusion::ofRun()}. Nobody while it runs, nor for a conclusion
+     * that GitHub adds later.
+     */
+    public function fault(): GitHubCheckFault
     {
-        return in_array($this->conclusion, self::FAILED_CONCLUSIONS, true);
+        return GitHubCheckConclusion::tryFrom((string) $this->conclusion)?->ofRun() ?? GitHubCheckFault::None;
     }
 
-    /** Whether the run failed because it was cancelled or could not start, not because the check found a problem. */
+    /** Whether the check run completed without passing. */
+    public function failed(): bool
+    {
+        return $this->fault() !== GitHubCheckFault::None;
+    }
+
+    /** Whether the run failed because it did not run to completion, not because the check found a problem. */
     public function infrastructure(): bool
     {
-        return in_array($this->conclusion, self::INFRASTRUCTURE_CONCLUSIONS, true);
+        return $this->fault() === GitHubCheckFault::Infrastructure;
     }
 
     /** Whether the run has not completed yet. */

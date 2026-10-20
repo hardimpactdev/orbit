@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RequiredCheckState;
+use App\Domain\Tasks\TaskHandoffPullRequest;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Models\Project;
 use App\Models\Task;
@@ -68,7 +69,7 @@ it('shares one check-run read of a commit between the merge check and the run li
     expect(merger_check_run_reads())->toBe(2);
 });
 
-it('reads the check runs and check suites of a commit as one snapshot', function (): void {
+it('reads the check suites of a commit before its check runs, as one snapshot', function (): void {
     GitHubTestSupport::storeApp();
     merger_fake_checks();
     $merger = app(GitHubTaskPullRequestMerger::class);
@@ -79,19 +80,26 @@ it('reads the check runs and check suites of a commit as one snapshot', function
         ->and($merger->checkSuites($group, MERGER_SHA))->toHaveCount(1)
         ->and(merger_check_run_reads('/check-runs'))->toBe(1)
         ->and(merger_check_run_reads('/check-suites'))->toBe(1);
+    $reads = array_values(array_filter(array_map(static fn (array $pair): string => (string) parse_url($pair[0]->url(), PHP_URL_PATH), Http::recorded()->all()),
+        static fn (string $path): bool => str_contains($path, '/check-')));
+    // A suite completes only after its runs, so a completed suite in the snapshot always comes with its final runs.
+    expect($reads)->toBe(['/repos/acme/orbit/commits/'.MERGER_SHA.'/check-suites', '/repos/acme/orbit/commits/'.MERGER_SHA.'/check-runs']);
 });
 
-it('shares the conflict read of a pull request for one head for a minute, and names only a conflict on that head', function (): void {
+it('shares the read of a handoff pull request that has the commit as head for a minute, and reads any other again', function (): void {
     GitHubTestSupport::storeApp();
     merger_fake_checks();
     $merger = app(GitHubTaskPullRequestMerger::class);
     $group = merger_group();
 
-    expect($merger->conflictBase($group, MERGER_SHA, 7))->toBe('main')
-        ->and($merger->conflictBase($group, MERGER_SHA, 7))->toBe('main')
-        ->and($merger->conflictBase($group, str_repeat('2', 40), 7))->toBeNull()
-        ->and($merger->conflictBase($group, str_repeat('2', 40), 7))->toBeNull()
-        ->and(merger_check_run_reads('/pulls/7'))->toBe(2);
+    expect($merger->handoffPullRequest($group, MERGER_SHA, 7))->toEqual(new TaskHandoffPullRequest(true, 'main'))
+        ->and($merger->handoffPullRequest($group, MERGER_SHA, 7))->toEqual(new TaskHandoffPullRequest(true, 'main'))
+        ->and(merger_check_run_reads('/pulls/7'))->toBe(1);
+
+    // The pull request's head is another commit, so CI there cannot test this one. Orbit publishes it again and reads anew.
+    expect($merger->handoffPullRequest($group, str_repeat('2', 40), 7))->toEqual(new TaskHandoffPullRequest(false, null))
+        ->and($merger->handoffPullRequest($group, str_repeat('2', 40), 7))->toEqual(new TaskHandoffPullRequest(false, null))
+        ->and(merger_check_run_reads('/pulls/7'))->toBe(3);
 });
 
 it('reads no check runs without the checks permission, and asks again on the next read', function (): void {

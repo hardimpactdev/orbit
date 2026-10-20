@@ -361,6 +361,19 @@ it('publishes an incoming pull request\'s handoff on task-{id} with its own draf
     expect(publisher_draft_mutations())->toBe([]);
 });
 
+it('pushes a commit it pushed before again when the handoff asks for it', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github_draft();
+    Queue::fake();
+    $group = publisher_group('/srv/orbit/apps/shop/workspace');
+    publisher_pushed($group, str_repeat('a', 40));
+
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->publishHandoff($group, str_repeat('a', 40), again: true))
+        ->toThrow(TaskPullRequestException::class, 'Orbit is pushing commit');
+    Queue::assertPushed(PublishTaskVmCommit::class, static fn (PublishTaskVmCommit $job): bool => $job->commit === str_repeat('a', 40) && $job->branch === 'task-'.$group->id);
+    Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls'));
+});
+
 it('waits for the push before it opens the draft', function (): void {
     GitHubTestSupport::storeApp();
     publisher_github_draft();
