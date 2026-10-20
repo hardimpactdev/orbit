@@ -304,7 +304,7 @@ it('asks for assistance, not the implementer, when every failed job did not run 
     expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe(ci_assistance('CI did not run to completion on handoff commit '.CI_HANDOFF.': Gateway shards (2) ('.$conclusion.'). Re-run it.'))
+        ->and($task->fresh()?->assistance_reason)->toBe(ci_assistance('CI did not run to completion on handoff commit '.CI_HANDOFF.': Gateway shards (2) ('.$conclusion.'). Check the runners.'))
         ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
 })->with(['cancelled', 'startup_failure']);
 
@@ -390,7 +390,7 @@ it('decides a missing merge-check run from the commit\'s GitHub Actions suites',
             ->and(ci_reminder())->toContain('GitHub Actions ended on '.CI_HANDOFF.' without check Required checks: check suite 5 ('.$conclusion.'). No failed job explains it')
             ->and(ci_reminder())->toContain('https://github.com/acme/orbit/commit/'.CI_HANDOFF.'/checks'),
         'infrastructure' => $waits()->and($fresh?->assistance_reason)->toBe(ci_assistance('CI did not run to completion on handoff commit '.CI_HANDOFF
-            .': GitHub Actions cancelled check suite 5 (cancelled) before check Required checks ran. Re-run it.')),
+            .': GitHub Actions cancelled check suite 5 (cancelled) before check Required checks ran. Check the runners.')),
         'unexplained' => $waits()->and($fresh?->assistance_reason)->toBe(ci_assistance('GitHub Actions completed every workflow on handoff commit '.CI_HANDOFF
             .' without check Required checks: check suite 5 ('.$conclusion.'). A renamed or removed job, or a workflow that no longer runs on pushes to task-*-handoff branches, causes this. '
             .'Fix the workflow or the Project merge check.')),

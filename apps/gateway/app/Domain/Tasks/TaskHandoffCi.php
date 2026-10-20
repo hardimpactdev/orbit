@@ -238,7 +238,7 @@ final readonly class TaskHandoffCi
     /** CI did not run to completion: the code is not at fault. Asks for assistance; no reminder, no budget charge. */
     private function infrastructure(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt, string $commit, string $what): void
     {
-        $this->assistance($scheduler, $group, $task, $receipt, 'CI did not run to completion on handoff commit '.$commit.': '.$what.'. Re-run it.');
+        $this->assistance($scheduler, $group, $task, $receipt, 'CI did not run to completion on handoff commit '.$commit.': '.$what.'. Check the runners.');
     }
 
     /** Orbit cannot charge the result to the implementer. Someone must look; no reminder, no budget charge. */

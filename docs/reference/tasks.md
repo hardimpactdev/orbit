@@ -1014,7 +1014,7 @@ When the task ends, completed or cancelled, Orbit deletes `task-{id}-handoff` on
 
 A failed check's output lists each failed job, its URL, and a [log excerpt](#check-output) of at most 16 KiB per job. A failed result counts toward the [failed-check budget](#rubric-and-reminders).
 
-Orbit classifies GitHub's conclusions in one place, for check runs and suites alike. A job that did not run to completion, such as one that was cancelled or that no runner started (`startup_failure`), is infrastructure, as [Fix a settling pull request](#fix-a-settling-pull-request) judges it too. When every failed job is infrastructure, the code is not at fault. The check stays `passed`, and the implementer gets no reminder. Re-run the jobs, then post a resolution, so the implementer hands off again.
+Orbit classifies GitHub's conclusions in one place, for check runs and suites alike. A job that did not run to completion, such as one that was cancelled or that no runner started (`startup_failure`), is infrastructure, as [Fix a settling pull request](#fix-a-settling-pull-request) judges it too. When every failed job is infrastructure, the code is not at fault. The check stays `passed`, and the implementer gets no reminder. Check the runners, then post a resolution. The implementer then hands off again, which starts a new CI run, so a re-run of the old jobs does not count.
 
 A merge-check run that ended `skipped`, `neutral`, or `stale`, or a run of that name from another App, did not fail. Orbit charges nothing to the implementer and asks for assistance.
 
