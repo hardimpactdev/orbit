@@ -153,14 +153,14 @@ final class TaskWorkspaceLease
         }
     }
 
-    public function acquire(Task $group, string $kind, string $owner, ?int $threadId = null, ?int $taskId = null): TaskWorkspaceLeaseRecord
+    public function acquire(Task $group, string $kind, string $owner, ?int $threadId = null, ?int $taskId = null, bool $queue = true): TaskWorkspaceLeaseRecord
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskCheckException('The task workspace is unavailable.');
         }
 
-        return app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($group, $instance, $kind, $owner, $threadId, $taskId): TaskWorkspaceLeaseRecord {
+        return app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($group, $instance, $kind, $owner, $threadId, $taskId, $queue): TaskWorkspaceLeaseRecord {
             if (($scope = $this->activeScope($instance->id)) instanceof TaskWorkspaceLeaseRecord) {
                 return $scope;
             }
@@ -169,7 +169,7 @@ final class TaskWorkspaceLease
             if ($taskId !== null && (! $task instanceof Task || $task->status === TaskStatus::Cancelled)) {
                 throw new TaskWorkspaceWaiting('The queued workspace actor belongs to a cancelled subtask.');
             }
-            $request = DB::transaction(function () use ($group, $instance, $kind, $owner, $threadId, $taskId, $task): TaskWorkspaceLeaseRecord {
+            $request = DB::transaction(function () use ($group, $instance, $kind, $owner, $threadId, $taskId, $task, $queue): TaskWorkspaceLeaseRecord {
                 $request = TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)->where('group_id', $group->id)
                     ->where(function ($query) use ($kind, $owner, $threadId): void {
                         $query->where(fn ($original) => $original->where('kind', $kind)->where('owner', $owner));
@@ -195,6 +195,9 @@ final class TaskWorkspaceLease
                         'gateway_pid' => getmypid(), 'gateway_started' => self::processIdentity(getmypid() ?: 0),
                         'gateway_host' => gethostname(), 'gateway_boot' => self::bootIdentity(), 'journaled' => true,
                     ]);
+                } elseif (! $queue) {
+                    // Admission and withdrawal commit together; no caller owns a later retry.
+                    $request->update(['status' => 'cancelled', 'released_at' => now()]);
                 }
 
                 return $request;
@@ -203,7 +206,7 @@ final class TaskWorkspaceLease
                 throw new TaskWorkspaceWaiting('The prior remote mutation has no authoritative completion.');
             }
             if ($request->status !== 'held') {
-                throw new TaskWorkspaceWaiting('Workspace lease queued for '.$kind.' '.$owner.'.');
+                throw new TaskWorkspaceWaiting('Workspace lease '.($queue ? 'queued' : 'unavailable').' for '.$kind.' '.$owner.'.');
             }
 
             return $request;
@@ -215,8 +218,10 @@ final class TaskWorkspaceLease
      *
      * @param  Closure(): T  $operation
      * @return T
+     *
+     * Callers without a durable workflow that will retry must disable queuing.
      */
-    public function run(Task $group, string $kind, string $owner, Closure $operation, ?int $taskId = null): mixed
+    public function run(Task $group, string $kind, string $owner, Closure $operation, ?int $taskId = null, bool $queue = true): mixed
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -231,9 +236,9 @@ final class TaskWorkspaceLease
         }
 
         // Instance admission is short; the durable row owns the operation after this lock ends.
-        $lease = $this->synchronized($group, function () use ($group, $kind, $owner, $taskId): TaskWorkspaceLeaseRecord {
+        $lease = $this->synchronized($group, function () use ($group, $kind, $owner, $taskId, $queue): TaskWorkspaceLeaseRecord {
             $this->reconcile($group);
-            $lease = $this->acquire($group, $kind, $owner, taskId: $taskId);
+            $lease = $this->acquire($group, $kind, $owner, taskId: $taskId, queue: $queue);
             if ($lease->getAttribute('gateway_pid') !== getmypid()
                 || $lease->getAttribute('gateway_started') !== self::processIdentity(getmypid() ?: 0)
                 || $lease->thread_id !== null || $lease->pid !== null || $lease->getAttribute('completion_pending')) {
