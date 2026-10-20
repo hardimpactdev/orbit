@@ -67,6 +67,27 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
             ->and(file_exists($this->root.'/vm/code'))->toBeFalse();
     });
 
+    it('chooses the newest cached main ancestor rather than a later publication or another branch', function (string $unbornBranch): void {
+        ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'cached main']);
+        $cached = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
+        ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'uncached head']);
+        $tip = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
+        ci_ref_git($this->root.'/source', ['checkout', '--quiet', '-b', 'other', $this->sha]);
+        ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'other branch']);
+        $other = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
+        ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', 'main', 'other', $this->cacheCommit.':refs/orbit/ci-cache/'.$cached]);
+        // Publish the older and off-main refs last. Their completion order cannot choose the baseline.
+        ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef, $this->cacheCommit.':refs/orbit/ci-cache/'.$other]);
+        $tips = $this->git->fetch($this->project, ['main', 'other'], $this->access, 'tasks.fetch_failed');
+        ci_ref_git($this->root.'/vm', ['symbolic-ref', 'HEAD', 'refs/heads/'.$unbornBranch]);
+
+        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', warmStart: true);
+
+        expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($cached)
+            ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'origin/main']))->toBe($tip)
+            ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/']))->toBe('refs/orbit/ci-cache/'.$cached);
+    })->with(['unborn default branch' => 'main', 'unborn other branch' => 'master']);
+
     it('does not substitute another SHA and missing cache refs do not fail source transfer', function (): void {
         $other = str_repeat('a', 40);
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':refs/orbit/ci-cache/'.$other]);

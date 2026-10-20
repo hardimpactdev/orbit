@@ -209,6 +209,107 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($network)->toBe(['0', '0']);
 });
 
+it('starts a new task workspace at the newest cached main commit and imports its caches', function (bool $cachedHead): void {
+    orb76_https_origin($this);
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Warm start', 'brief' => 'Start warm.', 'status' => TaskGroupStatus::Running]);
+    orb76_task_vm($this->node)->update(['group_id' => $group->id]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
+    $work = $this->sandbox.'/work';
+    $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
+    mkdir($work.'/bin');
+    copy(base_path('../../bin/tia-cache'), $work.'/bin/tia-cache');
+    copy(base_path('../../bin/ci-cache-ref'), $work.'/bin/ci-cache-ref');
+    chmod($work.'/bin/tia-cache', 0o755);
+    file_put_contents($work.'/.gitignore', "**/vendor/\n**/.orbit-tia/\n");
+    foreach ($projects as $project) {
+        mkdir($work.'/'.$project.'/tests', 0o755, true);
+        file_put_contents($work.'/'.$project.'/composer.lock', '{"packages":[]}');
+        file_put_contents($work.'/'.$project.'/tests/Pest.php', "<?php\n");
+        file_put_contents($work.'/'.$project.'/pint.json', '{}');
+        orb76_cache_dependencies($work.'/'.$project);
+    }
+    orb76_run(['git', '-C', $work, 'add', '.']);
+    orb76_run(['git', '-C', $work, 'commit', '-m', 'Cache inputs']);
+    $previous = orb76_publish_ci_cache($this->sandbox, $projects);
+    file_put_contents($work.'/README.md', "uncached main\n");
+    orb76_run(['git', '-C', $work, 'commit', '-am', 'New main']);
+    $main = trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
+    if ($cachedHead) {
+        orb76_publish_ci_cache($this->sandbox, $projects);
+    }
+    orb76_run(['git', '-C', $work, 'push', 'origin', 'main']);
+    $selected = $cachedHead ? $main : $previous;
+
+    try {
+        $name = 'task-'.$group->id;
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
+        $this->source->prepare($instance, false);
+        $resolution = $this->source->resolve($instance->refresh());
+        $checkout = $instance->checkout_path;
+        expect($resolution->startingCommit)->toBe($selected)
+            ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout))->toBe($selected)
+            ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'refs/worktree/orbit/ci-baseline'])->stdout))->toBe($selected)
+            ->and(trim(orb76_run(['git', '-C', $checkout, 'rev-parse', 'origin/main'])->stdout))->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/'])->stdout))->toBe('refs/orbit/ci-cache/'.$selected);
+        foreach ($projects as $project) {
+            orb76_cache_dependencies($checkout.'/'.$project);
+        }
+        $import = orb76_run(['bash', '-c', 'cd "$1"; bash "$2"', '--', $checkout, resource_path('instances/ci-caches.sh')]);
+        expect($import->stdout)->not->toContain('cold');
+        foreach ($projects as $project) {
+            $graph = json_decode(file_get_contents($checkout.'/'.$project.'/.orbit-tia/graph.json'), true, flags: JSON_THROW_ON_ERROR);
+            expect($graph['baselines']['main']['sha'])->toBe($selected)
+                ->and(file_get_contents($checkout.'/'.$project.'/vendor/pint.cache'))->toBe(json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => []], JSON_THROW_ON_ERROR));
+        }
+        expect($this->source->resolve($instance)->startingCommit)->toBe($selected);
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+})->with(['uncached head' => false, 'cached head' => true]);
+
+it('refuses a cache-enabled new task workspace when main has no published baseline', function (): void {
+    orb76_https_origin($this);
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'No baseline', 'brief' => 'No cache.', 'status' => TaskGroupStatus::Running]);
+    orb76_task_vm($this->node)->update(['group_id' => $group->id]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
+    try {
+        $name = 'task-'.$group->id;
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
+        $this->source->prepare($instance, false);
+
+        expect(fn () => $this->source->resolve($instance))->toThrow(RuntimeConvergenceException::class, 'The default branch has no published CI cache baseline.');
+        expect(trim(orb76_run(['git', '-C', $instance->checkout_path, 'for-each-ref', '--format=%(refname)', 'refs/heads/'])->stdout))->toBe('');
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+});
+
+it('does not require a cached start for an existing task branch or an incoming pull request', function (bool $incoming): void {
+    orb76_https_origin($this);
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Selected source', 'brief' => 'Keep source.', 'status' => TaskGroupStatus::Running, 'pr_branch' => $incoming ? 'feature' : null]);
+    orb76_task_vm($this->node)->update(['group_id' => $group->id]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
+    $name = 'task-'.$group->id;
+    $work = $this->sandbox.'/work';
+    if (! $incoming) {
+        orb76_run(['git', '-C', $work, 'checkout', '-b', $name]);
+        orb76_run(['git', '-C', $work, 'commit', '--allow-empty', '-m', 'Existing task work']);
+        orb76_run(['git', '-C', $work, 'push', 'origin', $name]);
+    }
+    $selected = trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
+    try {
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name, $group);
+        $this->source->prepare($instance, false);
+
+        expect($this->source->resolve($instance)->startingCommit)->toBe($selected);
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+})->with(['existing task branch' => false, 'incoming pull request' => true]);
+
 it('receives optional CI cache refs in an ordinary workspace through the Gateway mirror', function (bool $published): void {
     orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
@@ -3461,6 +3562,54 @@ function orb76_task_vm(Node $node): TaskVm
 {
     return TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-7',
         'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200']);
+}
+
+/** Use the installed Pest classes, but keep each fixture's imported quality caches private. */
+function orb76_cache_dependencies(string $project): void
+{
+    if (! is_dir($project.'/vendor')) {
+        mkdir($project.'/vendor');
+        symlink(base_path('vendor/autoload.php'), $project.'/vendor/autoload.php');
+    }
+}
+
+/** @param list<string> $projects */
+function orb76_publish_ci_cache(string $sandbox, array $projects): string
+{
+    $work = $sandbox.'/work';
+    $sha = trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
+    $payload = $sandbox.'/payload-'.$sha;
+    mkdir($payload);
+    foreach ($projects as $project) {
+        $directory = $payload.'/'.$project;
+        mkdir($directory.'/quality', 0o755, true);
+        $fingerprint = json_decode(orb76_run(['php', '-r', <<<'PHP'
+            require $argv[1].'/vendor/autoload.php';
+            echo json_encode(Pest\Plugins\Tia\Fingerprint::compute($argv[1]), JSON_THROW_ON_ERROR);
+            PHP, $work.'/'.$project])->stdout, true, flags: JSON_THROW_ON_ERROR);
+        $graph = json_encode(['schema' => 1, 'fingerprint' => $fingerprint,
+            'files' => ['tests/ExampleTest.php'], 'edges' => ['tests/ExampleTest.php' => [0]],
+            'baselines' => ['main' => ['sha' => $sha, 'tree' => [], 'results' => ['example' => ['status' => 0, 'file' => 'tests/ExampleTest.php']]]],
+        ], JSON_THROW_ON_ERROR);
+        $pint = json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => []], JSON_THROW_ON_ERROR);
+        $inputs = [];
+        foreach (['composer.lock', 'tests/Pest.php'] as $input) {
+            $inputs[$input] = hash_file('sha256', $work.'/'.$project.'/'.$input);
+        }
+        file_put_contents($directory.'/graph.json', $graph);
+        file_put_contents($directory.'/quality/pint', $pint);
+        file_put_contents($directory.'/manifest.json', json_encode(['schema' => 2, 'project' => $project, 'commit' => $sha,
+            'run_id' => '123', 'run_attempt' => '1', 'inputs' => $inputs, 'php' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
+            'graph_sha256' => hash('sha256', $graph), 'quality' => ['pint' => hash('sha256', $pint)],
+            'configurations' => ['pint' => hash_file('sha256', $work.'/'.$project.'/pint.json')],
+        ], JSON_THROW_ON_ERROR));
+    }
+    orb76_run(['git', 'init', $payload]);
+    orb76_run(['git', '-C', $payload, 'add', '.']);
+    orb76_run(['git', '-C', $payload, '-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '-m', 'CI caches']);
+    orb76_run(['git', '-C', $payload, 'push', $sandbox.'/origin.git', 'HEAD:refs/orbit/ci-cache/'.$sha]);
+
+    return $sha;
 }
 
 function orb76_create_remote_repository(string $sandbox, string $repository): void
