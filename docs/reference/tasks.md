@@ -592,7 +592,7 @@ A resolution clears group assistance only when its kind, question, and reason ma
 
 The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
 
-An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. In a Project with a merge check, it reopens the handoff instead, as [Handoff CI](#handoff-ci) describes. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
+An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. In a review-and-merge Project, it reopens the handoff instead, as [Handoff CI](#handoff-ci) describes. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
 
 Existing assistance stays open until an operator resolves it. A review without a recorded baseline lease cannot inherit proof from merge or check records created before leases existed.
 
@@ -1002,7 +1002,7 @@ The handoff reads and writes no pull request. No pull request has a handoff bran
 
 The handoff branch holds only commits for CI, and the workspace can leave its history, as when it follows an [incoming pull request](#incoming-pull-requests). So a handoff replaces the branch with `--force-with-lease`, only over the tip that Orbit just fetched.
 
-When the task ends, completed or cancelled, Orbit deletes `task-{id}-handoff` on origin once the removal of its workspace succeeded. A branch or repository that is already gone, a 404 or a 422, counts as deleted. The branch holds nothing to keep, so a failed delete never holds the removal. The task asks for assistance once, with a reason that starts with `Handoff branch not deleted: `. Delete the branch on GitHub, then resolve the request.
+When the task ends, completed or cancelled, Orbit deletes `task-{id}-handoff` on origin once its workspace is gone. A branch or repository that is already gone, a 404 or a 422, counts as deleted. The branch holds nothing to keep, so a failed delete never holds the removal. The task asks for `removal_failure` assistance once, with a reason that starts with `Handoff branch not deleted: `, and nothing retries the delete by itself. Delete the branch on GitHub or restore the App access, then cancel or complete the task again. That repeated command tries the delete once more and clears the request when the branch is gone.
 
 | Merge check on the handoff commit | Result |
 | --- | --- |
@@ -1033,7 +1033,7 @@ A suite that completed with `startup_failure` or `failure` without the merge-che
 
 Any other completed suite, such as `success`, `skipped`, or `timed_out`, ran to an end without the merge check. A renamed or removed job causes this. Orbit cannot tell a fault of the change from one of the Project setup, so it asks for assistance and charges the implementer nothing.
 
-When the commit has no GitHub Actions suite 10 minutes after Orbit recorded its push, Orbit asks for assistance once. A `ci.yml` on the task branch without the `task-*-handoff` push trigger, such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, or start CI on the commit, then post a resolution. Orbit only asks; it never pushes again or starts CI itself.
+When the commit has no GitHub Actions suite 10 minutes after Orbit recorded its push, Orbit asks for assistance once. A `ci.yml` on the task branch without the `task-*-handoff` push trigger, such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, then post a resolution, so the implementer hands off again. Orbit only asks; it never pushes again or starts CI itself.
 
 The work stays committed after a failed CI result. The implementer builds on that commit and hands off again. The approval stores the commit that CI passed and commits nothing; the [reviewer outcomes](#reviewer-outcomes) describe how. A failed push or an unreadable check read is a communication failure; the fifth asks for assistance. A pending run waits until CI reports a result.
 
@@ -1873,7 +1873,7 @@ A poll returns a delta, because a transcript only grows: downloading it again on
 
 ### Orbit commits and pushes
 
-Orbit holds the branch, the receipts, and the GitHub App, so it commits and publishes itself. With a merge check it commits at the handoff, so CI can test that exact commit; otherwise it commits after approval.
+Orbit holds the branch, the receipts, and the GitHub App, so it commits and publishes itself. In a review-and-merge Project it commits at the handoff, so CI can test that exact commit; otherwise it commits after approval.
 
 It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds. Publication requests configured reviewers so GitHub emits `review_requested` and the fleet reviewer wakes. That request is optional and soft-fails, because an empty reviewer list must not block settle.
 

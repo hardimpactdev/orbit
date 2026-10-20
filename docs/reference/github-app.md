@@ -156,7 +156,7 @@ A Project with [review and merge](/reference/tasks#review-and-merge) on uses the
 | Find the pull request's own runs | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}&event=pull_request`, one page of 100 | `actions: read` |
 | Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
 
-The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. So the flow needs no new App permission, no maintainer credential, and no webhook.
+The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. So the flow needs no new App permission, no maintainer credential, and no webhook.
 
 A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
 

@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
@@ -463,10 +464,12 @@ it('asks for assistance once when no GitHub Actions suite started ten minutes af
         ->and(TaskCheck::query()->sole()->pushed_at)->not->toBeNull();
 
     $this->travel(2)->seconds();
-    ci_ticks(2);
+    ci_ticks(3);
     expect($task->fresh()?->assistance_reason)->toBe(ci_assistance('GitHub Actions started no workflow on handoff commit '.CI_HANDOFF
         .' in the 10 minutes since Orbit pushed it to task-'.$task->parent_id.'-handoff. A ci.yml on the task branch without the task-*-handoff push trigger, '
-        .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, or start CI on the commit.'))
+        .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch.'))
+        ->and(Activity::query()->where('subject_type', Task::class)->where('subject_id', $task->id)
+            ->where('description', 'assistance requested')->count())->toBe(1)
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
         ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
         ->and($github->handoffs)->toBe([CI_HANDOFF]);

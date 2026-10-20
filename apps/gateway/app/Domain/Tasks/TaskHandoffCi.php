@@ -140,7 +140,7 @@ final readonly class TaskHandoffCi
             if ($check->pushed_at?->isBefore(now()->subSeconds(self::NoSuiteSeconds)) === true) {
                 $this->assistance($scheduler, $group, $task, $receipt, 'GitHub Actions started no workflow on handoff commit '.$commit.' in the '.(self::NoSuiteSeconds / 60)
                     .' minutes since Orbit pushed it to '.TaskRemoteBranch::handoff($group).'. A ci.yml on the task branch without the task-*-handoff push trigger, '
-                    .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch, or start CI on the commit.');
+                    .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch.');
             }
 
             return RequiredCheckState::Pending;

@@ -516,9 +516,9 @@ it('keeps a running main push, only the newest waiting one, and every full run',
 
     // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run. A pull
     // request's merge ref and a handoff branch each keep only their newest run. Scheduled and manual full runs keep
-    // a group per commit, so a push never replaces one.
+    // a group per ref and commit, so neither a push nor a manual run on another branch replaces one.
     expect($workflow['concurrency'])->toBe([
-        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}', github.event_name, github.sha) || github.ref }}",
+        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}",
         'cancel-in-progress' => "\${{ github.ref != 'refs/heads/main' }}",
     ]);
     // A task-*-handoff push is a handoff commit; a newer one on the same branch cancels it, and never a main or pull request run.

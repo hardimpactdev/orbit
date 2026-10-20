@@ -147,7 +147,7 @@ This item replaced, on 2026-10-20, the start-commit test base that it chose on 2
 - The local gate runs the fast checks only: `composer validate --strict`, `composer check`, the documentation, vocabulary and other `bin` checks, the generated-artifact checks, and the deliverables. It runs no test suite and no TIA selection.
 - After the local gate passes, Orbit commits exactly the checked tree and pushes it once to its branch `task-{id}-handoff`. The push starts CI: `ci.yml` runs on pushes to `task-*-handoff` with the same jobs and `Required checks` as a pull request, and a newer push to the same branch cancels the older run.
 - Handoff CI applies only to a review-and-merge Project, whose CI Orbit owns. Other Projects keep the task check alone, also with a `merge_check`.
-- Once the workspace removal at the end of the task succeeded, Orbit deletes `task-{id}-handoff`. A 404 or 422 counts as deleted; any other failure asks for assistance once and never holds the removal.
+- Once the workspace at the end of the task is gone, Orbit deletes `task-{id}-handoff`. A 404 or 422 counts as deleted; any other failure asks for assistance once and never holds the removal. Only a repeated cancel or completion tries the delete again.
 - The handoff commit message holds no GitHub skip directive. A commit with no GitHub Actions suite 10 minutes after its push asks for assistance once.
 - The merge gate counts only merge-check runs of the pull request's own `pull_request` workflow run for the head, so CI on the merge ref stays the integration gate. A handoff push run on the same commit never counts.
 - The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed commit never reaches the task's pull request or an incoming author's branch.
@@ -216,7 +216,7 @@ The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selecti
 
 ### 7. No Project gets a test base
 
-The `slug === 'orbit'` case goes. Since the 2026-10-20 amendment, no handoff check gets `ORBIT_TASK_CHECK_BASE`: the local gate runs no tests, so it needs no test base. The handoff's tests run in CI for every Project with a `merge_check`.
+The `slug === 'orbit'` case goes. Since the 2026-10-20 amendment, no handoff check gets `ORBIT_TASK_CHECK_BASE`: the local gate runs no tests, so it needs no test base. The handoff's tests run in CI for every review-and-merge Project.
 
 ### 8. Check results and evidence
 

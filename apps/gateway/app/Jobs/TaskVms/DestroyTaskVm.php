@@ -105,7 +105,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
         app(DeleteTaskVmAction::class)->execute($vm);
         if ($workspace && $lostCommit === null) {
-            app(RemoveTaskWorkspaceAction::class)->clearFailure($group);
+            app(RemoveTaskWorkspaceAction::class)->finishRemoval($group);
         }
 
         try {

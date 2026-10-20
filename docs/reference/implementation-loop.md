@@ -151,7 +151,7 @@ A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/task
 
 A new push to a pull request, or to a handoff branch, cancels the older run of that pull request or branch. Pushes to `main` share one concurrency group and never cancel a running run. GitHub keeps one running and one waiting run per group, and a newer push replaces the waiting one. So when several merges land close together, the newest `main` commit is tested next. The commits in between get a cancelled run instead of a result.
 
-The newest main run tests every project in full, including every change in between. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful `Required checks` result and skip commits without one, so the release includes the skipped commits. Scheduled and manual full runs have a group per commit, so a push never cancels one.
+The newest main run tests every project in full, including every change in between. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful `Required checks` result and skip commits without one, so the release includes the skipped commits. Scheduled and manual full runs have a group per branch and commit, so a push never cancels one.
 
 Every checkout in the run uses `${{ github.sha }}`. On a PR this is the event's merge commit, not a moving `refs/pull/N/merge` lookup. Main and reruns also test that immutable event commit. No job checks out a branch and resets it later.
 
@@ -621,7 +621,9 @@ Main always runs full suites with `--tia --fresh`. This keeps merge and release 
 
 ### Full suites gate merges; TIA serves the task loop
 
-Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, with TIA disabled. Orbit runs all five Composer suites on each PR, including architecture and subprocess tests. Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. When that head is the last handoff commit, the handoff's CI run is that result; any other head needs its own run. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches also run full suites while recording fresh TIA graphs.
+Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, with TIA disabled. Orbit runs all five Composer suites on each PR, including architecture and subprocess tests.
+
+Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. Only the pull request's own `pull_request` run for that head counts, also when the head is the last handoff commit, so the merge with the current base is tested before it lands. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches also run full suites while recording fresh TIA graphs.
 
 The [declaration-data audit](/solutions/test-impact-declaration-data) found that enum cases, constants, property and parameter defaults, and attribute arguments can change behavior without per-test coverage edges for later readers. Its seven-case fixture produced a TIA false green while the full suite failed four cases. A general declaration selector would widen 496 of 580 entries on main’s first-parent history that changed app code (85.5%, about 86%). That selector is rejected.
 

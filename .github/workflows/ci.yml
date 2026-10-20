@@ -14,12 +14,12 @@ on:
 permissions:
   contents: read
 
-# Scheduled and manual runs get a group per commit, so a push never cancels a full run. Every other run groups by its
-# ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the newest
-# commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge ref or
-# a handoff branch, keeps only its newest run, so neither cancels the other.
+# Scheduled and manual runs get a group per ref and commit, so a push never cancels a full run. Every other run groups
+# by its ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the
+# newest commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge
+# ref or a handoff branch, keeps only its newest run, so neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}', github.event_name, github.sha) || github.ref }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
