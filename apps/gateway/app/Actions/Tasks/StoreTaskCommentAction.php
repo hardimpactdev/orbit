@@ -79,8 +79,15 @@ final readonly class StoreTaskCommentAction
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && ! $endedPullRequest
                 && $group->assistance_requested && $group->assistance_kind === AssistanceKind::Failure
-                && is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, TaskScheduler::TickFailedReason)) {
+                && TaskScheduler::isTickFailureReason($group->assistance_reason)) {
+                foreach ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->lockForUpdate()->get() as $subtask) {
+                    if (TaskAssistance::sameRequest($subtask, $group)) {
+                        TaskAssistance::apply($subtask, source: $comment);
+                    }
+                }
                 TaskAssistance::apply($group, source: $comment);
+
+                return $comment;
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {

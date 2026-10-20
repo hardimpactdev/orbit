@@ -748,6 +748,64 @@ describe('merge on green', function (): void {
         Queue::assertNotPushed(ResumeTaskVm::class);
     });
 
+    it('keeps the group and open subtasks clear after resolving a tick failure without messaging an agent', function (string $target): void {
+        $group = rm_group([['Review', TaskStatus::Reviewing], ['Work', TaskStatus::Running], ['Other', TaskStatus::Completed]]);
+        $reviewing = $group->tasks->firstWhere('title', 'Review');
+        $running = $group->tasks->firstWhere('title', 'Work');
+        rm_reviewing($reviewing);
+        $running->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$running->id, $running)->id]);
+        $reason = TaskScheduler::TickFailedReason.'The workspace could not be reached.';
+        foreach ([$group, $reviewing, $running] as $record) {
+            TaskAssistance::apply($record, AssistanceKind::Failure, reason: $reason);
+        }
+        rm_runtime();
+        app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+        {
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                return ['thread' => ['session' => ['status' => 'running'], 'latestTurn' => ['id' => 'turn-of-'.$threadId, 'state' => 'running']]];
+            }
+        });
+        mock(AgentCommandDispatcher::class)->shouldNotReceive('dispatch');
+        Exceptions::fake();
+
+        $comment = app(StoreTaskCommentAction::class)->execute($group->tasks->firstWhere('title', $target), [
+            'type' => 'resolution', 'body' => 'The workspace access problem is fixed.', 'author' => 'operator',
+        ]);
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($comment->fresh()->body)->toBe('The workspace access problem is fixed.');
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        foreach ($group->tasks()->get() as $task) {
+            expect($task)->assistance_requested->toBeFalse()->assistance_reason->toBeNull()
+                ->resolution_delivered_comment_id->toBeNull()->pending_resolution_comment_id->toBeNull()
+                ->completion_attempt->toBe(1)->review_attempt->toBe(1);
+        }
+        expect($reviewing->fresh()->status)->toBe(TaskStatus::Reviewing);
+        expect($running->fresh()->status)->toBe(TaskStatus::Running);
+    })->with(['different subtask' => 'Other', 'flagged subtask' => 'Review']);
+
+    it('preserves a different open request when resolving the group tick failure', function (AssistanceKind $kind, string $reason): void {
+        $group = rm_group([['Review', TaskStatus::Reviewing], ['Other', TaskStatus::Completed]]);
+        $task = $group->tasks->firstWhere('title', 'Review');
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: TaskScheduler::TickFailedReason.'Workspace unavailable.');
+        TaskAssistance::apply($task, $kind, question: $kind === AssistanceKind::Direction ? 'Which approach?' : null, reason: $reason);
+        $request = $task->only(TaskAssistance::Fields);
+        mock(AgentCommandDispatcher::class)->shouldNotReceive('dispatch');
+
+        app(StoreTaskCommentAction::class)->execute($group->tasks->firstWhere('title', 'Other'), [
+            'type' => 'resolution', 'body' => 'Workspace access fixed.', 'author' => 'operator',
+        ]);
+
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect($task->fresh()->only(TaskAssistance::Fields))->toBe($request);
+    })->with([
+        'different tick failure' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'A different error.'],
+        'unrelated failure' => [AssistanceKind::Failure, 'The reviewer thread failed.'],
+        'direction' => [AssistanceKind::Direction, 'Which approach?'],
+    ]);
+
     it('keeps group assistance when a comment does not resolve a tick failure', function (AssistanceKind $kind, string $reason, string $type, string $body): void {
         $group = rm_settled();
         TaskAssistance::apply($group, $kind, question: $kind === AssistanceKind::Direction ? 'Which approach?' : null, reason: $reason);

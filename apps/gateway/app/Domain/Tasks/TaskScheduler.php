@@ -87,6 +87,11 @@ final readonly class TaskScheduler
         private PrunePendingTaskThreads $pendingThreads,
     ) {}
 
+    public static function isTickFailureReason(?string $reason): bool
+    {
+        return is_string($reason) && str_starts_with($reason, self::TickFailedReason);
+    }
+
     /**
      * @return list<TaskSessionDecision>
      */

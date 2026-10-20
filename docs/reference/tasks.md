@@ -505,7 +505,7 @@ The subtask phase takes the group's execution hold in `tick()`, before advancing
 
 When the task fails on two ticks in a row, the task and its `running` or `reviewing` subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself.
 
-Fix the cause, then post a non-empty `resolution` on any subtask. This clears the task's tick-failure assistance even when no subtask asks for assistance, so the next tick retries. Other assistance requests keep their normal resolution rules. A tick in which the task succeeds resets the count.
+For recovery, see [Resolve a request](#resolve-a-request). A tick in which the task succeeds resets the count.
 
 ### Claim and provision
 
@@ -897,6 +897,8 @@ The record's `task_id` is the parent task id and its `subtask_id` is the asking 
 
 A reason that starts with `Watched pull request ended: ` is the exception. Orbit stores the resolution comment and does not send it. It does not clear the flag, and it does not start a subtask. [Watch the branch while subtasks are open](#watch-the-branch-while-subtasks-are-open) defines that reason and the one notice Orbit sends.
 
+For a tick failure, fix the cause and post a non-empty `resolution` on any subtask, even one that is not asking. Orbit clears the request from the task and every open subtask carrying the same request. It does not send the resolution to an agent: a tick failure is an operator-level problem. The next tick retries the task's work. Other assistance requests keep their normal resolution rules.
+
 A `resolution` comment with a non-empty body resumes a subtask that asks for assistance. On a direction request, the route depends on the subtask. None of these routes starts a new implementer attempt, so the consult records of the current `completion_attempt` still count.
 
 When the subtask is `running` and its reviewer has started, Orbit sends the resolution as a relay and clears `assistance_requested` on the subtask and the task in that send. The question record stays `escalated`. The reviewer is then the acting thread, so the tick reads the relay receipt. An `answered` receipt marks the record `answered` and leaves the flag clear. A `blocked` receipt sets the flag, the kind, and the question again, as the [turn receipt](#turn-receipt) states.
@@ -911,7 +913,7 @@ Clearing the flag on send is keyed to the `resolution` comment and does not chan
 
 On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it.
 
-A non-empty resolution on any subtask clears group-level tick-failure assistance, even when that subtask is not asking. The next tick retries the group's work without sending the resolution to an agent unless the subtask also needs it. A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
+A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
 ### Retry a transient provider error
 
