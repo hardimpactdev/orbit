@@ -396,7 +396,7 @@ describe('Composer configuration', function (): void {
         $required = $jobs['required']['steps'][0]['run'];
         $verdict = function (array $results) use ($required): bool {
             $process = new Process(['bash', '-ec', $required], null, $results + [
-                'EVENT' => 'pull_request', 'DOCS_MERGE_REF_RESULT' => 'success', 'PROJECT_RESULT' => 'success',
+                'EVENT' => 'pull_request', 'PROJECT_RESULT' => 'success',
                 'PRIVILEGED_RESULT' => 'success', 'API_REFERENCE_RESULT' => 'success', 'WEB_RESULT' => 'success',
                 'PI_SERVER_RESULT' => 'success', 'AGENT_RESULT' => 'success', 'DESKTOP_RESULT' => 'success',
                 'REMOTE_PROGRAMS_RESULT' => 'success',
@@ -409,7 +409,7 @@ describe('Composer configuration', function (): void {
             expect($verdict(['GATEWAY_SHARDS_RESULT' => $result]))->toBeFalse();
         }
         foreach (['push', 'schedule', 'workflow_dispatch'] as $event) {
-            expect($verdict(['EVENT' => $event, 'DOCS_MERGE_REF_RESULT' => 'skipped', 'GATEWAY_SHARDS_RESULT' => 'skipped']))->toBeTrue();
+            expect($verdict(['EVENT' => $event, 'GATEWAY_SHARDS_RESULT' => 'skipped']))->toBeTrue();
         }
 
     });
@@ -583,7 +583,7 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
         'ci.yml:project', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
-        'ci.yml:docs-merge-ref', 'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+        'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"')

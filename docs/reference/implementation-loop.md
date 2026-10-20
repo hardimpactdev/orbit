@@ -160,7 +160,7 @@ The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs
 
 The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP process with PCRE JIT disabled, independently of TIA and shard selection. The test checks that PHP received the step's `PCRE_JIT` setting. This step runs even if an earlier test step fails and keeps the large-value redaction regressions in `Required checks`.
 
-The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change.
+Docs quality checks, including Docs lint and the ADR lifecycle rules, and the full Docs test suite run once in the project matrix. Like the other project lanes, Docs checks out the immutable event commit, `github.sha`: the merge commit on pull requests. There is no second Docs merge-ref job.
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
 
@@ -241,7 +241,9 @@ sudo ufw route delete allow in on orbitci0
 
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
-Each Composer project job caches three sets of files in GitHub Actions cache.
+Dependency downloads use stock `actions/cache`. The shared PHP setup caches only Composer's download directory, keyed by runner OS, architecture, Composer version, and all Composer lockfiles. Bun jobs cache only `~/.bun/install/cache`, keyed by OS, architecture, Bun version, and all Bun lockfiles. Only non-PR runs on `refs/heads/main` write these entries; all other runs restore without saving. Installs still run with the lockfile in each job. Jobs never share installed `vendor/` or `node_modules/` trees, and Playwright browsers are not cached.
+
+Each Composer project job also caches three sets of quality and test files in GitHub Actions cache.
 
 | Cache | Key inputs |
 | --- | --- |

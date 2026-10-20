@@ -42,3 +42,26 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}
       run: python3 bin/php-build verify --profile=ci-runner
+
+    - name: Locate Composer download cache
+      id: composer-cache
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        echo "path=$(composer config cache-files-dir --global)" >> "$GITHUB_OUTPUT"
+        echo "version=$(composer --version --no-ansi | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Composer downloads
+      if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.composer-cache.outputs.path }}
+        key: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-${{ hashFiles('**/composer.lock') }}
+
+    # The stock action saves after the job's installs, and only main produces trusted download entries.
+    - name: Cache Composer downloads on main
+      if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.composer-cache.outputs.path }}
+        key: composer-${{ runner.os }}-${{ runner.arch }}-${{ steps.composer-cache.outputs.version }}-${{ hashFiles('**/composer.lock') }}

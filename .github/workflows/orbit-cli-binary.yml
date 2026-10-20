@@ -3,6 +3,18 @@ name: Orbit CLI Binary
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'apps/cli/**'
+      - 'packages/php-sdk/**'
+      - 'apps/gateway/resources/machine-software/**'
+      - 'apps/gateway/resources/remote/php/**'
+      - 'apps/gateway/resources/remote/lib/**'
+      - 'apps/gateway/resources/remote/bootstrap.py'
+      - '.github/actions/php/**'
+      - 'bin/php-build'
+      - 'bin/orbit-build-cli-binary'
+      - 'bin/orbit-version'
+      - '.github/workflows/orbit-cli-binary.yml'
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -17,6 +29,11 @@ on:
 
 permissions:
   contents: read
+
+# Only PR runs share a group. Release calls and manual builds must not cancel each other.
+concurrency:
+  group: cli-binary-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: true
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
@@ -59,7 +76,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.commit }}
+          ref: ${{ inputs.commit || github.sha }}
 
       # The recipe's exact PHP build and pinned Composer (ADR 0216), as in every other PHP job. It only builds the
       # PHAR; the binary runs PHPacker's static PHP.
@@ -107,6 +124,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.path }}
           if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
 
   # The release waits for this job too, so a macOS binary that does not start is never published.
   run-macos:
