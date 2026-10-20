@@ -149,7 +149,9 @@ This item replaced, on 2026-10-20, the start-commit test base that it chose on 2
 - The Project's `merge_check` on exactly that commit is the handoff's test result. Green passes the handoff. Red returns the failed jobs and their logs as a failed check. A job that did not run to completion asks for assistance instead, as settling judges it. Pending waits, and each tick reads it again through one shared check-run read per commit.
 - The handoff stays blocking: the reviewer starts only after CI passed.
 - The publishing approval reuses the draft: it sets the description and marks it ready.
-- The approval stores the commit CI passed and commits nothing. A HEAD that left that commit reopens the handoff.
+- Every handoff gets its own commit, an empty one when nothing changed, so every handoff is published and tested the same way.
+- While no merge-check run exists, the commit's GitHub Actions check suites decide: unfinished is pending, a cancelled suite asks for assistance, and a suite that ended with `startup_failure` or `failure` fails the check.
+- The approval stores the commit CI passed and commits nothing. A HEAD that left that commit, or an Orbit-owned HEAD change during the review, reopens the handoff with its reason; the CI result stays as it is.
 - The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
 - `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base. `composer test:affected` stays for the implementer.
 

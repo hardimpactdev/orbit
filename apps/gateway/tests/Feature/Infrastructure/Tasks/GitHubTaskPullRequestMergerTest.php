@@ -28,6 +28,12 @@ function merger_fake_checks(int $checksTokenStatus = 201): void
         'https://api.github.com/app/installations/9/access_tokens' => $checksTokenStatus === 201
             ? Http::response(['token' => 'ghs_checks'], 201)
             : Http::response(['message' => 'The permissions requested are not granted to this installation.'], $checksTokenStatus),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 1, 'check_suites' => [
+            ['id' => 5, 'status' => 'completed', 'conclusion' => 'success', 'app' => ['slug' => 'github-actions']],
+        ]]),
+        'https://api.github.com/repos/acme/orbit/pulls/7' => Http::response([
+            'state' => 'open', 'merged' => false, 'mergeable' => false, 'mergeable_state' => 'dirty', 'head' => ['sha' => MERGER_SHA], 'base' => ['ref' => 'main'],
+        ]),
         'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => static fn (Request $request) => Http::response(['total_count' => 2, 'check_runs' => [
             ['id' => 2, 'name' => 'Gateway shards (1)', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => MERGER_SHA, 'app' => ['slug' => 'github-actions']],
             ['id' => 1, 'name' => 'Required checks', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => MERGER_SHA, 'app' => ['slug' => 'github-actions']],
@@ -35,9 +41,9 @@ function merger_fake_checks(int $checksTokenStatus = 201): void
     ]);
 }
 
-function merger_check_run_reads(): int
+function merger_check_run_reads(string $path = '/check-runs'): int
 {
-    return count(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/check-runs')));
+    return count(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), $path)));
 }
 
 beforeEach(function (): void {
@@ -60,6 +66,32 @@ it('shares one check-run read of a commit between the merge check and the run li
     $merger->checkRuns($group, MERGER_SHA);
 
     expect(merger_check_run_reads())->toBe(2);
+});
+
+it('reads the check runs and check suites of a commit as one snapshot', function (): void {
+    GitHubTestSupport::storeApp();
+    merger_fake_checks();
+    $merger = app(GitHubTaskPullRequestMerger::class);
+    $group = merger_group();
+
+    expect(array_map(static fn ($suite): ?string => $suite->conclusion, $merger->checkSuites($group, MERGER_SHA) ?? []))->toBe(['success'])
+        ->and($merger->checkRuns($group, MERGER_SHA))->toHaveCount(2)
+        ->and($merger->checkSuites($group, MERGER_SHA))->toHaveCount(1)
+        ->and(merger_check_run_reads('/check-runs'))->toBe(1)
+        ->and(merger_check_run_reads('/check-suites'))->toBe(1);
+});
+
+it('shares the conflict read of a pull request for one head for a minute, and names only a conflict on that head', function (): void {
+    GitHubTestSupport::storeApp();
+    merger_fake_checks();
+    $merger = app(GitHubTaskPullRequestMerger::class);
+    $group = merger_group();
+
+    expect($merger->conflictBase($group, MERGER_SHA, 7))->toBe('main')
+        ->and($merger->conflictBase($group, MERGER_SHA, 7))->toBe('main')
+        ->and($merger->conflictBase($group, str_repeat('2', 40), 7))->toBeNull()
+        ->and($merger->conflictBase($group, str_repeat('2', 40), 7))->toBeNull()
+        ->and(merger_check_run_reads('/pulls/7'))->toBe(2);
 });
 
 it('reads no check runs without the checks permission, and asks again on the next read', function (): void {

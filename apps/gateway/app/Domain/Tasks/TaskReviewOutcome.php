@@ -30,7 +30,6 @@ final readonly class TaskReviewOutcome
         private TaskTurnFetcher $turnFetcher,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
-        private TaskHandoffCi $handoffCi,
     ) {}
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -272,8 +271,8 @@ final readonly class TaskReviewOutcome
 
     /**
      * Stores the handoff commit that CI passed as the approved commit, while the workspace HEAD is exactly that
-     * commit. Any other HEAD reopens the handoff: a CI-tested commit that HEAD left fails its check, and a handoff
-     * without a tested commit runs handoff CI first. The approval never commits new work.
+     * commit. Any other HEAD reopens the handoff with its reason; the passed CI result stays as it is. The approval
+     * never commits new work.
      */
     private function approveTestedHandoff(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
     {
@@ -289,10 +288,10 @@ final readonly class TaskReviewOutcome
         }
         $tested = $handoff?->commit_sha;
         if ($handoff === null || $tested !== $head) {
-            if ($handoff instanceof TaskCheck && is_string($tested)) {
-                $this->handoffCi->moved($group, $handoff, $head);
-            }
-            $this->reopenHandoff($group, $task, $receipt);
+            // A defensive guard: an owned HEAD change already reopens the handoff before a review.
+            $this->reopenHandoff($group, $task, $receipt, is_string($tested)
+                ? 'The workspace HEAD is '.$head.', not the commit '.$tested.' that CI passed on, so Orbit could not approve it. Hand off again, so the check and CI run on the current HEAD.'
+                : 'Your handoff has no commit that CI tested, so Orbit could not approve it. Hand off again, so the check and CI run on the current HEAD.');
 
             return;
         }
@@ -641,6 +640,14 @@ final readonly class TaskReviewOutcome
             return 'wait';
         }
         if ($this->ownedWorkspaceChange($group, $task, $current)) {
+            if (! $task->isFinalReview() && $group->project->mergeCheckName() !== null) {
+                // Handoff CI (/reference/tasks#handoff-ci): CI passed on another commit, so the check and CI run on the new
+                // HEAD before any review of it.
+                $this->reopenHandoff($group, $task, $receipt, 'Orbit moved the workspace from '.$task->review_workspace_head.' to '.$current->head
+                    .' during the review, after CI passed on the handoff. Hand off again, so the check and CI run on the new HEAD before the review.');
+
+                return 'reopened';
+            }
             $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
 
             return 'reopened';
@@ -731,12 +738,16 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * A newer implementer turn changed the workspace during review. The reviewer outcome is not
-     * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
+     * Reopens the handoff: the reviewer outcome is not applied and the reviewer is not reminded. The subtask needs a
+     * new receipt and a passing check. A newer implementer turn that changed the workspace during review reopens it,
+     * and so does a HEAD that is not the commit CI passed on (/reference/tasks#handoff-ci).
+     *
+     * @param  string|null  $reason  why Orbit reopened it, which the implementer's next reminder names
      */
-    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt): void
+    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt, ?string $reason = null): void
     {
         $task->update([
+            'handoff_reopen_reason' => $reason,
             'status' => TaskStatus::Running,
             'review_handled_comment_id' => $receipt->id,
             'review_attempt' => $task->review_attempt + 1,

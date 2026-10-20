@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\GitHub\GitHubCheckRun;
+use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Models\Project;
@@ -36,11 +36,22 @@ interface TaskPullRequestMerger
     public function checkRuns(Task $group, string $sha): ?array;
 
     /**
-     * One pull request of the Project repository as GitHub reports it now.
+     * Every check suite on exactly this commit, from the same shared snapshot as {@see checkRuns()}. GitHub Actions makes
+     * one suite per workflow run. Null when the installation has not granted `checks: read`.
+     *
+     * @return list<GitHubCheckSuite>|null
+     *
+     * @throws TaskPullRequestException when the App or GitHub is unavailable
+     */
+    public function checkSuites(Task $group, string $sha): ?array;
+
+    /**
+     * The base branch that pull request `$number`, with head `$sha`, conflicts with, or null when it does not.
+     * GitHub runs no `pull_request` workflow while it conflicts. Shared for a minute like {@see checkRuns()}.
      *
      * @throws TaskPullRequestException
      */
-    public function pullRequest(Task $group, int $number): GitHubPullRequest;
+    public function conflictBase(Task $group, string $sha, int $number): ?string;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.

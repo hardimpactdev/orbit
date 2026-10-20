@@ -12,5 +12,6 @@ use App\Models\Instance;
  */
 interface TaskWorkspaceSigner
 {
-    public function commit(Instance $instance, string $message): ?string;
+    /** With `$allowEmpty`, a workspace with nothing to commit still gets a new commit on top of HEAD. */
+    public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string;
 }

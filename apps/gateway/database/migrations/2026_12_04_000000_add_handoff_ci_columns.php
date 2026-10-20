@@ -14,12 +14,18 @@ return new class extends Migration
             $table->string('commit_sha', 64)->nullable();
             $table->unsignedInteger('pull_request_number')->nullable();
         });
+        Schema::table('tasks', function (Blueprint $table): void {
+            $table->text('handoff_reopen_reason')->nullable();
+        });
     }
 
     public function down(): void
     {
         Schema::table('task_checks', function (Blueprint $table): void {
             $table->dropColumn(['commit_sha', 'pull_request_number']);
+        });
+        Schema::table('tasks', function (Blueprint $table): void {
+            $table->dropColumn('handoff_reopen_reason');
         });
     }
 };

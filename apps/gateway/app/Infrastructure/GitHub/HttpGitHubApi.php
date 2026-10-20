@@ -9,6 +9,7 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubCheckRun;
+use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
@@ -443,6 +444,45 @@ final readonly class HttpGitHubApi implements GitHubApi
             }
             if ($read === $total) {
                 return $runs;
+            }
+            if ($rows === []) {
+                throw GitHubApiException::unavailable();
+            }
+        }
+
+        throw GitHubApiException::unavailable();
+    }
+
+    /** Pages follow `total_count` as for {@see checkRuns()}. */
+    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    {
+        $path = $this->repositoryPath($repository).'/commits/'.rawurlencode($sha).'/check-suites';
+        $suites = [];
+        $read = 0;
+        $total = null;
+        for ($page = 1; $page <= self::CHECK_RUN_PAGES; $page++) {
+            $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($path, ['per_page' => self::PAGE_SIZE, 'page' => $page]));
+            $rows = $response->json('check_suites');
+            $count = $response->json('total_count');
+            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || ! is_int($count) || $count < 0
+                || ($total !== null && $count !== $total)) {
+                throw GitHubApiException::unavailable();
+            }
+            $total = $count;
+            $read += count($rows);
+            foreach ($rows as $row) {
+                $id = is_array($row) ? ($row['id'] ?? null) : null;
+                if (! is_array($row) || ! is_int($id)) {
+                    throw GitHubApiException::unavailable();
+                }
+                $suites[] = new GitHubCheckSuite($id, $this->text($row['status'] ?? null), $this->text($row['conclusion'] ?? null),
+                    is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null);
+            }
+            if ($read > $total) {
+                throw GitHubApiException::unavailable();
+            }
+            if ($read === $total) {
+                return $suites;
             }
             if ($rows === []) {
                 throw GitHubApiException::unavailable();

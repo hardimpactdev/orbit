@@ -179,6 +179,16 @@ interface GitHubApi
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array;
 
     /**
+     * Every check suite on the commit, every page up to 1,000 suites. A longer list, or one that changes or ends
+     * before its `total_count`, fails.
+     *
+     * @return list<GitHubCheckSuite>
+     *
+     * @throws GitHubApiException
+     */
+    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
+
+    /**
      * The first 100 commits reachable from the branch head, newest first, in GitHub's history order.
      * Needs a token with `contents: read`.
      *

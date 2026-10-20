@@ -46,6 +46,7 @@ function watcher_fake_health(array $pullRequest, array $checkRuns = [], int $che
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'], ...$pullRequest,
         ], $pullRequestStatus),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => count($checkRuns), 'check_runs' => $checkRuns], $checkRunsStatus),
     ]);
 }
@@ -599,6 +600,7 @@ it('starts a new pending clock when the check run id changes and clears one that
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
         ]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [$pending(1)]])
             ->push(['total_count' => 1, 'check_runs' => [$success]])
@@ -631,6 +633,7 @@ describe('bounded pending clocks', function (): void {
             'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
                 ->push(['state' => 'open', 'head' => ['sha' => 'old-head']])
                 ->push(['state' => 'open', 'head' => ['sha' => 'new-head']]),
+            'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [$pending]]),
         ]);
         $watcher = app(HttpTaskPullRequestWatcher::class);
@@ -680,7 +683,7 @@ describe('malformed watcher cache values', function (): void {
         watcher_fake_health([], [
             ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
         ]);
-        Cache::put('tasks:commit-check-runs:v1:acme/orbit@abc123', $value, 60);
+        Cache::put('tasks:commit-checks:v1:acme/orbit@abc123:checks', $value, 60);
 
         $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
 

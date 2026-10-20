@@ -539,6 +539,7 @@ function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 
     foreach ($checks as $sha => $runs) {
         $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['total_count' => count($runs), 'check_runs' => $runs]);
     }
+    $fake['https://api.github.com/repos/acme/orbit/commits/*/check-suites*'] = Http::response(['total_count' => 0, 'check_suites' => []]);
     Http::preventStrayRequests();
     Http::fake($fake);
 }
@@ -708,7 +709,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public bool $fails = false;
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
             if ($this->fails) {
@@ -987,6 +988,7 @@ function tick_red_main_baseline(string $slug, string $failed, string $tip, strin
         ]),
         "https://api.github.com/repos/acme/{$slug}/commits/{$failed}/check-runs*" => Http::response($runs($failed, $failedConclusion)),
         "https://api.github.com/repos/acme/{$slug}/commits/{$tip}/check-runs*" => Http::response($runs($tip, $tipConclusion)),
+        "https://api.github.com/repos/acme/{$slug}/commits/*/check-suites*" => Http::response(['total_count' => 0, 'check_suites' => []]),
     ]);
 
     return [$group, $task, $runner];

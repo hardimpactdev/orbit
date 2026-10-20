@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\GitHub\GitHubCheckRun;
-use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubCheckSuite;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Models\Instance;
 use App\Models\Task;
@@ -42,10 +43,8 @@ final readonly class TaskHandoffCi
         if ($commit === null || $check->status !== TaskCheckStatus::Passed) {
             return $check->status === TaskCheckStatus::Failed ? RequiredCheckState::Failed : RequiredCheckState::Pending;
         }
-        // The group's start commit is on the default branch: its run comes from main's CI, and a branch equal to its
-        // base cannot open a pull request. Every other commit is published once.
-        if ($check->pull_request_number === null && $commit !== TaskReviewBase::groupStartCommit($group)
-            && ! $this->publish($scheduler, $group, $task, $check, $commit)) {
+        // Every handoff commit is new, so it is published once, on task-{id}.
+        if ($check->pull_request_number === null && ! $this->publish($scheduler, $group, $task, $check, $commit)) {
             return RequiredCheckState::Pending;
         }
         $state = $this->merger->requiredCheck($group, $commit, $checkName);
@@ -54,14 +53,17 @@ final readonly class TaskHandoffCi
 
             return $state;
         }
-        $scheduler->clearCommunicationFailures($task);
-
-        return match ($state) {
-            // GitHub creates the merge check's run only after the jobs it needs finish, so a missing run is pending.
-            RequiredCheckState::Missing => $this->conflicting($scheduler, $group, $task, $check, $commit) ? RequiredCheckState::Failed : RequiredCheckState::Pending,
+        $state = match ($state) {
+            RequiredCheckState::Missing => $this->missing($scheduler, $group, $task, $check, $receipt, $commit, $checkName),
             RequiredCheckState::Failed => $this->failed($scheduler, $group, $task, $check, $receipt, $commit, $checkName),
             default => $state,
         };
+        if ($state !== RequiredCheckState::Unreadable) {
+            // Only a whole read resets the count, so a read that keeps failing asks for assistance on the fifth.
+            $scheduler->clearCommunicationFailures($task);
+        }
+
+        return $state;
     }
 
     /**
@@ -78,7 +80,8 @@ final readonly class TaskHandoffCi
         }
         try {
             $committed = app(TaskWorkspaceLease::class)->withReceipt($group, $task->id, $threadId, function () use ($instance, $task, $receipt): ?TaskWorkspaceSnapshot {
-                $commit = $this->signer->commit($instance, $task->title."\n\n".$receipt->body);
+                // Always a new commit, also when nothing changed, so every handoff is published and tested the same way.
+                $commit = $this->signer->commit($instance, $task->title."\n\n".$receipt->body, allowEmpty: true);
 
                 return $commit === null ? null : $this->checks->snapshot($instance);
             });
@@ -123,30 +126,64 @@ final readonly class TaskHandoffCi
     }
 
     /**
-     * Whether GitHub keeps CI from running at all: no run exists on the commit, and its pull request conflicts with
-     * its base. GitHub runs no `pull_request` workflow then. The check fails with the merge to do.
+     * The commit has no merge-check run yet. GitHub creates that run only after the jobs it needs finish. The commit's
+     * GitHub Actions check suites decide whether one still can come:
+     *
+     * - No suite: pending. A pull request that conflicts with its base gets no `pull_request` workflow at all, so a
+     *   conflict fails the check with the merge to do.
+     * - A suite not completed: pending.
+     * - Every suite completed, one with `startup_failure` or `failure`: the workflow ended before the merge check, as
+     *   for a workflow file GitHub cannot start. The implementer gets a failed check.
+     * - Every suite completed, one cancelled: infrastructure, as for a cancelled job.
      */
-    private function conflicting(TaskScheduler $scheduler, Task $group, Task $task, TaskCheck $check, string $commit): bool
+    private function missing(TaskScheduler $scheduler, Task $group, Task $task, TaskCheck $check, TaskComment $receipt, string $commit, string $checkName): RequiredCheckState
     {
-        $number = $check->pull_request_number;
         try {
-            if ($number === null || $this->merger->checkRuns($group, $commit) !== []) {
-                return false;
+            $all = $this->merger->checkSuites($group, $commit);
+            if ($all === null) {
+                $scheduler->recordCommunicationFailure($task, $group, 'Orbit could not read the check suites of '.$commit.'.');
+
+                return RequiredCheckState::Unreadable;
             }
-            $pullRequest = $this->merger->pullRequest($group, $number);
+            $suites = array_values(array_filter($all, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug === RequiredCheckState::CheckApp));
+            $conflict = $suites === [] && $check->pull_request_number !== null
+                ? $this->merger->conflictBase($group, $commit, $check->pull_request_number) : null;
         } catch (TaskPullRequestException $exception) {
             $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
 
-            return false;
+            return RequiredCheckState::Unreadable;
         }
-        if ($pullRequest->state !== GitHubPullRequestState::Open || ! $pullRequest->conflicts()) {
-            return false;
-        }
-        $base = $pullRequest->baseRef ?? 'the base branch';
-        $this->fail($group, $check, 'GitHub reports that the task branch conflicts with '.$base.', so CI cannot run on '.$commit.'. '
-            .'Merge origin/'.$base.' into the task branch and resolve the conflicts. Do not rebase and do not force-push.');
+        if ($conflict !== null) {
+            $this->fail($group, $check, 'GitHub reports that the task branch conflicts with '.$conflict.', so CI cannot run on '.$commit.'. '
+                .'Merge origin/'.$conflict.' into the task branch and resolve the conflicts. Do not rebase and do not force-push.');
 
-        return true;
+            return RequiredCheckState::Failed;
+        }
+        if ($suites === [] || ! array_all($suites, static fn (GitHubCheckSuite $suite): bool => $suite->completed())) {
+            return RequiredCheckState::Pending;
+        }
+        $conclusions = array_values(array_unique(array_map(static fn (GitHubCheckSuite $suite): string => (string) $suite->conclusion, $suites)));
+        $ended = array_values(array_intersect($conclusions, ['startup_failure', 'failure']));
+        if ($ended !== []) {
+            $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+            $this->fail($group, $check, 'GitHub Actions ended on '.$commit.' with '.implode(' and ', $ended).' before it ran check '.$checkName.'. '
+                .'A workflow that GitHub cannot start, such as a broken file under .github/workflows/, causes this.'
+                .($repository instanceof GitHubRepository ? ' See https://github.com/'.$repository->owner.'/'.$repository->name.'/commit/'.$commit.'/checks.' : ''));
+
+            return RequiredCheckState::Failed;
+        }
+        if (in_array('cancelled', $conclusions, true)) {
+            $this->infrastructure($scheduler, $group, $task, $receipt, $commit, 'GitHub Actions cancelled its workflow before check '.$checkName.' ran');
+        }
+
+        return RequiredCheckState::Pending;
+    }
+
+    /** CI did not run to completion: the code is not at fault. Asks for assistance; no reminder, no budget charge. */
+    private function infrastructure(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt, string $commit, string $what): void
+    {
+        $scheduler->requestAssistance($task, $group, 'CI did not run to completion on handoff commit '.$commit.': '.$what.'. Re-run it, then post a resolution so the implementer hands off again.',
+            handled: ['completion_handoff_comment_id' => $receipt->id]);
     }
 
     /**
@@ -165,9 +202,8 @@ final readonly class TaskHandoffCi
         }
         $genuine = array_values(array_filter($failures, static fn (GitHubCheckRun $run): bool => ! $run->infrastructure()));
         if ($failures !== [] && $genuine === []) {
-            $runs = implode(', ', array_map(static fn (GitHubCheckRun $run): string => $run->name.' ('.$run->conclusion.')', $failures));
-            $scheduler->requestAssistance($task, $group, 'CI did not run to completion on handoff commit '.$commit.': '.$runs.'. Re-run the jobs, then post a resolution so the implementer hands off again.',
-                handled: ['completion_handoff_comment_id' => $receipt->id]);
+            $this->infrastructure($scheduler, $group, $task, $receipt, $commit,
+                implode(', ', array_map(static fn (GitHubCheckRun $run): string => $run->name.' ('.$run->conclusion.')', $failures)));
 
             return RequiredCheckState::Pending;
         }
@@ -180,16 +216,6 @@ final readonly class TaskHandoffCi
             }, $genuine)));
 
         return RequiredCheckState::Failed;
-    }
-
-    /**
-     * HEAD left the commit that CI passed before the approval, so that result no longer covers the work. The check
-     * fails, and the reopened handoff runs the check and CI on the current HEAD.
-     */
-    public function moved(Task $group, TaskCheck $check, string $head): void
-    {
-        $this->fail($group, $check, 'The workspace HEAD is '.$head.', not the commit '.$check->commit_sha.' that CI passed on. '
-            .'Hand off again, so the check and CI run on the current HEAD.');
     }
 
     /** Records the CI result on the handoff check, which until now held only the passed workspace check. */

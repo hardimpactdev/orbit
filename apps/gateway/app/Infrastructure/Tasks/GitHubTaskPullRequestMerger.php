@@ -7,8 +7,9 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
+use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubMergeResult;
-use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
@@ -17,6 +18,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Models\Project;
 use App\Models\Task;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -27,10 +29,11 @@ use Illuminate\Support\Facades\Cache;
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
     /**
-     * Every caller of one commit's check runs shares one read for this long: the merge gate, the handoff, and the
-     * settling watch. The scheduler ticks every few seconds, and each read costs a checks token and a list call.
+     * Every reader of one commit's checks shares one read of each part for this long: the merge gate, the handoff CI,
+     * and the settling watch. The scheduler ticks every few seconds, and each read costs a token and a list call.
+     * Only check data is cached, never a token. A new push has a new commit, so it reads fresh.
      */
-    private const int CheckRunsSeconds = 60;
+    private const int ReadSeconds = 60;
 
     public function __construct(
         private RepositoryPullRequestAccess $access,
@@ -50,55 +53,106 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
 
     public function checkRuns(Task $group, string $sha): ?array
     {
-        $repository = $this->repository($group->project);
-        if (! $repository instanceof GitHubRepository) {
-            throw new TaskPullRequestException('The Project repository is not on github.com.');
-        }
-        $key = 'tasks:commit-check-runs:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        return $this->commitChecks($group, $sha)['runs'] ?? null;
+    }
+
+    public function checkSuites(Task $group, string $sha): ?array
+    {
+        return $this->commitChecks($group, $sha)['suites'] ?? null;
+    }
+
+    /**
+     * One snapshot of a commit's check runs and check suites, read together, so the two lists never come from
+     * different moments. Null when the installation has not granted `checks: read`; that is not cached, so the
+     * permission is checked again on the next read.
+     *
+     * @return array{runs: list<GitHubCheckRun>, suites: list<GitHubCheckSuite>}|null
+     *
+     * @throws TaskPullRequestException
+     */
+    private function commitChecks(Task $group, string $sha): ?array
+    {
+        $repository = $this->githubRepository($group);
+        $key = $this->key($repository, $sha, 'checks');
         $cached = Cache::get($key);
-        if (is_array($cached) && array_is_list($cached)) {
-            $runs = [];
-            foreach ($cached as $row) {
-                $run = GitHubCheckRun::fromArray($row);
-                if (! $run instanceof GitHubCheckRun) {
-                    // A value this read did not write: read GitHub again.
-                    $runs = null;
-                    break;
-                }
-                $runs[] = $run;
-            }
-            if ($runs !== null) {
-                return $runs;
+        if (is_array($cached)) {
+            $runs = self::decoded($cached['runs'] ?? null, GitHubCheckRun::fromArray(...));
+            $suites = self::decoded($cached['suites'] ?? null, GitHubCheckSuite::fromArray(...));
+            if ($runs !== null && $suites !== null) {
+                return ['runs' => $runs, 'suites' => $suites];
             }
         }
         $token = $this->access->checksToken($repository);
         if ($token === null) {
-            // Not cached, so the permission is checked again on the next read.
             return null;
         }
         try {
-            $runs = $this->github->checkRuns($token, $repository, $sha);
+            $snapshot = ['runs' => $this->github->checkRuns($token, $repository, $sha), 'suites' => $this->github->checkSuites($token, $repository, $sha)];
         } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('Orbit could not read the check runs of '.$sha.': '.$exception->getMessage(), previous: $exception);
+            throw new TaskPullRequestException('Orbit could not read the checks of '.$sha.': '.$exception->getMessage(), previous: $exception);
         }
-        // Only the runs are cached, never a token. A new push has a new commit, so it reads fresh.
-        Cache::put($key, array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $runs), self::CheckRunsSeconds);
+        Cache::put($key, [
+            'runs' => array_map(static fn (GitHubCheckRun $run): array => $run->toArray(), $snapshot['runs']),
+            'suites' => array_map(static fn (GitHubCheckSuite $suite): array => $suite->toArray(), $snapshot['suites']),
+        ], self::ReadSeconds);
 
-        return $runs;
+        return $snapshot;
     }
 
-    public function pullRequest(Task $group, int $number): GitHubPullRequest
+    public function conflictBase(Task $group, string $sha, int $number): ?string
     {
-        $repository = $this->repository($group->project);
-        if (! $repository instanceof GitHubRepository) {
-            throw new TaskPullRequestException('The Project repository is not on github.com.');
+        $repository = $this->githubRepository($group);
+        $key = $this->key($repository, $sha, 'conflict:'.$number);
+        $cached = Cache::get($key);
+        if (is_array($cached) && array_key_exists('base', $cached) && (is_string($cached['base']) || $cached['base'] === null)) {
+            return $cached['base'];
         }
-
         try {
-            return $this->github->pullRequest($this->access->token($repository), $repository, $number);
+            $pullRequest = $this->github->pullRequest($this->access->token($repository), $repository, $number);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('Orbit could not read pull request #'.$number.': '.$exception->getMessage(), previous: $exception);
         }
+        $base = $pullRequest->state === GitHubPullRequestState::Open && $pullRequest->headSha === $sha && $pullRequest->conflicts()
+            ? ($pullRequest->baseRef ?? 'the base branch') : null;
+        Cache::put($key, ['base' => $base], self::ReadSeconds);
+
+        return $base;
+    }
+
+    /** @throws TaskPullRequestException */
+    private function githubRepository(Task $group): GitHubRepository
+    {
+        return $this->repository($group->project) ?? throw new TaskPullRequestException('The Project repository is not on github.com.');
+    }
+
+    private function key(GitHubRepository $repository, string $sha, string $part): string
+    {
+        return 'tasks:commit-checks:v1:'.$repository->owner.'/'.$repository->name.'@'.$sha.':'.$part;
+    }
+
+    /**
+     * The list a read stored, or null to read GitHub again, also for a value that read did not write.
+     *
+     * @template T of object
+     *
+     * @param  Closure(mixed): (T|null)  $fromArray
+     * @return list<T>|null
+     */
+    private static function decoded(mixed $cached, Closure $fromArray): ?array
+    {
+        if (! is_array($cached) || ! array_is_list($cached)) {
+            return null;
+        }
+        $items = [];
+        foreach ($cached as $row) {
+            $item = $fromArray($row);
+            if ($item === null) {
+                return null;
+            }
+            $items[] = $item;
+        }
+
+        return $items;
     }
 
     public function merge(Task $group, string $sha): GitHubMergeResult

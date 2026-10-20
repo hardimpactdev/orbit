@@ -243,6 +243,7 @@ final readonly class TaskSubtaskRunner
 
             return;
         }
+        $task->update(['handoff_reopen_reason' => null]);
         TaskCheck::query()->updateOrCreate([
             'task_id' => $task->id, 'pid' => $process->pid, 'process_started' => $process->started,
         ], [
@@ -318,9 +319,12 @@ final readonly class TaskSubtaskRunner
     /** @return list<TaskRubricItem> */
     private function implementerItems(TaskScheduler $scheduler, Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
     {
-        $items = [
-            $scheduler->receiptItem($read, $receipt),
-        ];
+        $items = [];
+        if (! $receipt instanceof TaskComment && is_string($task->handoff_reopen_reason)) {
+            // Orbit reopened the handoff (/reference/tasks#handoff-ci); the reminder names why first.
+            $items[] = new TaskRubricItem('handoff_reopened', false, $task->handoff_reopen_reason);
+        }
+        $items[] = $scheduler->receiptItem($read, $receipt);
         $confirmation = $scheduler->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
         if ($confirmation instanceof TaskRubricItem) {
             $items[] = $confirmation;
