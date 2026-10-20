@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 /** @return list<string> */
 function orb277_projects(): array
 {
@@ -692,6 +694,34 @@ PHP);
             ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/LegacyTest.php']);
     });
 
+    it('configures existing E2E architecture paths with tests discoverable by real Pest without TIA', function (): void {
+        $configuration = new Process([
+            'python3', '-c',
+            'import json, runpy; print(json.dumps(runpy.run_path("bin/review-check")["ARCHITECTURE_TESTS"]["apps/e2e"]))',
+        ], base_path('../..'));
+        $configuration->mustRun();
+        $paths = json_decode($configuration->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($paths)->not->toBeEmpty();
+
+        foreach ($paths as $path) {
+            expect(file_exists(base_path($path)))->toBeTrue($path);
+
+            $listing = new Process([
+                PHP_BINARY, 'vendor/bin/pest', '--no-tia', '--list-tests', '--colors=never', $path,
+            ], base_path(), [
+                'COLLISION_PRINTER' => false,
+                'PARATEST' => false,
+                'TEST_TOKEN' => false,
+                'UNIQUE_TEST_TOKEN' => false,
+            ]);
+            $listing->run();
+
+            expect($listing->getExitCode())->toBe(0, $listing->getOutput().$listing->getErrorOutput());
+            expect($listing->getOutput())->toMatch('/^ - [^:\r\n]+::/m');
+        }
+    });
+
     it('runs every directory-scanning architecture test for every changed PHP project', function (string $project, array $architecturePaths): void {
         $fixture = orb277_gate_fixture(changedProject: $project);
         $receipt = orb277_run_gate($fixture, '')['receipt'];
@@ -714,7 +744,7 @@ PHP);
             'tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
             'tests/Feature/Configuration/ComposerConfigurationTest.php',
             'tests/Feature/Configuration/SubprocessTestGroupTest.php',
-            'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php',
+            'tests/Feature/Configuration/DocsWorkflowTest.php',
         ]],
         ['packages/php-sdk', [
             'tests/Unit/SuccessRequestIdBoundaryTest.php',

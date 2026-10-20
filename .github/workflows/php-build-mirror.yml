@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: php-build-mirror
@@ -24,11 +24,13 @@ concurrency:
 jobs:
   mirror:
     name: Mirror the recipe Debian artifacts
-    if: github.repository == 'nckrtl/orbit'
+    if: github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
+    permissions:
+      contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
