@@ -9,8 +9,8 @@ use App\Data\Gateway\GatewayAutoReleaseStatusData;
 use App\Data\Gateway\GatewayStatusData;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
+use App\Domain\GatewayReleases\GatewayVersion;
 use Illuminate\Foundation\Application;
-use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
@@ -37,7 +37,7 @@ final readonly class ShowGatewayStatusAction
         return new GatewayStatusData(
             name: 'orbit-gateway',
             status: 'ok',
-            version: Config::string('app.version'),
+            version: GatewayVersion::current(),
             phpVersion: PHP_VERSION,
             laravelVersion: Application::VERSION,
             desiredFleetState: $authenticated ? $this->fleet->cached() : null,

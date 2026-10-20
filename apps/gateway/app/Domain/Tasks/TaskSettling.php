@@ -20,6 +20,7 @@ use App\Models\TaskComment;
 use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -985,7 +986,7 @@ final readonly class TaskSettling
             }
             $locked->setRelation('tasks', $tasks);
             if ($candidate !== null) {
-                $trust = TaskReviewTrust::fromConfig($candidate->repository, config('orbit.tasks.github_reviewers', []));
+                $trust = TaskReviewTrust::fromConfig($candidate->repository, Config::string('orbit.tasks.github_reviewers'));
                 if ($locked->pr_url !== $group->pr_url || $locked->project_id !== $group->project_id
                     || ! is_string($locked->pr_url) || $candidate->repository->pullRequestNumber($locked->pr_url) !== $candidate->number
                     || ! $trust->valid || $trust->revision !== $candidate->trustRevision

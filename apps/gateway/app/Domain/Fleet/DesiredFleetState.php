@@ -7,10 +7,10 @@ namespace App\Domain\Fleet;
 use App\Data\Fleet\DesiredAgentData;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Data\Fleet\DesiredFleetStateData;
+use App\Domain\GatewayReleases\GatewayVersion;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Support\Facades\Config;
 
 /**
  * The desired fleet state of the running Gateway (ADR 0202): its commit, the CLI release CI published for that
@@ -114,7 +114,7 @@ final readonly class DesiredFleetState
 
     private function revision(): string
     {
-        return trim(Config::string('app.version'));
+        return GatewayVersion::current();
     }
 
     private function read(string $revision): ?DesiredFleetStateData
