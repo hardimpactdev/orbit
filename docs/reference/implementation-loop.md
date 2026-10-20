@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/ci.yml,actions/php/action.yml}
-  - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
+  - apps/gateway/{phpunit.xml,tests/Support/TestDatabase{Environment,Guard}.php}
 ---
 
 # Feature delivery
@@ -198,9 +198,13 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 ### Gateway shards
 
-The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
+The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) uses four balanced Gateway shards. The `Gateway plan` job lists every test with `pest --no-tia --all --list-tests`; the restored main graph supplies class timings only and cannot drop a test. The plan excludes the `privileged` group, which the separate required Gateway privileged job runs in full. A class with both privileged and ordinary tests stays in a shard, which excludes the privileged cases.
 
-A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged jobs. Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
+A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged jobs.
+
+Gateway's default `phpunit.xml` excludes that group, so full, affected, subprocess, and focused ordinary runs all leave it out. The XML exclusion keeps Pest TIA enabled and gives its saved graph the same selection and fingerprint in CI and local checks; a command-line exclusion would disable TIA. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. Discovery uses `--all` to include both groups when checking coverage.
+
+Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
 Stock PHPUnit `Before` and `After` fixture hooks put a denying `sudo` shim first on PATH for ordinary tests and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
 

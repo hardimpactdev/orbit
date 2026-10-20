@@ -6,12 +6,14 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 from urllib.parse import parse_qs, urlparse
 import unittest
+import xml.etree.ElementTree as ET
 
 REPOSITORY = Path(sys.argv.pop(1)).resolve()
 HELPER = REPOSITORY / 'bin/ci-tia'
@@ -314,7 +316,7 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual(('affected', head), self.plan()[:2])
 
     def shard_plan(self, classes, status=0, extra='', privileged=(), privileged_tests=''):
-        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --no-tia --list-tests` does, and
+        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --no-tia --all --list-tests` does, and
         the privileged classes and single tests for `pest --no-tia --group=privileged --list-tests`."""
         def write_listing(path, names, tail=''):
             path.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
@@ -326,7 +328,7 @@ class CiTiaTest(unittest.TestCase):
         write_listing(privileged_listing, privileged, privileged_tests)
         pest = self.root / 'pest'
         pest.write_text(f'#!/bin/sh\ncase "$*" in\n'
-                        f'  "--no-tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
+                        f'  "--no-tia --all --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
                         f'  "--no-tia --group=privileged --list-tests --colors=never") cat {privileged_listing} ;;\n'
                         f'  *) exit 9 ;;\nesac\n')
         pest.chmod(0o755)
@@ -554,6 +556,157 @@ class CiTiaTest(unittest.TestCase):
         self.write_graph(head)
         result = self.run_helper('finish', '--mode', 'full')
         self.assertEqual(0, result.returncode, result.stderr)
+
+
+class GatewaySelectionTest(unittest.TestCase):
+    """Run CI's commands with Gateway's real group configuration and installed Pest, never host sudo."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='orbit-gateway-selection-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.project = self.root / PROJECT
+        for directory in ('tests/Unit', 'tests/Feature', 'app', 'extensions'):
+            (self.project / directory).mkdir(parents=True)
+        # Pest resolves the project root from the real autoloader path, so a vendor symlink would run another suite.
+        shutil.copytree(REPOSITORY / 'packages/php-sdk/vendor', self.project / 'vendor',
+                        ignore=shutil.ignore_patterns('cache', 'pint.cache'))
+        (self.root / '.gitignore').write_text('**/vendor\n**/.orbit-tia/\n**/.executed\n')
+        # Keep the real test suites, source roots, and group selection. Only the Laravel bootstrap is replaced.
+        configuration = ET.parse(REPOSITORY / 'apps/gateway/phpunit.xml')
+        configuration.getroot().set('bootstrap', 'vendor/autoload.php')
+        configuration.write(self.project / 'phpunit.xml')
+        for manifest in ('composer.json', 'composer.lock'):
+            (self.project / manifest).write_bytes((REPOSITORY / 'packages/php-sdk' / manifest).read_bytes())
+        (self.project / 'tests/Pest.php').write_text(
+            "<?php\npest()->tia()->directory(dirname(__DIR__).'/.orbit-tia');\n"
+            "require_once dirname(__DIR__).'/app/Value.php';\n")
+        self.value = self.project / 'app/Value.php'
+        self.value.write_text('<?php\nfunction gatewaySelectionValue(): int { return 1; }\n')
+        (self.project / 'tests/Unit/MixedTest.php').write_text('''<?php
+it('runs an ordinary case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "ordinary\\n", FILE_APPEND);
+    expect(gatewaySelectionValue())->toBe(1);
+});
+it('runs an ordinary subprocess case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "subprocess\\n", FILE_APPEND);
+    expect(gatewaySelectionValue())->toBe(1);
+})->group('subprocess');
+it('runs a Unix user case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "privileged\\n", FILE_APPEND);
+    expect(gatewaySelectionValue())->toBe(1);
+})->group('privileged');
+it('runs a privileged subprocess case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "privileged-subprocess\\n", FILE_APPEND);
+    expect(gatewaySelectionValue())->toBe(1);
+})->group('privileged', 'subprocess');
+''')
+        (self.project / 'tests/Unit/UnrelatedTest.php').write_text('''<?php
+it('runs an unrelated ordinary case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "unrelated\\n", FILE_APPEND);
+    expect(true)->toBeTrue();
+});
+''')
+        (self.project / 'tests/Unit/PrivilegedOnlyTest.php').write_text('''<?php
+it('runs a privileged only case', function (): void {
+    file_put_contents(dirname(__DIR__, 2).'/.executed', "privileged-only\\n", FILE_APPEND);
+    expect(true)->toBeTrue();
+})->group('privileged');
+''')
+        for args in (('init', '-q', '-b', 'main'), ('config', 'user.name', 'Orbit'),
+                     ('config', 'user.email', 'orbit@example.test'), ('remote', 'add', 'origin', str(self.root))):
+            git(self.root, *args)
+        self.base = self.commit('base')
+        self.workflow = json.loads(subprocess.run([
+            'php', '-r', 'require $argv[1]."/apps/e2e/vendor/autoload.php"; '
+            'echo json_encode(Symfony\\Component\\Yaml\\Yaml::parseFile($argv[1]."/.github/workflows/ci.yml"));',
+            str(REPOSITORY),
+        ], check=True, capture_output=True, text=True).stdout)
+        # These are independent Pest invocations, not workers of the outer E2E run.
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith('PEST_') and key not in
+                       ('PARATEST', 'TEST_TOKEN', 'UNIQUE_TEST_TOKEN', 'LARAVEL_PARALLEL_TESTING')}
+        self.environment = {**environment, 'RUNNER_TEMP': str(self.root), 'ORBIT_TIA_DIRECTORY': '',
+                            'CI': '', 'GITHUB_ACTIONS': '', 'GITHUB_OUTPUT': str(self.root / 'output')}
+
+    def commit(self, message):
+        git(self.root, 'add', '-A')
+        git(self.root, 'commit', '-q', '-m', message)
+        head = git(self.root, 'rev-parse', 'HEAD')
+        git(self.root, 'update-ref', 'refs/remotes/origin/main', head)
+        git(self.root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+        return head
+
+    def command(self, step_name):
+        step = next(step for step in self.workflow['jobs']['project']['steps'] if step.get('name') == step_name)
+        # Resolve only the two expressions in these commands, as a Gateway job does, with two local workers.
+        return re.sub(r'\$\{\{ runner.environment .*?\}\}', '2', step['run']).replace(
+            "${{ matrix.project.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}", '')
+
+    def run_command(self, command):
+        result = subprocess.run(['bash', '-eo', 'pipefail', '-c', command], cwd=self.project,
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        return result.stdout + result.stderr
+
+    def executed(self):
+        marker = self.project / '.executed'
+        cases = marker.read_text().splitlines() if marker.exists() else []
+        marker.unlink(missing_ok=True)
+        return sorted(cases)
+
+    def finish(self, mode, head):
+        self.run_command(f'{HELPER} finish --mode {mode} --base {self.base} '
+                         f'--log "{self.root}/orbit-tia-pest.log"')
+        graph = json.loads((self.project / '.orbit-tia/graph.json').read_text())
+        self.assertEqual(head, graph['baselines']['main']['sha'])
+        self.assertEqual(3, len(graph['baselines']['main']['results']))
+        self.assertEqual({'tests/Unit/MixedTest.php', 'tests/Unit/UnrelatedTest.php'}, set(graph['edges']))
+
+    def test_full_ci_run_excludes_privileged_and_records_a_complete_graph(self):
+        self.run_command(self.command('Run full test suite and refresh Pest TIA graph'))
+
+        self.assertEqual(['ordinary', 'subprocess', 'unrelated'], self.executed())
+        self.finish('full', self.base)
+
+    def test_affected_ci_run_excludes_privileged_without_disabling_tia(self):
+        self.run_command(self.command('Run full test suite and refresh Pest TIA graph'))
+        self.executed()
+        self.value.write_text(self.value.read_text().replace('return 1;', 'return 1 + 0;'))
+        head = self.commit('change the dependency of the mixed class')
+        self.run_command(f'{HELPER} plan --event push --prefix prefix --restored-key prefix-main-base')
+        self.assertIn(f'mode=affected\nbase={self.base}\n', (self.root / 'output').read_text())
+
+        self.run_command(self.command('Run tests affected since the main graph'))
+
+        self.assertEqual(['ordinary', 'subprocess'], self.executed())
+        self.finish('affected', head)
+
+    def test_subprocess_ci_run_excludes_cases_in_both_groups(self):
+        self.run_command(self.command('Run subprocess tests'))
+
+        self.assertEqual(['subprocess'], self.executed())
+
+    def test_explicit_privileged_selection_and_full_discovery_keep_every_privileged_case(self):
+        job = self.workflow['jobs']['privileged']
+        command = next(step['run'] for step in job['steps'] if step.get('run', '').startswith('vendor/bin/pest '))
+        command = command.replace('${{ matrix.shard }}/${{ strategy.job-total }}', '1/1')
+        self.run_command(command)
+
+        self.assertEqual(['privileged', 'privileged-only', 'privileged-subprocess'], self.executed())
+        loader = importlib.machinery.SourceFileLoader('ci_tia_selection', str(HELPER))
+        module = importlib.util.module_from_spec(importlib.util.spec_from_loader('ci_tia_selection', loader))
+        loader.exec_module(module)
+        # full_tests invokes Pest in the current project, just as the PR plan does.
+        previous = Path.cwd()
+        try:
+            os.chdir(self.project)
+            whole, privileged = module.full_tests('vendor/bin/pest')
+        finally:
+            os.chdir(previous)
+        self.assertEqual(6, len(whole))
+        self.assertEqual(3, len(privileged))
+        self.assertEqual(3, len(whole - privileged))
 
 
 if __name__ == '__main__':

@@ -262,7 +262,7 @@ def test_class(test):
 
 def full_tests(pest):
     """List every test and the privileged cases; graph edges never choose PR tests."""
-    selected = listed_tests(pest, '--no-tia')
+    selected = listed_tests(pest, '--no-tia', '--all')
     return selected, selected & listed_tests(pest, '--no-tia', '--group=privileged')
 
 

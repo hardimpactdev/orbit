@@ -304,6 +304,8 @@ jobs:
             php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
           fi
 
+      # Gateway's phpunit.xml excludes privileged for every ordinary run, including subprocess and focused runs.
+      # Keep the exclusion in XML: a CLI --exclude-group would disable TIA and prevent graph refresh/selection.
       - name: Run tests affected since the main graph
         if: matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
         shell: bash
