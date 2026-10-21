@@ -295,6 +295,19 @@ class InstallBuildTest(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual(self.calls(), [])
 
+    def test_arm64_refuses_php_before_downloads_or_changes(self):
+        dpkg = Path(self.directory.name) / 'bin/dpkg'
+        dpkg.write_text(dpkg.read_text().replace('echo amd64', 'echo arm64'))
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data.get('reason')), ('download_failed', 'PHP is not available for arm64'))
+        self.assertFalse(path.exists())
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(list((self.state / 'installed').iterdir()), [])
+
     def test_failed_mitigation_validation_restores_files_so_convergence_can_retry(self):
         self.run_program(fpm='none')
         path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'

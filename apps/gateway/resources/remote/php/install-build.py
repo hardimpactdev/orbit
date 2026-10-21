@@ -128,7 +128,7 @@ def selected(payload, architecture):
         names = {pin['name'] for pin in build['packages']}
         if names - set(pins):
             raise Outcome('download_failed', {'package': sorted(names - set(pins))[0],
-                                              'reason': f'the recipe has no {architecture} package'})
+                                              'reason': f'PHP is not available for {architecture}'})
         versions[version] = {'pins': pins, 'extensions': build['extensions']}
     return versions
 

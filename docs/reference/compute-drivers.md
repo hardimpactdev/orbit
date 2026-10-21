@@ -68,7 +68,7 @@ The recipe pins both Ubuntu `docker.io` and `containerd` for Docker roles and th
 
 Docker CE is not the recipe's Ubuntu `docker.io` provider. Convergence refuses it with `docker-provider:docker-ce` before planning or installing packages. It never stops containers to change providers. Follow the explicit [Docker provider migration](/reference/docker-provider-migration) during a planned window. That command may downgrade Docker and containerd after inventory and compatibility checks; normal recipe convergence still refuses downgrades.
 
-An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
+An `artifact` tool has an `artifacts` object keyed by every declared architecture, except PHP packages, which support amd64 only. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each supported architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
@@ -134,6 +134,8 @@ After the packages, the image build adds `orbit` to `incus-admin`, because cloud
 
 The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
 
+PHP supports amd64 only. PHP packages, including the shared Sury dependencies, declare no arm64 artifacts. Profiles that include PHP support only amd64; PHP installation on arm64 fails with `PHP is not available for arm64` before changing packages. Other tools retain their declared architecture support. The artifact mirror takes only the PHP artifacts declared in the recipe.
+
 | Field | Contract |
 | --- | --- |
 | `php.versions.<version>.packages` | The `php<version>-*` pins of that version. Every such pin in `tools` must be in this list |
@@ -170,7 +172,7 @@ A settings-only change validates every active PHP-FPM master, including dedicate
 
 Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step, `node:converge-recipe`, or the rollout after the PHP build bump. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
 
-Remove this temporary mitigation once the patched PHP builds released on 21 October 2026 at 14:00 UTC are live everywhere. See the [early mitigation notice](https://ma.ttias.be/php-cve-2026-109618-early-mitigation/).
+The recipe pins PHP 8.4.27 and 8.5.12, which fix CVE-2026-109618 and CVE-2026-109619. The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
 
 Before it changes anything, the installer checks the machine:
 

@@ -73,8 +73,10 @@ final readonly class RecipeLoader
         $tools = [];
         $catalog = self::catalog();
         $phpSets = $this->phpSets($root->php, $catalog);
+        $phpPackages = $phpSets['shared'];
         foreach ($phpSets['versions'] as $set) {
             $catalog = [...$catalog, ...array_fill_keys($set['packages'], 'artifact')];
+            $phpPackages = [...$phpPackages, ...$set['packages']];
         }
         foreach (get_object_vars($rawTools) as $name => $raw) {
             $this->require(isset($catalog[$name]), "tools.{$name}: unknown tool.");
@@ -101,7 +103,9 @@ final readonly class RecipeLoader
             $rawArtifacts = $this->object($pin->artifacts, "tools.{$name}.artifacts");
             $keys = array_keys(get_object_vars($rawArtifacts));
             $this->require($keys !== [] && array_diff($keys, $architectures) === [], "tools.{$name}.artifacts: unsupported or missing architectures.");
-            if ($source !== 'internal') {
+            if (in_array($name, $phpPackages, true)) {
+                $this->require($keys === ['amd64'], "tools.{$name}.artifacts: PHP supports amd64 only.");
+            } elseif ($source !== 'internal') {
                 $this->require(array_diff($architectures, $keys) === [], "tools.{$name}.artifacts: every declared architecture needs a pin.");
             }
             // This seed has no Pi arm64 binary. Do not silently assign amd64 bytes to that profile.

@@ -87,7 +87,7 @@ def build(recipe, version=None, architecture=None, *, profile):
         if architecture is not None:
             artifact = tool['artifacts'].get(architecture)
             if artifact is None:
-                raise BuildError(f'The recipe has no {architecture} package for {name}.')
+                raise BuildError(f'PHP is not available for {architecture}')
             pins[name] = {'version': tool['version'], 'url': artifact['url'], 'sha256': artifact['sha256']}
     return {'version': version, 'php_version': upstream(recipe['tools'][f'php{version}-common']['version']),
             'packages': names, 'extensions': [name for name in selected['extensions']
@@ -392,6 +392,8 @@ def bump_recipe(recipe, indexes):
                 if name not in newest or newer(fields['Version'], newest[name]['Version']):
                     newest[name] = fields
         for name in names:
+            if arch not in recipe['tools'][name]['artifacts']:
+                continue
             if name not in newest:
                 raise BuildError(f'Sury has no {arch} package {name}.')
             fields, tool = newest[name], recipe['tools'][name]
@@ -415,7 +417,8 @@ def bump(path, dry_run):
     codename = CODENAMES[recipe['ubuntu']['release']]
     with tempfile.TemporaryDirectory(prefix='orbit-php-bump-') as directory:
         hashes = release_hashes(signed_release(codename, Path(directory)))
-        indexes = {arch: index(codename, arch, hashes, Path(directory)) for arch in recipe['architectures']}
+        architectures = sorted({arch for name in recipe['php']['shared'] for arch in recipe['tools'][name]['artifacts']})
+        indexes = {arch: index(codename, arch, hashes, Path(directory)) for arch in architectures}
     changes = bump_recipe(recipe, indexes)
     for change in changes:
         print(change)
