@@ -6,7 +6,12 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
+use Saloon\Exceptions\Request\FatalRequestException;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\PendingRequest;
 use Symfony\Component\Process\Process;
+use Tests\Support\CommandFixture;
 
 pest()->group('subprocess');
 
@@ -16,13 +21,31 @@ beforeEach(function (): void {
     $repository = app(GatewayConfigRepository::class);
     $repository->add(new GatewayProfile('primary', 'https://127.0.0.1:1'));
     $repository->add(new GatewayProfile('secondary', 'https://127.0.0.1:2'));
+    MockClient::global([
+        ShowGatewayStatusRequest::class => static function (PendingRequest $pending): never {
+            throw new FatalRequestException(new RuntimeException('Fixture transport failure.'), $pending);
+        },
+    ]);
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
 describe('local profile output channels', function (): void {
+    it('keeps the real binary stdout and stderr boundary plain through pipes', function (): void {
+        $process = new Process([PHP_BINARY, base_path('orbit'), 'gateway:use', 'secondary', '--json', '--ansi'], base_path(), [
+            'ORBIT_HOME' => $this->orbitHome,
+        ]);
+
+        expect($process->run())->toBe(0)
+            ->and($process->getErrorOutput())->toBe('')
+            ->and($process->getOutput())->not->toContain("\e[", 'Working...')
+            ->and(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['active_gateway' => 'secondary'])
+            ->and(app(GatewayConfigRepository::class)->active()?->name)->toBe('secondary');
+    });
+
     it('reports a removed profile and failed certificate cleanup without a stack trace', function (bool $json): void {
         $directory = $this->orbitHome.'/certificate';
         mkdir($directory, 0700);
@@ -32,16 +55,16 @@ describe('local profile output channels', function (): void {
         chmod($directory, 0500);
 
         try {
-            $arguments = [PHP_BINARY, base_path('orbit'), 'gateway:remove', 'secondary', '--yes'];
+            $arguments = ['gateway:remove', 'secondary', '--yes'];
 
             if ($json) {
                 $arguments[] = '--json';
             }
 
-            $process = new Process($arguments, base_path(), ['ORBIT_HOME' => $this->orbitHome]);
-            expect($process->run())->toBe(1)
-                ->and($process->getErrorOutput())->toBe('');
-            $output = $process->getOutput();
+            $result = CommandFixture::run($arguments);
+            expect($result['status'])->toBe(1)
+                ->and($result['stderr'])->toBe('');
+            $output = $result['output'];
             expect($output)->toContain('Gateway profile was removed, but its pinned certificate could not be deleted.')
                 ->not->toContain($certificate, 'ErrorException', 'Stack trace', 'Gateway [secondary] removed.');
 
@@ -63,13 +86,11 @@ describe('local profile output channels', function (): void {
     })->with([false, true])->skip(fn (): bool => posix_geteuid() === 0, 'Requires unprivileged filesystem permission checks.');
 
     it('keeps JSON on stdout without terminal output even with forced decoration', function (array $arguments, array $expected, int $exit): void {
-        $process = new Process([PHP_BINARY, base_path('orbit'), ...$arguments, '--json', '--ansi'], base_path(), [
-            'ORBIT_HOME' => $this->orbitHome,
-        ]);
-        expect($process->run())->toBe($exit);
-        expect($process->getErrorOutput())->toBe('');
-        expect($process->getOutput())->not->toContain("\e[", 'Working...', 'Removing profile', 'Requesting status');
-        $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $result = CommandFixture::run([...$arguments, '--json', '--ansi']);
+        expect($result['status'])->toBe($exit);
+        expect($result['stderr'])->toBe('');
+        expect($result['output'])->not->toContain("\e[", 'Working...', 'Removing profile', 'Requesting status');
+        $payload = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR);
 
         if ($exit === 0) {
             expect($payload)->toBe($expected);
@@ -90,13 +111,11 @@ describe('local profile output channels', function (): void {
     ]);
 
     it('keeps piped human output plain and settles each operation once', function (array $arguments, string $outcome, int $exit): void {
-        $process = new Process([PHP_BINARY, base_path('orbit'), ...$arguments, '--ansi', '--no-interaction'], base_path(), [
-            'ORBIT_HOME' => $this->orbitHome,
-        ]);
-        expect($process->run())->toBe($exit);
-        expect($process->getErrorOutput())->toBe('');
-        expect($process->getOutput())->not->toContain("\e[", 'Working...');
-        expect(substr_count($process->getOutput(), $outcome))->toBe(1);
+        $result = CommandFixture::run([...$arguments, '--ansi', '--no-interaction']);
+        expect($result['status'])->toBe($exit);
+        expect($result['stderr'])->toBe('');
+        expect($result['output'])->not->toContain("\e[", 'Working...');
+        expect(substr_count($result['output'], $outcome))->toBe(1);
     })->with([
         'use' => [['gateway:use', 'secondary'], 'Gateway [secondary] is active.', 0],
         'remove' => [['gateway:remove', 'secondary', '--yes'], 'Gateway [secondary] removed.', 0],

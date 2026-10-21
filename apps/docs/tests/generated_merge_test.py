@@ -1,4 +1,4 @@
-"""Prepared branch artifacts; real generators, Git drivers and two-parent merges."""
+"""Marker branch artifacts; real generators, Git drivers and two-parent merges."""
 from contextlib import ExitStack
 import importlib.machinery
 import importlib.util
@@ -106,26 +106,39 @@ class GeneratedMergeTest(unittest.TestCase):
         git(self.tree, 'checkout', '--quiet', '--detach', commit)
         git(self.tree, 'clean', '-fd', '--', 'docs/decisions')
 
+    def mark_derived(self, label, paths):
+        # These files are outputs, not maintained merge inputs. Invalid marker
+        # bytes force a content conflict and cannot pass any freshness gate.
+        for path in paths:
+            (self.tree / path).write_bytes(f'not generated: {label}\n'.encode())
+
     def check(self):
         tree = self.tree
-        # Read-only freshness gates rebuild their expected output. Do not first
-        # overwrite the merge result with another complete regeneration.
+        # Read-only gates independently rebuild their expected output. None
+        # consumes another gate's writes, so check the result concurrently.
         before = {path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS}
-        run(tree, 'bin/docs-openapi', '--check')
-        run(tree, 'bin/mcp-tools', '--check')
         env = dict(os.environ, ORBIT_DOCS_ROOT=str(tree / 'docs'),
                    APP_CONFIG_CACHE=str(tree / 'private-config.php'))
-        result = subprocess.run(['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
-                                cwd=tree, env=env, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        run(tree, 'bin/docs-nav')
         schema = Path(self.scratch.name) / 'fresh-schema.d.ts'
-        run(tree, str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
-            str(tree / 'docs/openapi.json'), '-o', str(schema))
+        commands = [
+            ['bin/docs-openapi', '--check'],
+            ['bin/mcp-tools', '--check'],
+            ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
+            ['bin/docs-nav'],
+            [str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+             str(tree / 'docs/openapi.json'), '-o', str(schema)],
+        ]
+        with ExitStack() as processes:
+            checks = [processes.enter_context(subprocess.Popen(
+                command, cwd=tree, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                for command in commands]
+            for command, process in zip(commands, checks):
+                stdout, stderr = process.communicate()
+                self.assertEqual(process.returncode, 0, f'{command}:\n{stdout}{stderr}')
         self.assertEqual(before['apps/web/src/api/schema.d.ts'], schema.read_bytes(),
                          'web types differ from a fresh build')
         for path, contents in before.items():
-            self.assertTrue(contents == (tree / path).read_bytes(), f'{path} differs from a fresh build')
+            self.assertTrue(contents == (tree / path).read_bytes(), f'{path} changed during freshness checks')
 
     def merge_both_orders(self, first, second, conflicts, cache_lookups=False):
         vanilla = subprocess.run(['git', '-c', 'merge.orbit-generated.driver=git merge-file %A %O %B',
@@ -220,22 +233,14 @@ class GeneratedMergeTest(unittest.TestCase):
             # Append to the table, not to its following blank paragraph.
             text = text.replace('\n\n| [' + number, '\n| [' + number)
             overview.write_text(text)
-            # Prepare a context entry directly. The driver, not branch setup,
-            # must build the final context from both maintained ADR additions.
-            context_path = self.tree / 'docs/generated/context.json'
-            context = json.loads(context_path.read_text())
-            context['documents'].append({
-                'path': f'docs/decisions/{slug}.md', 'title': f'ADR {number}: Merge fixture',
-                'kind': 'decision', 'components': ['apps/docs'], 'concepts': [], 'governing_adrs': [],
-            })
-            context_path.write_text(json.dumps(context, indent=4) + '\n')
+            self.mark_derived(number, [TOOL.ARTIFACTS[0]])
             commits.append(self.commit(f'add ADR {number}'))
         self.merge_both_orders(*commits, conflicts=TOOL.ARTIFACTS[:3])
 
     def test_independent_endpoint_changes(self):
         commits = []
-        # Separate route sources, adjacent new paths: ordinary text merging
-        # conflicts in the OpenAPI, API nav, web types, and MCP manifest.
+        # Separate route sources and maintained nav entries must survive;
+        # conflicting derived markers must be replaced, never text-unioned.
         for name, file, prefix in (('alpha', 'apps/gateway/routes/api.php', 'v1'),
                                    ('beta', 'apps/gateway/extensions/conn/routes/api.php', 'api/v1')):
             self.fresh(self.base)
@@ -244,28 +249,14 @@ class GeneratedMergeTest(unittest.TestCase):
                             f"Route::get('{prefix}/merge-fixture-{name}', "
                             "[\\App\\Http\\Controllers\\Api\\ActivitiesController::class, 'index'])"
                             f"->name('activity:merge-fixture-{name}');\n")
-            # Prepared snapshots need only model each branch's new endpoint.
-            # A stale type marker also proves the driver regenerates rather
-            # than unions the branch artifacts.
             endpoint = f'/api/v1/merge-fixture-{name}'
-            spec_path = self.tree / 'docs/openapi.json'
-            spec = json.loads(spec_path.read_text())
-            spec['paths'][endpoint] = spec['paths']['/api/v1/activities']
-            spec_path.write_text(json.dumps(spec, indent=2) + '\n')
             config_path = self.tree / 'docs/docs.json'
             config = json.loads(config_path.read_text())
             groups = [group for tab in config['navigation']['tabs'] for group in tab.get('groups', [])]
             next(group for group in groups if 'GET /api/v1/activities' in group.get('pages', []))['pages'].append(
                 f'GET {endpoint}')
             config_path.write_text(json.dumps(config, indent=2) + '\n')
-            tools_path = self.tree / 'apps/gateway/resources/mcp/tools.json'
-            manifest = json.loads(tools_path.read_text())
-            manifest['tools'].append(dict(manifest['tools'][0], name=f'activity-merge-fixture-{name}', path=endpoint))
-            tools_path.write_text(json.dumps(manifest, indent=2) + '\n')
-            schema = self.tree / 'apps/web/src/api/schema.d.ts'
-            schema.write_text(schema.read_text() + f'\ntype MergeFixtureEndpoint = "{name}";\n')
-            spec = json.loads(spec_path.read_text())
-            self.assertTrue(f'/api/v1/merge-fixture-{name}' in spec['paths'], 'fixture endpoint is missing')
+            self.mark_derived(name, TOOL.ARTIFACTS[3:])
             commits.append(self.commit(f'add endpoint {name}'))
         self.merge_both_orders(*commits, conflicts=[TOOL.ARTIFACTS[index] for index in (1, 3, 4, 5)],
                                cache_lookups=True)
@@ -314,11 +305,7 @@ class GeneratedMergeTest(unittest.TestCase):
             self.fresh(self.base)
             path = self.tree / 'apps/cli/app/Commands/Activities/ListActivitiesCommand.php'
             path.write_text(path.read_text().replace('List recent', f'List {value} recent'))
-            for artifact in TOOL.ARTIFACTS[3:]:
-                generated = self.tree / artifact
-                contents = generated.read_text()
-                self.assertIn('List recent', contents)
-                generated.write_text(contents.replace('List recent', f'List {value} recent'))
+            self.mark_derived(value, TOOL.ARTIFACTS[3:])
             commits.append(self.commit(f'conflicting source {value}'))
         self.fresh(commits[0])
         with subprocess.Popen(
