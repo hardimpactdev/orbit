@@ -233,7 +233,6 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
-                "Database server",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -2516,6 +2515,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Database server",
                 "Deployment",
                 "Doctor",
                 "Extension",

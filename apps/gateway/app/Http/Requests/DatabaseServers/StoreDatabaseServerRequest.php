@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Requests\DatabaseServers;
 
 use App\Data\DatabaseServers\CreateDatabaseServerData;
-use App\Support\ValidatedData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Http\Requests\DatabaseConnections\DatabaseConnectionFieldRules;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;

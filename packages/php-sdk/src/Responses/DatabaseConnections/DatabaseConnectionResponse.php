@@ -118,6 +118,7 @@ final readonly class DatabaseConnectionResponse
         if ($this->lanHost !== null) {
             $data['lan_host'] = $this->lanHost;
         }
+
         return $data;
     }
 

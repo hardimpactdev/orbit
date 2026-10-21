@@ -3,7 +3,6 @@ title: "Tools"
 description: "Where Tools run, the supported Tool Managers, how Orbit discovers, adopts, installs, updates, and removes one package, and why the contract stays closed."
 covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
-  - apps/gateway/app/Providers/ApplicationServiceProvider.php
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/*_{add_vp_environment_to_instances,migrate_legacy_vp_deploy_steps}.php}
   - apps/gateway/{app/Data/Tools/**,resources/remote/tools/**,resources/remote/lib/vp-store.py}

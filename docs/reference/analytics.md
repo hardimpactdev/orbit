@@ -23,14 +23,16 @@ The role keeps its data in two Docker Processes. Create them first on an active 
 
 | Process | Image | Holds |
 | --- | --- | --- |
-| PostgreSQL | `postgres:16`, any tag | Plausible accounts and site settings |
+| PostgreSQL | `postgres:16`, or a managed `postgres:18` server | Plausible accounts and site settings |
 | ClickHouse | `clickhouse/clickhouse-server`, any tag | Every tracked event |
 
 A Process needs a command. For PostgreSQL, use `postgres`. The ClickHouse image passes its own configuration file, so give it a server argument after two dashes, such as `-- --logger.level=warning`.
 
-Publish PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the database Node's WireGuard address only. Orbit refuses either storage Process if its published port binds to any other address, including an empty bind address (`0.0.0.0`). The WireGuard boundary is the real threat boundary; do not expose analytics storage on a public or LAN address.
+Publish unmanaged PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the database Node's WireGuard address only. A managed PostgreSQL server may also publish its exact recorded LAN address with its [intended-source filter](/reference/database-servers#private-publication-and-filtering). Wildcard and public publication are refused. Analytics still connects over WireGuard.
 
-Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
+For unmanaged storage, Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
+
+For managed PostgreSQL 18, create exactly one canonical `plausible-db` connection on the server before assigning its Process to analytics. The role resolves that database owner's encrypted credentials from the connection. A missing or ambiguous owner is refused; the server admin is never used. `database:update` protects managed identity and credentials, and `database:destroy` refuses removal of the analytics owner connection. [The migration runbook](/reference/postgresql-migration#move-analytics-last) gives the required disposable Plausible rehearsal and rollback to PostgreSQL 16.
 
 ## Assign the role
 
@@ -45,7 +47,7 @@ Assignment refuses a storage Process that does not fit:
 | `analytics.process_not_node` | The Process does not belong to a Node. |
 | `analytics.process_not_database_node` | The Process's Node is not an active `database` Node. |
 | `analytics.postgres_unsupported`, `analytics.clickhouse_unsupported` | The image is not the supported engine. |
-| `analytics.storage_credentials_missing` | A required credential variable is missing from the Process environment. |
+| `analytics.storage_credentials_missing` | A required Process credential or canonical managed PostgreSQL owner connection is missing or ambiguous. |
 | `analytics.storage_port_missing` | The Process does not publish port 5432 or 8123. |
 | `process.wireguard_ip_missing` | The Process's Node has no WireGuard address. |
 

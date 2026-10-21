@@ -16,6 +16,10 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
+## Managed database LAN peers
+
+Provisioning reconciles only explicitly enabled [Database server filters](/reference/database-servers#private-publication-and-filtering) on the changing Node or naming it as a LAN peer. Unrelated enrollments do not contact database hosts. LAN address changes widen before use and prune after activation. A failed expansion leaves the old Node identity intact. Removal prunes database access before metrics, agents or SSH recovery change. A filter failure returns `database.server_firewall_failed` and leaves the Node present. Doctor reports drift after an incomplete rollback; retry the affected server creation to repair it.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.

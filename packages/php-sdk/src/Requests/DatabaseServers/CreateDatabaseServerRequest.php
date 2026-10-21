@@ -65,6 +65,7 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
         if ($this->lanNodeIds !== null) {
             $body['lan_node_ids'] = $this->lanNodeIds;
         }
+
         return $body;
     }
 }

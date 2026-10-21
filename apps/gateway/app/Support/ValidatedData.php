@@ -45,6 +45,7 @@ final class ValidatedData
         foreach ($value as $item) {
             $result[] = self::integer($item);
         }
+
         return $result;
     }
 

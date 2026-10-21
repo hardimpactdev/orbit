@@ -137,6 +137,8 @@ Before it writes, the Gateway reads the file's key names. A key that stored conf
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
+A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard.
+
 For an Instance that owns its `DB` database, synchronization also writes `.env.testing` with the same checks and mode. The `DB_*` keys of that connection point to the [test database](/reference/database-connections#test-databases):
 
 - A missing file is created from the same values as `.env`, with `APP_ENV=testing` and those `DB_*` keys.
