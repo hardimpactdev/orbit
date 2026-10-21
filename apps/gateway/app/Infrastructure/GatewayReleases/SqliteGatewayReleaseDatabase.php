@@ -20,7 +20,7 @@ use Throwable;
 final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatabase
 {
     /** The default number of pre-release snapshots kept in `$ORBIT_HOME/backups`, newest first. */
-    public const int KeptSnapshots = 5;
+    public const int KeptSnapshots = 3;
 
     /** @var Closure(string): (float|false) */
     private Closure $freeSpace;

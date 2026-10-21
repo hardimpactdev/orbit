@@ -21,6 +21,8 @@ use Throwable;
  */
 final readonly class NativeGatewayReleaseUnitConverger implements GatewayReleaseUnitConverger
 {
+    private const string DPKG_LOCK_TIMEOUT = 'DPkg::Lock::Timeout=300';
+
     public function __construct(
         private ProcessRunner $processes,
         private GatewayReleaseUnitRenderer $units = new GatewayReleaseUnitRenderer,
@@ -53,8 +55,61 @@ final readonly class NativeGatewayReleaseUnitConverger implements GatewayRelease
             $this->units->renderTimer(),
             'gateway-release-timer',
         );
+        $logrotate = $this->processes->run(new ProcessInvocation(['test', '-x', '/usr/sbin/logrotate'], timeout: 10.0));
+        if (! $logrotate->succeeded()) {
+            $this->installLogrotate();
+        }
+        foreach (new GatewayDiskRetention()->files($workingDirectory, $user) as $path => $contents) {
+            $this->run('gateway-retention-directory', ['sudo', 'install', '-d', '-m', '0755', dirname($path)]);
+            $this->install($path, $contents, 'gateway-retention-config');
+        }
         $this->run('gateway-release-reload', ['sudo', 'systemctl', 'daemon-reload']);
+        if (! $this->isMasked('logrotate.service') && ! $this->isMasked('logrotate.timer')) {
+            $this->run('gateway-retention-enable', ['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer']);
+        }
         $this->run('gateway-release-enable', ['sudo', 'systemctl', 'enable', '--now', $this->units->timerName()]);
+    }
+
+    /** Installs logrotate only for Gateways not yet converged to the pinned machine recipe. */
+    private function installLogrotate(): void
+    {
+        $masked = [];
+        $failure = null;
+
+        try {
+            foreach (['logrotate.service', 'logrotate.timer'] as $unit) {
+                if ($this->isMasked($unit)) {
+                    continue;
+                }
+
+                $this->run('gateway-retention-mask', ['sudo', 'systemctl', 'mask', '--runtime', $unit]);
+                $masked[] = $unit;
+            }
+
+            $this->run('gateway-retention-packages', ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'update']);
+            $this->run('gateway-retention-packages', ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'install', '--yes', '--no-install-recommends', '--no-remove', '--', 'logrotate']);
+        } catch (Throwable $exception) {
+            $failure = $exception;
+        } finally {
+            foreach ($masked as $unit) {
+                try {
+                    $this->run('gateway-retention-unmask', ['sudo', 'systemctl', 'unmask', '--runtime', $unit]);
+                } catch (Throwable $exception) {
+                    $failure ??= $exception;
+                }
+            }
+        }
+
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    private function isMasked(string $unit): bool
+    {
+        $state = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', 'is-enabled', $unit]));
+
+        return in_array(trim($state->stdout), ['masked', 'masked-runtime'], true);
     }
 
     private function install(string $path, string $contents, string $step): void

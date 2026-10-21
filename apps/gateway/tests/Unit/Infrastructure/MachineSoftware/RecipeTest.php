@@ -225,7 +225,7 @@ describe('machine recipe structure and identity', function (): void {
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,
-            'gateway' => [...$common, 'caddy', ...$php85],
+            'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
             'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,

@@ -74,7 +74,7 @@ it('inspects each role with exact package service and firewall requirements', fu
 })->with([
     'gateway' => [
         RoleName::Gateway,
-        ['ca-certificates', 'caddy'],
+        ['ca-certificates', 'caddy', 'logrotate'],
         ['caddy', 'php8.5-fpm'],
         ['orbit:gateway-https'],
     ],

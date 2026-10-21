@@ -26,6 +26,7 @@ final class PruneProblemBatches implements ShouldQueue
 
     public function handle(): void
     {
-        Artisan::call('queue:prune-batches', ['--hours' => 24, '--unfinished' => 24, '--cancelled' => 24]);
+        $hours = config()->integer('retention.job_batch_hours');
+        Artisan::call('queue:prune-batches', ['--hours' => $hours, '--unfinished' => $hours, '--cancelled' => $hours]);
     }
 }

@@ -26,11 +26,20 @@ final class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
     public int $timeout;
 
     /**
+     * Keep the property default for queued payloads serialized before arguments existed.
+     *
+     * @var list<string>
+     */
+    public array $arguments = [];
+
+    /**
      * @param  string  $command  the command name, without arguments
      * @param  int  $uniqueFor  seconds after which a lock that a lost worker held frees itself
+     * @param  list<string>  $arguments
      */
-    public function __construct(public string $command, public int $uniqueFor, GatewayQueue $queue = GatewayQueue::Tasks)
+    public function __construct(public string $command, public int $uniqueFor, GatewayQueue $queue = GatewayQueue::Tasks, array $arguments = [])
     {
+        $this->arguments = $arguments;
         $this->timeout = min(1700, $uniqueFor);
         $this->onConnection(GatewayQueue::Connection)->onQueue($queue->value);
     }
@@ -42,7 +51,7 @@ final class RunScheduledCommand implements ShouldBeUnique, ShouldQueue
 
     public function handle(): void
     {
-        $process = new Process([PHP_BINARY, base_path('artisan'), $this->command, '--no-interaction'], base_path(), timeout: $this->timeout - 10);
+        $process = new Process([PHP_BINARY, base_path('artisan'), $this->command, ...$this->arguments, '--no-interaction'], base_path(), timeout: $this->timeout - 10);
         $process->run();
 
         if (! $process->isSuccessful()) {

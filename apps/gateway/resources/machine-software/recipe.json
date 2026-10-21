@@ -293,6 +293,11 @@
             "package": "libxrandr2",
             "version": "2:1.5.4-1build1"
         },
+        "logrotate": {
+            "source": "ubuntu",
+            "package": "logrotate",
+            "version": "3.22.0-1build1"
+        },
         "nftables": {
             "source": "ubuntu",
             "package": "nftables",
@@ -1137,6 +1142,7 @@
         ],
         "gateway": [
             "caddy",
+            "logrotate",
             "php:8.5"
         ],
         "app-dev": [

@@ -87,7 +87,7 @@ Laravel batches keep all Node observations available to related-node checks. Obs
 
 The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
 
-Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout.
+Laravel batch metadata is pruned daily after `ORBIT_JOB_BATCH_HOURS` (24 hours by default) with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout while Tasks is enabled. Failed jobs are pruned daily with `queue:prune-failed` after `ORBIT_FAILED_JOBS_HOURS` (168 hours by default), also while Tasks is disabled. These settings live in `config/retention.php`.
 
 ### Without a queue
 
