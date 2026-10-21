@@ -105,7 +105,7 @@ The serving phase of a release's [runtime handoff](/reference/gateway-recovery#r
 
 Laravel reserves a Redis job before Horizon records its reservation in a separate Redis connection. A failed metadata write must not discard the job that Laravel already reserved. The Gateway binds Horizon's reservation listener to `GatewayHorizonReservation`: it tries the metadata write once, logs a failure, and returns the job to the worker for normal processing. It does not release the job, add an attempt, or retry the Redis command. Horizon still starts its job timer.
 
-The error `Horizon could not record a job reservation.` records the job UUID, queue connection, queue, host, worker PID, reservation attempt count, and exception class. It never records the job payload. Use these fields with the Horizon Process journal to distinguish a metadata failure from a worker that exited. A live worker PID alone does not prove that it still owns an attempt: Laravel can discard a popped job after a listener throws, while the worker continues polling.
+The error `Horizon could not record a job reservation.` records the job UUID, queue connection, queue, host, worker PID, reservation attempt count, exception class, and exception message (`exception_message`). The message preserves the cause, such as a Redis EOF or ACL error. It never records the job payload. Use these fields with the Horizon Process journal to distinguish a metadata failure from a worker that exited. A live worker PID alone does not prove that it still owns an attempt: Laravel can discard a popped job after a listener throws, while the worker continues polling.
 
 ## Dashboard
 

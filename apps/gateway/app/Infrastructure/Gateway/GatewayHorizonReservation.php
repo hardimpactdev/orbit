@@ -27,6 +27,7 @@ final readonly class GatewayHorizonReservation
                 'pid' => getmypid(),
                 'attempts' => $event->payload['attempts'],
                 'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
             ]);
         }
     }

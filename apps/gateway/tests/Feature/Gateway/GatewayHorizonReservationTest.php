@@ -100,6 +100,7 @@ describe('Horizon reservation metadata', function (): void {
                 'pid' => getmypid(),
                 'attempts' => 1,
                 'exception_class' => RuntimeException::class,
+                'exception_message' => 'Stream is already at the end',
             ]);
         } else {
             Log::shouldNotHaveReceived('error');
