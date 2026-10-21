@@ -4,23 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
-use App\Infrastructure\Ssh\RemoteCommand;
-use InvalidArgumentException;
-use RuntimeException;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Models\Node;
 
-/** The fixed CI role modes of the existing Incus host program. */
+/** The CI role's fixed host actions, through the shared remote-program transport. */
 final readonly class CiRunnerHostProgram
 {
-    public static function command(string $action): RemoteCommand
-    {
-        if (! in_array($action, ['converge', 'inspect', 'remove', 'purge'], true)) {
-            throw new InvalidArgumentException('Invalid CI host action.');
-        }
-        $source = file_get_contents(resource_path('task-vms/incus-host.sh'));
-        if ($source === false) {
-            throw new RuntimeException('The Incus host program is missing.');
-        }
+    public function __construct(
+        private RemoteProgramRunner $runner,
+        private RemoteProgramCatalog $catalog,
+    ) {}
 
-        return new RemoteCommand(['sudo', 'bash', '-seu', '--', '--ci-runner', $action], $source, timeout: 180.0);
+    /** @param 'converge'|'inspect'|'remove'|'purge' $action */
+    public function run(Node $node, string $action): ProgramResult
+    {
+        return $this->runner->run($node, $this->catalog->program('ci-runners.host', user: 'root'), ['action' => $action]);
     }
 }

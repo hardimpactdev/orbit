@@ -922,9 +922,6 @@
             "base",
             "ci-runner"
         ],
-        "purge_extras": [
-            "ci-runner"
-        ],
         "versions": {
             "8.5": {
                 "packages": [

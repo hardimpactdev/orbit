@@ -952,6 +952,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
+            "title": "ADR 0213: Run CI runners through a ci-runner role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Project",
+                "Role"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0223",
+                "0225"
+            ]
+        },
+        {
             "path": "docs/decisions/0214-pin-the-ai-router-version-and-flag-upgrades.md",
             "title": "ADR 0214: Pin the AI router version and flag upgrades",
             "kind": "decision",
@@ -998,6 +1023,7 @@
                 "Placement",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1006,6 +1032,7 @@
             ],
             "governing_adrs": [
                 "0210",
+                "0213",
                 "0215"
             ]
         },
@@ -1135,6 +1162,7 @@
                 "Tool"
             ],
             "governing_adrs": [
+                "0213",
                 "0223"
             ]
         },
@@ -1196,6 +1224,7 @@
                 "Placement",
                 "Process",
                 "Project",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -1203,6 +1232,7 @@
                 "0210",
                 "0211",
                 "0212",
+                "0213",
                 "0218",
                 "0219",
                 "0224",
@@ -1284,6 +1314,7 @@
                 "0210",
                 "0211",
                 "0212",
+                "0213",
                 "0214",
                 "0215",
                 "0218",
@@ -2488,12 +2519,15 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0213"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -2723,11 +2757,13 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
                 "0211",
+                "0213",
                 "0225"
             ]
         },

@@ -148,8 +148,6 @@ final readonly class RecipeLoader
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
         $this->require(array_diff($phpSets['opentelemetry'], ['app-dev']) === [], 'php.opentelemetry: only the app-dev profile may load OpenTelemetry.');
-        // Purging PHP packages outside the recipe is for machines that run only CI jobs, never for a site's Node.
-        $this->require(array_diff($phpSets['purge_extras'], [RoleName::CiRunner->value]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
         $profiles = [];
         $used = $common;
         $usedPhp = [];
@@ -185,23 +183,22 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['opentelemetry']), $mirror, $gitPackages);
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages);
     }
 
     /**
      * Structure of the `php` object, before the pins exist. See ADR 0216.
      *
      * @param  array<string, string>  $catalog
-     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
      */
     private function phpSets(mixed $value, array $catalog): array
     {
-        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'purge_extras', 'versions']);
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'versions']);
         $rollback = $this->text($raw->rollback, 'php.rollback');
         $this->require(($catalog[$rollback] ?? null) === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $pcov = $this->strings($raw->pcov, 'php.pcov');
         $opentelemetry = $this->strings($raw->opentelemetry, 'php.opentelemetry');
-        $purge = $this->strings($raw->purge_extras, 'php.purge_extras');
         $shared = $this->strings($raw->shared, 'php.shared');
         $this->require($shared !== [], 'php.shared: expected the shared PHP pins.');
         foreach ($shared as $name) {
@@ -234,14 +231,14 @@ final readonly class RecipeLoader
         $ci = $this->text($raw->ci, 'php.ci');
         $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
 
-        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'purge_extras' => $purge, 'versions' => $versions];
+        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'versions' => $versions];
     }
 
     /**
      * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
      * for the recipe's Ubuntu release.
      *
-     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
      * @param  array<string, ToolPin>  $tools
      * @return array<string, PhpBuild>
      */

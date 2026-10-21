@@ -36,7 +36,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
 | `tools` | Object keyed by the loader's known tool identifiers; each value has a concrete `version` (an Ubuntu floor or exact artifact version) and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
-| `php` | The [PHP build](#php-build): `versions`, `shared`, `ci`, `rollback`, `pcov`, `opentelemetry`, and `purge_extras` |
+| `php` | The [PHP build](#php-build): `versions`, `shared`, `ci`, `rollback`, `pcov`, and `opentelemetry` |
 | `artifact_mirror` | The HTTPS base URL, without a trailing slash, of the [recipe artifact mirror](#the-recipe-artifact-mirror). Installers try it before each artifact's own URL |
 | `git` | The Git package set, `packages`, and the review date of the Git security notices, `usn_since` |
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers and PHP sets |
@@ -145,7 +145,6 @@ PHP supports amd64 only. PHP packages, including the shared Sury dependencies, d
 | `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
 | `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
-| `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
 
 A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
@@ -154,7 +153,7 @@ Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
 - `php.ci` names an undeclared version;
-- `php.purge_extras` names another profile than `ci-runner`, or `artifact_mirror` is not an HTTPS URL.
+- `artifact_mirror` is not an HTTPS URL.
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. The other PHP profiles, `app-prod`, `websocket`, and `gateway`, keep PCOV installed but not loaded.
 
@@ -230,7 +229,7 @@ Each caller sets two options:
 
 | Caller | Extra packages | PHP-FPM |
 | --- | --- | --- |
-| Recipe convergence | `refuse`, or `purge` on a `php.purge_extras` profile | `all`: the shared service and each active dedicated master; a failure rolls back |
+| Recipe convergence | `refuse` on every host, including a Node with `ci-runner`; the container installer requests `purge` explicitly | `all`: the shared service and each active dedicated master; a failure rolls back |
 | PHP step of an Instance | `keep`, so a deploy never removes a site's extension | `shared`: the shared service, left running when its pools fail `php-fpm -t` |
 | Image build | `refuse` | `none` |
 | `bin/php-build install` | `refuse`, or `purge` with `--purge-extras` | `shared` |

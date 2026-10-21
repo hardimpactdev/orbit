@@ -37,6 +37,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?IngressRoleBaseline $ingress = null,
         private ?MetricsReconcileDeferral $metricsDeferral = null,
         private ?NodeRoleConvergeLock $nodeLock = null,
+        private ?CiRunnerRoleBaseline $ciRunner = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -155,7 +156,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::Analytics => $this->analytics ?? app(AnalyticsRoleBaseline::class),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
-            RoleName::CiRunner => app(CiRunnerRoleBaseline::class),
+            RoleName::CiRunner => $this->ciRunner ?? app(CiRunnerRoleBaseline::class),
             RoleName::Ingress => $this->ingress ?? app(IngressRoleBaseline::class),
         };
     }

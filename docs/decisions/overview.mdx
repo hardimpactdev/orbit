@@ -32,6 +32,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
 | [0211](/decisions/0211-ship-node-changes-as-remote-programs) | Ship Node changes as remote programs | Superseded on 2026-10-19 by [0225](/decisions/0225-make-node-changes-through-agent-commands) |
 | [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
+| [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
@@ -49,7 +50,6 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 
 | Record | Decision | Now in |
 | --- | --- | --- |
-| 0213 | Run CI runners through a ci-runner role | [Node provisioning: CI roles own hosts](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration) |
 | 0001 | Adopt the closed Tool Management contract | [Tools: Why it works this way](/reference/tools#why-it-works-this-way) |
 | 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |

@@ -243,13 +243,12 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
     });
 
-    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+    it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
         $policy = new RecipeLoader()->load()->phpPolicy;
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
             ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
-            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
             ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror');
     });
 
@@ -324,9 +323,9 @@ describe('machine recipe structure and identity', function (): void {
         'an undeclared CI version' => [function (&$d): void {
             $d['php']['ci'] = '8.3';
         }, 'php.ci: [8.3] is not a declared PHP version'],
-        'purging on a site profile' => [function (&$d): void {
-            $d['php']['purge_extras'][] = 'app-prod';
-        }, 'only the ci-runner profile may purge PHP packages'],
+        'the removed purge policy' => [function (&$d): void {
+            $d['php']['purge_extras'] = ['ci-runner'];
+        }, 'expected exactly fields ci, shared, rollback, pcov, opentelemetry, versions'],
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],

@@ -4,7 +4,7 @@
 # First add the ci-runner role through Orbit; it owns the host project, profile, network and firewall.
 # Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-beast-2, ci-shark-1
+#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-4, ci-sabre-3
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
@@ -26,7 +26,7 @@ RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/hardimpactdev
-LABELS=self-hosted,Linux,X64,orbit-shard
+LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
 # signal/ptrace to container processes whose label is stacked (profile//&...). This lets the container signal its own
 # stacked processes only; they stay confined by the container profile. Nesting stays off. Set per instance, because a
@@ -108,7 +108,8 @@ SH
 }
 
 register() {
-  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}}
+  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
+  case "$name" in ci-sabre-*) labels+=,sabre ;; esac
   if ! in_ct "$name" test -f /home/runner/actions-runner/.runner; then
     [ -n "$token" ] || { echo 'register needs TOKEN or ORBIT_RUNNER_TOKEN' >&2; exit 2; }
     in_ct "$name" chown -R runner:runner /home/runner/actions-runner
@@ -120,7 +121,7 @@ register() {
     printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
       sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --runnergroup Default --work /home/runner/work --replace' \
-      config "$REPO_URL" "$name" "$LABELS" >/dev/null
+      config "$REPO_URL" "$name" "$labels" >/dev/null
   fi
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }

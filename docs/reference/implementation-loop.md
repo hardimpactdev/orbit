@@ -128,7 +128,7 @@ On a GitHub-hosted runner the action runs these steps:
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify --profile=ci-runner`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
 - The `ci-runner` role prepares Sabre, Shark, and Beast as workload Nodes. Add it through [normal role assignment](/reference/node-provisioning#ci-runner-role).
-- On each host, run `tools/ci-runners/setup.sh container NAME` for its two runner containers. The role converges host software. The script updates each idle container.
+- On each host, run `tools/ci-runners/setup.sh container NAME` for its active runner containers. The role converges host software. The script updates each idle container.
 
 #### Merge a PHP build change
 
@@ -214,13 +214,13 @@ Ordinary runs on main never shard; the privileged job runs on every CI event. Ea
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite. All six self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite. The self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
 On a self-hosted runner, the job skips host package installation and only [verifies](#one-php-build-in-ci) the recipe's PHP build. The runner software is installed inside each container while it is idle. Each container uses Composer 2.10 and the PHP CLI defaults. Pest detects the container's CPU count without a worker override.
 
-Sabre runs two Incus runner containers, `ci-sabre-1` and `ci-sabre-2`. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
+Sabre runs Incus runner containers. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
 
 Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
@@ -228,12 +228,12 @@ Each runner service mounts its own work directory at `/home/runner/work`, the pa
 
 The [CI runner role](/reference/node-provisioning#ci-runner-role) owns the host project, bridge, ACL, profile, and managed routed firewall rule. The script owns container creation and organization registration; it has no `host` step.
 
-The Gateway PR shards use the `self-hosted` and `orbit-shard` labels. The six runner containers are `ci-beast-1` and `ci-beast-2`, `ci-shark-1` and `ci-shark-2`, and `ci-sabre-1` and `ci-sabre-2`. The Sabre containers also carry `sabre` for full recording runs. The workflow selects runners by label, not by name.
+Each runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre, alongside the default `self-hosted,Linux,X64` labels. Role adoption preserves every container and its running state; it does not require a fixed count. The workflow selects runners by label, not by name.
 
 Each runner runs inside an unprivileged Incus container. Beast can share CI with app and database roles; Shark needs only the CI role. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) owns these idempotent container operations:
 
 - `container NAME` launches the container, sets its `raw.apparmor` line, and installs what is missing.
-- `register NAME [TOKEN]` registers the runner at `https://github.com/hardimpactdev` in runner group `Default`, keeps the `self-hosted,Linux,X64,orbit-shard` labels, and starts its service.
+- `register NAME [TOKEN]` registers the runner at `https://github.com/hardimpactdev` in runner group `Default`, sets `self-hosted,Linux,X64,hardimpact,orbit-shard` plus `sabre` for a `ci-sabre-*` runner, and starts its service.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
 
 `container` upgrades no installed package, except the PHP build, which it brings to the recipe. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
@@ -250,7 +250,7 @@ Inside each container, the `runner` user runs the runner service, with no `sudo`
 
 The job installs Node 24 with the Node setup step, and each shard uses all detected container CPUs. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 
-Six Gateway workers fit the 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
+Six Gateway workers fit each 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
 
 Two limits remain:
 

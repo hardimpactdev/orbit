@@ -133,7 +133,7 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
   - the classic branch protection, with `GET /repos/{owner}/{repo}/branches/{branch}/protection`, which needs `Administration: read`. A 404 there means that the branch has no classic protection.
 - It refuses when either source requires an up-to-date branch: `strict_required_status_checks_policy` in a ruleset, or `required_status_checks.strict` in classic protection.
 - It also refuses when it cannot read either source, because then the policy is unknown.
-- The protection read and App manifest need `Administration: read` only. The App never receives Administration write, which permits repository deletion. [ADR 0213](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration) leaves runner registration to the operator; the Gateway holds no organization registration token.
+- The protection read and App manifest need `Administration: read` only. The App never receives Administration write, which permits repository deletion. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) needs its own decision for runner registration: a user-owned repository has no narrower runner permission.
 - An installation that has not accepted the grant cannot turn review and merge on until it does. Projects that already have it on are not read again.
 - Rules can change after that. When GitHub refuses a merge because the branch is behind, Orbit records `refused`, merges nothing, and asks for assistance once, with that reason. So the pull request never waits without a signal.
 - Projects without review and merge keep GitHub's branch update, as today.
@@ -210,7 +210,7 @@ The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selecti
 - When `ORBIT_CHECK_PROCESSES` is set, `bin/check-processes` prints it, because it is the lane share below.
 - `tools/check-processes.php` runs `bin/check-processes` instead of its own copy of the rule.
 - `ORBIT_CHECK_PROCESSES` stays only as the share that `bin/review-check` and `bin/test` pass to each lane or suite. No Project or operator sets it.
-- CI keeps its counts per runner type in `ci.yml`. Shard runners share a host on purpose and see its cores ([ADR 0213](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration)).
+- CI keeps its counts per runner type in `ci.yml`. Shard runners share a host on purpose and see its cores ([ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role)).
 - The Orbit Project's task check goes back to `composer check`.
 - `ORBIT_TEST_PROCESSES` goes.
 
@@ -332,7 +332,7 @@ Each step is one small pull request. Docs change with the code in the same pull 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web
-- ADRs: [0213](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration): CI keeps its process counts per runner type; 0223 needs only `Administration: read`; the CI role leaves organization registration with the operator
+- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role): CI keeps its process counts per runner type; 0223 needs only `Administration: read`, while runner registration needs its own decision because a user-owned repository has no narrower runner permission
 - Detail: [Tasks](/reference/tasks): Deliverables, Project check, Baseline check, Rubric and reminders, Fix a settling pull request, Review fixup lifecycle, Review and merge, Final review, Every push is reviewed, Merge on green, Records and status, and "Orbit merges only what it reviewed". [Tasks: Outer loop](/reference/tasks#outer-loop). [Projects: Review and merge](/reference/projects#review-and-merge). [GitHub App](/reference/github-app). [Feature delivery](/reference/implementation-loop): Local checks, Parallel processes, The candidate gate, Main caches, and Why it works this way. [Instance setup: Import CI main caches](/reference/instance-setup#import-ci-main-caches): the setup step imports the nearest ancestor ref and no longer names `bin/tia-cache import-ci`. [Instance setup: Project 46](/reference/instance-setup#project-46). [Environment variables](/reference/environment-variables)
 - Verify: the tests and live reads below.
   - In apps/gateway, `php artisan test --compact --filter='TaskCheck|TaskPublication|TaskFinalReview|TaskSettling|ReviewAndMerge|TaskTurnInstructions|TaskConsultation'`.

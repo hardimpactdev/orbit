@@ -74,6 +74,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         private UfwManagedRulesCheck $firewallCheck = new UfwManagedRulesCheck,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
         private ?VpnSettings $vpnSettings = null,
+        private ?CiRunnerHostProgram $ciRunner = null,
     ) {}
 
     public function inspect(NodeRole $role): RoleInspectionData
@@ -111,7 +112,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                     : null,
                 $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
                 $role->role === RoleName::CiRunner
-                    ? $this->booleanResult($this->ssh->execute($connection, CiRunnerHostProgram::command('inspect')))
+                    ? $this->ciRunnerHostMatches($node)
                     : null,
             );
         } catch (DoctorInspectionException $exception) {
@@ -119,6 +120,17 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
+    }
+
+    private function ciRunnerHostMatches(Node $node): bool
+    {
+        $result = ($this->ciRunner ?? app(CiRunnerHostProgram::class))->run($node, 'inspect');
+
+        return match ($result->outcome) {
+            'matches' => true,
+            'drift' => false,
+            default => throw new DoctorInspectionException,
+        };
     }
 
     private function connection(Node $node): SshConnection

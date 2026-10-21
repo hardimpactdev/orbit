@@ -14,7 +14,7 @@ In progress.
 
 Nick decided this on 2026-10-19.
 
-Principle: [One way, one name](/mission#principles). Each Node action has one Rust implementation and one typed contract. It also serves [Deterministic first](/mission#principles): code, tests, and a CI ratchet enforce the boundary. No principle exception is proposed.
+Principle: [One way, one name](/mission#principles). Each Node action has one Rust implementation and one typed contract. It also serves [Deterministic first](/mission#principles): code, tests, and a CI ratchet enforce the boundary. Exception to [No exceptions and no legacy](/mission#principles): the explicitly requested CI host remote program below precedes agent command mode.
 
 ## Context
 
@@ -135,11 +135,13 @@ Static configuration, templates, and certificates stay data. Artisan and support
 
 ### The ratchet starts at this merge
 
+The 2026-10-21 review of [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) explicitly requires the CI host baseline as the stock `resources/remote/ci-runners/host.py` program while agent command mode is unbuilt. The guard permits only that named file when absent from the comparison base. It still counts the file, permits no other growth, and grants no allowance once the base contains it. This is a narrow exception to the freeze, not a new execution path. The CI host program joins the Incus migration area.
+
 `bin/node-scripts-ratchet` replaces the old file allowlist. It counts every heredoc and nowdoc in all Gateway PHP, identified by extension or a `<?php` opening, outside the excluded roots below. It excludes only these fixed data labels: `SQL`, `CADDY`, `CADDYFILE`, `FPM`, `INI`, `UNIT`, `SYSTEMD`, `CONF`, `EXTENSIONS`, `TEXT`, `MARKDOWN`, `HTML`, and `REGEX`. Unknown labels count. It also counts literal `sh -c`, `bash -c`, `python3 -c`, `php -r`, `perl -e`, and `node -e` calls. Combined flags and option values before the code flag count, including `bash -euo pipefail -c` and Python's `-I`. Heredoc bodies count once, not again as embedded interpreter calls.
 
 The file scan covers the whole Gateway, including extensions. It counts every non-PHP file, and PHP files under any `resources/` directory, except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Resource `.json` and `.xml` files must parse to qualify as data. Unknown types count, including `.txt` and `.stub`. Every shebang counts. The fixed OPcache adapter is excluded for the control-plane reason above. Only `apps/gateway/tests/`, `apps/gateway/extensions/*/tests/`, `apps/gateway/vendor/`, and `apps/gateway/node_modules/` are excluded roots. A nested directory named `tests` or `vendor` is not exempt. Git-tracked files and new unignored files are scanned.
 
-Inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-script budget.
+Outside the named CI host addition, inline and file totals may only decrease. They cannot offset each other. Moving code between files or into an extension is neutral. Deleting a script lowers the next comparison automatically. CI compares a PR merge ref with its first parent, `HEAD^1`. A main push uses its previous SHA; scheduled and manual checks use `HEAD^1`. There is no editable ceiling or per-script budget.
 
 The matcher also counts interpreter calls in comments. The guard is a count, not a proof about arbitrary PHP string construction. Review rejects new Gateway scripts in any form. Review rejects relabelling a heredoc, hiding a script in a data file, or building one by string concatenation. Each migrated area also adds architecture coverage that forbids Node execution outside the command runner. At completion, Node resources and inline scripts are gone. The remaining file count covers only the Gateway entry point and support files; that count still cannot rise.
 

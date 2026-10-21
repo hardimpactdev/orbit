@@ -678,6 +678,7 @@
               "decisions/0210-give-each-extension-its-own-code-boundary",
               "decisions/0211-ship-node-changes-as-remote-programs",
               "decisions/0212-turn-proxycli-into-the-ai-router-extension",
+              "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
               "decisions/0215-start-development-processes-from-project-definitions",
               "decisions/0218-take-long-commands-off-the-request-path",
@@ -1616,10 +1617,6 @@
     {
       "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",
       "destination": "/reference/websocket-apps#why-it-works-this-way"
-    },
-    {
-      "source": "/decisions/0213-run-ci-runners-through-a-ci-runner-role",
-      "destination": "/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration"
     }
   ]
 }

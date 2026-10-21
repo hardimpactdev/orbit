@@ -1,17 +1,21 @@
 """The CI role adopts the setup-script host projection without touching runner containers."""
 import copy
 import json
+import os
+from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from harness import REMOTE
+from harness import REMOTE, library, result
 
 
 def load():
-    namespace = {'__name__': 'ci_runner_host_test'}
-    source = (REMOTE.parent / 'task-vms/incus-host.sh').read_text().split("<<'CI_PY'\n", 1)[1].split('\nCI_PY', 1)[0]
-    exec(compile(source, 'ci-runner-host', 'exec'), namespace)
+    namespace = library('lib/program.py')
+    namespace['run_program'] = lambda main: None
+    source = (REMOTE / 'ci-runners/host.py').read_text()
+    exec(compile(source, 'ci-runners.host', 'exec'), namespace)
     return namespace
 
 
@@ -97,6 +101,9 @@ class CiRunnerHostTest(unittest.TestCase):
         self.assertEqual(profile['config']['limits.cpu'], '6')
         self.assertEqual(profile['config']['limits.memory'], '12GiB')
         self.assertEqual(profile['devices']['eth0']['network'], 'orbitci0')
+        network = self.incus.objects['/1.0/networks/orbitci0?project=default']['config']
+        self.assertEqual(network['security.acls.default.egress.action'], 'reject')
+        self.assertEqual(network['security.acls.default.ingress.action'], 'reject')
 
     def test_adopts_existing_setup_resources_without_changing_subnet_pool_or_runners(self):
         self.act('converge')
@@ -108,11 +115,50 @@ class CiRunnerHostTest(unittest.TestCase):
         self.assertEqual(self.incus.objects, before)
         self.assertFalse(any('launch' in call or 'exec' in call or 'stop' in call for call in self.incus.calls))
 
+    def test_adopts_the_expanded_fleet_and_preserves_clones_and_the_stopped_retired_container(self):
+        for host, active, retired in [('shark', 4, []), ('sabre', 3, []), ('beast', 1, ['ci-beast-2'])]:
+            with self.subTest(host=host):
+                self.incus.objects = {}
+                self.act('converge')
+                instances = {f'ci-{host}-{number}': 'Running' for number in range(1, active + 1)}
+                instances.update({name: 'Stopped' for name in retired})
+                self.incus.objects['/1.0/instances?project=orbit-ci'] = [
+                    f'/1.0/instances/{name}?project=orbit-ci' for name in instances
+                ]
+                for name, status in instances.items():
+                    self.incus.objects[f'/1.0/instances/{name}?project=orbit-ci'] = {
+                        'name': name, 'status': status, 'profiles': ['default'],
+                        'config': {'volatile.base_image': 'cloned-image', 'volatile.uuid': name},
+                    }
+                before = copy.deepcopy(self.incus.objects)
+                self.incus.calls = []
+
+                self.assertEqual(self.act('converge'), 'converged')
+                self.assertEqual(self.act('inspect'), 'matches')
+                self.assertEqual(self.act('converge'), 'converged')
+
+                self.assertEqual(self.incus.objects, before)
+                self.assertFalse(any(call[3] in ('launch', 'copy', 'exec', 'start', 'stop', 'delete', 'config')
+                                     for call in self.incus.calls if call[1] != 'query'))
+
+    def test_removal_refuses_even_a_lone_stopped_retired_container(self):
+        self.act('converge')
+        self.incus.objects['/1.0/instances?project=orbit-ci'] = ['/1.0/instances/ci-beast-2?project=orbit-ci']
+        self.incus.objects['/1.0/instances/ci-beast-2?project=orbit-ci'] = {'status': 'Stopped'}
+        before = copy.deepcopy(self.incus.objects)
+
+        self.assertEqual(self.act('remove'), 'occupied')
+        self.assertEqual(self.act('purge'), 'occupied')
+
+        self.assertEqual(self.incus.objects, before)
+
     def test_inspection_reports_each_boundary_drift_and_convergence_repairs_it(self):
         self.act('converge')
         cases = [
             ('/1.0/projects/orbit-ci', 'config', 'restricted.containers.nesting', 'allow'),
             ('/1.0/networks/orbitci0?project=default', 'config', 'security.acls', ''),
+            ('/1.0/networks/orbitci0?project=default', 'config', 'security.acls.default.egress.action', 'allow'),
+            ('/1.0/networks/orbitci0?project=default', 'config', 'security.acls.default.ingress.action', 'allow'),
             ('/1.0/profiles/default?project=orbit-ci', 'config', 'security.privileged', 'true'),
             ('/1.0/profiles/default?project=orbit-ci', 'devices', 'host', {'type': 'disk', 'source': '/'}),
         ]
@@ -165,6 +211,43 @@ class CiRunnerHostTest(unittest.TestCase):
 
     def test_the_bootstrap_contract_rejects_an_unknown_action(self):
         self.patch.stop()
-        completed = subprocess.run(['bash', str(REMOTE.parent / 'task-vms/incus-host.sh'), '--ci-runner', 'register'], capture_output=True, check=False)
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn(b'invalid CI host action', completed.stderr)
+        self.assertEqual(result('ci-runners.host', {'action': 'register'}), ('failed', {}))
+
+
+class CiRunnerRegistrationTest(unittest.TestCase):
+    def test_registers_org_runners_with_fleet_labels_and_sabre_label_only_on_sabre(self):
+        root = REMOTE.parents[3]
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            fake = state / 'incus'
+            fake.write_text('''#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if 'test' in args:
+    sys.exit(1)
+if 'id' in args:
+    print('1000')
+if 'config' in args:
+    sys.stdin.read()
+    with Path(os.environ['REGISTRATION_LOG']).open('a') as log:
+        log.write(json.dumps(args) + '\\n')
+''')
+            fake.chmod(0o755)
+            log = state / 'registrations.jsonl'
+            environment = {**os.environ, 'PATH': f'{state}:{os.environ["PATH"]}', 'REGISTRATION_LOG': str(log)}
+            for name, labels in [
+                ('ci-shark-4', 'self-hosted,Linux,X64,hardimpact,orbit-shard'),
+                ('ci-sabre-3', 'self-hosted,Linux,X64,hardimpact,orbit-shard,sabre'),
+                ('ci-beast-1', 'self-hosted,Linux,X64,hardimpact,orbit-shard'),
+            ]:
+                with self.subTest(name=name):
+                    completed = subprocess.run(['bash', str(root / 'tools/ci-runners/setup.sh'), 'register', name, 'test-token'],
+                                               env=environment, capture_output=True, text=True, check=False)
+
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    command = json.loads(log.read_text().splitlines()[-1])
+                    self.assertEqual(command[-3:], ['https://github.com/hardimpactdev', name, labels])
