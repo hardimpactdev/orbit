@@ -44,7 +44,9 @@ Before any change, the converge refuses a Node that lacks an address its Caddy s
 
 The Gateway reads the connection from published Reverb sites whose required process has reported `serving` after loading a snapshot in the current registry history. The reserved `gateway` app exists before a process can boot, so that confirmation proves the process loaded its credentials. A role in `provisioning`, `failed`, or `removing` still supplies realtime while such a process serves it. A private DNS publication failure therefore leaves `realtime:show`, channel authorization, and broadcasts configured.
 
-A later unrelated app revision or a delayed report does not invalidate the confirmed Gateway app. App operations still require fresh reports of their own revision. A new process boot clears its confirmation, and a verified shutdown or offline abandonment withdraws it. This includes a new assignment that stops Reverb while rolling back a failed publication. If that stop fails, its serving confirmation stays available. A process that never reported serving, an unpublished site, and an inactive Node supply no realtime connection. The Gateway needs no broadcast setting in its `.env`.
+A later unrelated app revision does not invalidate the confirmed Gateway app. Reverb reports every 5 seconds. The Gateway accepts a serving report for less than 60 seconds, allowing brief report delays while withdrawing a dead or hung process after one minute. App operations retain their stricter 15-second report window for their own revision.
+
+A new process boot clears its confirmation, and a verified shutdown or offline abandonment withdraws it. This includes a new assignment that stops Reverb while rolling back a failed publication. If that stop fails, its serving confirmation stays available. A process with no recent serving report, an unpublished site, and an inactive Node supply no realtime connection. The Gateway needs no broadcast setting in its `.env`.
 
 ### Move the role
 

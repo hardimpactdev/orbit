@@ -47,6 +47,16 @@ describe('GET /api/v1/realtime', function (): void {
             ->assertOk()->assertJsonPath('auth', $credentials->appKey.':'.hash_hmac('sha256', '1.1:private-orbit', $credentials->appSecret));
     });
 
+    it('withdraws config and auth when the confirmed process stops reporting', function (): void {
+        activate_websocket_role();
+        $this->travel(60)->seconds();
+
+        $this->getJson('/api/v1/realtime')->assertOk()
+            ->assertJsonPath('data.url', null)->assertJsonPath('data.key', null);
+        $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => 'private-orbit'])
+            ->assertNotFound()->assertJsonPath('error.code', 'realtime.not_configured');
+    });
+
     it('never leaks the Reverb secret or the generated APP_KEY', function (): void {
         activate_websocket_role();
 

@@ -157,9 +157,10 @@ it('refuses an active assignment until its process and published site confirm se
 });
 
 it('retains the served Gateway app across unrelated registry changes and delayed reports', function (): void {
+    $this->freezeTime();
     [$node, $credentials] = activate_websocket_role();
     new WebSocketAppIssuer()->issue('pending-app');
-    $this->travel(60)->seconds();
+    $this->travel(59)->seconds();
 
     expect(app(WebSocketCredentialManager::class)->current()?->appKey)->toBe($credentials->appKey);
 });
@@ -202,3 +203,42 @@ function websocketCredentialsNode(string $name = 'websocket-node', string $wireg
 
     return $node->refresh();
 }
+
+it('expires a confirmed endpoint after one minute and restores it on a fresh serving heartbeat', function (): void {
+    $this->freezeTime();
+    [$node, $credentials] = activate_websocket_role();
+    $node->roles()->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'converge:private-dns']);
+    $runtime = WebSocketRuntime::query()->where('node_id', $node->id)->sole();
+    new WebSocketAppIssuer()->issue('unrelated-pending-app');
+    $report = ['boot_id' => $runtime->boot_id, 'epoch' => $runtime->epoch, 'revision' => $runtime->applied_revision, 'state' => 'serving', 'error' => 'registry.unreachable'];
+    $manager = app(WebSocketCredentialManager::class);
+    $this->travel(59)->seconds();
+    expect($manager->current()?->appKey)->toBe($credentials->appKey);
+
+    $this->travel(1)->seconds();
+    expect($manager->current())->toBeNull()
+        ->and($runtime->refresh()->required)->toBeTrue();
+    app(ReportWebSocketRuntimeAction::class)->execute($runtime, [...$report, 'sequence' => 2]);
+    expect($manager->current()?->appKey)->toBe($credentials->appKey);
+});
+
+it('excludes a serving endpoint without a report timestamp', function (): void {
+    [$node] = activate_websocket_role();
+    WebSocketRuntime::query()->where('node_id', $node->id)->update(['reported_at' => null]);
+
+    expect(app(WebSocketCredentialManager::class)->current())->toBeNull();
+});
+
+it('omits an expired move endpoint while keeping a fresh serving endpoint', function (): void {
+    $this->freezeTime();
+    $source = Node::query()->create([
+        'name' => 'websocket-source', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.89', 'wireguard_ip' => '10.44.0.89', 'user' => 'orbit',
+    ]);
+    confirm_websocket_runtime($source);
+    new WebSocketDnsTarget()->markServing($source->id);
+    $this->travel(60)->seconds();
+    [$target] = activate_websocket_role();
+
+    expect(app(WebSocketCredentialManager::class)->current()?->addresses())->toBe([$target->wireguard_ip]);
+});

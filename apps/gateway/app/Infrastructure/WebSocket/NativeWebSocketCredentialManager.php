@@ -23,6 +23,8 @@ use Illuminate\Support\Str;
 
 final readonly class NativeWebSocketCredentialManager implements WebSocketCredentialManager
 {
+    private const int ReportFreshnessSeconds = 60;
+
     public function __construct(
         private SettingRepository $settings,
         private WebSocketAppIssuer $apps = new WebSocketAppIssuer,
@@ -79,6 +81,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         $confirmed = WebSocketRuntime::query()
             ->where('required', true)
             ->where('state', 'serving')
+            ->where('reported_at', '>', now()->subSeconds(self::ReportFreshnessSeconds))
             ->whereNotNull('boot_id')
             ->where('epoch', $version['epoch'])
             ->where('applied_revision', '>=', 1)

@@ -150,7 +150,7 @@ An Instance gets an app the way it gets a [Database connection](/reference/datab
 
 Operation status is `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
 
-The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw membership. Verified shutdown of the default service withdraws only its own process slot.
+The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw required apply membership. After 60 seconds without a serving report, the Gateway excludes the endpoint from realtime config, auth, and broadcasting until a fresh serving report arrives. Verified shutdown of the default service withdraws only its own process slot.
 
 Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
 
