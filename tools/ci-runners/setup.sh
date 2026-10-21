@@ -26,6 +26,7 @@ RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/hardimpactdev
+# The labels every hardimpactdev shard runner carries. A ci-sabre-* container also gets `sabre`.
 LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
 # signal/ptrace to container processes whose label is stacked (profile//&...). This lets the container signal its own
@@ -109,7 +110,7 @@ SH
 
 register() {
   local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
-  case "$name" in ci-sabre-*) labels+=,sabre ;; esac
+  case $name in ci-sabre-*) labels=$labels,sabre ;; esac
   if ! in_ct "$name" test -f /home/runner/actions-runner/.runner; then
     [ -n "$token" ] || { echo 'register needs TOKEN or ORBIT_RUNNER_TOKEN' >&2; exit 2; }
     in_ct "$name" chown -R runner:runner /home/runner/actions-runner
