@@ -23,6 +23,7 @@ import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 SURY = re.compile(r'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php', re.I)
@@ -169,7 +170,7 @@ def download(host, pin, mirror, work, architecture):
     cached = host.path(CACHE) / f'{pin["name"]}_{pin["sha256"]}.deb'
     if cached.is_file() and sha256(cached) == pin['sha256']:
         return cached
-    candidate = work / 'candidate.deb'
+    candidate = work / (pin['name'] + '.deb')
     sources = artifact_candidates(pin['name'], pin, mirror)
     for url in sources:
         candidate.unlink(missing_ok=True)
@@ -607,8 +608,9 @@ def main(payload):
     before = {version: links(host, version) for version in versions}
     pools = disabled_pools(host, versions, packages)
     with workspace(host) as work:
-        files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
-                 for name in pending + repair]
+        with ThreadPoolExecutor(max_workers=4) as downloads:
+            files = list(downloads.map(lambda name: download(host, pins[name], payload.get('mirror', ''), work, architecture),
+                                       pending + repair))
         replaced = [name for name in pending + repair if name in packages] + purge
         previous = previous_files(host, replaced, packages, payload['repack'], work, architecture)
 

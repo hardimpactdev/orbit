@@ -189,7 +189,9 @@ Before it changes anything, the installer checks the machine:
 Then it gets the files:
 
 1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
-2. It downloads each pinned file that is not installed at its version. It tries `artifact_mirror` first, then the pin's URL.
+2. It downloads missing pinned files with Python's standard thread pool, at most four at a time. It tries `artifact_mirror` first, then the pin's URL.
+
+   Each file uses a separate candidate path. All files pass verification before rollback preparation and serial package installation.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
 4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one. A file already there is not downloaded again. The cache grows with each build; an operator can delete the files of builds that no machine runs.
 

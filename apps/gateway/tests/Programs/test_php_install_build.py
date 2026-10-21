@@ -240,6 +240,25 @@ class InstallBuildTest(unittest.TestCase):
         curls = [call for call in self.calls() if call.startswith('curl')]
         self.assertTrue(curls[0].startswith('curl https://mirror.example/php/'))
 
+    def test_fetches_independent_files_together_before_installing_verified_packages(self):
+        curl = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        gate = '''touch "$STATE/download-${src##*/}"
+for ((attempt=0; attempt<100; attempt++)); do
+    downloads=("$STATE"/download-*)
+    [ "${#downloads[@]}" -eq 3 ] && break
+    sleep 0.01
+done
+[ "${#downloads[@]}" -eq 3 ] || exit 28
+'''
+        curl.write_text('#!/usr/bin/env bash\n' + FAKES['curl'].replace('cp "$src" "$out"', gate + 'cp "$src" "$out"') + '\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual(outcome, 'applied')
+        self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
+        self.assertEqual(len(self.cached()), 3)
+        self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
+
     def test_cleans_root_owned_repack_trees_before_installing_as_an_unprivileged_user(self):
         sudo = shutil.which('sudo', path='/usr/bin:/bin')
         if os.geteuid() == 0 or sudo is None or subprocess.run(
