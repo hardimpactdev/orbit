@@ -44,6 +44,7 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
     {
         return DatabaseServer::query()
             ->where('node_id', $node->id)
+            ->where(static fn ($query) => $query->where('driver', DatabaseDriver::Redis)->orWhere('private_endpoints_managed', true))
             ->whereHas('process', static fn ($query) => $query->where('desired_state', DesiredProcessState::Running))
             ->with(['node', 'databaseConnections.users'])
             ->orderBy('id')

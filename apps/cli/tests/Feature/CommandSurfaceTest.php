@@ -637,7 +637,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'database:server:close' => [['slug'], ['json' => false]],
         'database:server:create' => [
             ['slug'],
-            ['node' => null, 'driver' => null, 'process' => null, 'connection' => null, 'tag' => null, 'port' => null, 'json' => false],
+            ['node' => null, 'driver' => null, 'process' => null, 'connection' => null, 'tag' => null, 'port' => null, 'lan-node' => [], 'json' => false],
         ],
         'database:server:destroy' => [['slug'], ['force' => false, 'json' => false]],
         'database:server:list' => [[], ['json' => false]],
@@ -708,7 +708,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:database:add' => [
             ['slug'],
-            ['instance' => null, 'prefix' => null, 'json' => false],
+            ['instance' => null, 'prefix' => null, 'network' => null, 'json' => false],
         ],
         'instance:database:remove' => [
             ['slug'],

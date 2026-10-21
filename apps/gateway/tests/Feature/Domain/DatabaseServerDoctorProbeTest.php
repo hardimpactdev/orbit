@@ -66,9 +66,9 @@ it('keeps endpoint rollout checks off existing servers until explicitly enabled'
 
     $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
 
-    expect($report->issues)->toBe([])->and($report->checked)->toBe(1);
+    expect($report->issues)->toBe([])->and($report->checked)->toBe($driver === 'mysql' ? 0 : 1);
     if ($driver === 'mysql') {
-        expect($sql->readyChecks)->toBe(['existing-server']);
+        expect($sql->readyChecks)->toBe([]);
     } else {
         expect($valkey->calls)->toContain('anonymous ping', 'config get aclfile', 'acl list');
     }

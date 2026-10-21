@@ -166,11 +166,12 @@ it('keeps bodyless operations without a request body', function (): void {
     expect($operations->get('instance-dependencies-show'))->not->toHaveKey('requestBody');
 });
 
-it('publishes Valkey ACL creation inputs and the restricted server driver', function (): void {
+it('publishes Valkey ACL creation inputs and all managed server drivers', function (): void {
     $root = dirname(__DIR__, 4);
     $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
     $server = $openapi['paths']['/api/v1/database-servers']['post']['requestBody']['content']['application/json']['schema'];
-    expect($server['properties']['driver']['enum'])->toBe(['mysql', 'redis']);
+    expect($server['properties']['driver']['enum'])->toBe(['mysql', 'redis', 'pgsql']);
+    expect($server['properties']['lan_node_ids']['items']['type'])->toBe('integer');
     $variants = $openapi['paths']['/api/v1/database-connections']['post']['requestBody']['content']['application/json']['schema']['oneOf'];
     $acl = collect($variants)->first(fn (array $variant): bool => isset($variant['properties']['patterns']));
     expect($acl['required'])->toEqualCanonicalizing(['slug', 'server', 'patterns', 'allow'])

@@ -17,7 +17,8 @@
             "has_password": true,
             "server": "beast-valkey",
             "owner_instance_id": null,
-            "test_database": null
+            "test_database": null,
+            "lan_host": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
