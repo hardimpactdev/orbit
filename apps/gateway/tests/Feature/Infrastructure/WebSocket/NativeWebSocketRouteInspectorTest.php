@@ -15,8 +15,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 it('inspects the current release route list as the production user without exposing application output', function (string $output, ?bool $collision): void {
     $home = sys_get_temp_dir().'/orbit-route-inspection-'.Str::uuid();
     $files = new Filesystem;

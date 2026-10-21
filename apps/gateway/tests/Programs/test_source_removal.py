@@ -82,6 +82,45 @@ class Sandbox(unittest.TestCase):
         self.assertEqual(completed.returncode, 74, completed.stderr.decode())
 
 
+class ProductionRouteInspectionTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix='orbit-production-route-inspection-')
+        self.addCleanup(self.directory.cleanup)
+        self.home = os.path.realpath(self.directory.name)
+        self.release = f'{self.home}/releases/one'
+        os.makedirs(self.release)
+        os.symlink(self.release, f'{self.home}/current')
+        with open(f'{self.release}/artisan', 'w') as handle:
+            handle.write('<?php file_put_contents("booted", "yes"); echo "[]";')
+        self.payload = {'inspection': 'laravel_routes', 'home': self.home,
+                        'application': f'{self.home}/current', 'php': shutil.which('php')}
+
+    def test_refuses_a_current_link_outside_releases_without_booting_the_application(self):
+        os.unlink(f'{self.home}/current')
+        os.symlink(self.home, f'{self.home}/current')
+
+        outcome, data = result('instances.inspect-source', self.payload)
+
+        self.assertEqual((outcome, data), ('path_mismatch', {}))
+        self.assertFalse(os.path.exists(f'{self.release}/booted'))
+
+    def test_refuses_an_application_outside_the_selected_release_without_booting_it(self):
+        outcome, data = result('instances.inspect-source', {**self.payload, 'application': self.home})
+
+        self.assertEqual((outcome, data), ('path_mismatch', {}))
+        self.assertFalse(os.path.exists(f'{self.release}/booted'))
+
+    def test_suppresses_failed_artisan_output(self):
+        with open(f'{self.release}/artisan', 'w') as handle:
+            handle.write('<?php fwrite(STDOUT, "sensitive output"); fwrite(STDERR, "sensitive error"); exit(1);')
+
+        completed = execute('instances.inspect-source', self.payload)
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, b'{"outcome":"failed","data":{}}\n')
+        self.assertNotIn(b'sensitive', completed.stderr)
+
+
 class InspectSourceTest(Sandbox):
     def inspect(self, checkout, **overrides):
         payload = {
