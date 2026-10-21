@@ -1002,7 +1002,7 @@ After a handoff check passes and its deliverables verify, Orbit:
 3. Pushes the commit once to Orbit's handoff branch `task-{id}-handoff`. The task VM records the push, so a later tick does not push it again.
 4. Reads the check runs and check suites of exactly that commit. It judges the merge check by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 
-The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, four Gateway shards, and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
+The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, [capacity-sized Gateway shards](/reference/implementation-loop#gateway-shards), and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
 
 The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed handoff commit never reaches the task's pull request, nor an outside author's branch. A conflict with the base is not a handoff concern: the task's pull request, opened after the last approval, merges against the latest base through the [merge gate](#merge-on-green).
 
@@ -1805,7 +1805,7 @@ The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the works
 
 ### The full suite runs in CI at each handoff
 
-On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite as four shards, and its `Required checks` finish in about five minutes.
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite in [one shard per shared runner](/reference/implementation-loop#gateway-shards).
 
 The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
 

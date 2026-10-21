@@ -81,8 +81,8 @@ YAML
 description: Orbit CI shard runner
 config:
   boot.autostart: "true"
-  limits.cpu: "4"
-  limits.memory: 8GiB
+  limits.cpu: "6"
+  limits.memory: 12GiB
   limits.processes: "8192"
   security.nesting: "false"
   security.privileged: "false"

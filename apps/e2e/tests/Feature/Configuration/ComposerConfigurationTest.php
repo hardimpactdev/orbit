@@ -7,9 +7,6 @@ use Symfony\Component\Yaml\Yaml;
 
 pest()->group('subprocess');
 
-/** Pest's process count in CI: 6 on the self-hosted Sabre runner, 4 on GitHub-hosted runners. */
-const CI_PEST_PROCESSES = '--processes=${{ runner.environment == \'self-hosted\' && 6 || 4 }}';
-
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
@@ -283,13 +280,13 @@ SH);
         expect($steps['Run full PR test suite'])
             ->toMatchArray([
                 'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact',
+                'run' => 'vendor/bin/pest --parallel --no-tia --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
         expect($steps['Run full test suite and refresh Pest TIA graph'])->toMatchArray([
             'if' => "env.CHANGE_RUN != 'true'",
-            'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
+            'run' => 'vendor/bin/pest --parallel --tia --fresh --compact',
         ]);
         $order = array_flip(array_keys($steps));
         expect($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Export main caches']);
@@ -321,7 +318,7 @@ SH);
             ->toContain('actions/cache/restore@')
             ->toContain('actions/cache/save@')
             ->toContain('coverage: pcov')
-            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
+            ->toContain('vendor/bin/pest --parallel --tia --fresh --compact')
             ->toContain("github.event_name == 'pull_request'")
             ->not->toContain('bin/ci-tia', 'Restore Pest TIA graph')
             ->not->toContain('bin/tia-cache')
@@ -402,20 +399,22 @@ SH);
     it('requires the full Gateway suite in shards on every pull request and task-*-handoff push', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $jobs = $workflow['jobs'];
+        $shardCount = count($jobs['gateway-shards']['strategy']['matrix']['shard']);
         $shardSteps = array_column($jobs['gateway-shards']['steps'], null, 'name');
         $projectSteps = array_column($jobs['project']['steps'], null, 'name');
 
+        expect($shardCount)->toBeGreaterThan(1);
         expect($jobs)->not->toHaveKey('gateway-plan');
         expect($jobs['project'])->not->toHaveKey('needs');
         expect($jobs['gateway-shards'])->not->toHaveKey('needs')
             ->toMatchArray([
                 'if' => "github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')",
-                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => [1, 2, 3, 4]]],
+                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, $shardCount)]],
             ]);
         expect($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
-            ->toBe('vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact');
+            ->toBe('vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
             'if' => "matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'",
             'run' => '../../bin/check-pest-shards',
@@ -531,10 +530,26 @@ it('keeps the whole privileged group required in one disposable CI job', functio
     expect($job['runs-on'])->toBe('ubuntu-26.04');
     expect($job)->not->toHaveKey('strategy')->not->toHaveKey('if');
     $commands = implode("\n", array_column($job['steps'], 'run'));
+    expect($commands)->toContain('vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never');
     expect($commands)->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite')
         ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
+});
+
+it('lets stock ParaTest use every available CPU in each CI test run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+
+    foreach ($workflow['jobs'] as $job) {
+        foreach ($job['steps'] ?? [] as $step) {
+            $command = $step['run'] ?? '';
+            if (str_contains($command, 'vendor/bin/pest --parallel')) {
+                expect($command)->not->toContain('--processes')
+                    ->not->toContain('--max-processes')
+                    ->not->toContain('ORBIT_CHECK_PROCESSES');
+            }
+        }
+    }
 });
 
 it('builds the agent and desktop app on a handoff push only when it changes them since main', function (string $job, string $output): void {

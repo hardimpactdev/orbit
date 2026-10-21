@@ -1,4 +1,4 @@
-"""Check ordinary shard coverage and the CI no-sudo boundary."""
+"""Check capacity-sized ordinary shard coverage and the CI no-sudo boundary."""
 import importlib.machinery
 import importlib.util
 import json
@@ -21,6 +21,8 @@ CASES = [
     r'P\Tests\Feature\Tasks\WorkspaceLeaseStatusTest::__pest_evaluable_it_reports_the_workspace_holder_and_ordered_waiters_without_changing_ownership_while_tasks_is_disabled',
     r'P\Tests\Feature\TestTemporaryDirectoryTest::__pest_evaluable_it_gives_a_test_process_its_own_directory__removes_it_at_exit__and_removes_those_of_ended_processes',
     r'P\Tests\Feature\VitePortAllocatorTest::__pest_evaluable_it_keeps_node_scoped_assignments_and_retains_both_placements_until_transfer_cleanup',
+    r'P\Tests\Feature\Api\ActivitiesTest::test_example',
+    r'P\Tests\Feature\Api\AdoptToolTest::test_example',
     r'P\Tests\Unit\Configuration\RecipeSnapshotWorkflowTest::__pest_evaluable_it_runs_the_shared_Ubuntu_snapshot_check_only_for_recipe_changes_in_the_Gateway_CI_job',
 ]
 CLASSES = [case.split('::', 1)[0] for case in CASES]
@@ -34,6 +36,9 @@ def listing(classes, code=0):
 
 
 class PestShardsTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(checker, 'shard_count', return_value=len(CLASSES)))
+
     def outputs(self, partitions=None):
         return [listing(CLASSES), *(listing(classes) for classes in
                                    (partitions if partitions is not None else [[name] for name in CLASSES]))]
@@ -44,24 +49,24 @@ class PestShardsTest(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         common = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged']
         self.assertEqual([common + ['--list-tests', '--colors=never'], *[
-            common + [f'--shard={index}/4', '--list-tests', '--colors=never'] for index in range(1, 5)
+            common + [f'--shard={index}/{checker.shard_count()}', '--list-tests', '--colors=never'] for index in range(1, checker.shard_count() + 1)
         ]], commands)
 
     def test_fails_if_a_class_lands_in_no_shard(self):
         with patch.object(checker.subprocess, 'run', side_effect=self.outputs([
-            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[0]],
+            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[3]], [CLASSES[4]], [CLASSES[0]],
         ])), self.assertRaisesRegex(ValueError, 'Missing:.*RecipeSnapshotWorkflowTest'):
             checker.check()
 
     def test_fails_if_two_shards_own_the_same_class(self):
         with patch.object(checker.subprocess, 'run', side_effect=self.outputs([
-            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[3], CLASSES[0]],
+            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[3]], [CLASSES[4]], [CLASSES[5], CLASSES[0]],
         ])), self.assertRaisesRegex(ValueError, 'Repeated:.*WorkspaceLeaseStatusTest'):
             checker.check()
 
     def test_fails_if_a_shard_lists_an_unexpected_class(self):
         with patch.object(checker.subprocess, 'run', side_effect=self.outputs([
-            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[3], 'Tests\\Unexpected'],
+            [CLASSES[0]], [CLASSES[1]], [CLASSES[2]], [CLASSES[3]], [CLASSES[4]], [CLASSES[5], 'Tests\\Unexpected'],
         ])), self.assertRaisesRegex(ValueError, 'Unexpected:.*Unexpected'):
             checker.check()
 
@@ -85,6 +90,25 @@ class PestShardsTest(unittest.TestCase):
         outputs[1].stdout = f' - {CLASSES[0]}::test_example.\n'
         with patch.object(checker.subprocess, 'run', side_effect=outputs):
             checker.check()
+
+
+class ShardCapacityTest(unittest.TestCase):
+    def test_matrix_is_the_only_count_source_and_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(checker, 'ROOT', Path(directory)):
+            workflow = Path(directory) / '.github/workflows/ci.yml'
+            workflow.parent.mkdir(parents=True)
+            for count in (3, 7):
+                contents = ('jobs:\n  gateway-shards:\n    strategy:\n      matrix:\n'
+                            f'        shard: {list(range(1, count + 1))}\n')
+                workflow.write_text(contents)
+                self.assertEqual(count, checker.shard_count())
+                self.assertEqual(contents, workflow.read_text())
+
+            for matrix in ([], [1], [1, 3], [2, 1], [1, 2, 2], [True, 2], [1, '2'], [1.0, 2]):
+                workflow.write_text('jobs:\n  gateway-shards:\n    strategy:\n      matrix:\n'
+                                    f'        shard: {json.dumps(matrix)}\n')
+                with self.subTest(matrix=matrix), self.assertRaisesRegex(ValueError, '1..count'):
+                    checker.shard_count()
 
 
 def read_yaml(path):
