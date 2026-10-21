@@ -30,6 +30,50 @@ use Tests\Support\PrivateDnsPublishHarness;
 
 pest()->group('subprocess');
 
+it('keeps the installed listener untouched when its PHP disappears or fails its self-test', function (bool $missing): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->listenerManager($harness->listenerPhp());
+        $manager->converge();
+        $records = file_get_contents($harness->recordsPath());
+        $catalog = file_get_contents($harness->catalogPath());
+        $harness->breakListenerPhp($missing);
+        $harness->clearServiceLog();
+
+        expect(fn () => $manager->converge())->toThrow(RuntimeConvergenceException::class);
+
+        expect($harness->serviceCalls())->toBe([])
+            ->and(file_get_contents($harness->recordsPath()))->toBe($records)
+            ->and(file_get_contents($harness->catalogPath()))->toBe($catalog);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['missing PHP' => true, 'broken PHP' => false]);
+
+it('replaces a deleted listener executable behind its unchanged socket', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $harness->deletedListenerExecutable();
+        $harness->clearServiceLog();
+
+        $manager->converge();
+
+        expect(array_count_values($harness->serviceCalls())['restart orbit-private-dns.service'] ?? 0)->toBe(1)
+            ->and($harness->serviceCalls())->not->toContain('stop orbit-private-dns.socket', 'start orbit-private-dns.socket', 'restart dnsmasq');
+        $harness->clearServiceLog();
+        $manager->converge();
+        expect($harness->serviceCalls())->not->toContain('restart orbit-private-dns.service');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('activates the listener from an installed release behind its socket without rewriting LAN into the shared fragment', function (): void {
     $harness = new PrivateDnsPublishHarness;
     [$route, $member] = orb307_published_cluster();
@@ -235,7 +279,7 @@ it('reinstalls and restarts a release whose files no longer match its id', funct
     }
 });
 
-it('restores the previous units and catalog when a stale listener fails to restart', function (): void {
+it('restores the previous units and catalog when a stale listener fails to restart', function (bool $brokenPrevious): void {
     $harness = new PrivateDnsPublishHarness;
     orb307_published_cluster();
     $harness->putVpnFragment("# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\n");
@@ -245,17 +289,30 @@ it('restores the previous units and catalog when a stale listener fails to resta
         $manager->converge();
         $previousCatalog = (string) file_get_contents($harness->catalogPath());
         $previousUnit = (string) file_get_contents($harness->unitPath());
+        if ($brokenPrevious) {
+            $previous = $harness->releasesPath().'/0123456789abcdef';
+            mkdir($previous);
+            file_put_contents($previous.'/serve.php', '<?php exit(78);');
+            $previousUnit = preg_replace('/^WorkingDirectory=.*$/m', 'WorkingDirectory='.$previous, $previousUnit);
+            file_put_contents($harness->unitPath(), $previousUnit);
+        }
         $harness->staleListener();
         $harness->failListenerRestart();
+        $harness->clearServiceLog();
         orb_catalog_change();
 
         expect(fn () => $manager->converge())->toThrow(RuntimeConvergenceException::class);
         expect(file_get_contents($harness->catalogPath()))->toBe($previousCatalog)
             ->and(file_get_contents($harness->unitPath()))->toBe($previousUnit);
+        expect(array_count_values($harness->serviceCalls()))->toMatchArray([
+            'daemon-reload' => $brokenPrevious ? 2 : 1,
+            'restart dnsmasq' => 1,
+            'restart orbit-private-dns.service' => $brokenPrevious ? 1 : 2,
+        ]);
     } finally {
         $harness->cleanup();
     }
-});
+})->with(['valid previous release' => false, 'broken previous release' => true]);
 
 it('restores the previous dnsmasq fragment and catalog when listener activation fails', function (): void {
     $harness = new PrivateDnsPublishHarness;

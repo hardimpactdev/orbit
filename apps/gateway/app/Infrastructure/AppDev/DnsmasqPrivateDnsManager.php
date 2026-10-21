@@ -20,6 +20,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
@@ -53,6 +54,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         private ?SshKeyProvider $keys = null,
         private ?KnownHostsStore $knownHosts = null,
         private ?PrivateDnsListenerRelease $release = null,
+        private string $procDirectory = '/proc',
     ) {}
 
     public function converge(?Node $pendingNode = null): void
@@ -137,6 +139,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             BASH);
 
         if (! $result->succeeded()) {
+            // Role exceptions suppress process output. Keep this publication's diagnostics before wrapping.
+            Log::warning('Private DNS publication failed.', [
+                'node_id' => $remote?->id,
+                'exit_code' => $result->exitCode,
+                'duration_ms' => $result->durationMs,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'output_truncated' => $result->truncated,
+            ]);
+
             throw new RuntimeConvergenceException(
                 step: 'private-dns',
                 errorCode: 'app-dev.dns_config_failed',
@@ -231,6 +243,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $releaseFiles = $this->releaseFiles($release);
         $manifestEncoded = base64_encode($this->releaseManifest($release));
         $php = escapeshellarg($this->phpBinary);
+        $proc = escapeshellarg($this->procDirectory);
         $loaded = FilePrivateDnsCatalogStore::loadedPath($catalogPath);
         $unitDirectory = $this->unitDirectory;
         $unitName = $this->units->name();
@@ -297,6 +310,14 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 rm -rf -- "\$release_candidate.replaced"
                 release_installed=1
             fi
+            self_test_listener() {
+                if ! {$php} "\$1/serve.php" --self-test; then
+                    echo "Private DNS listener PHP self-test failed for [\$1]; no listener start or restart attempted." >&2
+                    return 1
+                fi
+            }
+            # An existing release needs the same runtime validation as a fresh release, before any service calls.
+            self_test_listener "\$release_dir" || exit 1
             printf '%s' '{$unitEncoded}' | base64 --decode > "\$validation/{$unitName}"
             printf '%s' '{$socketEncoded}' | base64 --decode > "\$validation/{$socketName}"
             systemd-analyze verify "\$validation/{$socketName}" "\$validation/{$unitName}"
@@ -319,6 +340,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             fi
             listener_pid() {
                 systemctl show -p MainPID --value {$unitName} 2>/dev/null || true
+            }
+            previous_listener_dir=''
+            if [ "\$had_unit" = 1 ]; then
+                previous_listener_dir=\$(systemctl show -p WorkingDirectory --value {$unitName})
+            fi
+            listener_uses_installed_php() {
+                local pid
+                pid=\$(listener_pid)
+                case "\$pid" in ''|0|*[!0-9]*) return 1 ;; esac
+                [ {$proc}/"\$pid"/exe -ef {$php} ]
             }
             listener_running() {
                 local pid
@@ -388,6 +419,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             # The sockets stay open in orbit-private-dns.socket, so queries wait for the next listener instead of
             # failing. The confirmation is removed first, so only the new listener can write it.
             restart_listener() {
+                self_test_listener "\$release_dir" || return 1
                 rm -f -- "\$catalog_loaded"
                 systemctl restart {$unitName} || return 1
                 wait_until_php_owns_vpn_dns || return 1
@@ -426,14 +458,18 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                     systemctl stop {$unitName} || true
                     systemctl disable --now {$socketName} || true
                     if [ "\$had_unit" = 1 ]; then
-                        systemctl enable --now {$unitName} || true
+                        if self_test_listener "\$previous_listener_dir"; then
+                            systemctl enable --now {$unitName} || true
+                        fi
                     fi
                 elif [ "\$had_unit" = 1 ]; then
-                    systemctl restart {$unitName} || true
+                    if self_test_listener "\$previous_listener_dir"; then
+                        systemctl restart {$unitName} || true
+                    fi
                 fi
             }
             if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ] && [ "\$socket_changed" = 0 ] && [ "\$release_installed" = 0 ]; then
-                if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$socketName} && systemctl is-active --quiet {$unitName} && php_owns_vpn_dns && listener_confirms_catalog 0; then
+                if systemctl is-active --quiet dnsmasq && systemctl is-active --quiet {$socketName} && systemctl is-active --quiet {$unitName} && php_owns_vpn_dns && listener_uses_installed_php && listener_confirms_catalog 0; then
                     exit 0
                 fi
             fi
@@ -457,6 +493,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             if ! systemctl is-active --quiet {$socketName} || [ "\$socket_changed" = 1 ]; then
                 # The address moves to the socket unit. A listener that binds the address itself must let go first.
                 # Enabling first keeps the gap between the stop and the socket bind to milliseconds.
+                self_test_listener "\$release_dir" || exit 1
                 listener_started=1
                 rm -f -- "\$catalog_loaded"
                 if ! systemctl enable {$socketName} {$unitName}; then
@@ -468,7 +505,8 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                     restore_listener
                     exit 1
                 fi
-            elif [ "\$unit_changed" = 1 ] || [ "\$release_installed" = 1 ] || ! listener_running; then
+            elif [ "\$unit_changed" = 1 ] || [ "\$release_installed" = 1 ] || ! listener_running || ! listener_uses_installed_php; then
+                self_test_listener "\$release_dir" || exit 1
                 listener_started=1
                 rm -f -- "\$catalog_loaded"
                 if ! systemctl enable {$unitName} || ! systemctl restart {$unitName}; then

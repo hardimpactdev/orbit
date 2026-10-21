@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\ConvergeNodeRecipeAction;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Nodes\RoleName;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -136,7 +137,7 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
+    $php = in_array($role, [RoleName::WebSocket, RoleName::Vpn], true) ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
     $baseline = new NodeBootstrapPackageCatalog()->forRole($node, $role);
     // Recipe convergence pins the container runtime too; enrollment only asks apt for Docker.
     $runtime = in_array('docker.io', $baseline, true) ? ['containerd'] : [];
@@ -154,7 +155,7 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
     expect($pins)->toContain(...$recipe->php('8.5')->packagesFor(false))
         ->not->toContain('php8.4-cli')
         ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->cliExtensions()]);
-})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
+})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway, RoleName::Vpn]);
 
 it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
     $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
@@ -173,6 +174,43 @@ it('installs the PHP build with the one installer after the other tools, strictl
         ->and(array_keys($php->inputs[2]['versions']))->toBe(['8.5'])
         ->and($result['changes']['php'])->toMatchArray(['changed' => [], 'stale_masters' => []]);
 });
+
+it('applies the VPN FPM policy in both preflight and installation', function (array $roles, string $fpm): void {
+    $node = FleetFixtures::node('recipe-vpn-policy', $roles);
+    recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load());
+
+    expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
+        ->and(array_values(array_unique(array_column($php->inputs, 'fpm'))))->toBe([$fpm]);
+})->with([
+    'VPN only' => [[RoleName::Vpn], 'disabled'],
+    'VPN and websocket CLI' => [[RoleName::Vpn, RoleName::WebSocket], 'disabled'],
+    'VPN and Gateway FPM' => [[RoleName::Vpn, RoleName::Gateway], 'all'],
+    'VPN and application FPM' => [[RoleName::Vpn, RoleName::AppProd], 'all'],
+]);
+
+it('publishes private DNS after applying PHP only on a VPN Node', function (RoleName $role, string $outcome): void {
+    $node = FleetFixtures::node('recipe-php-dns', [$role]);
+    recipeSsh();
+    $php = new FakePhpBuildRunner(['apply' => [$outcome, ['changed' => ['php8.5-cli']]]]);
+    app()->instance(RemoteProgramRunner::class, $php);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $dns = Mockery::mock(PrivateDnsManager::class);
+    $dns->shouldReceive('converge')->times($role === RoleName::Vpn && $outcome === 'applied' ? 1 : 0)
+        ->withNoArgs()->andReturnUsing(function () use ($php): void {
+            expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply']);
+        });
+    app()->instance(PrivateDnsManager::class, $dns);
+
+    app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load());
+})->with([
+    'changed VPN runtime' => [RoleName::Vpn, 'applied'],
+    'unchanged VPN runtime' => [RoleName::Vpn, 'current'],
+    'changed application runtime' => [RoleName::AppProd, 'applied'],
+]);
 
 it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', function (): void {
     $node = FleetFixtures::node('recipe-beast', [RoleName::AppDev]);
