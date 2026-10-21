@@ -75,7 +75,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
 
         // A role's convergence status does not describe its running process. Keep a confirmed Gateway
         // app through unrelated DNS or registry publication failures, including an older applied revision.
-        $version = app(WebSocketRegistry::class)->version();
+        $version = $this->registry->version();
         $confirmed = WebSocketRuntime::query()
             ->where('required', true)
             ->where('state', 'serving')
