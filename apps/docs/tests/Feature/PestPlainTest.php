@@ -96,7 +96,15 @@ it('preserves the termination exit status when a detached child holds stdout aft
     $script = <<<'PYTHON'
 import json,os,pathlib,subprocess,sys,time
 root=os.environ['TMPDIR']
-child=subprocess.Popen([sys.executable,'-c', 'import os,pathlib,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); pathlib.Path(os.environ["TMPDIR"],"ready").touch(); time.sleep(30)'], start_new_session=True)
+child_script = '''import os,pathlib,signal,time
+signal.signal(signal.SIGTERM,signal.SIG_IGN)
+parent = os.getppid()
+pathlib.Path(os.environ['TMPDIR'],'ready').touch()
+while pathlib.Path(f'/proc/{parent}').exists(): time.sleep(0.01)
+print('leader gone',flush=True)
+time.sleep(30)
+'''
+child=subprocess.Popen([sys.executable,'-c',child_script], start_new_session=True)
 while not pathlib.Path(root,'ready').exists(): time.sleep(0.001)
 print(root,flush=True)
 time.sleep(30)
@@ -105,6 +113,8 @@ PYTHON;
     $process->start();
     $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'run-'));
     $directory = trim($process->getOutput());
+    $process->signal(SIGTERM);
+    $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'leader gone'));
     $process->signal(SIGTERM);
     $process->wait();
 
@@ -219,4 +229,104 @@ PYTHON;
     } finally {
         new Filesystem()->deleteDirectory($directory);
     }
+});
+
+it('lets a worker finish interrupt cleanup after its leader exits', function (int $signal, bool $holdsOutput, bool $detached): void {
+    if ($detached && PHP_OS_FAMILY !== 'Linux') {
+        $this->markTestSkipped('Orphan adoption uses Linux subreapers.');
+    }
+
+    $markers = sys_get_temp_dir().'/pest-worker-'.bin2hex(random_bytes(6));
+    mkdir($markers);
+    $script = <<<'PYTHON'
+import os,pathlib,signal,subprocess,sys,time
+markers = pathlib.Path(sys.argv[1])
+worker = '''import os,pathlib,signal,sys,time
+markers = pathlib.Path(sys.argv[1])
+def cleanup(*_):
+    (markers/'started').touch()
+    time.sleep(1.4)
+    assert pathlib.Path(os.environ['TMPDIR']).is_dir()
+    (markers/'finished').touch()
+    sys.exit(0)
+signal.signal(signal.SIGTERM,cleanup)
+signal.signal(signal.SIGINT,cleanup)
+(markers/'ready').touch()
+time.sleep(60)
+'''
+detached = sys.argv[3]=='detached'
+child = subprocess.Popen([sys.executable,'-c',worker,str(markers)],stdout=None if sys.argv[2]=='held' else subprocess.DEVNULL,start_new_session=detached)
+def leader_cleanup(sig,_):
+    if detached: os.kill(child.pid,sig)
+    sys.exit(0)
+signal.signal(signal.SIGTERM,leader_cleanup)
+signal.signal(signal.SIGINT,leader_cleanup)
+while not (markers/'ready').exists(): time.sleep(0.01)
+print(os.environ['TMPDIR'],flush=True)
+time.sleep(60)
+PYTHON;
+    $process = new Process([dirname(__DIR__, 4).'/bin/pest-plain', 'python3', '-c', $script, $markers, $holdsOutput ? 'held' : 'closed', $detached ? 'detached' : 'group'], timeout: 10);
+
+    try {
+        $process->start();
+        $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'run-'));
+        $directory = trim($process->getOutput());
+        $process->signal($signal);
+        $process->wait();
+
+        expect($process->getExitCode())->toBe(128 + $signal)
+            ->and(is_file($markers.'/started'))->toBeTrue()
+            ->and(is_file($markers.'/finished'))->toBeTrue()
+            ->and(is_dir($directory))->toBeFalse();
+    } finally {
+        $process->stop();
+        new Filesystem()->deleteDirectory($markers);
+    }
+})->with([
+    'TERM with inherited output' => [SIGTERM, true, false],
+    'TERM with closed output' => [SIGTERM, false, false],
+    'INT with inherited output' => [SIGINT, true, false],
+    'INT with closed output' => [SIGINT, false, false],
+    'adopted child with closed output' => [SIGTERM, false, true],
+]);
+
+it('bounds the interrupt grace period for a command that never finishes cleanup', function (): void {
+    $script = <<<'PYTHON'
+import sys
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+import test_runtime
+with patch.object(test_runtime,'INTERRUPT_GRACE_SECONDS',0.2):
+    sys.exit(test_runtime.main([sys.executable,'-c','import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.environ["TMPDIR"],flush=True); time.sleep(60)']))
+PYTHON;
+    $process = new Process(['python3', '-c', $script, dirname(__DIR__, 4).'/tools'], timeout: 10);
+    $process->start();
+    $process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'run-'));
+    $directory = trim($process->getOutput());
+    $process->signal(SIGTERM);
+    $process->wait();
+
+    expect($process->getExitCode())->toBe(143)
+        ->and(is_dir($directory))->toBeFalse();
+});
+
+it('forwards an interrupt received before the command spawn returns', function (): void {
+    $script = <<<'PYTHON'
+import os,signal,sys
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+import test_runtime
+spawn = test_runtime.subprocess.Popen
+def interrupted_spawn(*args,**kwargs):
+    process = spawn(*args,**kwargs)
+    os.kill(os.getpid(),signal.SIGTERM)
+    return process
+with patch.object(test_runtime.subprocess,'Popen',side_effect=interrupted_spawn):
+    sys.exit(test_runtime.main([sys.executable,'-c','import time; time.sleep(1.4); print("ran to the end")']))
+PYTHON;
+    $process = new Process(['python3', '-c', $script, dirname(__DIR__, 4).'/tools'], timeout: 10);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(143)
+        ->and($process->getOutput())->toBe('');
 });

@@ -457,6 +457,9 @@ SH);
             chmod($root.'/bin/'.$launcher, 0o700);
         }
         copy(base_path('../../tools/test_runtime.py'), $root.'/tools/test_runtime.py');
+        $policy = 'apps/gateway/tests/Support/test-private-tmpdir.regex';
+        mkdir(dirname($root.'/'.$policy), 0o700, true);
+        copy(base_path('../../'.$policy), $root.'/'.$policy);
 
         mkdir($project.'/app', 0o700, true);
         mkdir($project.'/tests/Unit', 0o700, true);

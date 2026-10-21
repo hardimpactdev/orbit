@@ -57,6 +57,23 @@ it('reuses the launcher temporary directory without registering worker cleanup',
         ->and(is_dir($directory.'/fixture'))->toBeTrue();
 });
 
+it('bootstraps a copied Gateway support directory without the rest of the monorepo', function (): void {
+    $copy = TestOrbitHome::scratch('copied-support');
+    mkdir($copy, 0o700, true);
+    foreach (['TestTemporaryDirectory.php', 'test-private-tmpdir.regex'] as $file) {
+        copy(base_path('tests/Support/'.$file), $copy.'/'.$file);
+    }
+    $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .' require '.var_export($copy.'/TestTemporaryDirectory.php', true).';'
+        .' Tests\\Support\\TestTemporaryDirectory::bootstrap();'
+        .' fwrite(STDOUT, sys_get_temp_dir().PHP_EOL);';
+    $probe = new Process([PHP_BINARY, '-r', $script], $copy, ['TMPDIR' => $copy, 'ORBIT_TEST_TMPDIR' => false]);
+    $directory = trim($probe->mustRun()->getOutput());
+
+    expect($directory)->toStartWith($copy.'/'.TestTemporaryDirectory::Prefix)
+        ->and(is_dir($directory))->toBeFalse();
+});
+
 it('lets cross-user fixtures traverse the launcher directory from a private role TMPDIR', function (string $role): void {
     $private = TestOrbitHome::scratch('private-role');
     $configured = $private.'/'.$role;
