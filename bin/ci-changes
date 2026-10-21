@@ -39,7 +39,8 @@ RULES = [
     # CLI CommandSurfaceTest checks its commands against the named Gateway routes.
     ('apps/gateway/routes/api.php', {'cli'}),
     ('apps/docs/*', {'docs', 'e2e', 'api-reference'}),
-    ('apps/e2e/*', {'e2e'}),
+    # Docs' strict covers: lint reads tracked paths in every documented project.
+    ('apps/e2e/*', {'e2e', 'docs'}),
     # CLI has the SDK Composer path repository. Gateway and CLI response tests
     # read SDK fixtures; Docs' api-fixtures check reads all SDK and web fixtures.
     ('packages/php-sdk/*', {'php-sdk', 'cli', 'gateway', 'docs', 'e2e', 'api-reference'}),
@@ -48,10 +49,10 @@ RULES = [
     # Desktop's Tauri config consumes web; Docs' merge proof generates web types.
     # Docs and API reference also run repository vocabulary checks over web/Pi sources.
     ('apps/web/*', {'web', 'desktop', 'docs', 'api-reference'}),
-    ('apps/pi-server/*', {'pi-server'}),
-    ('apps/pi-server/src/*', {'docs', 'api-reference'}),
-    ('apps/desktop/*', {'desktop'}),
-    ('apps/agent/*', {'agent'}),
+    ('apps/pi-server/*', {'pi-server', 'docs'}),
+    ('apps/pi-server/src/*', {'api-reference'}),
+    ('apps/desktop/*', {'desktop', 'docs'}),
+    ('apps/agent/*', {'agent', 'docs'}),
     # Gateway's log tests share the agent's real redaction and journal fixtures.
     ('apps/agent/tests/*', {'gateway'}),
     # tools/check_agent_release.py compares this pin with apps/agent/Cargo.toml.

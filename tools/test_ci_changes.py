@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,15 @@ loader = importlib.machinery.SourceFileLoader('ci_changes', str(ROOT / 'bin/ci-c
 spec = importlib.util.spec_from_loader(loader.name, loader)
 ci = importlib.util.module_from_spec(spec)
 loader.exec_module(ci)
+
+
+def expand_braces(pattern):
+    """Expand the same comma-separated brace alternatives as DocsImpact."""
+    match = re.search(r'\{([^{}]+)\}', pattern)
+    if not match:
+        return [pattern]
+    return [expanded for choice in match[1].split(',')
+            for expanded in expand_braces(pattern[:match.start()] + choice + pattern[match.end():])]
 
 
 class SelectionTest(unittest.TestCase):
@@ -72,10 +82,45 @@ class SelectionTest(unittest.TestCase):
                 projects.update(job for job, selected in result['jobs'].items() if selected)
                 self.assertTrue(set(consumers) <= projects, f'{path}: missing {set(consumers) - projects}')
 
-    def test_desktop_changes_start_only_desktop(self):
+    def test_documented_coverage_roots_always_start_docs(self):
+        patterns = 0
+        for section in ('reference', 'cli', 'solutions'):
+            for page in sorted((ROOT / 'docs' / section).glob('*')):
+                if page.suffix not in ('.md', '.mdx'):
+                    continue
+                frontmatter = re.match(r'\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)', page.read_text(), re.S)
+                if not frontmatter or not re.search(r'^covers\s*:', frontmatter[1], re.M):
+                    continue
+                # DocsImpact accepts an indented list of string globs, not arbitrary YAML.
+                block = re.search(r'^covers\s*:\s*\n((?:[ \t]+[^\n]*\n)*)', frontmatter[1] + '\n', re.M)
+                self.assertIsNotNone(block, str(page))
+                self.assertTrue(block[1].strip(), f'{page}: covers: has no globs')
+                for line in block[1].strip().splitlines():
+                    match = re.fullmatch(r'\s*-\s*[\'\"]?([^\'\"]+?)[\'\"]?\s*', line)
+                    self.assertIsNotNone(match, f'{page}: {line}')
+                    pattern = match[1].strip().replace('\\', '/').strip('/')
+                    for alternative in expand_braces(pattern):
+                        parts = alternative.split('/')
+                        # Probe each real project root, including brace and wildcard alternatives.
+                        root = '/'.join(parts[:2] if parts[0] in ('apps', 'packages') else parts[:1])
+                        roots = sorted(ROOT.glob(root))
+                        self.assertTrue(roots, f'{page}: no roots match {alternative}')
+                        for directory in roots:
+                            probe = directory.relative_to(ROOT).as_posix()
+                            if directory.is_dir():
+                                probe += '/__ci_docs_coverage_probe__'
+                                self.assertTrue(any(ci.fnmatchcase(probe, rule) for rule, _ in ci.RULES),
+                                                f'{page}: {probe} has no explicit rule')
+                            with self.subTest(page=str(page.relative_to(ROOT)), pattern=pattern, path=probe):
+                                selected = ci.selection([probe])
+                                self.assertIn({'name': 'Docs', 'directory': 'apps/docs'}, selected['matrix']['project'])
+                    patterns += 1
+        self.assertGreater(patterns, 0, 'No documented covers: globs were checked')
+
+    def test_desktop_changes_start_desktop_and_docs(self):
         result = ci.selection(['apps/desktop/src-tauri/src/lib.rs'])
-        self.assertEqual(result['matrix'], {'project': []})
-        self.assertEqual([job for job, selected in result['jobs'].items() if selected], ['desktop'])
+        self.assertEqual(result['matrix']['project'], [{'name': 'Docs', 'directory': 'apps/docs'}])
+        self.assertEqual([job for job, selected in result['jobs'].items() if selected], ['project', 'desktop'])
 
     def test_shared_and_unknown_paths_start_everything(self):
         for path in ['.github/workflows/ci.yml', '.github/actions/php/action.yml', 'composer.json',
@@ -100,14 +145,16 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue(web['jobs']['desktop'])
         self.assertTrue(web['jobs']['web'])
 
-    def test_a_non_composer_project_has_an_empty_skipped_matrix(self):
+    def test_pi_server_changes_also_start_docs(self):
         result = ci.selection(['apps/pi-server/package.json'])
-        self.assertEqual(result['matrix'], {'project': []})
-        self.assertFalse(result['jobs']['project'])
+        self.assertEqual(result['matrix']['project'], [{'name': 'Docs', 'directory': 'apps/docs'}])
+        self.assertTrue(result['jobs']['project'])
         self.assertTrue(result['jobs']['pi-server'])
 
     def test_no_changed_paths_select_no_jobs(self):
-        self.assertFalse(any(ci.selection([])['jobs'].values()))
+        result = ci.selection([])
+        self.assertFalse(any(result['jobs'].values()))
+        self.assertEqual(result['matrix'], {'project': []})
 
     def test_full_events_select_everything_without_reading_a_diff(self):
         for event, ref in [('push', 'refs/heads/main'), ('schedule', 'refs/heads/main'),

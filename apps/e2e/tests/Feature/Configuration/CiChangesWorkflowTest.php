@@ -58,7 +58,9 @@ it('accepts a skipped job only when successful detection explicitly marks it unt
     $selected[$job] = $touched;
     $needs[$job]['result'] = $result;
     $needs['changes'] = ['result' => 'success', 'outputs' => ['jobs' => json_encode($selected, JSON_THROW_ON_ERROR)]];
-    $process = new Process(['bash', '-ec', $required['steps'][0]['run']], env: ['NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR)]);
+    $process = new Process(['bash', '-ec', $required['steps'][0]['run']], env: [
+        'NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR), 'PYTHONOPTIMIZE' => '1',
+    ]);
     $process->run();
 
     expect($process->getExitCode())->toBe($exit, $process->getErrorOutput());
@@ -78,7 +80,9 @@ it('fails required checks when detection or its outputs are missing', function (
     $required = $workflow['jobs']['required'];
     $needs = array_fill_keys($required['needs'], ['result' => 'skipped']);
     $needs['changes'] = ['result' => $detection, 'outputs' => ['jobs' => $selection]];
-    $process = new Process(['bash', '-ec', $required['steps'][0]['run']], env: ['NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR)]);
+    $process = new Process(['bash', '-ec', $required['steps'][0]['run']], env: [
+        'NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR), 'PYTHONOPTIMIZE' => '1',
+    ]);
     $process->run();
 
     expect($process->getExitCode())->toBe(1);

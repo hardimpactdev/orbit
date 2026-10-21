@@ -783,13 +783,17 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           python3 - <<'PYTHON'
-          import json, os
+          import json, os, sys
           needs = json.loads(os.environ['NEEDS'])
-          assert needs['changes']['result'] == 'success', 'Project detection did not succeed'
+          if needs['changes']['result'] != 'success':
+              sys.exit('Project detection did not succeed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
-          assert set(selected) == set(needs) - {'changes'}, 'Missing project selections'
+          if set(selected) != set(needs) - {'changes'}:
+              sys.exit('Missing project selections')
           for job, touched in selected.items():
-              assert type(touched) is bool, f'{job}: invalid selection'
+              if type(touched) is not bool:
+                  sys.exit(f'{job}: invalid selection')
               result = needs[job]['result']
-              assert result == 'success' or (result == 'skipped' and not touched), f'{job}: {result}'
+              if result != 'success' and not (result == 'skipped' and not touched):
+                  sys.exit(f'{job}: {result}')
           PYTHON
