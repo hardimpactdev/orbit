@@ -6,6 +6,31 @@ use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 describe('Composer configuration', function (): void {
+    it('requires stock Pest in every Composer project and turns on no test impact analysis', function (): void {
+        $root = base_path('../..');
+        foreach (['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'] as $project) {
+            /** @var array{require?: array<string, string>, require-dev?: array<string, string>} $composer */
+            $composer = json_decode((string) file_get_contents("{$root}/{$project}/composer.json"), true, flags: JSON_THROW_ON_ERROR);
+            /** @var array{packages: list<array{name: string}>, packages-dev: list<array{name: string}>} $lock */
+            $lock = json_decode((string) file_get_contents("{$root}/{$project}/composer.lock"), true, flags: JSON_THROW_ON_ERROR);
+            $locked = array_column([...$lock['packages'], ...$lock['packages-dev']], 'name');
+
+            expect($composer['require-dev']['pestphp/pest'] ?? null)->toBe('^5.3', $project)
+                ->and([...array_keys($composer['require'] ?? []), ...array_keys($composer['require-dev'] ?? [])])->not->toContain('nckrtl/pestphp-monorepo')
+                ->and($locked)->toContain('pestphp/pest')
+                ->and($locked)->not->toContain('nckrtl/pestphp-monorepo');
+            // Stock Pest also turns TIA on from the PEST_TIA environment variable, so no project configuration sets it.
+            foreach (glob("{$root}/{$project}/phpunit*.xml*") ?: [] as $configuration) {
+                expect((string) file_get_contents($configuration))->not->toContain('PEST_TIA');
+            }
+        }
+        foreach ([...(glob("{$root}/.github/workflows/*.yml") ?: []), ...(glob("{$root}/.github/actions/*/action.yml") ?: []), ...(glob("{$root}/bin/*") ?: [])] as $file) {
+            if (is_file($file)) {
+                expect((string) file_get_contents($file))->not->toContain('PEST_TIA');
+            }
+        }
+    });
+
     it('runs every repository-owned Pest command as a stock full suite without test impact analysis', function (): void {
         foreach ([
             'bin/test',
@@ -17,17 +42,11 @@ describe('Composer configuration', function (): void {
         ] as $path) {
             $contents = file_get_contents(base_path('../../'.$path));
 
-            expect($contents)
-                ->toBeString()
-                ->not->toContain(
-                    '--tia',
-                    '--filter',
-                    '--exclude-filter',
-                    '--group',
-                    '--exclude-group',
-                    '--testsuite',
-                    '--exclude-testsuite',
-                );
+            expect($contents)->toBeString();
+            // One needle per call: a negated toContain passes when any one of several needles is absent.
+            foreach (['--tia', '--locally', 'PEST_TIA', '--filter', '--exclude-filter', '--group', '--exclude-group', '--testsuite', '--exclude-testsuite'] as $option) {
+                expect($contents)->not->toContain($option);
+            }
 
             if (str_ends_with($path, 'composer.json')) {
                 /** @var array{scripts: array<string, mixed>} $composer */
@@ -41,6 +60,7 @@ describe('Composer configuration', function (): void {
                     ->and($composer['scripts'])->not->toHaveKey('test:fresh');
                 expect(file_get_contents(base_path('../../'.dirname($path).'/tests/Pest.php')))
                     ->not->toContain('tia()')
+                    ->not->toContain('->tia(')
                     ->not->toContain('ORBIT_TIA_DIRECTORY');
 
                 array_walk_recursive($composer['scripts'], function (mixed $command): void {

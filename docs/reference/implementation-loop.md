@@ -301,7 +301,7 @@ In `apps/docs`, `composer check` also runs the documentation lint and the API fi
 
 Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
-Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file, in place of `pestphp/pest`. Orbit configures none of its test-impact features. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
+Each project requires stock `pestphp/pest` from its lock file. Stock Pest includes test impact analysis, which turns on with `--tia` or `--locally`, a `PEST_TIA` environment variable, or a `tia()` configuration. Orbit uses none of them, and a contract test checks the project scripts, the PHPUnit configuration, the workflows, the CI actions, and the `bin` scripts. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
