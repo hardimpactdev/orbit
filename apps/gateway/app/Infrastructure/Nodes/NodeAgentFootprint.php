@@ -6,7 +6,7 @@ namespace App\Infrastructure\Nodes;
 
 final readonly class NodeAgentFootprint
 {
-    public const string Version = '0.4.3';
+    public const string Version = '0.4.4';
 
     /** @var list<string> */
     public const array Architectures = ['x86_64', 'aarch64'];
@@ -17,8 +17,8 @@ final readonly class NodeAgentFootprint
      * @var array{x86_64: string, aarch64: string}
      */
     private const array ReleaseManifest = [
-        'x86_64' => '4effe5a562dbb087f33a580e9912e0b78c83f77ff72af6d2eec030b4b918d74a',
-        'aarch64' => '8c063259e2f04900b988bc6405c987dd5273ad9d15b856abb3ab98bbb36cb4df',
+        'x86_64' => 'b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf',
+        'aarch64' => 'b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632',
     ];
 
     public const string BinaryPath = '/usr/local/bin/orbit-agent';

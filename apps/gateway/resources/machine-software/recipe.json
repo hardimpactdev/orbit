@@ -300,15 +300,15 @@
         },
         "node": {
             "source": "artifact",
-            "version": "24.22.0",
+            "version": "24.22.1",
             "artifacts": {
                 "amd64": {
-                    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.xz",
-                    "sha256": "cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008"
+                    "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz",
+                    "sha256": "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6"
                 },
                 "arm64": {
-                    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.xz",
-                    "sha256": "fef00bb4d36e1c50104a9775a10359beee98f162b4104dd12472c75065c6a143"
+                    "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-arm64.tar.xz",
+                    "sha256": "dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e"
                 }
             }
         },
@@ -329,15 +329,15 @@
         },
         "orbit-agent": {
             "source": "artifact",
-            "version": "0.4.3",
+            "version": "0.4.4",
             "artifacts": {
                 "amd64": {
-                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-x86_64",
-                    "sha256": "4effe5a562dbb087f33a580e9912e0b78c83f77ff72af6d2eec030b4b918d74a"
+                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64",
+                    "sha256": "b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf"
                 },
                 "arm64": {
-                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-aarch64",
-                    "sha256": "8c063259e2f04900b988bc6405c987dd5273ad9d15b856abb3ab98bbb36cb4df"
+                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-aarch64",
+                    "sha256": "b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632"
                 }
             }
         },
@@ -922,9 +922,6 @@
             "base",
             "ci-runner"
         ],
-        "purge_extras": [
-            "ci-runner"
-        ],
         "versions": {
             "8.5": {
                 "packages": [
@@ -1105,7 +1102,8 @@
     "roles": {
         "vpn": [
             "dnsmasq",
-            "openssl"
+            "openssl",
+            "php:8.5"
         ],
         "router": [
             "caddy",
@@ -1180,6 +1178,7 @@
         ],
         "operator": [],
         "ci-runner": [
+            "incus",
             "acl",
             "attr",
             "unzip",

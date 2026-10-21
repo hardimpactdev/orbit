@@ -42,7 +42,7 @@ def recipe():
             'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
         'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev', 'base', 'ci-runner'], 'opentelemetry': ['app-dev'],
-                'purge_extras': ['ci-runner'], 'versions': {
+                'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
     }
@@ -101,7 +101,10 @@ class BuildTest(unittest.TestCase):
             with self.assertRaises(build.BuildError) as raised:
                 build.verify(recipe(), None, 'ci-runner')
         self.assertIn('Extra extensions: apcu.', str(raised.exception))
-        self.assertIn('node:converge-recipe sabre --profile=ci-runner', str(raised.exception))
+        self.assertIn('for a Node with the ci-runner role', str(raised.exception))
+        self.assertIn('`php artisan node:converge-recipe NODE` on the Gateway', str(raised.exception))
+        self.assertIn('`tools/ci-runners/setup.sh container NAME` on its host', str(raised.exception))
+        self.assertNotIn('--profile=ci-runner', str(raised.exception))
 
     def test_main_exits_nonzero_with_the_message_on_stderr(self):
         with tempfile.TemporaryDirectory() as directory:

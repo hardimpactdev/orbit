@@ -90,6 +90,43 @@ class ConvergenceTest(unittest.TestCase):
         self.assertNotIn('/etc/apt/apt.conf.d/99orbit-recipe', self.published)
         self.assertEqual(set(self.published), {source_path, str(self.policy)})
 
+    def test_refreshes_only_ubuntu_sources_and_never_contacts_a_failing_third_party_source(self):
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                if 'Dir::Etc::sourceparts=-' not in argv:
+                    return subprocess.CompletedProcess(argv, 100, '', 'deadsnakes PPA: 503 Service Unavailable')
+                self.assertIn('APT::Update::Error-Mode=any', argv)
+                self.assertIn('Acquire::Languages=none', argv)
+            return self.command(argv, **kwargs)
+
+        self.assertTrue(self.apply(command)['healthy'])
+
+    def test_current_packages_do_not_refresh_snapshot_indexes(self):
+        sources = []
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                source = next(c.split('=', 1)[1] for c in argv if c.startswith('Dir::Etc::sourcelist='))
+                sources.append(Path(source).read_text())
+            return self.command(argv, **kwargs)
+
+        result = self.apply(command, versions=[{'curl': '2.0'}, {'curl': '2.0'}])
+
+        self.assertTrue(result['healthy'])
+        updates = [c for c in self.commands if c[:2] == ['apt-get', 'update']]
+        self.assertEqual(len(updates), 1)
+        self.assertIn('archive.ubuntu.com', sources[0])
+        self.assertNotIn('snapshot.ubuntu.com', sources[0])
+
+    def test_ubuntu_refresh_failure_stops_before_installation(self):
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                return subprocess.CompletedProcess(argv, 100, '', 'Ubuntu signature verification failed')
+            return self.command(argv, **kwargs)
+
+        with self.assertRaises(recipe.RecipeFailure):
+            self.apply(command)
+        self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
+
     def test_restarts_active_instances_of_a_changed_package_service_template(self):
         output = subprocess.CompletedProcess([], 0, '/usr/lib/systemd/system/wg-quick@.service\n', '')
         with patch.object(recipe, 'run', return_value=output):

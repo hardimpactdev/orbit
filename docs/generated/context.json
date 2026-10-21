@@ -963,20 +963,17 @@
                 "apps/web"
             ],
             "concepts": [
-                "Cluster",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process",
                 "Project",
-                "Role",
-                "Roleless Node",
-                "Route",
-                "Task",
-                "Tool"
+                "Role"
             ],
             "governing_adrs": [
-                "0213"
+                "0213",
+                "0223",
+                "0225"
             ]
         },
         {
@@ -1227,6 +1224,7 @@
                 "Placement",
                 "Process",
                 "Project",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -1234,6 +1232,7 @@
                 "0210",
                 "0211",
                 "0212",
+                "0213",
                 "0218",
                 "0219",
                 "0224",
@@ -1730,7 +1729,6 @@
                 "Process",
                 "Project",
                 "Role",
-                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1740,7 +1738,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0206"
+                "0206",
+                "2026"
             ]
         },
         {
@@ -2181,7 +2180,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "2026"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
@@ -2511,6 +2512,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2526,7 +2528,9 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0213"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -2644,6 +2648,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Extension",
@@ -2756,11 +2761,13 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
                 "0211",
+                "0213",
                 "0225"
             ]
         },
@@ -2831,6 +2838,7 @@
                 "Node agent",
                 "Process",
                 "Role",
+                "Roleless Node",
                 "Tool"
             ],
             "governing_adrs": []

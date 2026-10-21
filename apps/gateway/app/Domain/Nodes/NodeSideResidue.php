@@ -82,6 +82,9 @@ final readonly class NodeSideResidue
                 'Orbit firewall rule for the websocket role',
                 'Stored Reverb application credentials and generated APP_KEY',
             ],
+            RoleName::CiRunner => [
+                'Incus orbit-ci project, runner containers and registrations, orbitci0 bridge, orbit-ci-egress ACL and routed firewall rule',
+            ],
             RoleName::Analytics => [
                 'Orbit firewall rule for the analytics role',
             ],

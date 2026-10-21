@@ -1,113 +1,64 @@
 ---
 title: "ADR 0213: Run CI runners through a ci-runner role"
 sidebarTitle: "0213 CI runner role"
-description: "In progress. A ci-runner role prepares a Node to host self-hosted runners for GitHub Actions in unprivileged Incus containers. Each runner is a Gateway record that Orbit registers through the GitHub App, converges, and removes."
+description: "In progress. The host role adopts the Incus CI boundary. Gateway-owned runner records and their organization registration credential flow remain pending."
 ---
 
 # ADR 0213: Run CI runners through a ci-runner role
 
-A new `ci-runner` role prepares a Node to host self-hosted runners for GitHub Actions. Every runner runs in an unprivileged Incus container on that Node. Each runner is a CI runner record that the Gateway registers with one repository through its GitHub App, converges on the Node, and deregisters on removal.
+The `ci-runner` role prepares a Node for GitHub Actions runners in unprivileged Incus containers. The host role is implemented. Gateway-owned runner records, container lifecycle, and registration remain unbuilt and need an agreed credential boundary. This decision stays in progress across those parts.
 
 ## Status
 
 In progress.
 
-Principle: [Agents operate, humans steer](/mission#principles). Runners become commands that an agent can run and a human can read, instead of hand-made services and a shell script. It also serves [Security fits the real threat model](/mission#principles): a job runs as an unprivileged user in a container whose egress cannot reach the Gateway, WireGuard, or the LAN, so a job never acts as the Node. No principle exception is proposed.
+Amended on 2026-10-21 to separate the built host role from the pending runner lifecycle. The original proposal to register repository runners through the GitHub App does not fit the deployed organization runners or [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge), which keeps Administration write out of the App.
+
+Principle: [Agents operate, humans steer](/mission#principles). The host role follows normal role commands, inspection, and fleet rules. It also serves [Security fits the real threat model](/mission#principles): jobs run without sudo inside unprivileged containers whose egress cannot reach the Gateway, WireGuard, or LAN. The temporary remote-program exception is explicit in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands#the-ratchet-starts-at-this-merge).
 
 ## Context
 
-Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runners. GitHub lists five runners for `hardimpactdev/orbit`:
-
-| Runner | Node | Labels | State |
-| --- | --- | --- | --- |
-| `sabre-1`, `sabre-2` | Sabre | `self-hosted`, `Linux`, `X64`, `sabre`, `orbit-shard` | Online |
-| `ci-beast-1`, `ci-beast-2` | Beast | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Online |
-| `ci-shark-1` | Shark | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Offline, its container stopped |
-
-- Sabre has no role. Its runners run on the host as `github-runner`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. The runner user has no sudo, so a job cannot use it to bypass that rule and act as Sabre toward the Gateway. The implementation loop describes [the runner setup](/reference/implementation-loop#self-hosted-gateway-runner).
-- Beast and Shark are `app-dev` Nodes. Their runners run in unprivileged Incus containers in the project `orbit-ci`, with a `runner` user that has no `sudo`. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) builds them by hand. Both Nodes list `orbit-ci/*` in `task_vms.operator_owned`, so the task VM stray report ignores those containers. The implementation loop describes [those runners](/reference/implementation-loop#self-hosted-shard-runners).
-
-Doctor sees none of this state, registration tokens pass through an operator's shell, and removal is a manual recipe.
-
-[Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege) defines the test and runner boundary. The default XML selection excludes privileged cases from both the unsharded Gateway job and its PR shards. One disposable GitHub-hosted job runs the privileged group. Ordinary jobs reject a runner with working sudo. Sabre's runner user has no sudo.
-
-GitHub's repository registration-token endpoint needs the App permission `Administration: write`.
+The operator script builds persistent organization runners in the `orbit-ci` Incus project. The Gateway holds no organization registration token. Hosts may serve CI alone or share app and database roles. A recorded recipe profile alone does not make a host a workload Node, so it cannot replace a role.
 
 ## Decision
 
-The Gateway owns the role, every CI runner record, and every registration. The parts below form one contract.
+Implement the host role through the existing role lifecycle. Keep the runner-record lifecycle pending until its organization credential flow is agreed.
 
-### The role
+### Host role: implemented
 
-`orbit node:role:add <node> ci-runner` assigns the role. It is Linux-only, like every role, is not a singleton, is not relocatable, and cannot be assigned through `node:add --role`. It shares a Node with every role except `gateway` and `vpn`, whose Nodes hold the fleet's trust anchors. Cluster membership does not matter to it.
+[Node provisioning](/reference/node-provisioning#ci-runner-role) owns the implemented contract. The role follows normal role add, baseline, managed firewall, Doctor, metrics, and fleet participation. It shares all roles except `gateway` and `vpn`. It is Linux-only, not a singleton or relocatable, and cannot be assigned during enrollment.
 
-The role installs Incus when it is missing and creates the Incus project `orbit-ci`, the bridge `orbitci0`, the ACL `orbit-ci-egress`, the restricted default profile, and the `ufw route allow in on orbitci0` rule, as `setup.sh host` does today. The ACL rejects every private, CGNAT, loopback, link-local, multicast, and reserved IPv4 range, and all IPv6. The project's resources belong to the role, so the task VM stray report and Doctor treat `orbit-ci` on a `ci-runner` Node as owned, without an `operator_owned` entry.
+The explicitly requested stock program has a one-file ratchet allowance in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands#the-ratchet-starts-at-this-merge) until it enters the base revision.
 
-Convergence uses the role baseline, as every role does today. When [ADR 0211](https://github.com/hardimpactdev/orbit/pull/1251) is built, its migration moves this baseline to remote programs with the rest.
+The baseline uses the shared `RemoteProgramCatalog` and `SshProgramRunner` through `ci-runners.host`, with JSON input and declared outcomes. It adopts the reserved project, bridge, ACL, and default profile in place. It preserves an existing pool, bridge subnet, every container, and each container's running state. Runner counts and names are not role input. Both default ACL directions reject, private IPv4 and all IPv6 are rejected, and only public IPv4 egress is allowed.
 
-### CI runner records
+Removal refuses while any container remains, including stopped containers. It never deregisters or deletes runners. Normal removal retains Incus resources; explicit purge removes only the empty project, bridge, and ACL. The shared pool stays.
 
-A CI runner is a Gateway record with a Node, a unique name, a repository, labels, and a status. The repository is `<owner>/<repository>`. Labels always include `self-hosted`, `Linux`, and the architecture label, plus any labels the operator adds.
+Shark can serve CI alone without an app role. Beast can keep its app and database roles. Adding the role does not remove another role. The operator adds it through the normal role-add path after merge; no deployment migration changes live Nodes.
 
-| Command | Effect |
-| --- | --- |
-| `ci-runner:create <node> <name> --repository=<owner>/<repository> [--label=…]` | Records the runner, creates its container, registers it, and starts it. |
-| `ci-runner:list [--node=…]` | Lists records with their status. |
-| `ci-runner:show <runner>` | Shows one record and the status that GitHub reports for it. |
-| `ci-runner:destroy <runner>` | Stops the runner, deregisters it from GitHub, and deletes its container. |
+### Runner records and registration: pending
 
-`ci-runner:create` refuses a Node without the role with `ci_runner.role_missing`.
+The original proposal included Gateway-owned runner records with a Node, unique name, target, labels, status, and create, inspect, converge, and destroy operations. That lifecycle has not been implemented or withdrawn. Its target and credential model must be settled before it is built.
 
-Each container has a `runner` user with no `sudo` and no group beyond its own, as the shard containers have today. Every tool a job needs comes from the `ci-runner` profile of the [machine software recipe](/reference/node-provisioning). Today a roleless Node selects that profile with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). The role selects it instead, and the `--profile` option goes away. Runners are persistent: one runner takes job after job in the same container. Ephemeral runners need a new ADR.
+The deployed runners serve the organization. Repository registration through the GitHub App would require Administration write and would not implement organization registration. This host-role change adds no GitHub permission or credential storage.
 
-### Registration through the GitHub App
+For the current implementation, container creation and organization registration remain together in [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh). Registration tokens stay with the operator. Role add does not create an unregistered container or recreate an existing runner. The script remains until a managed lifecycle replaces both parts together.
 
-The Gateway mints each registration and removal token through its [GitHub App](/reference/github-app), with only `administration: write`, for the runner's repository. The App's manifest gains that permission, and existing installations must accept it before a runner registers. A refused permission fails with `ci_runner.permission_missing`.
+### Verification still needed
 
-The Gateway sends the token to the Node on the standard input of the role's command, and never stores, logs, or returns it. Two exposures remain, and this decision accepts both:
-
-- `config.sh` takes the token as an argument, so it shows in the container's process list for a few seconds. A registration token is valid for one hour and only registers a runner.
-- The runner stores its own long-lived credentials in its container, as every self-hosted runner does. Deleting the container and deregistering the runner revokes them.
-
-### Removal and Doctor
-
-`node:role:remove <node> ci-runner` refuses while CI runners exist, unless `--force` is given; then it destroys each runner first. `--purge-data` also deletes the project, its images, the bridge, the ACL, and the ufw rule. `--offline` removes only Gateway state and leaves the runners registered with GitHub; the operator removes them there.
-
-Doctor compares each CI runner record with its container and reports a missing, stopped, or unexpected runner. It does not call GitHub.
-
-### Migration
-
-The existing runners are recreated, not adopted:
-
-1. Add the role to Sabre, Beast, and Shark.
-2. Create `sabre-1` and `sabre-2` with the labels `sabre` and `orbit-shard`, `ci-beast-1` and `ci-beast-2` with `orbit-shard`, and `ci-shark-1` with `orbit-shard`.
-3. Remove the hand-made runners and their GitHub registrations, including the offline `ci-shark-1`.
-4. On Sabre, remove the `github-runner` user, its runner services, the `github-runner-egress` unit, and its nftables rule.
-5. Remove `orbit-ci/*` from `task_vms.operator_owned` on Beast (Node 9) and Shark (Node 13).
-
-The pull request that builds this decision deletes `tools/ci-runners/` and rewrites the two runner sections of the implementation loop. Sabre's unsharded Gateway job already leaves out the `privileged` group, as the shards do.
+Host tests cover fresh convergence, adoption with varying container counts and stopped containers, both ACL defaults, drift, removal refusal, and empty purge. Gateway tests cover normal role dispatch, Doctor, role compatibility, recipe selection, fleet participation, and exporters. A disposable Incus convergence check remains required before live rollout. The runner lifecycle implementation needs its own credential, record, registration, and removal tests before this ADR can retire.
 
 ## Rejected alternatives
 
-- Run runners on the host of a dedicated Node: a job that gains root acts as the Node toward the Gateway, and the role needs a second mode, a mode-aware conflict check, and a second egress path.
-- Give the runner user `sudo`: no CI step on a self-hosted runner needs it, and it widens what a job can change inside its container.
-- Operator-supplied registration tokens: each add and repair needs a fresh one-hour token, and removal cannot deregister.
-- Organization targets: no runner pool for an organization exists, and they need another App permission. A new ADR adds them when one does.
-- A `provider` field for GitLab: it has one value. The ADR that adds GitLab adds it.
-- Runners as fields of a Node setting, like task VMs: per-runner status, errors, and removal have no home.
-- Adopt the existing runners: adoption code must read and trust hand-made state, for a one-time move.
+Host runners would give a compromised job the Node's trust. Container runners keep the existing isolation boundary. Selecting only a recipe profile would leave fleet and workload visibility dependent on special cases. Splitting container creation into role add while keeping registration in the operator script would add a partial lifecycle. Recreating existing runners on role add would discard healthy registrations and caches.
 
 ## Consequences
 
-- Runners become visible to Doctor, the API, and agents, and removal deregisters them.
-- Sabre's jobs move from the host to containers, keeping their runner user without sudo.
-- ADR 0223 needs `Administration: read` only for classic branch protection. The App never receives Administration write, which permits repository deletion. Runner registration needs its own decision because a user-owned repository has no narrower runner permission.
-- Privileged tests run only on the GitHub-hosted privileged job.
-- Persistent runners keep warm caches, and a job can still leave state for the next job.
+The host is visible as a workload Node with meters and normal fleet participation. Container state stays outside role intent. Doctor checks the host projection, not individual runners or GitHub registration. The open runner lifecycle must be resolved before this decision is absorbed and retired.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, apps/docs, apps/e2e
-- ADRs: none
-- Detail: a new reference page, CI runner role, written by the implementation pull request; [Role compatibility](/reference/node-provisioning#role-compatibility); [GitHub App](/reference/github-app#what-the-app-is); [Implementation loop](/reference/implementation-loop#self-hosted-gateway-runner)
-- Verify: Gateway feature tests for the role conflicts, records, token scope, and removal; CLI command surface test; an Incus E2E that adds the role, creates a runner against a test repository, and destroys it
+- ADRs: 0211, 0223, 0225
+- Detail: [Node provisioning](/reference/node-provisioning#ci-runner-role); [Implementation loop](/reference/implementation-loop#self-hosted-shard-runners)
+- Verify: focused role, Doctor, recipe, fleet, exporter, remote-program, and browser tests; disposable Incus adoption and removal before live rollout; runner lifecycle verification when built

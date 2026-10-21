@@ -302,7 +302,7 @@ class RecipeVersionsTest(unittest.TestCase):
         def command(argv, **kwargs):
             if argv[:2] == ['apt-get', 'update'] and '-c' in argv:
                 indexes.append(Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::State::lists='))))
-                self.assertEqual(kwargs['timeout'], 60)
+                self.assertEqual(kwargs['timeout'], 120)
             if argv[:3] == ['apt-cache', 'policy', 'curl:amd64'] and '-c' in argv:
                 for path in indexes:
                     self.assertTrue(path.is_dir())
@@ -547,7 +547,7 @@ class RecipeVersionsTest(unittest.TestCase):
                 refreshed = False
                 def command(argv, architecture=architecture, **kwargs):
                     nonlocal refreshed
-                    if argv[:2] == ['apt-get', 'update'] and ('Dir::Etc::sourcelist=' + str(source)) in argv:
+                    if argv[:2] == ['apt-get', 'update']:
                         self.assertIn('Dir::Etc::sourceparts=-', argv)
                         self.assertIn('APT::Get::List-Cleanup=false', argv)
                         self.assertEqual((self.apt / 'ubuntu.sources.orbit-snapshot-backup').read_bytes(), LEGACY_SOURCE)
@@ -635,6 +635,8 @@ class RecipeVersionsTest(unittest.TestCase):
         rolling_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
         for trusted in (True, False):
             with self.subTest(trusted=trusted):
+                source.write_bytes(LEGACY_SOURCE)
+                (self.apt / 'ubuntu.sources.orbit-snapshot-backup').unlink(missing_ok=True)
                 self.commands = []
                 refreshed = False
                 state = {'applied': False}
@@ -643,7 +645,7 @@ class RecipeVersionsTest(unittest.TestCase):
                     if argv[:2] == ['apt-get', 'update']:
                         self.assertIn('Dir::Etc::sourceparts=-', argv)
                         selected_source = Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::Etc::sourcelist=')))
-                        if state['applied'] and selected_source != source:
+                        if 'snapshot.ubuntu.com' in selected_source.read_text():
                             return self.command(argv, **kwargs)
                         self.assertIn('http://archive.ubuntu.com/ubuntu', selected_source.read_text())
                         self.assertIn('Suites: resolute-security', selected_source.read_text())
@@ -688,6 +690,47 @@ class RecipeVersionsTest(unittest.TestCase):
                 self.assertEqual(custom.read_text(), 'deb https://broken.example resolute main\n')
                 source.write_bytes(LEGACY_SOURCE)
                 (self.apt / 'ubuntu.sources.orbit-snapshot-backup').unlink()
+
+    def test_apply_uses_refreshed_origins_when_the_host_mirror_has_no_lists(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_text('Types: deb\nURIs: https://mirror.example/ubuntu\nSuites: resolute\n'
+                          'Components: main\nSigned-By: ' + recipe.UBUNTU_KEYRING + '\n')
+        self.status_only_policy()
+        for foreign in (False, True):
+            with self.subTest(foreign=foreign):
+                refreshed = False
+                assessments = []
+                def command(argv, foreign=foreign, assessments=assessments, **kwargs):
+                    nonlocal refreshed
+                    result = self.command(argv, **kwargs)
+                    selected = next((Path(arg.split('=', 1)[1]) for arg in argv
+                                     if arg.startswith('Dir::Etc::sourcelist=')), None)
+                    if argv[:2] == ['apt-get', 'update']:
+                        self.assertIn('archive.ubuntu.com', selected.read_text())
+                        refreshed = True
+                    if argv[:3] == ['apt-cache', 'policy', 'curl:amd64']:
+                        if selected is not None and 'archive.ubuntu.com' in selected.read_text():
+                            self.assertTrue(refreshed)
+                            assessments.append(selected)
+                            result.stdout = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+                        elif selected is None and foreign:
+                            result.stdout = f'curl:\n *** {NEWER} 500\n        500 https://ppa.example/ubuntu resolute/main amd64 Packages\n'
+                    return result
+                with patch.object(recipe, 'POLICY', self.apt / 'policy'), \
+                     patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
+                     patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
+                     patch.object(recipe, 'active_units', return_value=set()), \
+                     patch.object(recipe, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
+                     patch.object(recipe.pwd, 'getpwnam', return_value=None), \
+                     patch.object(recipe, 'run', side_effect=command):
+                    payload = {'architecture': 'amd64', 'snapshot': '20261014T000000Z', 'tools': self.tools}
+                    if foreign:
+                        with self.assertRaisesRegex(recipe.RecipeFailure, 'origin:curl'):
+                            recipe.apply(payload)
+                    else:
+                        self.assertEqual(recipe.apply(payload)['newer_than_recipe']['curl']['installed'], NEWER)
+                        self.assertEqual(len(assessments), 2)
+                        self.assertTrue(all(not path.exists() for path in assessments))
 
     def test_similar_but_not_exact_sources_and_symlinks_are_never_overwritten(self):
         source = self.apt / 'sources.list.d/ubuntu.sources'

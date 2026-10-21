@@ -1,0 +1,20 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: Ubuntu
+Label: Ubuntu
+Suite: resolute
+Codename: resolute
+Date: Wed, 21 Oct 2026 00:00:00 UTC
+Architectures: amd64
+Components: main
+SHA256:
+ 372dd4fc511be947f0debac32070efb9e384013f840b9e9a2c3c08426617713c 78 main/binary-amd64/Packages.gz
+ 1c8ba9a74deb6e188e1308394ac966e458028758240a1ac63546561342b7db76 59 main/binary-amd64/Packages
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQRL02SEAUonG/5Rkz/u1T/eLTaoSAUCatj9PQAKCRDu1T/eLTao
+SIR9AQDPL+PAb5apPDNq3SNjqQsAkvtB8i+xaBZ2WLfNf6xwTQEA9eUOKdZs796x
+Dto0jUwde10MRRYejpSIy+hRVDx5bww=
+=ct/j
+-----END PGP SIGNATURE-----

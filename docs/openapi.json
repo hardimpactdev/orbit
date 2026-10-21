@@ -13939,7 +13939,8 @@
                         "metrics",
                         "database",
                         "websocket",
-                        "analytics"
+                        "analytics",
+                        "ci-runner"
                       ]
                     }
                   },
@@ -15913,7 +15914,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },
@@ -16097,7 +16099,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },
@@ -16258,7 +16261,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },

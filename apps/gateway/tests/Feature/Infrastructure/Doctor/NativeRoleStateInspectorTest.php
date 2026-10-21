@@ -9,10 +9,13 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
+use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -294,6 +297,7 @@ function role_state_inspector(RoleInspectorSshExecutor $ssh): NativeRoleStateIns
         new NodeRoleServiceCatalog,
         new NodeFirewallRuleCatalog,
         new CommandDeadline,
+        ciRunner: new CiRunnerHostProgram(new SshProgramRunner($ssh, new RoleInspectorKeys, new RoleInspectorKnownHosts, new RemoteProgramCatalog), new RemoteProgramCatalog),
     );
 }
 
@@ -457,3 +461,21 @@ final readonly class RoleInspectorKnownHosts implements KnownHostsStore
 
     public function put(string $host, int $port, HostKey $key): void {}
 }
+
+it('observes CI host projection with the read-only program action', function (string $output, bool $matches): void {
+    $assignment = role_inspector_assignment(RoleName::CiRunner);
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"), role_inspector_result("1\n"),
+        role_inspector_result("Status: active\n[ 1] Anywhere ALLOW FWD Anywhere on orbitci0 # orbit-ci-runners\n[ 2] Anywhere (v6) ALLOW FWD Anywhere (v6) on orbitci0 # orbit-ci-runners\n"),
+        role_inspector_result($output),
+    ]);
+
+    $state = role_state_inspector($ssh)->inspect($assignment);
+
+    expect($state->ciRunnerHostMatches)->toBe($matches)
+        ->and($state->firewallProjectionMatches)->toBeTrue()
+        ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
+        ->and($ssh->calls[1]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
+        ->and($ssh->calls[3]['command']->arguments)->toContain('sudo', 'root', 'python3', '-I', 'ci-runners.host')
+        ->and(json_decode(explode("\0", $ssh->calls[3]['command']->input)[1], true)['action'])->toBe('inspect');
+})->with([["{\"outcome\":\"matches\",\"data\":{}}\n", true], ["{\"outcome\":\"drift\",\"data\":{}}\n", false]]);
