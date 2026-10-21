@@ -129,20 +129,18 @@ On a GitHub-hosted runner the action runs these steps:
 
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify --profile=ci-runner`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
-- Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build and purges PHP packages outside the recipe. No other profile purges.
-- The first run records the profile. Then nightly recipe maintenance converges Sabre, and a manual run needs only `php artisan node:converge-recipe sabre`.
-- On Beast and Shark, run `tools/ci-runners/setup.sh container NAME` for each shard container.
+- The `ci-runner` role prepares Sabre, Shark, and Beast as workload Nodes. Add it through [normal role assignment](/reference/node-provisioning#ci-runner-role).
+- On each host, run `tools/ci-runners/setup.sh container NAME` for its active runner containers. The role converges host software. The script updates each idle container.
 
 #### Merge a PHP build change
 
 A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. With the maintainer's approval, an operator runs from the pull request branch:
 
-1. On Sabre: `sudo bin/php-build install --profile=ci-runner --ci --purge-extras`.
-2. On Beast and Shark: `tools/ci-runners/setup.sh container NAME` for each shard container.
+On Sabre, Beast, and Shark, run `tools/ci-runners/setup.sh container NAME` for each idle runner container.
 
-Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
+Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge each host through its roles and update each idle runner container.
 
-[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges CI-role hosts in the overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` requires the project matrix, including Docs, on every event. It also requires every Gateway shard to succeed on pull requests. The PR-only shard jobs must be skipped on main pushes, nightly runs and manual runs.
 
@@ -218,27 +216,24 @@ Ordinary runs on main never shard; the privileged job runs on every CI event. Ea
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite. All six self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite. The self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
-On Sabre the job skips the Homebrew and system package steps, because Sabre already has Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP step only [verifies](#one-php-build-in-ci) that Sabre runs the recipe's PHP build. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`. On a shard runner container, the PR quality job keeps the PHP CLI default for that setting, because none of its steps needs `0`.
+On a self-hosted runner, the job skips host package installation and only [verifies](#one-php-build-in-ci) the recipe's PHP build. The runner software is installed inside each container while it is idle. Each container uses Composer 2.10 and the PHP CLI defaults. Pest detects the container's CPU count without a worker override.
 
-A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest detects the container's CPU count without a worker override.
-
-The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH.
-
-Sabre runs two Incus runner containers, `ci-sabre-1` and `ci-sabre-2`. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
+Sabre runs Incus runner containers. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
 
 Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 ### Self-hosted shard runners
 
-The Gateway PR shards use the `self-hosted` and `orbit-shard` labels. The six runner containers are `ci-beast-1` and `ci-beast-2`, `ci-shark-1` and `ci-shark-2`, and `ci-sabre-1` and `ci-sabre-2`. The Sabre containers also carry `sabre` for full recording runs. The workflow selects runners by label, not by name.
+The [CI runner role](/reference/node-provisioning#ci-runner-role) owns the host project, bridge, ACL, profile, and managed routed firewall rule. The script owns container creation and organization registration; it has no `host` step.
 
-Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
+Each runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre, alongside the default `self-hosted,Linux,X64` labels. Role adoption preserves every container and its running state; it does not require a fixed count. The workflow selects runners by label, not by name.
 
-- `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
+Each runner runs inside an unprivileged Incus container. Beast can share CI with app and database roles; Shark needs only the CI role. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) owns these idempotent container operations:
+
 - `container NAME` launches the container, sets its `raw.apparmor` line, and installs what is missing.
 - `register NAME [TOKEN]` registers the runner with the labels `self-hosted`, `Linux`, `X64`, `hardimpact`, and `orbit-shard`, plus `sabre` for a `ci-sabre-*` container.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
@@ -249,7 +244,7 @@ Beast and Shark are app-dev Nodes with live Instances and task workspaces. So ea
 
 Create an organization registration token with `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
-The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The setup script's default profile specifies 6 CPUs and 12 GiB. Each runner runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The role's default profile specifies 6 CPUs and 12 GiB. Each runner runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
 
 Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
 
@@ -259,7 +254,7 @@ Inside each container, the `runner` user runs the runner service, with no `sudo`
 
 The job installs Node 24 with the Node setup step, and each shard uses all detected container CPUs. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 
-Six Gateway workers fit the 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
+Six Gateway workers fit each 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
 
 Two limits remain:
 
@@ -268,22 +263,7 @@ Two limits remain:
 
 So a job can query each dnsmasq on the host, such as the task bridge's. The answers reveal task names and addresses that the job still cannot reach, and a query changes nothing.
 
-To remove the runners from a host, stop and uninstall each runner service as root in its container, and run `config.sh remove` as `runner` with a remove token. Then delete the containers, the project, the bridge, the ACL, and the ufw rule:
-
-```bash
-token=$(gh api -X POST orgs/hardimpactdev/actions/runners/remove-token --jq .token)
-for name in ci-beast-1 ci-beast-2; do  # ci-shark-1 on Shark
-  incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- sh -c './svc.sh stop && ./svc.sh uninstall'
-  printf '%s\n' "$token" | incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- \
-    su runner -c 'IFS= read -r token; ./config.sh remove --token "$token"'
-  incus delete --force "$name" --project orbit-ci
-done
-incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci
-incus project delete orbit-ci
-incus network delete orbitci0
-incus network acl delete orbit-ci-egress
-sudo ufw route delete allow in on orbitci0
-```
+To remove runners, stop and uninstall each runner service as root in its container, then run `config.sh remove` as `runner` with an organization removal token. Delete the containers with `incus delete NAME --project orbit-ci`. Clear cached images with `incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci`, and remove custom volumes and extra profiles. Then use `orbit node:role:remove <node> ci-runner --force`, with `--purge-data` to remove the empty project, bridge, and ACL. The role owns the routed firewall rule. It never deletes a runner or registration.
 
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 

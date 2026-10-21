@@ -218,7 +218,7 @@ describe('machine recipe structure and identity', function (): void {
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,
-            'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'ci-runner' => [...$common, 'incus', 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -230,7 +230,7 @@ describe('machine recipe structure and identity', function (): void {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
-                if ($role !== 'base') {
+                if ($role !== 'base' && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
                     expect($recipe->profile($role))->not->toContain($package);
                 }
             }
@@ -243,13 +243,12 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
     });
 
-    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+    it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
         $policy = new RecipeLoader()->load()->phpPolicy;
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
             ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
-            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
             ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror');
     });
 
@@ -324,9 +323,9 @@ describe('machine recipe structure and identity', function (): void {
         'an undeclared CI version' => [function (&$d): void {
             $d['php']['ci'] = '8.3';
         }, 'php.ci: [8.3] is not a declared PHP version'],
-        'purging on a site profile' => [function (&$d): void {
-            $d['php']['purge_extras'][] = 'app-prod';
-        }, 'only the ci-runner profile may purge PHP packages'],
+        'the removed purge policy' => [function (&$d): void {
+            $d['php']['purge_extras'] = ['ci-runner'];
+        }, 'expected exactly fields ci, shared, rollback, pcov, opentelemetry, versions'],
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],

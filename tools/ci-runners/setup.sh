@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Orbit CI shard runners in unprivileged Incus containers. See "Self-hosted shard runners" in
 # docs/reference/implementation-loop.md.
-# Run on the host as a member of incus-admin with sudo. Every step is idempotent.
+# First add the ci-runner role through Orbit; it owns the host project, profile, network and firewall.
+# Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
-#   tools/ci-runners/setup.sh host SUBNET            # 10.253.1.1/24 on Beast, 10.253.2.1/24 on Shark
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-beast-2, ci-shark-1
+#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-4, ci-sabre-3
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
@@ -20,9 +20,6 @@ set -euo pipefail
 
 REPOSITORY=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT=orbit-ci
-NETWORK=orbitci0
-ACL=orbit-ci-egress
-POOL=default
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
@@ -36,68 +33,6 @@ LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
 # stacked processes only; they stay confined by the container profile. Nesting stays off. Set per instance, because a
 # profile key is also checked against the project's VM low-level restriction.
 APPARMOR="signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,"
-
-host() {
-  local subnet=$1
-
-  incus project show "$PROJECT" >/dev/null 2>&1 || incus project create "$PROJECT" \
-    -c features.images=true -c features.profiles=true -c features.storage.volumes=true \
-    -c features.storage.buckets=true -c features.networks=false
-  # restricted=true keeps containers unprivileged, blocks nesting and host disk devices, and limits the project to its
-  # bridge. Container low-level keys stay allowed only for the raw.apparmor line set at launch (see APPARMOR).
-  incus project set "$PROJECT" restricted=true restricted.networks.access="$NETWORK" \
-    restricted.containers.nesting=block restricted.containers.privilege=unprivileged \
-    restricted.virtual-machines.lowlevel=block restricted.containers.lowlevel=allow limits.virtual-machines=0
-
-  # Egress: public IPv4 only. Every private, CGNAT, link-local, multicast and reserved range is rejected, which covers
-  # the host LAN, WireGuard 10.44.0.0/24, docker and task bridges, and the bridge gateway (Incus accepts DNS/DHCP to
-  # the gateway before the ACL runs). IPv6 has no allow rule, so the default reject applies to all of it.
-  incus network acl show "$ACL" >/dev/null 2>&1 || incus network acl create "$ACL"
-  incus network acl edit "$ACL" <<'YAML'
-description: Orbit CI runner boundary
-egress:
-- action: reject
-  destination: 0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
-  state: enabled
-- action: reject
-  destination: ::/0
-  state: enabled
-- action: allow
-  destination: 0.0.0.0/0
-  state: enabled
-ingress: []
-config: {}
-YAML
-
-  incus network show "$NETWORK" >/dev/null 2>&1 || incus network create "$NETWORK" --type=bridge \
-    ipv4.address="$subnet" ipv4.nat=true ipv6.address=none
-  incus network set "$NETWORK" ipv4.address="$subnet" ipv4.nat=true ipv6.address=none \
-    security.acls="$ACL" security.acls.default.egress.action=reject security.acls.default.ingress.action=reject
-
-  # ufw's routed policy is deny; the bridge needs the same forward allowance the task bridges have (orbittask+).
-  sudo ufw status | grep -q "on $NETWORK .*# orbit-ci-runners" ||
-    sudo ufw route allow in on "$NETWORK" comment orbit-ci-runners >/dev/null
-
-  incus profile edit default --project "$PROJECT" <<YAML
-description: Orbit CI shard runner
-config:
-  boot.autostart: "true"
-  limits.cpu: "6"
-  limits.memory: 12GiB
-  limits.processes: "8192"
-  security.nesting: "false"
-  security.privileged: "false"
-devices:
-  eth0:
-    name: eth0
-    network: $NETWORK
-    type: nic
-  root:
-    path: /
-    pool: $POOL
-    type: disk
-YAML
-}
 
 in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 
@@ -227,6 +162,6 @@ verify() {
 }
 
 case "${1:-}" in
-  host | container | register | verify) "$@" ;;
+  container | register | verify) "$@" ;;
   *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac

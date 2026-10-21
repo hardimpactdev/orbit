@@ -8,6 +8,7 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
@@ -404,6 +405,21 @@ describe('Doctor', function (): void {
 });
 
 describe('strays', function (): void {
+    it('recognizes the CI role project without an operator-owned exception', function (): void {
+        TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->beast->id)]]);
+        $this->incus->foreign = ['10.44.0.7' => ['orbit-ci/ci-beast-1', 'default/stray']];
+        $this->incus->volumes = ['10.44.0.7' => ['orbit-ci/default/cache']];
+        $this->beast->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+        $host = app(TaskVmSettings::class)->host($this->beast->id);
+        $audit = app(TaskVmHostAudit::class);
+
+        expect($audit->strays($host, $this->beast))->toMatchArray(['instances' => ['default/stray'], 'volumes' => []]);
+        $this->beast->roles()->where('role', 'ci-runner')->delete();
+        expect($audit->strays($host, $this->beast))->toMatchArray([
+            'instances' => ['orbit-ci/ci-beast-1', 'default/stray'], 'volumes' => ['orbit-ci/default/cache'],
+        ]);
+    });
+
     /** @return list<array{string, string}> code and observed value of the stray issues */
     function tvm_stray_doctor(Node $node, bool $reachable = true): array
     {
