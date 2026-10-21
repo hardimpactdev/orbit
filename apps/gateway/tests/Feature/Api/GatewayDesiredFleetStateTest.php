@@ -143,7 +143,7 @@ describe('X-Orbit-Cli-Version', function (): void {
     });
 
     it('sends nothing while the release is pending', function (): void {
-        fake_cli_release_github(['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'Not Found'], 404)]);
+        fake_cli_release_github(['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'Not Found'], 404)]);
         app(DesiredFleetState::class)->current();
 
         $this->withHeader('X-Orbit-Client-Version', '0.4600.0')

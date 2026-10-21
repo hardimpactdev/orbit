@@ -3,7 +3,7 @@
   "normalization": "Selected one submitted review from each list. Only commit_id is replaced with aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to match the existing pull and check fixtures. All other fields, including id, user, and state, are retained from the response.",
   "fixtures": {
     "pr-commented-reviews.json": {
-      "endpoint": "https://api.github.com/repos/nckrtl/orbit/pulls/946/reviews",
+      "endpoint": "https://api.github.com/repos/hardimpactdev/orbit/pulls/946/reviews",
       "id": 5407909532,
       "original_commit_id": "869557fe5a88a217773e0a661019d8acbeaeeb61"
     },

@@ -352,7 +352,7 @@ describe('CLI release workflow', function (): void {
             'PATH' => $bin.':'.getenv('PATH'),
             'GIT_CONFIG_GLOBAL' => '/dev/null',
             'GIT_CONFIG_NOSYSTEM' => '1',
-            'REPOSITORY' => 'nckrtl/orbit',
+            'REPOSITORY' => 'hardimpactdev/orbit',
             'COMMIT' => $release,
             'VERSION' => '0.2.0',
             'TAG' => 'cli-v0.2.0',
@@ -368,10 +368,10 @@ describe('CLI release workflow', function (): void {
             expect($process->getOutput())->not->toContain('::error');
         }
     })->with([
-        'workflows differ from main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', true, true],
-        'same workflows as main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', false, false],
-        'another failure' => [1, 'HTTP 500 (https://api.github.com/repos/nckrtl/orbit/releases)', true, false],
-        'secondary rate limit' => [1, 'HTTP 403: You have exceeded a secondary rate limit (https://api.github.com/repos/nckrtl/orbit/releases)', true, false],
+        'workflows differ from main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/hardimpactdev/orbit/releases)', true, true],
+        'same workflows as main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/hardimpactdev/orbit/releases)', false, false],
+        'another failure' => [1, 'HTTP 500 (https://api.github.com/repos/hardimpactdev/orbit/releases)', true, false],
+        'secondary rate limit' => [1, 'HTTP 403: You have exceeded a secondary rate limit (https://api.github.com/repos/hardimpactdev/orbit/releases)', true, false],
         'published' => [0, 'Uploading assets', true, false],
     ]);
 
@@ -390,7 +390,7 @@ describe('CLI release workflow', function (): void {
             'PATH' => $bin.':'.getenv('PATH'),
             'GIT_CONFIG_GLOBAL' => '/dev/null',
             'GIT_CONFIG_NOSYSTEM' => '1',
-            'REPOSITORY' => 'nckrtl/orbit',
+            'REPOSITORY' => 'hardimpactdev/orbit',
             'COMMIT' => str_repeat('a', 40),
             'VERSION' => '0.2.0',
             'TAG' => 'cli-v0.2.0',

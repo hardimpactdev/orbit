@@ -41,7 +41,7 @@ bun install
 bun run demo
 ```
 
-`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/nckrtl/orbit/blob/main/apps/web/README.md) describes both modes, the layout of the source, and how to run the app against a disposable topology.
+`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md) describes both modes, the layout of the source, and how to run the app against a disposable topology.
 
 Run the checks before you submit a change:
 

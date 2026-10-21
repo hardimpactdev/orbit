@@ -60,6 +60,7 @@ it('publishes Git update issues only from the current main scheduled or manual r
     $publishSteps = array_column($publish['steps'], null, 'name');
 
     expect($workflow['on'])->toHaveKeys(['pull_request', 'schedule', 'workflow_dispatch']);
+    expect($check['if'])->toBe("github.repository == 'hardimpactdev/orbit'");
     expect($check)->not->toHaveKey('permissions');
     expect($checkSteps['Check published PPA builds and Ubuntu Git notices']['run'])
         ->toBe('python3 bin/git-build-watch --output "$RUNNER_TEMP/git-build-watch.md"');
@@ -129,7 +130,7 @@ it('limits the recipe mirror write token to main and never triggers it for pull 
 
     expect(array_keys($workflow['on']))->toBe(['push', 'workflow_dispatch']);
     expect($workflow['on']['push']['branches'])->toBe(['main']);
-    expect($workflow['jobs']['mirror']['if'])->toBe("github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main'");
+    expect($workflow['jobs']['mirror']['if'])->toBe("github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'");
 });
 
 it('groups all five Composer projects, three Bun projects and action pins with a seven-day cooldown', function (): void {

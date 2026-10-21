@@ -47,7 +47,7 @@ describe('project:create', function (): void {
             ->artisan('project:create', [
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
-                'repository' => 'git@github.com:nckrtl/orbit.git',
+                'repository' => 'git@github.com:hardimpactdev/orbit.git',
                 '--name' => 'Orbit',
                 '--default-branch' => 'stable',
                 '--json' => true,
@@ -66,7 +66,7 @@ describe('project:create', function (): void {
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
-                'repository_url' => 'git@github.com:nckrtl/orbit.git',
+                'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
                 'default_branch' => 'stable',
                 'root' => 'public',
             ]);
@@ -146,7 +146,7 @@ describe('project:create', function (): void {
             ->artisan('project:create', [
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
-                'repository' => 'git@github.com:nckrtl/orbit.git',
+                'repository' => 'git@github.com:hardimpactdev/orbit.git',
             ])
             ->expectsOutput('Project [orbit] created.')
             ->expectsOutputToContain(app_request_id())
@@ -162,7 +162,7 @@ describe('project:create', function (): void {
             ->artisan('project:create', [
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
-                'repository' => 'git@github.com:nckrtl/orbit.git',
+                'repository' => 'git@github.com:hardimpactdev/orbit.git',
                 '--root' => 'web/public',
             ])
             ->assertExitCode(0);
@@ -184,7 +184,7 @@ describe('project:create', function (): void {
         $exitCode = Artisan::call('project:create', [
             'slug' => $slug,
             'type' => 'laravel-app',
-            'repository' => 'git@github.com:nckrtl/orbit.git',
+            'repository' => 'git@github.com:hardimpactdev/orbit.git',
             '--json' => true,
         ]);
         $output = trim(Artisan::output());
@@ -278,7 +278,7 @@ describe('project:create', function (): void {
             ->artisan('project:create', [
                 'slug' => 'Orbit App',
                 'type' => 'laravel-app',
-                'repository' => 'nckrtl/orbit',
+                'repository' => 'hardimpactdev/orbit',
             ])
             ->assertExitCode(0);
 
@@ -288,7 +288,7 @@ describe('project:create', function (): void {
             ->toBe([
                 'slug' => 'Orbit App',
                 'type' => 'laravel-app',
-                'repository_url' => 'nckrtl/orbit',
+                'repository_url' => 'hardimpactdev/orbit',
                 'root' => 'public',
             ]);
     });
@@ -350,10 +350,10 @@ describe('project:create repository boundary', function (): void {
         expect($mockClient->getLastRequest()?->body()->all()['repository_url'] ?? null)
             ->toBe($repository);
     })->with([
-        'GitHub shorthand' => 'nckrtl/orbit',
-        'HTTPS URL' => 'https://github.com/nckrtl/orbit.git',
-        'SSH URL with conventional Git user' => 'ssh://git@github.com/nckrtl/orbit.git',
-        'scp-style SSH URL' => 'git@github.com:nckrtl/orbit.git',
+        'GitHub shorthand' => 'hardimpactdev/orbit',
+        'HTTPS URL' => 'https://github.com/hardimpactdev/orbit.git',
+        'SSH URL with conventional Git user' => 'ssh://git@github.com/hardimpactdev/orbit.git',
+        'scp-style SSH URL' => 'git@github.com:hardimpactdev/orbit.git',
     ]);
 
     it('passes repository policy values through the typed SDK request', function (string $repository): void {
@@ -524,7 +524,7 @@ describe('project:show', function (): void {
         expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
         expect(Artisan::output())->toContain('Project: orbit')
             ->toContain('Orbit')
-            ->toContain('git@github.com:nckrtl/orbit.git')
+            ->toContain('git@github.com:hardimpactdev/orbit.git')
             ->toContain('Default branch')
             ->toContain('main')
             ->toContain('Web root')
@@ -592,7 +592,7 @@ describe('project:update', function (): void {
         $this
             ->artisan('project:update', [
                 'project' => '3',
-                '--repository' => 'https://github.com/nckrtl/orbit.git',
+                '--repository' => 'https://github.com/hardimpactdev/orbit.git',
                 '--default-branch' => 'stable',
                 '--json' => true,
             ])
@@ -607,7 +607,7 @@ describe('project:update', function (): void {
             ->toBeInstanceOf(UpdateProjectRequest::class)
             ->and($request?->body()->all())
             ->toBe([
-                'repository_url' => 'https://github.com/nckrtl/orbit.git',
+                'repository_url' => 'https://github.com/hardimpactdev/orbit.git',
                 'default_branch' => 'stable',
             ])
             ->and($request?->body()->all())
@@ -858,7 +858,7 @@ function app_payload(): array
         'name' => 'Orbit',
         'slug' => 'orbit',
         'type' => 'laravel-app',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
         'source_access' => 'github_app',
         'default_branch' => 'main',
         'root' => 'public',

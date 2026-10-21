@@ -14,7 +14,7 @@ In progress.
 
 Principle: [Lean](/mission#principles). Seven of the eleven guards of a task checkout go, and one holder per group replaces them. It also serves [One way, one name](/mission#principles): one sender, one turn record, and one holder. No principle exception.
 
-Nick approved this decision on 2026-10-18. It is built after the steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land and [#1340](https://github.com/nckrtl/orbit/pull/1340) merges, and before Tasks moves into its own extension.
+Nick approved this decision on 2026-10-18. It is built after the steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land and [#1340](https://github.com/hardimpactdev/orbit/pull/1340) merges, and before Tasks moves into its own extension.
 
 ## Context
 
@@ -175,7 +175,7 @@ The scheduler state gates, the IMMEDIATE transactions, and `TaskVmWorkspaceGuard
 
 The tick only decides and sends. It reads and writes the database, reads Pi threads, sends turns, and dispatches jobs. It makes no SSH call and runs no Git command. Its only outbound HTTP calls are its Pi calls, which the pass budget below bounds. So it calls no GitHub API, no model, and no webhook.
 
-- [#1340](https://github.com/nckrtl/orbit/pull/1340) deletes the Coder settle notifier, whose webhook posts the tick makes today (`TaskConsultation.php:858`, `TaskSettling.php:568`). It is a prerequisite of this build. No step here moves those calls.
+- [#1340](https://github.com/hardimpactdev/orbit/pull/1340) deletes the Coder settle notifier, whose webhook posts the tick makes today (`TaskConsultation.php:858`, `TaskSettling.php:568`). It is a prerequisite of this build. No step here moves those calls.
 
 - **Bound.** A tick pass finishes in under 5 s at the p99, and no pass takes 30 s.
 - `TaskTickClock` records the duration of each pass. `tasks:status` reports the p99 and the maximum of the last hour.
@@ -345,7 +345,7 @@ When another race occurs, it gets its own decision with its data.
 The build starts after two prerequisites:
 
 - The steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge) land, so the main-merge actor is already gone.
-- [#1340](https://github.com/nckrtl/orbit/pull/1340) merges, so the tick sends no webhook.
+- [#1340](https://github.com/hardimpactdev/orbit/pull/1340) merges, so the tick sends no webhook.
 
 The build ends before Tasks moves into its own extension. Each step is one small pull request. Docs change with the code in the same pull request.
 

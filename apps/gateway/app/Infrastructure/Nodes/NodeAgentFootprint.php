@@ -59,7 +59,7 @@ final readonly class NodeAgentFootprint
 
     public static function downloadUrl(string $architecture): string
     {
-        return 'https://github.com/nckrtl/orbit/releases/download/agent-v'.self::Version
+        return 'https://github.com/hardimpactdev/orbit/releases/download/agent-v'.self::Version
             .'/'.self::assetName($architecture);
     }
 }

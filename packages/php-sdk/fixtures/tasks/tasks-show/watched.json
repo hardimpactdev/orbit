@@ -16,7 +16,7 @@
             "status": "running",
             "reviewer_agent_thread_id": null,
             "pr_url": null,
-            "watched_pr_url": "https://github.com/nckrtl/orbit/pull/451",
+            "watched_pr_url": "https://github.com/hardimpactdev/orbit/pull/451",
             "watched_pr_number": 451,
             "watched_pr_state": "open",
             "assistance_requested": false,

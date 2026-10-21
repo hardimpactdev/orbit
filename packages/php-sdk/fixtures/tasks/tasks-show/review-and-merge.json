@@ -12,10 +12,10 @@
             "taskable_type": null,
             "taskable_id": null,
             "title": "Review #460: Throttle logins",
-            "brief": "Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.",
+            "brief": "Orbit reviews pull request https://github.com/hardimpactdev/orbit/pull/460.",
             "status": "settling",
             "reviewer_agent_thread_id": null,
-            "pr_url": "https://github.com/nckrtl/orbit/pull/460",
+            "pr_url": "https://github.com/hardimpactdev/orbit/pull/460",
             "watched_pr_url": null,
             "watched_pr_number": null,
             "watched_pr_state": null,
@@ -38,7 +38,7 @@
                     "task_group_id": 1,
                     "position": 1,
                     "title": "Final review",
-                    "brief": "Review pull request https://github.com/nckrtl/orbit/pull/460 as a whole before Orbit approves it on GitHub and merges it. The diff runs from its merge base with origin/main to the pull request head. Approve only when the complete change is correct, tested, documented, and ready to merge as it is. Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. Orbit applies the findings in a new subtask.",
+                    "brief": "Review pull request https://github.com/hardimpactdev/orbit/pull/460 as a whole before Orbit approves it on GitHub and merges it. The diff runs from its merge base with origin/main to the pull request head. Approve only when the complete change is correct, tested, documented, and ready to merge as it is. Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. Orbit applies the findings in a new subtask.",
                     "deliverables": [
                         {
                             "id": "final-review",
