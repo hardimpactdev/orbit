@@ -70,6 +70,7 @@ final readonly class NativeGatewayReleaseUnitConverger implements GatewayRelease
         $this->run('gateway-release-enable', ['sudo', 'systemctl', 'enable', '--now', $this->units->timerName()]);
     }
 
+    /** Installs logrotate only for Gateways not yet converged to the pinned machine recipe. */
     private function installLogrotate(): void
     {
         $masked = [];

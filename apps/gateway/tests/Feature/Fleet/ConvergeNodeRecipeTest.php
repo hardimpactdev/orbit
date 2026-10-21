@@ -107,9 +107,9 @@ it('unions multiple role tool sets without including base-only tools', function 
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    expect(array_keys($pins))->toContain('caddy', 'curl', 'php8.4-pcov', 'php8.5-fpm')
+    expect(array_keys($pins))->toContain('caddy', 'curl', 'logrotate', 'php8.4-pcov', 'php8.5-fpm')
         ->not->toContain('rust', 'orbit-agent', 'pi')
-        ->and(array_keys($pins))->toHaveCount(count($recipe->profile('app-dev')));
+        ->and(array_keys($pins))->toHaveCount(count($recipe->profile('app-dev')) + 1);
 });
 
 it('refuses a missing service role profile before SSH', function (): void {
@@ -137,14 +137,14 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $php = in_array($role, [RoleName::WebSocket, RoleName::Vpn], true) ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
+    $php = in_array($role, [RoleName::WebSocket, RoleName::Vpn, RoleName::Gateway], true) ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
     $baseline = new NodeBootstrapPackageCatalog()->forRole($node, $role);
     // Recipe convergence pins the container runtime too; enrollment only asks apt for Docker.
     $runtime = in_array('docker.io', $baseline, true) ? ['containerd'] : [];
     $expected = array_unique([...$recipe->profile('operator'), ...$baseline, ...$runtime, ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
-})->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
+})->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics, RoleName::Gateway]);
 
 it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (RoleName $role): void {
     $node = FleetFixtures::node('recipe-php-'.$role->value, [$role]);
