@@ -133,72 +133,83 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         let _ = shutdown_tx.send(true);
     });
     let mut sequence = Sequencer::default();
-    let mut attempt = 0u32;
-    let mut joined_at: Option<Instant> = None;
     let mut docker_units = HashMap::new();
     let mut docker_available = false;
     let mut systemd = systemd_snapshot(&manager).await?;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(5));
     let mut systemd_poll = tokio::time::interval(Duration::from_secs(30));
-    let mut realtime_poll = tokio::time::interval(Duration::from_secs(60));
+    reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| {
+        loop {
+            let discovery = tokio::select! {
+                _ = shutdown_rx.changed() => return Ok(()),
+                result = discover(&client, &config.gateway_url) => result?,
+            };
+            if discovery
+                .member
+                .strip_prefix("agent.")
+                .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
+            {
+                return Err("Gateway returned an invalid agent channel identity".into());
+            }
+            let log_channel = accepted_log_channel(&discovery);
+            let (Some(url), Some(address), Some(key)) =
+                (discovery.url, discovery.address, discovery.key)
+            else {
+                tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(Duration::from_secs(60))=>{}}
+                continue;
+            };
+            return connected_session(
+                &client,
+                &config.gateway_url,
+                &url,
+                &address,
+                &key,
+                &discovery.channel,
+                log_channel.as_deref(),
+                &log_hub,
+                tls.clone(),
+                &manager,
+                &mut sequence,
+                &mut systemd,
+                &mut docker_units,
+                &mut docker_available,
+                &mut docker_rx,
+                &mut systemd_rx,
+                &workspaces,
+                &mut workspace_rx,
+                &mut heartbeat,
+                &mut systemd_poll,
+                shutdown_rx,
+                joined_at,
+            )
+            .await;
+        }
+    }).await
+}
+
+/// Owns every retry, so a reset, close, failed join, or ping timeout takes the same path.
+async fn reconnect_loop(
+    shutdown: &mut watch::Receiver<bool>,
+    mut session: impl AsyncFnMut(
+        &mut watch::Receiver<bool>,
+        &mut Option<Instant>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut attempt = 0;
     loop {
-        if *shutdown_rx.borrow() {
+        if *shutdown.borrow() {
             return Ok(());
         }
-        let discovery = match discover(&client, &config.gateway_url).await {
-            Ok(d) => d,
-            Err(error) => {
-                eprintln!("orbit-agent: realtime discovery failed: {error}");
-                tokio::select! { _=shutdown_rx.changed()=>return Ok(()), _=tokio::time::sleep(retry_delay(attempt))=>{} }
-                attempt = attempt.saturating_add(1);
-                continue;
-            }
-        };
-        if discovery
-            .member
-            .strip_prefix("agent.")
-            .is_none_or(|id| discovery.channel != format!("presence-node.{id}"))
-        {
-            return Err("Gateway returned an invalid agent channel identity".into());
-        }
-        let log_channel = accepted_log_channel(&discovery);
-        let (Some(url), Some(address), Some(key)) =
-            (discovery.url, discovery.address, discovery.key)
-        else {
-            tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=realtime_poll.tick()=>{}}
-            continue;
-        };
-        match connected_session(
-            &client,
-            &config.gateway_url,
-            &url,
-            &address,
-            &key,
-            &discovery.channel,
-            log_channel.as_deref(),
-            &log_hub,
-            tls.clone(),
-            &manager,
-            &mut sequence,
-            &mut systemd,
-            &mut docker_units,
-            &mut docker_available,
-            &mut docker_rx,
-            &mut systemd_rx,
-            &workspaces,
-            &mut workspace_rx,
-            &mut heartbeat,
-            &mut systemd_poll,
-            &mut shutdown_rx,
-            &mut joined_at,
-        )
-        .await
-        {
+        let mut joined_at = None;
+        match session(shutdown, &mut joined_at).await {
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("orbit-agent: realtime connection ended: {error}");
-                attempt = next_attempt(attempt, joined_at.take().map(|joined| joined.elapsed()));
-                tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=tokio::time::sleep(retry_delay(attempt))=>{}}
+                attempt = next_attempt(attempt, joined_at.map(|joined| joined.elapsed()));
+                tokio::select! {
+                    _ = shutdown.changed() => return Ok(()),
+                    _ = tokio::time::sleep(retry_delay(attempt)) => {},
+                }
             }
         }
     }
@@ -356,14 +367,9 @@ async fn connected_session(
     let mut liveness = Liveness::new(Instant::now());
     loop {
         tokio::select! {
-            _=shutdown.changed()=>{socket.close(None).await?;return Ok(())},
+            _=shutdown.changed()=>{socket_write(socket.close(None)).await?;return Ok(())},
             _=heartbeat.tick()=>{
                 let payload=Envelope{sequence:sequence.advance(),at:iso_now(),data:HeartbeatData{}};send_client(&mut socket,channel,"client-heartbeat",serde_json::to_value(payload)?).await?;
-                match liveness.check(Instant::now()) {
-                    LivenessCheck::Alive=>{},
-                    LivenessCheck::Ping=>send_control(&mut socket,"pusher:ping",json!({})).await?,
-                    LivenessCheck::Dead=>return Err("Reverb did not answer the ping".into()),
-                }
             },
             _=&mut snapshot_due=>{
                 let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;
@@ -396,8 +402,8 @@ async fn connected_session(
                 if let Some(log_channel)=log_channel{for event in log_hub.flush(log_channel,now)?{send_raw_frame(&mut socket,event).await?;}}
             },
             _=&mut debounce,if !pending.is_empty()=>{if pending.due(Instant::now()){for unit in pending.take(){let event=orbit_agent::process_frame(channel,sequence.advance(),unit)?;send_raw_frame(&mut socket,event).await?;}}},
-            message=socket.next()=>match message{
-                Some(Ok(Message::Text(text)))=>{liveness.message(Instant::now());let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel,log_pending){
+            message=receive(&mut socket, &mut liveness)=>match message{
+                Ok(Message::Text(text))=>{let value:Value=serde_json::from_str(&text)?;match route(&value,channel,log_channel,log_pending){
                     Route::Pong=>send_control(&mut socket,"pusher:pong",json!({})).await?,
                     Route::Fail=>return Err(format!("Pusher rejected subscription: {}",value["data"]).into()),
                     Route::Snapshot=>{let all=combined_units(systemd,docker_units);send_snapshots(&mut socket,channel,sequence,&all,if *docker_available{"available"}else{"absent"},workspaces).await?;snapshot_due.as_mut().reset(Instant::now()+SNAPSHOT_INTERVAL);},
@@ -406,9 +412,36 @@ async fn connected_session(
                     Route::FetchLogStreams=>log_hub.prompt(),
                     Route::Ignore=>{}
                 }},
-                Some(Ok(Message::Ping(data)))=>{liveness.message(Instant::now());socket.send(Message::Pong(data)).await?},
-                Some(Ok(Message::Close(_)))|None=>return Err("Pusher closed connection".into()),
-                Some(Err(error))=>return Err(error.into()),_=>{}
+                Ok(Message::Ping(data))=>{socket_write(socket.send(Message::Pong(data))).await?},
+                Err(error)=>return Err(error),_=>{}
+            }
+        }
+    }
+}
+
+/// Keep protocol liveness independent of event publishing and heartbeat timer ticks.
+async fn receive(
+    socket: &mut Socket,
+    liveness: &mut Liveness,
+) -> Result<Message, Box<dyn Error + Send + Sync>> {
+    loop {
+        tokio::select! {
+            message = socket.next() => {
+                let message = message.ok_or("Pusher closed connection")??;
+                if matches!(message, Message::Close(_)) {
+                    // Tungstenite queued the close reply; flush it before ending this session.
+                    socket_write(socket.flush()).await?;
+                    return Err("Pusher closed connection".into());
+                }
+                liveness.message(Instant::now());
+                return Ok(message);
+            }
+            _ = tokio::time::sleep_until(liveness.deadline()) => {
+                match liveness.check(Instant::now()) {
+                    LivenessCheck::Alive => {},
+                    LivenessCheck::Ping => send_control(socket, "pusher:ping", json!({})).await?,
+                    LivenessCheck::Dead => return Err("Reverb did not answer the ping".into()),
+                }
             }
         }
     }
@@ -511,7 +544,9 @@ async fn protocol_handshake(
             Message::Text(text) => {
                 let value: Value = serde_json::from_str(&text)?;
                 match value["event"].as_str().unwrap_or("") {
-                    "pusher_internal:subscription_succeeded" => return Ok((socket, socket_id)),
+                    "pusher_internal:subscription_succeeded" if value["channel"] == channel => {
+                        return Ok((socket, socket_id));
+                    }
                     "pusher:error" | "pusher_internal:subscription_error" => {
                         return Err(
                             format!("Pusher rejected subscription: {}", value["data"]).into()
@@ -521,7 +556,7 @@ async fn protocol_handshake(
                     _ => {}
                 }
             }
-            Message::Ping(data) => socket.send(Message::Pong(data)).await?,
+            Message::Ping(data) => socket_write(socket.send(Message::Pong(data))).await?,
             Message::Close(_) => return Err("Pusher closed before subscription_succeeded".into()),
             _ => {}
         }
@@ -593,11 +628,10 @@ async fn send_control(
     event: &str,
     data: Value,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    socket
-        .send(Message::Text(
-            json!({"event":event,"data":data}).to_string().into(),
-        ))
-        .await?;
+    socket_write(socket.send(Message::Text(
+        json!({"event":event,"data":data}).to_string().into(),
+    )))
+    .await?;
     Ok(())
 }
 async fn send_raw_frame(
@@ -608,9 +642,20 @@ async fn send_raw_frame(
     if text.len() > orbit_agent::PUSHER_FRAME_LIMIT {
         return Err("Pusher client event exceeded the frame size limit".into());
     }
-    socket.send(Message::Text(text.into())).await?;
+    socket_write(socket.send(Message::Text(text.into()))).await?;
     Ok(())
 }
+/// Bound writes so a peer that stops reading cannot hold the receive loop past its ping deadline.
+/// A timed-out write ends this session; its sink is never reused.
+async fn socket_write<T>(
+    write: impl std::future::Future<Output = Result<T, tokio_tungstenite::tungstenite::Error>>,
+) -> Result<T, Box<dyn Error + Send + Sync>> {
+    tokio::time::timeout(orbit_agent::PONG_TIMEOUT, write)
+        .await
+        .map_err(|_| "Reverb WebSocket write timed out")?
+        .map_err(Into::into)
+}
+
 fn queue_changes(
     batch: &mut ChangeBatch,
     changes: impl IntoIterator<Item = Unit>,
@@ -841,6 +886,7 @@ mod protocol_tests {
     const TEST_SECRET: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     #[derive(Clone)]
     struct FakeState {
+        discoveries: Arc<AtomicUsize>,
         auths: Arc<AtomicUsize>,
         subscriptions: Arc<AtomicUsize>,
         forms: Arc<std::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -907,11 +953,16 @@ mod protocol_tests {
     }
     async fn fake_server() -> (String, FakeState) {
         let state = FakeState {
+            discoveries: Arc::default(),
             auths: Arc::new(AtomicUsize::new(0)),
             subscriptions: Arc::new(AtomicUsize::new(0)),
             forms: Arc::default(),
         };
         let app = Router::new()
+            .route("/api/v1/agent/realtime", get(async |State(state): State<FakeState>| {
+                state.discoveries.fetch_add(1, Ordering::SeqCst);
+                Json(json!({"data": {"url": "wss://reverb.orbit", "address": "127.0.0.1", "key": "test", "channel": "presence-node.12", "log_channel": "presence-node-logs.12", "member": "agent.12"}}))
+            }))
             .route("/socket", get(ws_route))
             .route("/auth", post(auth))
             .with_state(state.clone());
@@ -922,6 +973,178 @@ mod protocol_tests {
         });
         (format!("http://{addr}"), state)
     }
+    #[derive(Clone, Copy)]
+    enum Failure {
+        Reset,
+        Close,
+        Silent,
+    }
+
+    // Keep the paused runtime runnable during real loopback HTTP/TCP IO. Time moves only when
+    // the test advances it, never because an HTTP request temporarily leaves the runtime idle.
+    async fn assert_recovers(failure: Failure) {
+        let runnable = tokio::spawn(async {
+            loop {
+                tokio::task::yield_now().await;
+            }
+        });
+        let (base, state) = fake_server().await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (commands, mut command_rx) = mpsc::unbounded_channel();
+        let (ping_tx, mut pings) = mpsc::unbounded_channel();
+        let server = tokio::spawn(async move {
+            for id in 1..=2 {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                let (command_tx, command) = tokio::sync::oneshot::channel::<Failure>();
+                let ping_tx = ping_tx.clone();
+                commands.send(command_tx).unwrap();
+                tokio::spawn(async move {
+                    let established = json!({"event":"pusher:connection_established","data":json!({"socket_id":format!("{id}.2")}).to_string()});
+                    socket
+                        .send(Message::Text(established.to_string().into()))
+                        .await
+                        .unwrap();
+                    let sub = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let sub: Value = serde_json::from_str(&sub).unwrap();
+                    assert_eq!(sub["event"], "pusher:subscribe");
+                    assert_eq!(sub["data"]["channel"], "presence-node.12");
+                    assert_eq!(sub["data"]["auth"], "signed");
+                    let ack = json!({"event":"pusher_internal:subscription_succeeded","channel":"presence-node.12","data":{}});
+                    socket
+                        .send(Message::Text(ack.to_string().into()))
+                        .await
+                        .unwrap();
+                    match command.await {
+                        Ok(Failure::Reset) => {} // Drop TCP without a WebSocket close handshake.
+                        Ok(Failure::Close) => {
+                            let _ = socket.close(None).await;
+                        }
+                        Ok(Failure::Silent) => {
+                            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                                let value: Value = serde_json::from_str(&text).unwrap();
+                                if value["event"] == "pusher:ping" {
+                                    ping_tx.send(()).unwrap();
+                                }
+                                // Deliberately never answer the ping.
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                });
+            }
+        });
+        let http = reqwest::Client::builder()
+            .default_headers(AgentSecret::parse(TEST_SECRET).unwrap().headers())
+            .build()
+            .unwrap();
+        let (shutdown_tx, mut shutdown) = watch::channel(false);
+        let (joined_tx, mut joins) = mpsc::unbounded_channel();
+        let (failed_tx, mut failures) = mpsc::unbounded_channel();
+        let client = async move {
+            reconnect_loop(&mut shutdown, async |shutdown, joined_at| {
+                // The same discovery, auth, join, read, and retry functions as the running agent.
+                let discovery = discover(&http, &base).await?;
+                let (socket, _) = connect_async(format!("ws://{address}")).await?;
+                let (mut socket, socket_id) = protocol_handshake(
+                    socket,
+                    &http,
+                    &format!("{base}/auth"),
+                    &discovery.channel,
+                    VERSION,
+                )
+                .await?;
+                *joined_at = Some(Instant::now());
+                joined_tx.send(socket_id).unwrap();
+                let mut liveness = Liveness::new(Instant::now());
+                let error = tokio::select! {
+                    _ = shutdown.changed() => return Ok(()),
+                    result = receive(&mut socket, &mut liveness) => result.unwrap_err(),
+                };
+                failed_tx.send(error.to_string()).unwrap();
+                Err(error)
+            })
+            .await
+            .unwrap();
+        };
+        let verify = async {
+            let command = command_rx.recv().await.unwrap();
+            assert_eq!(joins.recv().await.unwrap(), "1.2");
+            command.send(failure).ok().unwrap();
+            if matches!(failure, Failure::Silent) {
+                tokio::time::advance(orbit_agent::PING_AFTER).await;
+                pings.recv().await.unwrap();
+                tokio::time::advance(orbit_agent::PONG_TIMEOUT).await;
+            }
+            let error = failures.recv().await.unwrap();
+            match failure {
+                Failure::Reset => assert!(error.contains("without closing handshake"), "{error}"),
+                Failure::Close => assert_eq!(error, "Pusher closed connection"),
+                Failure::Silent => assert_eq!(error, "Reverb did not answer the ping"),
+            }
+            tokio::time::advance(Duration::from_millis(999)).await;
+            assert_eq!(
+                state.discoveries.load(Ordering::SeqCst),
+                1,
+                "must back off before retry"
+            );
+            tokio::time::advance(Duration::from_millis(1001)).await;
+            let second_command = command_rx.recv().await.unwrap();
+            assert_eq!(joins.recv().await.unwrap(), "2.2");
+            assert_eq!(state.discoveries.load(Ordering::SeqCst), 2);
+            let forms = state.forms.lock().unwrap().clone();
+            assert_eq!(forms.len(), 2);
+            assert_eq!(forms[0]["socket_id"], "1.2");
+            assert_eq!(forms[1]["socket_id"], "2.2");
+            assert!(forms
+                .iter()
+                .all(|form| form["channel_name"] == "presence-node.12"));
+            shutdown_tx.send(true).unwrap();
+            drop(second_command);
+        };
+        tokio::join!(client, verify);
+        server.await.unwrap();
+        runnable.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reset_reconnects_reauthenticates_and_resubscribes() {
+        assert_recovers(Failure::Reset).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn server_close_reconnects_reauthenticates_and_resubscribes() {
+        assert_recovers(Failure::Close).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn missing_pong_reconnects_reauthenticates_and_resubscribes() {
+        assert_recovers(Failure::Silent).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stalled_websocket_write_times_out() {
+        let (client, _unread_server) = tokio::io::duplex(1);
+        let mut socket = WebSocketStream::from_raw_socket(
+            client,
+            tokio_tungstenite::tungstenite::protocol::Role::Client,
+            None,
+        )
+        .await;
+        let write = socket_write(socket.send(Message::Text("heartbeat".into())));
+        tokio::pin!(write);
+        assert!(futures_util::poll!(&mut write).is_pending());
+        tokio::time::advance(orbit_agent::PONG_TIMEOUT).await;
+        let std::task::Poll::Ready(result) = futures_util::poll!(&mut write) else {
+            panic!("a blocked write must finish at its deadline");
+        };
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Reverb WebSocket write timed out"
+        );
+    }
+
     #[test]
     fn messages_act_only_on_their_own_channel() {
         let node = "presence-node.12";
@@ -1079,7 +1302,7 @@ mod protocol_tests {
     }
 
     #[tokio::test]
-    async fn fake_pusher_auth_subscribe_events_and_reconnect() {
+    async fn fake_pusher_auth_subscribe_events_and_pong() {
         let (base, state) = fake_server().await;
         let unauthenticated = reqwest::Client::new();
         let (socket, _) = connect_async(format!("{}/socket", base.replacen("http://", "ws://", 1)))

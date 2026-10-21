@@ -171,9 +171,10 @@ The agent bounds each step, so a peer that stops answering never holds it.
 | --- | --- |
 | A Gateway request | 10 seconds to connect, 30 seconds in total |
 | One join, from the connection to `pusher_internal:subscription_succeeded` | 30 seconds |
+| A WebSocket write or close | 10 seconds; a blocked write ends the session and starts a new connection |
 | A quiet connection | After 15 seconds without a message, the agent sends `pusher:ping`. Without an answer in 10 more seconds, it reconnects. |
 
-After a drop, the agent reconnects with a backoff from 2 to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
+After a reset, server close, or ping timeout, the agent reconnects with exponential backoff capped at 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
 
