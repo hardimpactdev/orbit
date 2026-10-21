@@ -127,7 +127,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside a task workspace](#processes-inside-a-task-workspace), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside the removed Instance](#processes-inside-the-removed-instance), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Delete the Instance record. |
 
