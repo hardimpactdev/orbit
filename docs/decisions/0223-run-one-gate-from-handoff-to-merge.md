@@ -178,7 +178,7 @@ The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selecti
 - The test step of a PHP project in CI stays in `ci.yml`, because CI runs full sharded Pest on pull requests and selects tests separately on main.
 - `bin/review-check` reads it.
 - The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
-- Path triggers select only the checks that TIA cannot narrow: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
+- Path triggers select only the checks outside the PHP projects' commands: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
 - Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today.
 - A handoff and a local `composer check` run a triggered check when a changed path matches its triggers.
 - The baseline check uses no path triggers. Its branch diff is empty, so triggers would select nothing.
@@ -187,15 +187,15 @@ The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selecti
 - The architecture-test step runs `bin/review-check architecture PROJECT`.
 - CI path conditions read the triggers from the file.
 - CI runs every check that the file marks for CI.
-- Runner choice, Gateway shards, process counts, and the main TIA plan stay in `ci.yml`, because only CI has runners.
+- Runner choice, Gateway shards, and process counts stay in `ci.yml`, because only CI has runners.
 - The E2E configuration test checks that every check job in `ci.yml` runs its commands through `bin/review-check`. It no longer holds its own copy.
 
 ### 5. One cache transport: Git refs
 
 - CI cache refs, `refs/orbit/ci-cache/<sha>`, are the only cache transport.
 - A checkout imports the ref of the nearest first-parent ancestor of its baseline commit that has a ref. It never imports a newer commit.
-- Pest selects the changes since that commit. So a baseline is not cold for lack of a ref while any ancestor ref is retained.
-- A changed TIA fingerprint, such as a new `composer.lock` or Pest configuration between the ref and the baseline, still forces a full run, as it does today.
+- Pint and PHPStan recheck only the files changed since that commit. So a baseline is not cold for lack of a ref while any ancestor ref is retained.
+- A changed `composer.lock` or tool configuration between the ref and the baseline leaves that tool cold, because the importer checks both.
 - The Gateway sends that ref to a workspace, as it sends the exact ref today.
 - A local worktree fetches the refs from `origin` and imports its own nearest ancestor ref with `bin/ci-cache-ref import`. `bin/bootstrap` and `bin/worktree-cache` call it for the graph and the Pint and PHPStan caches.
 - The shared main cache store under `orbit-tia/v1` goes, with its seed, its registration, and its refresh.
