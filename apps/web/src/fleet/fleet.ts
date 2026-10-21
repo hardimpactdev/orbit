@@ -155,69 +155,59 @@ export function attentionRows(fleet: Fleet): AttentionRow[] {
     return [
         ...fleet.nodes
             .filter((node) => !nodeHealthy(node))
-            .map(
-                (node): AttentionRow => ({
-                    id: `node-${node.id}`,
-                    kind: "nodes",
-                    record: node,
-                    label: "Node",
-                    name: node.name,
-                    where: "—",
-                    state: node.status,
-                }),
-            ),
+            .map((node): AttentionRow => ({
+                id: `node-${node.id}`,
+                kind: "nodes",
+                record: node,
+                label: "Node",
+                name: node.name,
+                where: "—",
+                state: node.status,
+            })),
         ...fleet.instances
             .filter((instance) => !instanceHealthy(instance))
-            .map(
-                (instance): AttentionRow => ({
-                    id: `instance-${instance.id}`,
-                    kind: "instances",
-                    record: instance,
-                    label: "Instance",
-                    name: `${instance.project.slug}/${instance.name}`,
-                    where: instance.node.name,
-                    state: instance.status,
-                }),
-            ),
+            .map((instance): AttentionRow => ({
+                id: `instance-${instance.id}`,
+                kind: "instances",
+                record: instance,
+                label: "Instance",
+                name: `${instance.project.slug}/${instance.name}`,
+                where: instance.node.name,
+                state: instance.status,
+            })),
         ...fleet.processes
             .filter((process) => !processHealthy(process))
-            .map(
-                (process): AttentionRow => ({
-                    id: `process-${process.id}`,
-                    kind: "processes",
-                    record: process,
-                    label: "Process",
-                    name: process.name,
-                    where: processOwner(fleet, process),
-                    state: `${process.runtime_status}, wanted ${process.desired_state}`,
-                }),
-            ),
+            .map((process): AttentionRow => ({
+                id: `process-${process.id}`,
+                kind: "processes",
+                record: process,
+                label: "Process",
+                name: process.name,
+                where: processOwner(fleet, process),
+                state: `${process.runtime_status}, wanted ${process.desired_state}`,
+            })),
         ...fleet.schedules
             .filter((schedule) => !scheduleHealthy(schedule))
-            .map(
-                (schedule): AttentionRow => ({
-                    id: `schedule-${schedule.id}`,
-                    kind: "schedules",
-                    record: schedule,
-                    label: "Schedule",
-                    name: schedule.name,
-                    where: instanceName(fleet, schedule.target_id),
-                    state: schedule.status === "failed" ? "failed" : schedule.desired_timer_state,
-                }),
-            ),
+            .map((schedule): AttentionRow => ({
+                id: `schedule-${schedule.id}`,
+                kind: "schedules",
+                record: schedule,
+                label: "Schedule",
+                name: schedule.name,
+                where: instanceName(fleet, schedule.target_id),
+                state: schedule.status === "failed" ? "failed" : schedule.desired_timer_state,
+            })),
         ...fleet.firewall
             .filter((rule) => !firewallHealthy(rule))
-            .map(
-                (rule): AttentionRow => ({
-                    id: `firewall-${rule.id}`,
-                    kind: "firewall",
-                    record: rule,
-                    label: "Firewall",
-                    name: `${rule.port}/${rule.protocol} ${rule.action} ${rule.source}`,
-                    where: rule.node,
-                    state: rule.status,
-                }),
-            ),
+            .map((rule): AttentionRow => ({
+                id: `firewall-${rule.id}`,
+                kind: "firewall",
+                record: rule,
+                label: "Firewall",
+                name: `${rule.port}/${rule.protocol} ${rule.action} ${rule.source}`,
+                where: rule.node,
+                state: rule.status,
+            })),
     ];
 }
 

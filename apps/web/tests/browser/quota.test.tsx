@@ -42,7 +42,7 @@ it("shows AI router as unconfigured while the ai-router extension is enabled wit
     await expect.element(page.getByTestId("nav-ai-router")).toBeVisible();
     await expect
         .element(page.getByTestId("quota-unavailable"))
-        .toHaveTextContent("CLIProxyAPI collector is not configured");
+        .toMatchTextContent("CLIProxyAPI collector is not configured");
     expect(
         app.gateway.requests.some((request) => request.path === "/api/v1/ai-router/providers"),
     ).toBe(false);
@@ -57,7 +57,7 @@ it("keeps AI router visible after the collector is torn down until the extension
     await expect.element(page.getByTestId("nav-ai-router")).toBeVisible();
     await expect
         .element(page.getByTestId("quota-unavailable"))
-        .toHaveTextContent("CLIProxyAPI collector is not configured");
+        .toMatchTextContent("CLIProxyAPI collector is not configured");
 
     app.gateway.disableAiRouterExtension();
     await queryClient.invalidateQueries({ queryKey: ["extensions"] });
@@ -97,7 +97,7 @@ it("shows account controls and never renders a missing window as zero", async ()
     await openApp("/ai-router/codex", { "ai-router": true });
 
     await expect.element(pane("Accounts")).toBeVisible();
-    await expect.element(row("Accounts", "plus.json")).toHaveTextContent("7d 60%");
+    await expect.element(row("Accounts", "plus.json")).toMatchTextContent("7d 60%");
     expect(screenText()).not.toContain(" 0%");
 
     await expect.element(row("Accounts", "disable")).toBeVisible();
@@ -119,7 +119,7 @@ it("shows successful and failed account toggle outcomes", async () => {
         },
     });
     await page.getByText("disable", { exact: true }).click();
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Account toggle failed");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Account toggle failed");
 });
 
 it("positions a red even-pace marker and omits it without a reset", async () => {

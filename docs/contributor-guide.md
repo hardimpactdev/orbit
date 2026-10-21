@@ -187,6 +187,8 @@ The wait applies only when Composer or Bun resolves a version. `composer install
 
 Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
+When updating Vite+ in web or Pi server, keep the `vite` alias on the same Vite+ core version. Match the `vitest` override and web's Playwright browser provider to the Vitest version in `vite-plus/dist/versions.js`. Remove overrides for Vitest packages absent from the new runner. Pi server also pins transitive `pi-ai` and `pi-agent-core` to its direct versions so runtime objects and branded types come from one copy.
+
 Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs, E2E and the PHP SDK; Bun in web, Pi server and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
 
 When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.

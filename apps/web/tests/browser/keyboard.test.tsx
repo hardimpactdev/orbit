@@ -59,7 +59,7 @@ it("hovers a pane, focuses it, moves the selection, and opens the row", async ()
 
     await userEvent.keyboard("{Enter}");
     await expect.element(pane("Nodes with roles")).toHaveAttribute("data-state", "focused");
-    await expect.element(footer()).toHaveTextContent("Enter or click opens");
+    await expect.element(footer()).toMatchTextContent("Enter or click opens");
 
     await userEvent.keyboard("{ArrowDown}");
     await expect.element(row("Nodes with roles", "beast")).toHaveAttribute("aria-selected", "true");
@@ -112,7 +112,7 @@ it("cycles the node filter with n and keeps it in the URL", async () => {
 
     await userEvent.keyboard("n");
     await expect.poll(app.url).toBe("/processes?node=gateway");
-    await expect.element(pane("Processes")).toHaveTextContent("None.");
+    await expect.element(pane("Processes")).toMatchTextContent("None.");
 
     await userEvent.keyboard("n");
     await expect.poll(app.url).toBe("/processes?node=beast");
@@ -142,23 +142,23 @@ it("sorts a pane by a column header", async () => {
     await openApp("/projects");
     await expect.element(row("Projects", "charlie-shop")).toBeVisible();
 
-    await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
-    await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
+    await pane("Projects").getByRole("columnheader", { name: /^Slug/ }).click();
+    await pane("Projects").getByRole("columnheader", { name: /^Slug/ }).click();
 
     await expect
         .element(pane("Projects").getByRole("row").nth(1))
-        .toHaveTextContent("charlie-shop");
+        .toMatchTextContent("charlie-shop");
 });
 
 it("names the way to a record by what owns it", async () => {
     const app = await openApp("/processes/2");
     const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
 
-    await expect.element(crumbs).toHaveTextContent("Projects›charlie-shop›dev›vite");
+    await expect.element(crumbs).toMatchTextContent("Projects›charlie-shop›dev›vite");
 
     await crumbs.getByText("dev", { exact: true }).click();
     await expect.poll(app.url).toBe("/instances/1");
 
     await openApp("/processes/4");
-    await expect.element(crumbs).toHaveTextContent("Nodes›beast›valkey");
+    await expect.element(crumbs).toMatchTextContent("Nodes›beast›valkey");
 });
