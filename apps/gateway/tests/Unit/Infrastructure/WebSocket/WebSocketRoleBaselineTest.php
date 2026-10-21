@@ -12,6 +12,7 @@ use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\WebSocketRuntime;
@@ -50,8 +51,46 @@ it('rolls a newly assigned runtime back when publication fails', function (): vo
             'runtime:converge',
             'publication:converge',
             'runtime:remove',
+            'publication:retire',
+            'credentials:purge',
         ]);
 });
+
+it('withdraws a confirmed endpoint only after a new assignment rollback stops Reverb', function (bool $stopFails): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $manager = app(WebSocketCredentialManager::class);
+    $target = new WebSocketDnsTarget;
+    $runtime = Mockery::mock(WebSocketRuntimeLifecycle::class);
+    $runtime->shouldReceive('converge')->once();
+    $stop = $runtime->shouldReceive('remove')->once()->with($node, $assignment, false);
+    if ($stopFails) {
+        $stop->andThrow(new RuntimeException('Reverb stop failed'));
+    }
+    $publication = Mockery::mock(WebSocketPublicationManager::class);
+    $publication->shouldReceive('checkListenAddresses')->once();
+    $publication->shouldReceive('converge')->once()->andReturnUsing(function (Node $node) use ($manager, $target): never {
+        confirm_websocket_runtime($node);
+        $target->markServing($node->id);
+        expect($manager->current())->not->toBeNull();
+
+        throw new RuntimeException('Private DNS publication failed');
+    });
+    if ($stopFails) {
+        $publication->shouldNotReceive('retire');
+    } else {
+        $publication->shouldReceive('retire')->once()->andReturnUsing(fn (Node $node) => $target->forget($node->id));
+    }
+    $baseline = new WebSocketRoleBaseline($runtime, $publication, $manager);
+
+    expect(fn () => $baseline->converge($node, $assignment))->toThrow(
+        $stopFails ? ResourceOperationException::class : RuntimeException::class,
+        $stopFails ? 'WebSocket convergence rollback failed.' : 'Private DNS publication failed',
+    );
+
+    expect($manager->current() !== null)->toBe($stopFails)
+        ->and($target->isServing($node->id))->toBe($stopFails)
+        ->and(WebSocketRuntime::query()->where('node_id', $node->id)->sole()->required)->toBe($stopFails);
+})->with([false, true]);
 
 it('keeps an existing runtime when publication fails after convergence is claimed', function (LifecycleStatus $status): void {
     [$node, $assignment] = websocketBaselineTopology();

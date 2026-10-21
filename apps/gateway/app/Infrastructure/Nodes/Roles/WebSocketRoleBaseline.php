@@ -40,6 +40,8 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
                 // Existing assignments may serve every app, also while retrying a failed publication.
                 if ($runtimeConverged && $assignment->wasRecentlyCreated) {
                     $this->runtime->remove($node, $assignment, false);
+                    $this->publication->retire($node);
+                    $this->credentials->purge($node, runtimeStopped: true);
                 }
             } catch (Throwable $rollback) {
                 // A lost Node lock refuses the rollback's commands too; the loss is the failure to report.

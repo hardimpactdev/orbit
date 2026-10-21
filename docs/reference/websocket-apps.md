@@ -38,6 +38,8 @@ The name is a lowercase slug of at most 63 characters. `gateway` and a taken nam
 
 `websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
 
+A role failure keeps the saved app and its operation. App creation does not converge the role, restart Reverb, or publish private DNS. If delivery fails, keep the operation id and use `websocket:operation:show` or `websocket:sync` after recovery. Repeating the request with the same idempotency key returns the same app and operation. A pending unrelated app keeps the Gateway app available on processes that already serve it.
+
 ## Destroy an app
 
 Destroy an app when no Instance uses it any more.
@@ -148,7 +150,7 @@ An Instance gets an app the way it gets a [Database connection](/reference/datab
 
 Operation status is `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
 
-The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw membership. Verified shutdown of the default service withdraws only its own process slot.
+The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw required apply membership. After 60 seconds without a serving report, the Gateway excludes the endpoint from realtime config, auth, and broadcasting until a fresh serving report arrives. Verified shutdown of the default service withdraws only its own process slot.
 
 Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
 

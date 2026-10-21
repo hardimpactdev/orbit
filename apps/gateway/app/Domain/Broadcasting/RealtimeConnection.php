@@ -11,8 +11,8 @@ use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Support\Facades\Broadcast;
 
 /**
- * Resolves the realtime connection from the active `websocket` role
- * assignment, or null when none is active. Bound scoped to one request:
+ * Resolves the realtime connection from a published Reverb process that
+ * confirmed serving the Gateway app, or null when none has confirmed. Bound scoped to one request:
  * the database lookup this performs happens at most once per request, and
  * only when something actually asks for the connection (a broadcast, or the
  * realtime config/tail endpoints) — never unconditionally on every request.
@@ -122,7 +122,7 @@ final class RealtimeConnection
      * Points Laravel's `reverb` broadcast connection at the resolved
      * connection so the Pusher-protocol broadcaster and channel-auth signer
      * use it. Returns false, leaving the connection unconfigured, when no
-     * websocket role is active.
+     * published Reverb process has confirmed serving.
      */
     public function configureBroadcasting(?RealtimeConnectionData $connection = null, bool $oldServer = false): bool
     {
