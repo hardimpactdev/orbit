@@ -80,6 +80,15 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
   acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+# Jobs start their own PostgreSQL cluster as runner; never create or start a system cluster.
+apt-get install -y -qq --no-install-recommends --no-upgrade postgresql-common >/dev/null
+cluster_config=/etc/postgresql-common/createcluster.conf
+sed -i 's/^[#[:space:]]*create_main_cluster[[:space:]]*=.*/create_main_cluster = false/' "$cluster_config"
+if ! grep -q '^create_main_cluster = false$' "$cluster_config"; then
+  printf '\ncreate_main_cluster = false\n' >> "$cluster_config"
+fi
+apt-get install -y -qq --no-install-recommends --no-upgrade postgresql-18 postgresql-client-18 >/dev/null
+systemctl disable --now postgresql >/dev/null
 # A shard container runs only CI jobs, so it purges PHP packages and sources outside the recipe.
 python3 /root/orbit-php-build/bin/php-build install --profile=ci-runner --purge-extras --no-composer >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
