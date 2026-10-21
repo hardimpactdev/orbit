@@ -150,7 +150,11 @@ CLI and Docs limit each test to two seconds through stock PHPUnit configuration:
 
 Both projects allow one integration exception: PHPUnit's stock `#[Medium]` size has a 30-second limit. CLI uses it for the real animation composition proof, which checks seven outer ticks across admission and resume at the production 300 ms cadence.
 
-Docs uses it for the generated-merge wrapper, which retains all five Python cases, real Git merges in both orders, and independent freshness checks. Docs also uses it for the repository vocabulary proof, which runs the real executable over the whole maintained corpus. The vocabulary fixture matrix keeps the two-second limit. Each project also uses it for the regression that starts nested runners to prove the limits. No other test receives this exception. Explicit `large` tests retain the two-second limit.
+Docs uses it for the generated-merge wrapper, which retains all five Python cases, real Git merges in both orders, and independent freshness checks. It also uses it for the repository vocabulary proof, which runs the real executable over the whole maintained corpus.
+
+The Rector cache invalidation proof also uses Medium. It runs Rector twice against fresh parent and child fixtures, retaining the warm cache and unchanged child assertion. The vocabulary and tooling fixture matrices keep the two-second limit.
+
+Each project also uses it for the regression that starts nested runners to prove the limits. No other test receives this exception. Explicit `large` tests retain the two-second limit.
 
 Pest generates the test classes. Each project's `MediumTests` helper adds PHPUnit's stock `#[Medium]` attribute to the registered class. PHPUnit 13 rejects `group('medium')`, and the installed TIA fork requires Pest tests rather than native PHPUnit tests. The helper adds metadata only; it does not measure time or change test selection.
 
