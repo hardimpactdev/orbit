@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
 use App\Actions\Instances\DestroyInstanceAction;
+use App\Data\Doctor\DoctorNodeReportData;
+use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Problems\ProblemRecovery;
+use App\Domain\Problems\ProblemSource;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteInspector;
@@ -15,6 +19,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\WebSocketApp;
@@ -180,4 +185,23 @@ it('refuses target removal and Instance removal before changing a public attachm
         expect($exception->errorCode)->toBe('websocket.route_in_use');
     });
     expect(WebSocketAppTarget::query()->count())->toBe(1)->and($route->targets()->count())->toBe(1);
+});
+
+it('resolves a previous Doctor collision after removing public Reverb without inspecting the app', function (): void {
+    [$node, $instance, $route] = public_reverb_fixture();
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+    $problem = ProblemFingerprint::query()->create([
+        'fingerprint' => 'doctor|route.websocket_collision|route|'.$route->id,
+        'source' => ProblemSource::Doctor, 'occurrences' => 0,
+        'evidence' => ['doctor_node' => (string) $node->id, 'doctor_family' => 'route', 'doctor_code' => 'route.websocket_collision',
+            'doctor_resource' => (string) $route->id, 'doctor_observed_at' => now()->toISOString()],
+    ]);
+    $this->deleteJson(public_reverb_url($instance))->assertOk();
+    $this->travel(1)->minutes();
+    $this->inspector->shouldNotReceive('hasCollisions');
+    $family = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, null, null, null)));
+    app(ProblemRecovery::class)->doctor(DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
+    ]), now());
+    expect($problem->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
 });

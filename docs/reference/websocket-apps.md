@@ -93,7 +93,7 @@ The attachment stores the existing public app Route ID and projects its domain i
 
 Caddy admits only `GET /app/<attached-key>` WebSocket upgrades and the attached app ID's known Pusher API paths and methods with its `auth_key`. Reverb verifies the API signatures. Other `/app`, `/app/*`, `/apps`, and `/apps/*` requests receive 404. `/internal/*` follows the application handler and never reaches Reverb. Paths and query strings stay unchanged. Channel authorization remains on the application `/broadcasting/auth` endpoint; an app key is public and does not authorize private subscriptions.
 
-Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including root parameter routes that may cover those prefixes. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment. Attachment and detachment commit stored intent before building Caddy. On build failure, retry attachment or converge the affected Nodes to repair Caddy. Synchronize the environment after attachment or rotation.
+Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including root parameter routes that may cover those prefixes. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment. Attachment and detachment commit stored intent before building Caddy. On build failure, retry public attachment to publish. To repair a withdrawal, run `orbit node:converge <node> --force` on every affected serving Node. A plain converge compares code digests and can skip a changed attachment. Synchronize the environment after attachment or rotation.
 
 ### Website build and protection
 
@@ -134,7 +134,7 @@ php8.5 -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $a
 
 For Hauzer (Instance 71), repeat after Mealou passes: run `orbit instance:websocket:add hauzer-prod --instance=71 --public`, then `orbit env:sync --instance=71`. Use `hauzer.app`, the `hauzer-prod` public key, `orbit-rollout-71`, and a distinct nonce for the same external handshake and broadcast test. Build its website with `VITE_REVERB_HOST=hauzer.app`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`, and its own `VITE_REVERB_APP_KEY`.
 
-To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succeeds, then reattach without `--public` and sync the environment. This restores the private endpoint; public phone clients cannot use that endpoint. A failed withdrawal build needs a converge of each affected serving Node because the attachment intent has already been removed.
+To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succeeds, then reattach without `--public` and sync the environment. This restores the private endpoint; public phone clients cannot use that endpoint. A failed withdrawal build needs `orbit node:converge <node> --force` on each affected serving Node because the attachment intent has already been removed.
 
 ## The Reverb server
 

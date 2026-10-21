@@ -24,7 +24,7 @@ final readonly class NativeWebSocketRoutePublisher implements WebSocketRoutePubl
                 $this->builds->build($node);
             } catch (NodeCaddyBuildException $exception) {
                 throw new ResourceOperationException('websocket.route_publication_failed',
-                    'The attachment environment is stored, but its Caddy build failed. Retry public attachment or converge the Route serving Nodes to repair a withdrawal.',
+                    'The attachment environment is stored, but its Caddy build failed. Retry public attachment to publish, or run node:converge with --force on the Route serving Nodes to repair a withdrawal.',
                     502, previous: $exception);
             }
         }

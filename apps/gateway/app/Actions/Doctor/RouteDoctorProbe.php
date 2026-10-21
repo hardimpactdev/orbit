@@ -62,11 +62,16 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     {
         $routes = $context->select($this->servedRoutes($context->node));
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
+        $attachments = WebSocketAppTarget::query()->with(['route.targets.instance'])->whereIn('route_id', $routes->modelKeys())->get()->unique('route_id');
         $observedChecks = [];
         foreach ($routes as $route) {
             $observedChecks[$route->id] = [RouteDoctorIssueCode::LifecycleNotActive->value, RouteDoctorIssueCode::DomainReserved->value];
+            if (! $attachments->contains('route_id', $route->id)) {
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::WebSocketCollision->value;
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::WebSocketInspectionFailed->value;
+            }
         }
-        foreach (WebSocketAppTarget::query()->with(['route.targets.instance'])->whereIn('route_id', $routes->modelKeys())->get()->unique('route_id') as $attachment) {
+        foreach ($attachments as $attachment) {
             $route = $attachment->route;
             if (! $route instanceof Route) {
                 continue;
