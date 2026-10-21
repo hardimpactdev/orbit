@@ -28,7 +28,7 @@ class GitBuildWatchTest(unittest.TestCase):
             response.__enter__.return_value = response
             response.geturl.return_value = watch.PPA
             response.read.return_value = b'{"entries": []}'
-            with self.subTest(error=error), patch.object(watch.urllib.request, 'urlopen', side_effect=[error, response]) as fetch, \
+            with self.subTest(error=str(error)), patch.object(watch.urllib.request, 'urlopen', side_effect=[error, response]) as fetch, \
                  patch.object(watch.time, 'sleep') as sleep:
                 self.assertEqual(watch.fetch_json(watch.PPA), {'entries': []})
                 self.assertEqual(fetch.call_count, 2)
