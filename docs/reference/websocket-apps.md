@@ -115,7 +115,7 @@ Changes to PHP code still require a process restart. Announce a reconnect window
 
 ## Deploy and recover
 
-Each Gateway release pins an immutable orbit-reverb commit in its configuration. A Gateway rollback selects that release's matching server commit. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
+Each Gateway release pins an immutable orbit-reverb commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php`. This value has no environment override. A Gateway rollback selects that release's matching server commit. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
 
 Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. Recovery rolls forward to a compatible release or restores a coordinated backup.
 
