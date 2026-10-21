@@ -385,8 +385,8 @@ SH);
 
         expect($shardCount)->toBeGreaterThan(1);
         expect($jobs)->not->toHaveKey('gateway-plan');
-        expect($jobs['project'])->not->toHaveKey('needs');
-        expect($jobs['gateway-shards'])->not->toHaveKeys(['needs', 'if'])
+        expect($jobs['project']['needs'])->toBe('changes');
+        expect($jobs['gateway-shards'])->toMatchArray(['needs' => 'changes', 'if' => 'fromJSON(needs.changes.outputs.jobs).gateway-shards'])
             ->toMatchArray([
                 'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, $shardCount)]],
             ]);
@@ -412,22 +412,21 @@ SH);
         // Required checks refuses failed, cancelled or skipped full-suite shards, whatever the event.
         expect($jobs['required']['needs'])->toContain('gateway-shards')
             ->and($jobs['required']['steps'][0]['env'])->toMatchArray([
-                'GATEWAY_SHARDS_RESULT' => '${{ needs.gateway-shards.result }}',
+                'NEEDS' => '${{ toJSON(needs) }}',
             ]);
         $required = $jobs['required']['steps'][0]['run'];
-        $verdict = function (array $results) use ($required): bool {
-            $process = new Process(['bash', '-ec', $required], null, $results + [
-                'PROJECT_RESULT' => 'success',
-                'PRIVILEGED_RESULT' => 'success', 'API_REFERENCE_RESULT' => 'success', 'WEB_RESULT' => 'success',
-                'PI_SERVER_RESULT' => 'success', 'AGENT_RESULT' => 'success', 'DESKTOP_RESULT' => 'success',
-                'REMOTE_PROGRAMS_RESULT' => 'success',
-            ]);
+        $verdict = function (string $result) use ($required, $jobs): bool {
+            $selected = array_fill_keys(array_diff($jobs['required']['needs'], ['changes']), true);
+            $needs = array_fill_keys(array_keys($selected), ['result' => 'success']);
+            $needs['changes'] = ['result' => 'success', 'outputs' => ['jobs' => json_encode($selected, JSON_THROW_ON_ERROR)]];
+            $needs['gateway-shards']['result'] = $result;
+            $process = new Process(['bash', '-ec', $required], env: ['NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR)]);
 
             return $process->run() === 0;
         };
-        expect($verdict(['GATEWAY_SHARDS_RESULT' => 'success']))->toBeTrue();
+        expect($verdict('success'))->toBeTrue();
         foreach (['failure', 'cancelled', 'skipped'] as $result) {
-            expect($verdict(['GATEWAY_SHARDS_RESULT' => $result]))->toBeFalse();
+            expect($verdict($result))->toBeFalse();
         }
         expect($jobs['required']['steps'][0]['env'])->not->toHaveKey('CHANGE_RUN')
             ->and($required)->not->toContain('CHANGE_RUN');
@@ -436,7 +435,10 @@ SH);
 
     it('keeps one project lane per suite and preserves main cache indexes', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
-        $matrix = $workflow['jobs']['project']['strategy']['matrix'];
+        expect($workflow['jobs']['project']['strategy']['matrix'])->toBe('${{ fromJSON(needs.changes.outputs.matrix) }}');
+        $process = new Process(['python3', 'bin/ci-changes', '--event', 'workflow_dispatch'], base_path('../..'));
+        $process->mustRun();
+        $matrix = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['matrix'];
 
         expect(array_keys($matrix))->toBe(['project']);
         expect(array_column($matrix['project'], 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK']);
@@ -498,20 +500,21 @@ it('requires the lint and direct tests of the Gateway remote programs in CI', fu
 
     expect(implode("\n", $commands))->toContain('shellcheck', 'ruff==0.17.0', 'bin/remote-programs-check')
         ->and($workflow['jobs']['required']['needs'])->toContain('remote-programs')
-        ->and($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$REMOTE_PROGRAMS_RESULT" = success');
+        ->and($job['if'])->toBe('fromJSON(needs.changes.outputs.jobs).remote-programs');
 });
 
 it('keeps the whole privileged group required in one disposable CI job', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['privileged'];
     expect($job['runs-on'])->toBe('ubuntu-26.04');
-    expect($job)->not->toHaveKey('strategy')->not->toHaveKey('if');
+    expect($job)->not->toHaveKey('strategy');
+    expect($job['if'])->toBe('fromJSON(needs.changes.outputs.jobs).privileged');
     $commands = implode("\n", array_column($job['steps'], 'run'));
     expect($commands)->toContain('vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never');
     expect($commands)->toContain('--group=privileged', '--fail-on-empty-test-suite')
         ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
-    expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
+    expect($workflow['jobs']['required']['steps'][0]['env']['NEEDS'])->toBe('${{ toJSON(needs) }}');
 });
 
 it('lets stock ParaTest use every available CPU in each CI test run', function (): void {
@@ -531,15 +534,13 @@ it('lets stock ParaTest use every available CPU in each CI test run', function (
 
 it('builds the agent and desktop app on a handoff push only when it changes them since main', function (string $job, string $output): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
-    $steps = $workflow['jobs'][$job]['steps'];
-    $detect = array_column($steps, null, 'id')['changes'];
+    $gated = $workflow['jobs'][$job];
 
-    // GitHub expressions treat 0 as false, so the depth is a string: a handoff push needs origin/main for the merge-base.
-    expect($steps[0]['with']['fetch-depth'])->toBe("\${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}")
-        ->and($detect)->not->toHaveKey('env')
-        ->and($detect['run'])->toContain('if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi')
-        ->toContain('if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD')
-        ->toContain('echo "'.$output.'=true"');
+    expect($gated['needs'])->toBe('changes')
+        ->and($gated['if'])->toBe('fromJSON(needs.changes.outputs.jobs).'.$output);
+    foreach ($gated['steps'] as $step) {
+        expect($step['if'] ?? '')->not->toContain('steps.changes');
+    }
 })->with([['agent', 'agent'], ['desktop', 'desktop']]);
 
 it('defines a handoff push and a change run once, and lets no job choose its runner or tests by them', function (): void {
@@ -548,7 +549,7 @@ it('defines a handoff push and a change run once, and lets no job choose its run
     $change = "github.event_name == 'pull_request' || ".$handoff;
 
     // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Only steps read
-    // them, for cache keys and change bases: every event runs the same jobs on the same runners.
+    // them, for cache keys and change bases. The changes job selects projects for all jobs.
     expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
         ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
         ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(2);

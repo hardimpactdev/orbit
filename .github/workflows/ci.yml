@@ -27,30 +27,43 @@ env:
   # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
   # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
   # request or a handoff push, and every job treats both alike. Steps read these values; a change run differs only
-  # in its cache keys and change bases, never in which tests run. No job's `if` or `runs-on` reads them.
+  # in its cache keys and change bases. The changes job selects projects; selected suites always run in full.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
+  changes:
+    name: Changed projects
+    runs-on: ubuntu-26.04
+    outputs:
+      matrix: ${{ steps.changes.outputs.matrix }}
+      jobs: ${{ steps.changes.outputs.jobs }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Test project mapping
+        run: python3 -m unittest discover -s tools -p test_ci_changes.py
+      - name: Select touched projects
+        id: changes
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          CHANGE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 bin/ci-changes --base "$CHANGE_BASE" --head "$CHANGE_HEAD" --github-output "$GITHUB_OUTPUT"
+
   project:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).project
     name: ${{ matrix.project.name }}
     # This Gateway job checks quality on any orbit-shard runner while the Gateway shards run its tests, on every event.
     # Fork PRs never run on self-hosted runners.
     runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
-      matrix:
-        project:
-          - name: CLI
-            directory: apps/cli
-          - name: Docs
-            directory: apps/docs
-          - name: Gateway
-            directory: apps/gateway
-          - name: E2E
-            directory: apps/e2e
-          - name: PHP SDK
-            directory: packages/php-sdk
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
 
     defaults:
       run:
@@ -299,6 +312,8 @@ jobs:
 
   # Every run uses the static stock shard matrix below as the only source of the shard count.
   gateway-shards:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).gateway-shards
     name: Gateway shards
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
@@ -372,6 +387,8 @@ jobs:
         run: vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).privileged
     name: Gateway privileged
     # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
@@ -406,6 +423,8 @@ jobs:
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).remote-programs
     name: Remote programs
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -450,6 +469,8 @@ jobs:
         run: bin/remote-programs-check
 
   api-reference:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).api-reference
     name: API reference
     runs-on: ubuntu-26.04
 
@@ -490,6 +511,8 @@ jobs:
         run: bin/mcp-tools --check
 
   web:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).web
     name: Web
     runs-on: ubuntu-26.04
 
@@ -564,6 +587,8 @@ jobs:
           retention-days: 14
 
   pi-server:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).pi-server
     name: Pi server
     runs-on: ubuntu-26.04
 
@@ -616,6 +641,8 @@ jobs:
         run: bun run build
 
   agent:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).agent
     name: Rust agent
     runs-on: ubuntu-26.04
     defaults:
@@ -627,55 +654,30 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
-      # A change run that changes neither the agent nor this workflow cannot change the agent build.
-      # Pushes to main and manual runs always build it.
-      - name: Detect agent changes
-        id: changes
-        working-directory: .
-        run: |
-          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
-          base=HEAD^1
-          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
-          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
-            echo "agent=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "agent=false" >> "$GITHUB_OUTPUT"
-            echo "The change does not touch apps/agent or ci.yml; skipping the agent build."
-          fi
       - name: Install Rust toolchain
-        if: steps.changes.outputs.agent == 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
           components: clippy,rustfmt
       - name: Restore Rust caches
-        if: steps.changes.outputs.agent == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/agent
       - name: Install cross compiler
-        if: steps.changes.outputs.agent == 'true'
         run: command -v cross >/dev/null || cargo install cross --locked
       - name: Check formatting
-        if: steps.changes.outputs.agent == 'true'
         run: cargo fmt --all -- --check
       - name: Run clippy
-        if: steps.changes.outputs.agent == 'true'
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run tests
-        if: steps.changes.outputs.agent == 'true'
         run: cargo test --locked
       - name: Build static x86_64 binary
-        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target x86_64-unknown-linux-musl
       - name: Build static aarch64 binary
-        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target aarch64-unknown-linux-musl
 
       # Keep this after the builds so a version bump can prove its binaries before tagging.
-      # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      # Shared recipe and delivery tooling select this job through bin/ci-changes.
       - name: Install Python test tools
         working-directory: .
         run: |
@@ -691,6 +693,8 @@ jobs:
           python3 tools/check_agent_release.py
 
   desktop:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).desktop
     name: Desktop app
     runs-on: ubuntu-26.04
     defaults:
@@ -702,23 +706,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
-      # A change run that changes neither the desktop app nor this workflow cannot change its build.
-      # Pushes to main and manual runs always check it.
-      - name: Detect desktop changes
-        id: changes
-        working-directory: .
-        run: |
-          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
-          base=HEAD^1
-          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
-          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "desktop=false" >> "$GITHUB_OUTPUT"
-            echo "The change does not touch apps/desktop or ci.yml; skipping the desktop checks."
-          fi
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -726,46 +713,39 @@ jobs:
 
       - name: Set up Bun
         id: bun
-        if: steps.changes.outputs.desktop == 'true'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
       - name: Restore Bun downloads
-        if: steps.changes.outputs.desktop == 'true' && (github.ref != 'refs/heads/main' || github.event_name == 'pull_request')
+        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - name: Cache Bun downloads on main
-        if: steps.changes.outputs.desktop == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - name: Install dependencies
-        if: steps.changes.outputs.desktop == 'true'
         run: bun install --frozen-lockfile
       # Tauri links WebKitGTK on Linux; https://v2.tauri.app/start/prerequisites/ lists these packages.
       - name: Install the Tauri system libraries
-        if: steps.changes.outputs.desktop == 'true'
         timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
       - name: Install Rust toolchain
-        if: steps.changes.outputs.desktop == 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy,rustfmt
       - name: Restore Rust caches
-        if: steps.changes.outputs.desktop == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
       - name: Check formatting
-        if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
       - name: Run clippy
-        if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
@@ -793,19 +773,21 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
+    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
     runs-on: ubuntu-26.04
     steps:
-      - name: Require every project to pass
+      - name: Require every selected project to pass
         env:
-          PROJECT_RESULT: ${{ needs.project.result }}
-          GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
-          PRIVILEGED_RESULT: ${{ needs.privileged.result }}
-          REMOTE_PROGRAMS_RESULT: ${{ needs.remote-programs.result }}
-          API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
-          WEB_RESULT: ${{ needs.web.result }}
-          PI_SERVER_RESULT: ${{ needs.pi-server.result }}
-          AGENT_RESULT: ${{ needs.agent.result }}
-          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          test "$PROJECT_RESULT" = success && test "$GATEWAY_SHARDS_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success
+          python3 - <<'PYTHON'
+          import json, os
+          needs = json.loads(os.environ['NEEDS'])
+          assert needs['changes']['result'] == 'success', 'Project detection did not succeed'
+          selected = json.loads(needs['changes']['outputs']['jobs'])
+          assert set(selected) == set(needs) - {'changes'}, 'Missing project selections'
+          for job, touched in selected.items():
+              assert type(touched) is bool, f'{job}: invalid selection'
+              result = needs[job]['result']
+              assert result == 'success' or (result == 'skipped' and not touched), f'{job}: {result}'
+          PYTHON

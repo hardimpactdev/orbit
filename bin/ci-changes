@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Map changed paths to CI projects with git diff and stock Python. No test selection.
+
+This is the single dependency map for CI. Rules are additive; an unknown path
+selects everything. Main, schedules and manual dispatches always select everything.
+"""
+import argparse
+from fnmatch import fnmatchcase
+import json
+import os
+from pathlib import Path
+import subprocess
+
+ROOT = Path(__file__).resolve().parent.parent
+PROJECTS = {
+    'cli': {'name': 'CLI', 'directory': 'apps/cli'},
+    'docs': {'name': 'Docs', 'directory': 'apps/docs'},
+    'gateway': {'name': 'Gateway', 'directory': 'apps/gateway'},
+    'e2e': {'name': 'E2E', 'directory': 'apps/e2e'},
+    'php-sdk': {'name': 'PHP SDK', 'directory': 'packages/php-sdk'},
+}
+JOB_PROJECTS = {
+    'project': set(PROJECTS),
+    'gateway-shards': {'gateway'},
+    'privileged': {'gateway'},
+    'remote-programs': {'gateway'},
+    'api-reference': {'api-reference'},
+    'web': {'web'},
+    'pi-server': {'pi-server'},
+    'agent': {'agent'},
+    'desktop': {'desktop'},
+}
+ALL = set().union(*JOB_PROJECTS.values())
+RULES = [
+    # bin/docs-openapi reads Gateway, CLI command and SDK sources. Docs' real
+    # generated_merge_test.py exercises those generators and web type generation.
+    ('apps/cli/*', {'cli', 'docs', 'api-reference'}),
+    ('apps/gateway/*', {'gateway', 'docs', 'api-reference'}),
+    ('apps/docs/*', {'docs'}),
+    ('apps/e2e/*', {'e2e'}),
+    # CLI's composer.json has the SDK path repository; Gateway's response tests
+    # read packages/php-sdk/fixtures through tests/Support/ResponseFixtures.php.
+    ('packages/php-sdk/*', {'php-sdk', 'cli', 'gateway'}),
+    ('packages/php-sdk/src/*', {'docs', 'api-reference'}),
+    # Desktop's Tauri config consumes the web app; Docs' merge proof builds types.
+    ('apps/web/*', {'web', 'desktop', 'docs'}),
+    ('apps/pi-server/*', {'pi-server'}),
+    ('apps/agent/*', {'agent'}),
+    # Gateway's log tests share the agent's real redaction and journal fixtures.
+    ('apps/agent/tests/*', {'gateway'}),
+    # tools/check_agent_release.py validates this pin against apps/agent/Cargo.toml.
+    ('apps/gateway/resources/machine-software/recipe.json', {'agent'}),
+    ('docs/*', {'docs'}),
+    ('docs/api/*', {'api-reference'}),
+    ('docs/docs.json', {'api-reference'}),
+    # OpenAPI feeds web schema generation, SDK/CLI contracts and Gateway MCP tools.
+    ('docs/openapi.json', {'api-reference', 'web', 'php-sdk', 'cli', 'gateway'}),
+    # Shared workflow/actions, executables, analysis rules and root configuration.
+    ('.github/*', ALL),
+    ('bin/*', ALL),
+    ('tools/*', ALL),
+    ('.agents/*', ALL),
+    ('.codex/*', ALL),
+]
+
+
+def selection(paths, full=False):
+    selected = set(ALL) if full else set()
+    for path in paths:
+        matches = [projects for pattern, projects in RULES if fnmatchcase(path, pattern)]
+        selected.update(set().union(*matches) if matches else ALL)
+    return {
+        'matrix': {'project': [value for key, value in PROJECTS.items() if key in selected]},
+        'jobs': {job: bool(projects & selected) for job, projects in JOB_PROJECTS.items()},
+    }
+
+
+def changed_paths(base, head, root=ROOT):
+    merge_base = subprocess.check_output(['git', 'merge-base', base, head], cwd=root, text=True).strip()
+    # --no-renames includes both sides of a move, so moving out of a project tests it too.
+    paths = subprocess.check_output(
+        ['git', 'diff', '--name-only', '--no-renames', '-z', merge_base, head], cwd=root,
+    )
+    return paths.decode().rstrip('\0').split('\0') if paths else []
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base', default='origin/main')
+    parser.add_argument('--head', default='HEAD')
+    parser.add_argument('--event', default=os.environ.get('GITHUB_EVENT_NAME', 'workflow_dispatch'))
+    parser.add_argument('--ref', default=os.environ.get('GITHUB_REF', ''))
+    parser.add_argument('--github-output', type=Path)
+    args = parser.parse_args()
+    change_run = args.event == 'pull_request' or (
+        args.event == 'push' and args.ref.startswith('refs/heads/task-') and args.ref.endswith('-handoff')
+    )
+    result = selection(changed_paths(args.base, args.head, Path.cwd()) if change_run else [], full=not change_run)
+    print(json.dumps(result))
+    if args.github_output:
+        with args.github_output.open('a') as output:
+            for key, value in result.items():
+                output.write(f'{key}={json.dumps(value, separators=(",", ":"))}\n')
+
+
+if __name__ == '__main__':
+    main()

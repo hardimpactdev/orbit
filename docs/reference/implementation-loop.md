@@ -561,7 +561,9 @@ Main always runs full suites, sharded as on a pull request. This keeps merge and
 
 ### Full suites gate merges
 
-Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref. Orbit runs all five Composer suites on each PR, including architecture tests and tests that start PHP subprocesses.
+Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, including architecture tests and tests that start PHP subprocesses. On 2026-10-21 he confirmed that untouched projects must start no CI jobs. The `changes` job compares the PR head with its merge base and applies the path and consumer map in [`bin/ci-changes`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-changes). That file owns project paths, shared contracts, and their consumers. Root Composer files, workflow and action files, `bin/`, `tools/`, shared configuration, and unknown paths select everything. Ordinary documentation pages select only Docs; API documentation also selects API reference checks, and generated API contracts, CLI guides, and the delivery-line reference select their tested consumers.
+
+Each selected project runs its full suite. Job conditions skip untouched projects before they take a runner, and the Composer matrix contains only selected projects. `Required checks` accepts a skipped job only when `changes` succeeded and explicitly marked that job untouched. A failure, cancellation, missing selection, or unexpected skip fails the gate. Main pushes, schedules, and manual dispatches select every project, so main checks the dependency map within one merge.
 
 Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. Only the pull request's own `pull_request` run for that head counts, also when the head is the last handoff commit, so the merge with the current base is tested before it lands. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches run the same full suites.
 
