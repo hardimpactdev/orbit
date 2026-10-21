@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 POLICY = Path('/usr/sbin/policy-rc.d')
 APT_ETC = Path('/etc/apt')
+NODE_USR = Path('/usr')
 DPKG_LOG = Path('/var/log/dpkg.log')
 UBUNTU_KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
 MAX_SNAPSHOT_LOOKUPS = 3
@@ -527,19 +528,68 @@ def node_sources():
                             'nodistro', ['main'], 'node')
 
 
+def node_config(changes):
+    """Validate NodeSource-owned preference/key files and preflight durable backups."""
+    files = []
+    for name in ('nodejs', 'nsolid'):
+        path = APT_ETC / 'preferences.d' / name
+        if not path.exists() and not path.is_symlink():
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise RecipeFailure('node-ownership', detail=f'Refusing unexpected NodeSource preference [{path}].')
+        content = path.read_bytes()
+        fields = deb822_fields(content.decode(), str(path))
+        if (set(fields) != {'package', 'pin', 'pin-priority'} or fields['package'] != name
+                or fields['pin'] != 'origin deb.nodesource.com' or not re.fullmatch(r'-?[0-9]+', fields['pin-priority'])):
+            raise RecipeFailure('node-ownership', detail=f'Refusing mixed or unexpected NodeSource preference [{path}].')
+        files.append((path, content, 'node-preference'))
+    replacements = {path: after.decode() for path, before, after in changes}
+    sources = [APT_ETC / 'sources.list', *sorted((APT_ETC / 'sources.list.d').glob('*.sources')),
+               *sorted((APT_ETC / 'sources.list.d').glob('*.list'))]
+    for path, owner in ((NODE_USR / 'share/keyrings/nodesource.gpg', 'node-usr-keyring'),
+                        (APT_ETC / 'keyrings/nodesource.gpg', 'node-apt-keyring')):
+        if not path.exists() and not path.is_symlink():
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise RecipeFailure('node-ownership', detail=f'Refusing unexpected NodeSource keyring [{path}].')
+        for source in sources:
+            if source.is_file():
+                remaining = replacements[source] if source in replacements else source.read_text()
+                active = '\n'.join(line for line in remaining.splitlines() if not line.lstrip().startswith('#'))
+                if str(path) in active:
+                    raise RecipeFailure('node-ownership', detail=f'NodeSource keyring [{path}] is still referenced by [{source}].')
+        files.append((path, path.read_bytes(), owner))
+    for path, content, owner in files:
+        backup_apt_source(path, content, owner, check_only=True)
+    return files
+
+
+def dangling_corepack_links():
+    links = []
+    for name in ('yarn', 'yarnpkg', 'pnpm', 'pnpx'):
+        path = NODE_USR / 'bin' / name
+        expected = NODE_USR / 'lib/node_modules/corepack/dist' / (name + '.js')
+        if (path.is_symlink() and not path.exists()
+                and Path(os.path.abspath(path.parent / os.readlink(path))) == expected):
+            links.append(path)
+    return links
+
+
 def consolidate_node(tools, *, apply=False):
     """The recipe owns Node. Retire duplicate APT ownership only after verifying its replacement."""
     if 'node' not in tools:
         return []
     changes = node_sources()
+    config = node_config(changes)
     installed = 'nodejs' in packages()
     actions = (['remove_nodejs_package'] if installed else []) + (['retire_node_source'] if changes else [])
+    actions += (['retire_node_config'] if config else []) + (['remove_corepack_links'] if dangling_corepack_links() else [])
     if not apply:
         return actions
     if inspect({'node': tools['node']})['node'] != tools['node']['version']:
         raise RecipeFailure('node-ownership', detail='Verify the recipe Node runtime before removing the APT source.')
     if installed:
-        environment = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive')
+        environment = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
         result = package_command(['apt-get', '--simulate', 'remove', '--', 'nodejs'], ['nodejs'], env=environment)
         removed = [line.split()[1] for line in result.stdout.splitlines() if line.startswith('Remv ')]
         if removed != ['nodejs']:
@@ -548,6 +598,11 @@ def consolidate_node(tools, *, apply=False):
         if 'nodejs' in packages():
             raise RecipeFailure('node-ownership', detail='The duplicate nodejs package is still installed.')
     retire_sources(changes, 'node')
+    for path, content, owner in config:
+        backup_apt_source(path, content, owner)
+        path.unlink()
+    for path in dangling_corepack_links():
+        path.unlink()
     return actions
 
 
@@ -679,6 +734,7 @@ def inspect(tools):
         # Store executables are account-writable. Never inspect them with container/host root privileges.
         if os.geteuid() == 0:
             prefix = ['sudo', '-u', account.pw_name, '-H']
+        prefix += ['env', 'VP_HOME=' + str(scope)]
     for name, pin in tools.items():
         if pin['source'] == 'ubuntu' or (pin['source'] == 'artifact' and any(a['url'].endswith('.deb') for a in pin.get('artifacts', {}).values())):
             versions[name] = installed.get(pin['package'] if pin['source'] == 'ubuntu' else name)
@@ -688,7 +744,7 @@ def inspect(tools):
             binary = (scope / 'bin/vp').resolve()
             # Even --version can bootstrap an unmarked Vite+ executable. Never invoke one in a read.
             ready = binary.is_file() and (binary.parent / '.vp-setup-complete').is_file()
-            versions[name] = binary_version(binary, dict(os.environ, VP_HOME=str(scope)), prefix=prefix) if ready else None
+            versions[name] = binary_version(binary, prefix=prefix) if ready else None
         elif name == 'vp':
             digest = pin.get('lock_sha256')
             target = scope / 'recipe' / ('vp-runtime-' + str(digest))

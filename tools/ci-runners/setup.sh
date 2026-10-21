@@ -167,7 +167,14 @@ install -d -o runner -g runner /home/runner/work
 
 # Install and verify recipe Node, then retire duplicate APT ownership with a dependency check.
 python3 /root/orbit-php-build/tools/ci-runners/javascript.py
-sudo -u runner -H /usr/local/bin/node --version
+# Verify the launcher from a directory that runner can traverse, against the recipe.
+expected_node_version=$(python3 -c 'import json,sys; print("v" + json.load(open(sys.argv[1]))["tools"]["node"]["version"])' /root/orbit-php-build/apps/gateway/resources/machine-software/recipe.json)
+actual_node_version=$(cd / && sudo -u runner -H /usr/local/bin/node --version)
+if [ "$actual_node_version" != "$expected_node_version" ]; then
+  echo "Runner Node version does not match the recipe: expected $expected_node_version, got $actual_node_version" >&2
+  exit 1
+fi
+printf '%s\n' "$actual_node_version"
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"

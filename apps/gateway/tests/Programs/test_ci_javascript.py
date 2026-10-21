@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import types
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -38,7 +40,30 @@ class CiJavascriptTest(unittest.TestCase):
         recipe.inspect.assert_called_once_with(selected)
         recipe.consolidate_node.assert_called_once_with(selected, apply=True)
 
-    def test_setup_smoke_check_runs_as_runner(self):
+    def smoke_check(self, actual):
         source = (ROOT / 'tools/ci-runners/setup.sh').read_text()
-        self.assertIn('sudo -u runner -H /usr/local/bin/node --version', source)
-        self.assertNotIn('\n/usr/local/bin/node --version', source)
+        source = source[source.index('# Verify the launcher'):source.index('if [ ! -x /home/runner/actions-runner/config.sh ]')]
+        source = source.replace('/root/orbit-php-build', str(ROOT))
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            private = work / 'private'
+            private.mkdir(mode=0o700)
+            sudo = work / 'sudo'
+            sudo.write_text('#!/bin/sh\n[ "$PWD" = / ] || exit 71\n'
+                            '[ "$*" = "-u runner -H /usr/local/bin/node --version" ] || exit 72\n'
+                            'printf "%s\\n" "$SMOKE_NODE_VERSION"\n')
+            sudo.chmod(0o755)
+            return subprocess.run(['bash', '-euo', 'pipefail', '-c', source], cwd=private,
+                                  env=dict(os.environ, PATH=directory + ':' + os.environ['PATH'], SMOKE_NODE_VERSION=actual),
+                                  capture_output=True, text=True)
+
+    def test_setup_smoke_check_escapes_private_cwd_and_matches_recipe_as_runner(self):
+        version = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['node']['version']
+        result = self.smoke_check('v' + version)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'v' + version)
+
+    def test_setup_smoke_check_rejects_wrong_runtime_version(self):
+        result = self.smoke_check('v24.22.0')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not match the recipe', result.stderr)
