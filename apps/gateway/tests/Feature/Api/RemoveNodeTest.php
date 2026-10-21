@@ -1514,3 +1514,22 @@ it('removes an unrelated Node without contacting database servers and prunes onl
         expect(implode("\n", $filter->calls[0]['rules']))->not->toContain('-s 10.0.0.4/32');
     }
 })->with([[false, true], [true, false], [true, true]]);
+
+it('restores a LAN peer filter when a later removal step fails', function (): void {
+    $caller = remove_node_record('operator', '10.44.0.2');
+    $target = remove_node_record('lan-peer', '10.44.0.3');
+    $databaseNode = remove_node_record('database-host', '10.44.0.80');
+    $databaseNode->update(['lan_ip' => '10.0.0.6']);
+    $target->update(['lan_ip' => '10.0.0.4']);
+    $caller->accessibleNodes()->attach($target);
+    DatabaseServer::query()->create(['slug' => 'managed-pg', 'node_id' => $databaseNode->id, 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => true, 'lan_node_ids' => [$target->id]]);
+    $this->metricsAccess->failure = new RuntimeException('Grafana unavailable');
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $e): bool => $e->errorCode === 'node.grafana_access_revocation_failed');
+    $calls = app(DatabaseServerFirewall::class)->calls;
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($calls)->toHaveCount(2)
+        ->and(implode("\n", $calls[0]['rules']))->not->toContain('-s 10.0.0.4/32')
+        ->and(implode("\n", $calls[1]['rules']))->toContain('-s 10.0.0.4/32')
+        ->and($calls[1]['expand'])->toBeTrue();
+});

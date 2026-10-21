@@ -94,7 +94,7 @@ final readonly class CreateDatabaseServerAction
         }
 
         $this->lan->validate($node, $data->lanNodeIds ?? []);
-        if ($data->driver === DatabaseDriver::Pgsql && preg_match('/\A18(?:\.[0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]*)?\z/D', $data->tag) !== 1) {
+        if ($data->driver === DatabaseDriver::Pgsql && preg_match(DatabaseServerProcess::POSTGRES_TAG_PATTERN, $data->tag) !== 1) {
             throw new ResourceOperationException('validation.failed', 'Managed PostgreSQL requires a major 18 image tag.', 422);
         }
         $adoption = null;
@@ -211,7 +211,7 @@ final readonly class CreateDatabaseServerAction
     private function provision(DatabaseServer $server, Node $node): void
     {
         $server->update([
-            'status' => LifecycleStatus::Provisioning,
+            'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Provisioning,
             'failed_step' => null,
             'error_code' => null,
         ]);

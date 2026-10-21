@@ -68,7 +68,7 @@ All three drivers publish on WireGuard and, when set, `lan_ip`. The stored conne
 
 Only IPv4 is published. LAN traffic is limited to the server Node and explicitly selected active peer Nodes. WireGuard admits all mesh peers, as today. Orbit installs a raw PREROUTING chain before Docker DNAT with an owned UFW `before.init` hook. Allowed traffic returns to Docker's own rules; other endpoint ingress drops. UFW must be installed and active or creation fails before publication.
 
-An owned INPUT chain permits only exact private endpoint hairpin traffic from `docker0`, including the LAN endpoint for local containers. A Docker service drop-in requires UFW and restores the filter before daemon startup. A failed check prevents Docker startup. The database role adds no broad port allow.
+An owned INPUT chain permits only exact private endpoint hairpin traffic from `docker0`, including the LAN endpoint for local containers. A Docker service drop-in starts after UFW and restores the filter before daemon startup. Its `Wants=` dependency does not propagate an operator UFW stop or restart to Docker. A failed check prevents Docker startup. The database role adds no broad port allow.
 
 Filtering is enabled for a server only by its explicit create/retry. Existing servers stay unchanged until their operators retry create. Doctor checks publication and filter drift only after this choice; SQL login and Valkey ACL checks still run. Creating PostgreSQL on Services does not filter an existing Valkey server there. Node provisioning, LAN address changes and removal reconcile only enabled servers on that Node or naming it as a LAN peer. An unrelated enrollment never contacts database hosts.
 
@@ -277,7 +277,10 @@ The server commands return these codes.
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
-| `database.driver_unsupported` | 422 | The command does not work on a `redis` server. |
+| `database.driver_unsupported` | 422 | The driver does not support this operation, including Instance-owned PostgreSQL databases. |
+| `database.server_firewall_failed` | 502 | The private endpoint filter could not be applied or verified. |
+| `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
+| `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
 | `database.name_conflict` | 409 | The name is taken on the server. |
 | `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |

@@ -679,3 +679,12 @@ it('refuses ACL options without a server before sending', function (): void {
     $this->artisan('database:create', ['slug' => 'app', '--driver' => 'redis', '--host' => 'localhost', '--pattern' => ['app:*'], '--json' => true])->assertExitCode(1);
     expect($mockClient->getLastPendingRequest())->toBeNull();
 });
+
+it('sends the explicit attachment network with its prefix through the SDK', function (string $network): void {
+    $mockClient = database_cli_mock(AddInstanceDatabaseRequest::class, database_cli_attachment_data());
+    $this->artisan('instance:database:add', [
+        'slug' => 'app', '--instance' => '12', '--prefix' => 'CATALOG_DB', '--network' => $network, '--json' => true,
+    ])->doesntExpectOutputToContain(DATABASE_CLI_SECRET)->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())->toBe(['prefix' => 'CATALOG_DB', 'network' => $network]);
+})->with(['lan', 'wireguard']);

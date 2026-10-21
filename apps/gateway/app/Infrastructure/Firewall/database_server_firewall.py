@@ -19,7 +19,7 @@ END = '# END ORBIT DATABASE FIREWALL\n'
 HOOK_BLOCK = BEGIN + '/etc/orbit/database-firewall "${1:-start}" || exit $?\n' + END
 DROPIN_CONTENT = '''[Unit]
 After=ufw.service
-Requires=ufw.service
+Wants=ufw.service
 
 [Service]
 ExecStartPre=/etc/orbit/database-firewall docker

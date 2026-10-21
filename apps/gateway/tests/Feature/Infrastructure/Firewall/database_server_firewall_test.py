@@ -140,6 +140,9 @@ class FirewallTest(unittest.TestCase):
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_runner_keeps_exactly_one_first_jump_and_blocks_docker_without_ufw(self):
+        self.assertIn('Wants=ufw.service', f.DROPIN_CONTENT)
+        self.assertIn('After=ufw.service', f.DROPIN_CONTENT)
+        self.assertNotIn('Requires=', f.DROPIN_CONTENT)
         # Execute the real shell runner with fake iptables, never the host firewall.
         commands = self.root / 'bin'
         commands.mkdir()

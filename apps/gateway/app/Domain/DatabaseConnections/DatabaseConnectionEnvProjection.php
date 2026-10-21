@@ -11,8 +11,8 @@ use App\Models\DatabaseServer;
 use App\Models\Node;
 
 /**
- * The prefixed env keys of a connection. Host and port are always the record's own values, also
- * for an Instance on the connection's Node: Orbit publishes databases on the WireGuard address.
+ * Prefixed connection keys. Explicit LAN selection uses the managed server's peer policy;
+ * the default keeps the connection's recorded host and port.
  */
 final readonly class DatabaseConnectionEnvProjection
 {
@@ -65,7 +65,7 @@ final readonly class DatabaseConnectionEnvProjection
             throw new ResourceOperationException('validation.failed', 'The network must be wireguard or lan.', 422);
         }
         if (! $server instanceof DatabaseServer && $consumer instanceof Node) {
-            foreach (DatabaseServer::query()->where('port', $connection->port)->with('node')->get() as $candidate) {
+            foreach (DatabaseServer::query()->where('private_endpoints_managed', true)->where('port', $connection->port)->with('node')->get() as $candidate) {
                 if ($host === $candidate->node->lan_ip && ! (new DatabaseServerLanPolicy)->eligible($candidate, $consumer)) {
                     throw new ResourceOperationException('database.lan_unavailable', 'This LAN alias requires an active server peer.', 422);
                 }

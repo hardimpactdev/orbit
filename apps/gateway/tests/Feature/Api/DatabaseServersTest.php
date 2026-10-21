@@ -451,3 +451,14 @@ it('keeps an active server active after a publication repair fails and finishes 
     $this->runtime->failConverge = false;
     $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.failed_step', null);
 });
+
+it('keeps active SQL servers active when a readiness check fails during repair', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->admin->readiness = [false];
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+        ->and(DatabaseServer::query()->sole()->failed_step)->toBe('readiness');
+    $this->admin->readiness = [true];
+    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.failed_step', null);
+});

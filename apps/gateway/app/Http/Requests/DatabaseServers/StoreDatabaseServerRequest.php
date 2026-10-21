@@ -6,6 +6,7 @@ namespace App\Http\Requests\DatabaseServers;
 
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Http\Requests\DatabaseConnections\DatabaseConnectionFieldRules;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Support\ValidatedData;
@@ -32,7 +33,7 @@ final class StoreDatabaseServerRequest extends FormRequest
             'slug' => ['required', 'string', 'max:63', 'regex:'.DatabaseConnectionFieldRules::SLUG_PATTERN],
             'node_id' => ['required', 'integer', 'min:1', 'exists:nodes,id', self::strictInteger(...)],
             'driver' => ['sometimes', 'string', Rule::enum(DatabaseDriver::class)->only([DatabaseDriver::Mysql, DatabaseDriver::Redis, DatabaseDriver::Pgsql])],
-            'tag' => ['sometimes', 'string', 'max:128', 'regex:'.($this->input('driver') === 'pgsql' ? '/\A18(?:\.[0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]*)?\z/D' : self::TAG_PATTERN)],
+            'tag' => ['sometimes', 'string', 'max:128', 'regex:'.($this->input('driver') === 'pgsql' ? DatabaseServerProcess::POSTGRES_TAG_PATTERN : self::TAG_PATTERN)],
             'lan_node_ids' => ['sometimes', 'array', 'list', 'max:256'],
             'lan_node_ids.*' => ['integer', 'min:1', 'distinct', 'exists:nodes,id', self::strictInteger(...)],
             'port' => ['sometimes', 'integer', 'min:1', 'max:65535', self::strictInteger(...), 'prohibits:process_id'],

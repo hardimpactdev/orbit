@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -301,7 +302,7 @@ it('rejects sqlite attachments without the same Node before changing stored stat
 
     expect(DatabaseConnectionTarget::query()->exists())->toBeFalse()
         ->and(stored_env($this->instance))->toBe(['DB_DATABASE' => 'keep-me']);
-})->with([true, false]);
+})->with(['peer' => [true, true], 'non-peer' => [false, true], 'unmanaged' => [false, false]]);
 
 it('refuses updates that put a SQLite connection on a different Node from any attached Instance', function (string $driver, bool $clearNode): void {
     $nodeId = $driver === 'sqlite' ? $this->instance->node_id : $this->caller->id;
@@ -486,3 +487,30 @@ it('refuses LAN selection outside a managed server peer list before writing envi
         ->assertUnprocessable()->assertJsonPath('error.code', 'database.lan_unavailable');
     expect(DatabaseConnectionTarget::query()->count())->toBe(0)->and(stored_env($this->instance))->toBe([]);
 });
+
+it('checks LAN aliases when attaching and reports a peer removed after attachment', function (bool $eligible, bool $managed): void {
+    $consumer = $this->instance->node;
+    $consumer->update(['lan_ip' => '10.0.0.4']);
+    $this->caller->update(['lan_ip' => '10.0.0.6']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->caller->id, 'name' => 'managed-pg', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.0.0.6:5434:5432']], 'status' => 'active', 'desired_state' => 'running']);
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => $managed, 'lan_node_ids' => $eligible ? [$consumer->id] : []]);
+    DatabaseConnection::query()->create(['slug' => 'lan-alias', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'host' => '10.0.0.6', 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
+
+    $response = $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/lan-alias", ['prefix' => 'DB']);
+
+    if (! $eligible && $managed) {
+        $response->assertUnprocessable()->assertJsonPath('error.code', 'database.lan_unavailable');
+        expect(stored_env($this->instance))->toBe([]);
+
+        return;
+    }
+    $response->assertOk()->assertJsonPath('data.host', '10.0.0.6');
+    $inspection = app(DatabaseConnectionDoctorInspection::class);
+    expect($inspection->attachment(DatabaseConnectionTarget::query()->sole()))->toBe([]);
+    if (! $managed) {
+        return;
+    }
+    $server->update(['lan_node_ids' => []]);
+    $issues = $inspection->attachment(DatabaseConnectionTarget::query()->sole());
+    expect(array_map(fn ($issue): string => $issue->code, $issues))->toBe(['database_connection.inspection_failed']);
+})->with(['peer' => [true, true], 'non-peer' => [false, true], 'unmanaged' => [false, false]]);

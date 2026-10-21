@@ -21,6 +21,8 @@ use SensitiveParameter;
  */
 final readonly class DatabaseServerProcess
 {
+    public const string POSTGRES_TAG_PATTERN = '/\A18(?:\.[0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]*)?\z/D';
+
     public const string ROOT_PASSWORD_VARIABLE = 'MYSQL_ROOT_PASSWORD';
 
     public const int CONTAINER_PORT = 3306;
@@ -46,8 +48,7 @@ final readonly class DatabaseServerProcess
             image: ($server->driver === DatabaseDriver::Pgsql ? 'postgres:' : 'mysql:').$server->tag,
             workingDirectory: null,
             environment: [self::passwordVariable($server) => $rootPassword],
-            // WireGuard only: Docker publishes around the host firewall, so a server never
-            // listens on a public address.
+            // Publish private IPv4 endpoints only, after the ingress filter is verified.
             ports: self::publishedPorts($node, $server->port, $server->driver === DatabaseDriver::Pgsql ? 5432 : self::CONTAINER_PORT),
             volumes: [[
                 'source' => self::volume($server->slug),
