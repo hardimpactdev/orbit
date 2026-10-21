@@ -216,7 +216,7 @@ Every CI run shards the Gateway suite the same way: pull requests, handoff pushe
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On every event, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. No job selects a runner by the `sabre` label. All six self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On every event, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. No job selects a runner by the `sabre` label. All eight self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
@@ -226,13 +226,13 @@ A job never installs software on Sabre: the former PHP setup action made `/usr/l
 
 The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH.
 
-Sabre runs two Incus runner containers, `ci-sabre-1` and `ci-sabre-2`. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
+Sabre runs three Incus runner containers, `ci-sabre-1`, `ci-sabre-2` and `ci-sabre-3`. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
 
 Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 ### Self-hosted shard runners
 
-The Gateway shards use the `self-hosted` and `orbit-shard` labels. The six runner containers are `ci-beast-1` and `ci-beast-2`, `ci-shark-1` and `ci-shark-2`, and `ci-sabre-1` and `ci-sabre-2`. The workflow selects runners by label, not by name.
+The Gateway shards use the `self-hosted` and `orbit-shard` labels. The eight runner containers are `ci-beast-1`, `ci-shark-1` to `ci-shark-4`, and `ci-sabre-1` to `ci-sabre-3`. They serve the whole organization's queue, so the Gateway shard matrix has five shards: an Orbit run leaves runners free for other repositories' jobs. The workflow selects runners by label, not by name.
 
 Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
 
@@ -268,7 +268,7 @@ To remove the runners from a host, stop and uninstall each runner service as roo
 
 ```bash
 token=$(gh api -X POST orgs/hardimpactdev/actions/runners/remove-token --jq .token)
-for name in ci-beast-1 ci-beast-2; do  # ci-shark-1 on Shark
+for name in ci-beast-1; do  # ci-shark-1 to ci-shark-4 on Shark
   incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- sh -c './svc.sh stop && ./svc.sh uninstall'
   printf '%s\n' "$token" | incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- \
     su runner -c 'IFS= read -r token; ./config.sh remove --token "$token"'
@@ -294,7 +294,7 @@ Each Composer project job also caches two sets of quality files in GitHub Action
 
 A run on main restores quality caches for its branch, then the project. A PR restores quality caches only from main and saves none. CI records no TIA graph. Runs outside PRs save quality caches only after passing. Shard timings are committed source, not a cache. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
 
-CI publishes no files for the [main cache store](#main-caches) and no [CI cache ref](#ci-cache-refs).
+A passing project job on `main` also stages its Pint and PHPStan caches as a [CI artifact](#ci-artifacts) for the [SHA-bound Git ref](#ci-cache-refs) that task workspaces import. CI exports no test graph and nothing for the [main cache store](#main-caches).
 
 The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
 
@@ -472,26 +472,32 @@ It refuses a path that exists but is not a registered worktree. Then it runs `bi
 
 `bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation. `bin/bootstrap --dependencies-only` stops after dependency installation, including any requested Bun and Rust dependencies; it prepares no development state and runs no checks.
 
-`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh and removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
+`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Main caches
 
-Main caches let a new checkout start with warm test-impact graphs and warm Pint and PHPStan result caches. Orbit dropped TIA, so a main CI run records no graph and uploads no cache artifact. Publications that a worker already imported stay in the store, and a newer commit has none. No local command and no deployment runs a test suite, Pint, or PHPStan to fill the caches. Each repository keeps one store in its Git common directory under `orbit-tia/v1`. Linked worktrees share it.
+Main caches let a new checkout start with warm test-impact graphs and warm Pint and PHPStan result caches from a local store. Each repository keeps one store in its Git common directory under `orbit-tia/v1`. Linked worktrees share it. Nothing writes the store: Orbit dropped TIA, and main CI exports no graph for it. Checkouts seed only from the publications that the store already holds. Task VM workspaces get main's Pint and PHPStan caches from [CI cache refs](#ci-cache-refs) instead.
 
 | Path under `orbit-tia/v1` | Content |
 | --- | --- |
 | `published/<project>.json` | One test-impact graph per Composer project |
 | `quality/<project>/<tool>.json` | One Pint or PHPStan result cache per project |
-| `requests.json` | Pending refresh requests, the last result per project, and open correctness failures |
-| `refresh.log`, `run-*/` | The worker log and the per-run logs |
-| `runners/` | The frozen worker scripts |
-| `requests.lock`, `refresh.lock` | The queue lock and the worker lock |
 
-Each publication records the tested commit, the CI run, a checksum, and the inputs it is valid for. A new publication must descend from the one it replaces, so older results never replace newer ones.
+Each publication records the tested commit, the CI run, a checksum, and the inputs it is valid for.
 
 ### CI cache refs
 
-CI publishes no `refs/orbit/ci-cache/<sha>` ref. Refs that earlier main runs published stay on origin until someone deletes them; nothing prunes them.
+The `publish-ci-cache` job in `ci.yml` publishes main's Pint and PHPStan caches for task workspaces after `Required checks` succeeds on `main`. It runs for a main push, scheduled run, or manual dispatch on main, never for a pull request, fork, or other branch. It gathers the five Composer projects' [quality exports](#ci-artifacts) from the same run and tested SHA. All project jobs must pass before publication, because the job runs only after `Required checks` succeeds. A failed, cancelled, or incomplete run publishes no ref.
+
+Only this job receives `permissions: contents: write`. It pushes to the repository with its short-lived `GITHUB_TOKEN`; no personal token or Gateway credential is stored in CI. The workflow's other jobs keep `contents: read`. The Gateway later fetches the ref with its GitHub App's repository-scoped `Contents: read` token, through the same protected Git path as source reads. Neither a task VM nor an agent receives either credential.
+
+The job runs `bin/ci-cache-ref publish` to write a parentless cache-only Git commit and push it to `refs/orbit/ci-cache/<sha>`. Its tree contains no source files or source history. The suffix is the full tested code SHA, not the cache commit's SHA. The tree groups payloads by repository-relative project path.
+
+Each project has a schema-3 manifest and optional Pint and PHPStan caches. The manifest records the tested code SHA, project, CI run and exporting attempt, the checksum of each cache, each tool's configuration checksum, and the PHP minor version. It holds no test graph. A partial re-run may keep exports from earlier successful attempts of the same run and SHA. [Rector runs without a cache](#ci-caches-stay-separate); this transport does not change that policy.
+
+Before pushing, the publisher verifies that every manifest names the run's tested SHA, that each tool configuration matches that commit, and that all five project exports are complete. Consumers repeat the SHA and checksum checks; a ref name alone is not evidence that the payload fits. The source of trust is the successful main workflow and repository write access, not the checksums. PHPStan caches contain executable PHP.
+
+A ref is immutable while retained. A retry at the same code SHA keeps an existing valid publication rather than force-pushing it; a conflicting publication fails the publishing job. Publication failure leaves the code available without a cache ref and records the failure in the publishing job log.
 
 A new task VM workspace starts at the `origin/<default branch>` tip. For a Project that declares `@orbit/ci-caches`, the Gateway independently selects the newest commit on that tip's first-parent history with a published `refs/orbit/ci-cache/<sha>` ref, records it in `refs/worktree/orbit/ci-baseline`, and imports its caches. It logs the baseline SHA and its distance from the tip, including zero for a cached tip.
 
@@ -500,6 +506,21 @@ If no ancestor has a cache ref, the workspace starts cold with no recorded cache
 Existing task branches, seeded worktrees, and incoming pull requests keep their selected source commit. The ref for the remote default branch still tracks its latest head. The PR must pass the normal full-suite gate against latest main before merging.
 
 The Gateway fetches the `refs/orbit/ci-cache/*` namespace into its mirror alongside source refs. Cache fetching is optional: a cache-ref miss must not fail the required source fetch. The Gateway sends only the ref for the selected code baseline to a workspace over SSH. [Instance setup](/reference/instance-setup#import-ci-main-caches) owns the compatibility checks and import. A missing or incompatible payload leaves checks cold at the selected code commit. A cache ref for another SHA, even a newer one, is never substituted. The workspace imports Git objects, not an Actions download or a base64 command payload.
+
+### Cache ref retention
+
+After each publication, the publisher prunes `refs/orbit/ci-cache/*` to one ref: the ref of the newest tested main commit. Main commit ancestry, not job completion order, identifies that commit. So origin holds only the newest publication, and a workspace never selects an older cache baseline. The first publication also removes the refs that earlier runs published with TIA graphs. Pruning never touches source branches, tags, or other refs.
+
+The Gateway removes upstream-deleted refs only from its mirror's cache namespace. It does not delete an active workspace's local cache objects or private tool caches. A workspace whose baseline ref was pruned starts cold. Git garbage collection can reclaim unreferenced cache objects later.
+
+### CI artifacts
+
+After a project job passes on `main`, CI uploads the artifact `ci-cache-<index>-<commit>` and keeps it for 14 days. Pull request runs upload none. These artifacts stage the exports for `publish-ci-cache`. They are not a workspace transport: the Gateway reads Git refs for `@orbit/ci-caches`, without downloading artifacts or putting their contents in a setup command.
+
+| File | Content |
+| --- | --- |
+| `manifest.json` | Schema version 3, project path, tested commit, CI run and exporting attempt, PHP minor version, and the checksum and configuration checksum of each quality cache |
+| `quality/pint`, `quality/phpstan` | The Pint and PHPStan result caches that `composer check` wrote in the same job, when it wrote them |
 
 ### Seed a checkout
 
@@ -516,67 +537,20 @@ The Pest fingerprint holds checksums of the dependency and test configuration fi
 
 When `ORBIT_MAIN_CACHE_STORE` is set, a checkout seeds only from that store, even when it has no publications, and `bin/worktree-cache` skips the primary-checkout fallback. Bootstrap uses this variable only while seeding. When the variable is unset, a checkout seeds from its own store when that store has publications, and otherwise from the store registered for its origin on the same machine.
 
-The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, and `$XDG_STATE_HOME` defaults to `~/.local/state`. The key comes from the origin URL, so the HTTPS and SSH URLs of one repository share it. Each publication registers its store unless another live store already holds the registration. `bin/tia-cache register` takes the registration for the current repository.
-
-When `ORBIT_MAIN_CACHE_STORE` is unset and the store has publications that lag the checkout's fetched `main`, seeding queues a background refresh for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one.
+The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, and `$XDG_STATE_HOME` defaults to `~/.local/state`. The key comes from the origin URL, so the HTTPS and SSH URLs of one repository share it. `bin/tia-cache register` takes the registration for the current repository.
 
 Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at the last commit that [deployed](/reference/deployments#development-defaults) there. They share its main cache store but keep private tool caches. `bin/bootstrap` seeds those private caches from the publications, and `bin/review-check` seeds the quality caches. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
 
-### Refresh from CI
-
-`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree, and seeding queues it when the store lags. Cache freshness never holds worktree creation, a merge, or cleanup.
-
-The worker uses `git` and the GitHub CLI with the login of the user who runs it. That `gh` login needs read access to the repository and its Actions. For each batch of requests, the worker:
-
-1. fetches `main` from `origin`;
-2. reads the newest 30 finished `CI` runs on `main`: pushes, nightly runs, and manual runs;
-3. reads the conclusions of each project's jobs in those runs;
-4. finds the newest commit on which the project's jobs passed;
-5. downloads, checks, and publishes that commit's graph and quality caches.
-
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has `Gateway` and `Gateway privileged` jobs on main. E2E and the other Composer projects have one job each. Their full suites include the subprocess tests. A failure in any of a project's jobs counts as a failure of the project.
-
-Before it publishes, the worker checks that:
-
-- the manifest names the project, the run, and the commit of that run;
-- the test configuration checksums match the files at that commit;
-- the graph checksum matches, and the graph describes that commit, holds only passed results, and uses relative paths;
-- each quality cache matches its checksum.
-
-The published graph keeps the fingerprint that CI recorded, and its runner identity comes from the lock file and `tests/Pest.php` at the tested commit. A quality publication records the lock file and tool configuration at the tested commit, and the PHP minor version of the CI job. The worker deletes the downloads after each batch.
-
-The worker runs a frozen copy of `bin/tia-cache` as `origin/main` of the store's repository holds it, never the caller's copy. So a clone of an unmerged change only records requests, and it cannot change how the shared store is maintained. Without the tool on that `main`, no worker starts.
-
-Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
-
-For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register it with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The managed user that owns the store runs the worker, so its `gh` login must read `hardimpactdev/orbit`.
-
 | Command | Result |
 | --- | --- |
-| `bin/tia-cache seed` | Copies compatible published graphs into absent caches, and queues a refresh when the store lags |
-| `bin/tia-cache refresh --background` | Queues a refresh and starts a worker when none runs |
-| `bin/tia-cache refresh` | Queues a refresh, runs main's copy as the worker in the foreground, and exits nonzero when a requested project has a failure |
-| `bin/tia-cache status` | Prints the publications and the maintenance state |
-| `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
+| `bin/tia-cache seed` | Copies compatible published graphs into absent caches |
 | `bin/tia-cache register` | Registers this repository's store for its origin |
-| `bin/tia-cache import-ci` | Validates and imports one project's CI cache files into private caches without publishing them; workspace files come from the selected Git ref. |
 
-`import-ci` replaces an existing private graph only when CI tested a descendant of that graph's main commit. It exits 3, with the reason, when the payload does not fit the checkout: another test configuration, or a commit outside its history. The project's tests then run cold. Workspace imports also require the exact [selected-ref SHA match](/reference/instance-setup#import-ci-main-caches); an ancestor check alone cannot authorize a different ref. Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept repeatable `--project=apps/docs` options, and they cover all five projects by default.
+Both commands accept `--repository=PATH`. `seed` accepts repeatable `--project=apps/docs` options and covers all five projects by default.
 
 ### Failures on main
 
-`bin/tia-cache status --json --remote` reads the remote `main` and prints the maintenance state. `current` names the projects whose graph publication is at that `main`. The output also has the worker lock state, the pending requests, each project's last result with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that main passes.
-
-The worker sorts failures into two kinds.
-
-| Kind | Cause | Effect |
-| --- | --- | --- |
-| Check failure, tool `ci` | A job of the project failed or timed out in a finished `CI` run on `main` | A correctness signal on main. It stays open until a run that finished later passes the project's jobs on the same commit or on a descendant. |
-| Maintenance failure | `git` or `gh` failed, the newest 30 runs have no finished job for the project, or the artifact is missing or refused | Checkouts keep the previous publications. It never sets or clears a check failure. |
-
-A check failure records the commit, the run ID and URL, and the failed jobs. While it is open, the newest commit on which the project passed stays published. The failure stays open until a later passing run tests the same commit or a descendant. Diagnose a check failure on the failed commit. Fix it, or revert the change that caused it, through a reviewed pull request. The next passing CI run on `main` clears it at the next refresh.
-
-Earlier versions of `bin/tia-cache` ran the checks locally and recorded failures with tool `tia`, `pint`, or `phpstan`. The first refresh that reads the project's CI history replaces them.
+A failure on main is a `Required checks` check run on a `main` commit that did not succeed. Read it for the current tip with `gh api 'repos/hardimpactdev/orbit/commits/main/check-runs?check_name=Required%20checks'`. Diagnose it on the failed commit. Fix it, or revert the change that caused it, through a reviewed pull request. The next `main` commit whose `Required checks` passes clears it.
 
 ## Why it works this way
 

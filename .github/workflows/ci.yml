@@ -229,6 +229,49 @@ jobs:
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
         run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
 
+      # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
+      # the cache-ref publisher. Task workspaces import them; CI exports no test graph.
+      - name: Export main quality caches
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          PROJECT: ${{ matrix.project.directory }}
+          EXPORT: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, subprocess
+          from pathlib import Path
+          export = Path(os.environ['EXPORT'])
+          (export / 'quality').mkdir(parents=True)
+          quality, configurations = {}, {}
+          for tool, config, source in (('pint', 'pint.json', 'vendor/pint.cache'),
+                                       ('phpstan', 'phpstan.neon', 'vendor/phpstan/cache/resultCache.php')):
+              if Path(source).is_file() and Path(source).stat().st_size:
+                  shutil.copyfile(source, export / 'quality' / tool)
+                  quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+                  configurations[tool] = hashlib.sha256(Path(config).read_bytes()).hexdigest()
+          manifest = {
+              'schema': 3,
+              'project': os.environ['PROJECT'],
+              'commit': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'configurations': configurations,
+              'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
+                                    check=True, capture_output=True, text=True).stdout,
+              'quality': quality,
+          }
+          (export / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+
+      - name: Publish main quality caches
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-cache-${{ strategy.job-index }}-${{ github.sha }}
+          path: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
+          if-no-files-found: error
+          retention-days: 14
+
   # Every run uses the static stock shard matrix below as the only source of the shard count.
   gateway-shards:
     name: Gateway shards
@@ -237,7 +280,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5]
     defaults:
       run:
         working-directory: apps/gateway
@@ -676,6 +719,27 @@ jobs:
         if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
+
+  publish-ci-cache:
+    name: Publish CI cache ref
+    needs: [required]
+    # Publish only after Required checks passes on main, never for a pull request, fork or other branch.
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ci-cache-*-${{ github.sha }}
+          path: ${{ runner.temp }}/ci-cache-exports
+      - name: Publish immutable tested-SHA ref and prune older cache refs
+        run: python3 bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"
 
   required:
     name: Required checks

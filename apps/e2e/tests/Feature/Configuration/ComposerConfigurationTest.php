@@ -180,18 +180,40 @@ describe('Composer configuration', function (): void {
         }
     });
 
-    it('publishes no TIA graphs or cache refs, so no CI job writes repository contents', function (): void {
+    it('publishes only the Pint and PHPStan caches of main as SHA-bound refs after Required checks', function (): void {
         $source = (string) file_get_contents(base_path('../../.github/workflows/ci.yml'));
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $publisher = $workflow['jobs']['publish-ci-cache'];
+        expect($publisher['needs'])->toBe(['required'])
+            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
+            ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
+            ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
+            ->and($publisher['steps'][1]['with']['pattern'])->toBe('ci-cache-*-${{ github.sha }}')
+            ->and($publisher['steps'][1]['with']['path'])->toBe('${{ runner.temp }}/ci-cache-exports')
+            ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"');
         $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
-
-        expect($workflow['jobs'])->not->toHaveKey('publish-ci-cache')
-            ->and($projectSteps)->not->toHaveKeys(['Export main caches', 'Publish main caches']);
-        foreach (['sandbox-tia', 'ci-cache-ref', '.orbit-tia', 'ORBIT_TIA_DIRECTORY', '--fresh', '--tia --', 'Pest TIA graph'] as $needle) {
+        expect($projectSteps['Export main quality caches']['if'])
+            ->toBe("success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'")
+            ->and($projectSteps['Export main quality caches']['run'])
+            ->toContain("'schema': 3", "('pint', 'pint.json', 'vendor/pint.cache')", "('phpstan', 'phpstan.neon', 'vendor/phpstan/cache/resultCache.php')");
+        expect($projectSteps['Publish main quality caches']['uses'])->toStartWith('actions/upload-artifact@');
+        expect($projectSteps['Publish main quality caches'])->toMatchArray([
+            'if' => $projectSteps['Export main quality caches']['if'],
+            'with' => [
+                'name' => 'ci-cache-${{ strategy.job-index }}-${{ github.sha }}',
+                'path' => '${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}',
+                'if-no-files-found' => 'error',
+                'retention-days' => 14,
+            ],
+        ]);
+        // CI records and exports no TIA graph.
+        foreach (['sandbox-tia', 'graph.json', '.orbit-tia', 'ORBIT_TIA_DIRECTORY', '--fresh', '--tia --', 'Pest TIA graph'] as $needle) {
             expect($source)->not->toContain($needle);
         }
-        foreach ($workflow['jobs'] as $job) {
-            expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');
+        foreach ($workflow['jobs'] as $name => $job) {
+            if ($name !== 'publish-ci-cache') {
+                expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');
+            }
         }
     });
 
@@ -614,6 +636,10 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
             continue;
         }
         $body = implode("\n", array_filter(array_slice($lines, 1), static fn (string $line): bool => ! str_starts_with(ltrim($line), '#')));
+        // bin/ci-cache-ref runs PHP only on import, in a task workspace; its CI publish step never does.
+        if (basename($bin) === 'ci-cache-ref') {
+            continue;
+        }
         if (str_ends_with($lines[0], 'php')
             || (str_ends_with($lines[0], 'bash') && preg_match("/{$command}/", $body) === 1)
             || (str_ends_with($lines[0], 'python3') && preg_match('/\[\s*[\'"](?:php|composer)[\'"]\s*,/', $body) === 1)) {

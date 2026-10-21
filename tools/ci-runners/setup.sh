@@ -4,7 +4,7 @@
 # Run on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
 #   tools/ci-runners/setup.sh host SUBNET            # 10.253.1.1/24 on Beast, 10.253.2.1/24 on Shark
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-beast-2, ci-shark-1
+#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-1, ci-sabre-1
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
