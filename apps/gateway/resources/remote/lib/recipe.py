@@ -575,8 +575,27 @@ def snapshot_options(payload, work):
     path = work / 'ubuntu.sources'
     publish(path, source.encode())
     # Keep normal sources and their cached origin metadata for unattended-upgrades and read-only plans.
+    return apt_source_options(path)
+
+
+def apt_source_options(path):
     return ['-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
-            '-o', 'APT::Get::List-Cleanup=false']
+            '-o', 'APT::Get::List-Cleanup=false', '-o', 'APT::Update::Error-Mode=any',
+            '-o', 'Acquire::Languages=none', '-o', 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled=false',
+            '-o', 'Acquire::IndexTargets::deb::CNF::DefaultEnabled=false']
+
+
+def refresh_ubuntu_indexes(payload, resources):
+    """Refresh origin evidence from Ubuntu without reading unrelated host sources."""
+    work = Path(resources.enter_context(tempfile.TemporaryDirectory(prefix='orbit-recipe-sources-')))
+    path = work / 'ubuntu.sources'
+    source = rolling_source(payload['architecture'])
+    path.write_text(source)
+    options = apt_source_options(path)
+    package_command(['apt-get', 'update', *options], [])
+    # Origin checks also need cached snapshot evidence. Installation still uses only the pinned snapshot.
+    path.write_text(source + '\n' + snapshot_source(payload['snapshot']))
+    return options
 
 
 def package_command(argv, packages, **kwargs):
@@ -980,17 +999,14 @@ def apply_recipe(payload, snapshots):
         if policy.exists() or policy.is_symlink():
             raise RecipeFailure()
         stage = 'apt-source'
-        repaired = repair_ubuntu_sources(payload['architecture'])
-        repair_options = (['-o', 'Dir::Etc::sourcelist=' + str(APT_ETC / 'sources.list.d/ubuntu.sources'),
-                           '-o', 'Dir::Etc::sourceparts=-', '-o', 'APT::Get::List-Cleanup=false'] if repaired else [])
-        # Refresh the rolling pockets before assessing even an already-converged Node.
-        package_command(['apt-get', 'update', *repair_options, '-o', 'APT::Update::Error-Mode=any'], [])
+        repair_ubuntu_sources(payload['architecture'])
+        origin_options = refresh_ubuntu_indexes(payload, snapshots)
         stage = 'preflight'
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
         versions = inspect(tools)
         check_git_siblings(payload)
-        assessment = assess(tools, versions, snapshots=snapshots, git_names=git_packages(payload))
+        assessment = assess(tools, versions, origin_options, snapshots, git_packages(payload))
         supported(assessment)
         active = active_units()
         recipe_packages = {pin['package'] for pin in tools.values() if pin['source'] == 'ubuntu'}
@@ -1016,11 +1032,12 @@ def apply_recipe(payload, snapshots):
                     raise RecipeFailure()
             stage = 'apt-source'
             configure_git(payload, apply=True)
-            apt_options = snapshot_options(payload, work)
-            stage = 'packages'
-            package_command(['apt-get', 'update', *apt_options], [])
             ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items()
                       if pin['source'] == 'ubuntu' and assessment[name]['changed']]
+            apt_options = snapshot_options(payload, work) if ubuntu or debs else None
+            stage = 'packages'
+            if apt_options is not None:
+                package_command(['apt-get', 'update', *apt_options], [])
             environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
             # This is temporary restart suppression, not a package/configuration rollback.
             publish(policy, b'#!/bin/sh\nexit 101\n', 0o755)
@@ -1040,7 +1057,7 @@ def apply_recipe(payload, snapshots):
             install_javascript(tools, downloads, work, account, payload.get('vp_lock')) if js else None
             stage = 'inventory'
             after_versions = inspect(tools)
-            after_assessment = assess(tools, after_versions, apt_options, snapshots, git_packages(payload))
+            after_assessment = assess(tools, after_versions, origin_options, snapshots, git_packages(payload))
             supported(after_assessment)
             if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in after_assessment.values()):
                 raise RecipeFailure()
