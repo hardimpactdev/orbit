@@ -29,8 +29,8 @@ final readonly class PiClient
     private const float STREAM_READ_TIMEOUT = 5.0;
 
     /**
-     * The largest session body the Gateway accepts. Real Pi transcripts reach about 9 MiB, and decoding one takes about
-     * twice its size. A larger body stops the transfer and fails, so it never fills a PHP worker's memory.
+     * The session response budget, sent to Pi so it can truncate snapshots before transfer. The transfer guard also
+     * refuses a server that violates the budget, before decoding can fill a PHP worker's memory.
      */
     public const int SESSION_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -62,12 +62,14 @@ final readonly class PiClient
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Node $node, string $sessionId): array
+    public function state(Node $node, string $sessionId): array
     {
-        $payload = $this->session($node, $sessionId, null, self::TIMEOUT);
-        if (($payload['kind'] ?? null) !== 'snapshot') {
+        $payload = $this->session($node, $sessionId, null, self::TIMEOUT, stateOnly: true);
+        if (! in_array($payload['kind'] ?? null, ['state', 'snapshot'], true)) {
             throw new AgentDriverException('The Pi server returned an invalid snapshot.');
         }
+
+        unset($payload['entries']);
 
         return $payload;
     }
@@ -80,9 +82,9 @@ final readonly class PiClient
      * @param  array{run: string, sequence: int}|null  $after
      * @return array<string, mixed>
      */
-    public function read(Node $node, string $sessionId, ?array $after): array
+    public function read(Node $node, string $sessionId, ?array $after, ?float $timeoutSeconds = null): array
     {
-        $payload = $this->session($node, $sessionId, $after, self::READ_TIMEOUT);
+        $payload = $this->session($node, $sessionId, $after, $timeoutSeconds ?? self::READ_TIMEOUT);
         if (! in_array($payload['kind'] ?? null, ['snapshot', 'delta'], true)) {
             throw new AgentDriverException('The Pi server returned an invalid snapshot.');
         }
@@ -107,7 +109,7 @@ final readonly class PiClient
             ->timeout(0)
             ->withOptions(['stream' => true, 'read_timeout' => self::STREAM_READ_TIMEOUT, 'version' => '1.0'])
             ->accept('application/x-ndjson')
-            ->get($this->url($node, 'sessions', $sessionId, 'stream'), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])), $node);
+            ->get($this->url($node, 'sessions', $sessionId, 'stream'), ['max_bytes' => self::SESSION_MAX_BYTES, ...($after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])])), $node);
         $body = $response->toPsrResponse()->getBody();
 
         try {
@@ -124,20 +126,16 @@ final readonly class PiClient
      * @param  array{run: string, sequence: int}|null  $after
      * @return array<string, mixed>
      */
-    private function session(Node $node, string $sessionId, ?array $after, float $timeout): array
+    private function session(Node $node, string $sessionId, ?array $after, float $timeout, bool $stateOnly = false): array
     {
         $response = $this->call(fn (): Response => $this->request($node)
             ->timeout($timeout)
             // Decoding stays off, so the progress counts are the body's own bytes.
             ->withOptions(['decode_content' => false, 'progress' => static function (int $total, int $received): void {
-                if (max($total, $received) > self::SESSION_MAX_BYTES) {
-                    throw self::tooLarge();
-                }
+                self::assertSessionSize(max($total, $received));
             }])
-            ->get($this->url($node, 'sessions', $sessionId), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']]));
-        if (($response->toPsrResponse()->getBody()->getSize() ?? 0) > self::SESSION_MAX_BYTES) {
-            throw self::tooLarge();
-        }
+            ->get($this->url($node, 'sessions', $sessionId), $stateOnly ? ['view' => 'state'] : ['max_bytes' => self::SESSION_MAX_BYTES, ...($after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])]));
+        self::assertSessionSize($response->toPsrResponse()->getBody()->getSize() ?? 0);
         try {
             return ValidatedData::object($this->ensure($response, $node)->json());
         } catch (InvalidArgumentException) {
@@ -145,9 +143,11 @@ final readonly class PiClient
         }
     }
 
-    private static function tooLarge(): AgentDriverException
+    private static function assertSessionSize(int $bytes): void
     {
-        return new AgentDriverException('The Pi server session is larger than '.intdiv(self::SESSION_MAX_BYTES, 1024 * 1024).' MiB.');
+        if ($bytes > self::SESSION_MAX_BYTES) {
+            throw new AgentDriverException('The Pi server session is larger than '.intdiv(self::SESSION_MAX_BYTES, 1024 * 1024).' MiB.');
+        }
     }
 
     /** @param callable(): Response $send */

@@ -625,6 +625,121 @@ describe("token usage", () => {
     });
 });
 
+describe("large session reads", () => {
+    it("observes and reads a session file over the Gateway budget", async () => {
+        const h = await created();
+        h.faux.setResponses([fauxAssistantMessage("initial turn")]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const before = await settled(h);
+        const maxBytes = 16 * 1024 * 1024;
+        appendSessionEntries(h.root, [
+            {
+                type: "message",
+                id: "large-history",
+                timestamp: "2026-10-21T00:00:00.000Z",
+                message: { role: "user", content: "😀".repeat(5 * 1024 * 1024), timestamp: 1 },
+            },
+            {
+                type: "message",
+                id: "latest",
+                timestamp: "2026-10-21T00:00:01.000Z",
+                message: {
+                    role: "assistant",
+                    content: [{ type: "text", text: "latest answer" }],
+                    api: "faux",
+                    provider: "faux",
+                    model: "model-a",
+                    stopReason: "stop",
+                    timestamp: 2,
+                    usage: {
+                        input: 3,
+                        output: 4,
+                        cacheRead: 5,
+                        cacheWrite: 6,
+                        totalTokens: 18,
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                    },
+                },
+            },
+        ]);
+        harness = await h.restart();
+        const full = (await harness.request("GET", "/sessions/thread-1")).body;
+        expect(Buffer.byteLength(JSON.stringify(full))).toBeGreaterThan(maxBytes);
+
+        const state = await harness.request("GET", "/sessions/thread-1?view=state");
+        expect(state.status).toBe(200);
+        expect(state.body).toMatchObject({ kind: "state", state: "done", turnId: "k1" });
+        expect(state.body).not.toHaveProperty("entries");
+        expect(state.body.usage.total).toBe(before.usage.total + 18);
+        expect(state.body.usage).toEqual(full.usage);
+
+        const bounded = await harness.request("GET", `/sessions/thread-1?max_bytes=${maxBytes}`);
+        expect(bounded.status).toBe(200);
+        expect(Buffer.byteLength(JSON.stringify(bounded.body))).toBeLessThanOrEqual(maxBytes);
+        expect(bounded.body.entries[0].message).toMatchObject({ role: "system" });
+        expect(bounded.body.entries[0].message.content).toContain("Transcript truncated");
+        expect(bounded.body.entries.at(-1).id).toBe("latest");
+        expect(bounded.body.usage).toEqual(full.usage);
+        expect(bounded.body.sequence).toBe(full.sequence);
+
+        const [streamed] = await harness.stream(
+            "thread-1",
+            (events) => events.length > 0,
+            `?max_bytes=${maxBytes}`,
+        );
+        expect(streamed).toEqual(bounded.body);
+    });
+
+    it("resets an oversized delta to a bounded snapshot and resumes at its current cursor", async () => {
+        const h = await created();
+        const start = (await h.request("GET", "/sessions/thread-1")).body;
+        h.faux.setResponses([fauxAssistantMessage("😀".repeat(2000))]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const full = await settled(h);
+
+        const reset = await h.request(
+            "GET",
+            `/sessions/thread-1?run=${start.run}&after=${start.sequence}&max_bytes=4096`,
+        );
+        expect(reset.body.kind).toBe("snapshot");
+        expect(Buffer.byteLength(JSON.stringify(reset.body))).toBeLessThanOrEqual(4096);
+        expect(reset.body.entries[0].message.content).toContain("Transcript truncated");
+        expect(reset.body.sequence).toBe(full.sequence);
+        expect(reset.body.usage).toEqual(full.usage);
+
+        const next = await h.request(
+            "GET",
+            `/sessions/thread-1?run=${reset.body.run}&after=${reset.body.sequence}&max_bytes=4096`,
+        );
+        expect(next.body).toMatchObject({ kind: "delta", events: [], state: "done" });
+    });
+
+    it("keeps an exact-budget UTF-8 snapshot intact and marks a read one byte smaller", async () => {
+        const h = await created();
+        h.faux.setResponses([fauxAssistantMessage("😀".repeat(2000))]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const full = await settled(h);
+        const bytes = Buffer.byteLength(JSON.stringify(full));
+
+        const exact = await h.request("GET", `/sessions/thread-1?max_bytes=${bytes}`);
+        expect(exact.body).toEqual(full);
+
+        const smaller = await h.request("GET", `/sessions/thread-1?max_bytes=${bytes - 1}`);
+        expect(Buffer.byteLength(JSON.stringify(smaller.body))).toBeLessThanOrEqual(bytes - 1);
+        expect(smaller.body.entries[0].message.content).toContain("Transcript truncated");
+    });
+
+    it.each(["0", "-1", "4095", "abc", "1.5", "9007199254740992"])(
+        "rejects invalid response budget %s",
+        async (value) => {
+            const h = await created();
+            const response = await h.request("GET", `/sessions/thread-1?max_bytes=${value}`);
+            expect(response.status).toBe(422);
+            expect(response.body.error.code).toBe("validation.failed");
+        },
+    );
+});
+
 describe("restart", () => {
     it("reloads the transcript and keeps completed outcomes", async () => {
         const h = await created();

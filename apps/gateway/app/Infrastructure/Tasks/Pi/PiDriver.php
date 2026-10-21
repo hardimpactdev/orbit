@@ -99,22 +99,22 @@ final readonly class PiDriver implements AgentDriver
     public function observe(AgentThread $thread): AgentObservation
     {
         $node = $this->node($thread);
-        $snapshot = $this->client->snapshot($node, $thread->external_id);
-        if (data_get($snapshot, 'session.id') !== $thread->external_id) {
+        $state = $this->client->state($node, $thread->external_id);
+        if (data_get($state, 'session.id') !== $thread->external_id) {
             throw new AgentDriverException('Agent observation identity does not match.');
         }
 
-        return $this->snapshotObservation($snapshot, new PiTranscript, $node);
+        return $this->observation($this->redactObject($state, $node), []);
     }
 
     /**
      * Reads the thread for a viewer. A cursor from the server's current run gets a delta: the entries the stream would
      * send after it, merged by ID, with the current state. Any other cursor gets a snapshot, as on the stream.
      */
-    public function read(AgentThread $thread, ?string $cursor): AgentObservation
+    public function read(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): AgentObservation
     {
         $node = $this->node($thread);
-        $payload = $this->client->read($node, $thread->external_id, $this->resumeFrom($cursor));
+        $payload = $this->client->read($node, $thread->external_id, $this->resumeFrom($cursor), $timeoutSeconds);
         if (data_get($payload, 'session.id') !== $thread->external_id) {
             throw new AgentDriverException('Agent observation identity does not match.');
         }

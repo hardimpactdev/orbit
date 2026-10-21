@@ -116,9 +116,9 @@ final readonly class LeasedAgentDriver implements AgentDriver
         return $this->driver->observe($thread);
     }
 
-    public function read(AgentThread $thread, ?string $cursor): AgentObservation
+    public function read(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): AgentObservation
     {
-        return $this->driver->read($thread, $cursor);
+        return $this->driver->read($thread, $cursor, $timeoutSeconds);
     }
 
     public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable

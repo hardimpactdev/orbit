@@ -119,7 +119,7 @@ Older Pi server binaries send older error shapes. A binary built before this env
 | `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`, and returns `201`. Repeating the same create returns `200` |
 | `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`, and returns `202`. A repeated key returns `200` with `duplicate: true` and starts no turn |
 | `POST /sessions/{id}/interrupt` | Aborts the active turn and returns `202` |
-| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage). With `run` and `after`, it can answer a delta instead. See [Read after a cursor](#read-after-a-cursor) |
+| `GET /sessions/{id}` | Session snapshot, `view=state` for state and metrics, or a [delta after a cursor](#read-after-a-cursor). Includes [token usage](#token-usage) |
 | `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
@@ -166,7 +166,7 @@ To resume, pass the last event the client received as `?run={run}&after={sequenc
 
 Then it sends the entries streamed after that sequence and the latest `state` event if it came after it, in sequence order. `context` lists the entries at or before the cursor whose tool calls have no result yet, so the client can name the results that follow.
 
-The server sends a snapshot instead when the cursor is missing or malformed, names another run, or is ahead of the run. A cursor from before a restart or an idle unload names another run.
+The server sends a snapshot instead when the cursor is missing or malformed, names another run, or is ahead of the run. A cursor from before a restart or an idle unload names another run. With `max_bytes`, an oversized resumed start also becomes a bounded snapshot.
 
 ### Read after a cursor
 
@@ -186,6 +186,12 @@ The server sends a snapshot instead when the cursor is missing or malformed, nam
 | `events` | The `entry` and `state` events that a stream resumed from the same cursor sends after `resumed`, in sequence order. A cursor at the newest sequence gives an empty list |
 
 The read answers a full snapshot whenever the stream would start with one. The Gateway's [agent thread read](/reference/tasks#read-a-thread) uses the delta, so each poll carries only the events after the last one. A read does not change the stream or its sequence numbers.
+
+The Gateway sends `max_bytes` on transcript reads and streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state. This budget comes from the Gateway, which also bounds the transfer; the server has no second size setting.
+
+`GET /sessions/{id}?view=state` returns a `state` object with session ID, run, sequence, state, error, provider error, turn ID, and usage. It does not build or send transcript entries. Observation polling uses this read, so transcript growth does not interrupt state or token observation.
+
+State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers. A rollout must build and pin the updated Pi artifact through `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, and update the recipe pin for new base images. Prepared VMs keep their existing binary until removal; updating the Gateway does not restart their agents.
 
 A binary built before delta reads ignores `run` and `after` on `GET /sessions/{id}` and always answers a snapshot. A client tells the two answers apart by `kind`.
 

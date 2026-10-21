@@ -98,9 +98,9 @@ function fake_effort_pi(): void
             return Http::response(['duplicate' => false], 202);
         },
         'http://10.44.0.110:3774/sessions/*' => function (Request $request) use (&$turns) {
-            $id = basename($request->url());
+            $id = basename(parse_url($request->url(), PHP_URL_PATH));
 
-            return Http::response(['kind' => 'snapshot', 'state' => 'done', 'session' => ['id' => $id], 'turnId' => $id.':'.($turns[$id] ?? 0)]);
+            return Http::response(['kind' => 'state', 'state' => 'done', 'session' => ['id' => $id], 'turnId' => $id.':'.($turns[$id] ?? 0)]);
         },
     ]);
 }

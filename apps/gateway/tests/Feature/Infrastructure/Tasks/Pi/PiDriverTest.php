@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentThreadEvent;
+use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\LeasedAgentDriver;
@@ -133,7 +135,7 @@ function pi_check_transcript(string $checkResult, bool $failed = false): array
 describe('registration and placement', function (): void {
     it('registers the lease-protected Pi driver and dispatches through Pi', function (): void {
         Http::fake([
-            PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done')),
+            PI_BASE.'/sessions/session-1?view=state' => Http::response([...pi_snapshot('done'), 'kind' => 'state']),
             PI_BASE.'/sessions/session-1/messages' => Http::response(['duplicate' => false], 202),
         ]);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
@@ -236,11 +238,11 @@ describe('create and send', function (): void {
     });
 });
 
-describe('observe', function (): void {
+describe('transcript and observation', function (): void {
     it('maps a completed turn to done with entries, tokens, and turn identity', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', pi_check_transcript("All checks passed\n")))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', pi_check_transcript("All checks passed\n")))]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect($observation->state)->toBe(AgentThreadState::Done)
             ->and($observation->tokens)->toBe(120)
@@ -251,17 +253,17 @@ describe('observe', function (): void {
     });
 
     it('shows a successful bash result as one activity that ends with the command and its exit code', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', pi_check_transcript('ok')))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', pi_check_transcript('ok')))]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect($observation->entries[2]['text'])->toEndWith("$ composer check\nexit code 0");
     });
 
     it('shows the exit code of a failed bash result', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', pi_check_transcript("PHPStan found 2 errors\n\nCommand exited with code 2", failed: true)))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', pi_check_transcript("PHPStan found 2 errors\n\nCommand exited with code 2", failed: true)))]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect($observation->entries[2]['text'])->toEndWith("$ composer check\nexit code 2");
     });
@@ -273,22 +275,22 @@ describe('observe', function (): void {
             ]]],
             ['id' => 'e6', 'timestamp' => '2026-09-22T10:00:05.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-2', 'toolName' => 'edit', 'isError' => false, 'content' => [['type' => 'text', 'text' => 'Replaced 1 block.']]]],
         ];
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', $entries))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', $entries))]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect(array_last($observation->entries)['text'])->toBe('Editing Service.php');
     });
 
     it('keeps the leading spaces of bash output, such as git status lines', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', [
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', [
             ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
                 ['type' => 'toolCall', 'id' => 'call-1', 'name' => 'bash', 'arguments' => ['command' => 'git status --short']],
             ]]],
             ['id' => 'e2', 'timestamp' => '2026-09-22T10:00:01.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-1', 'toolName' => 'bash', 'isError' => false, 'content' => [['type' => 'text', 'text' => " M routes/web.php\n?? boost.json"]]]],
         ]))]);
 
-        expect(pi_driver()->observe(pi_thread(pi_node()))->entries[0]['text'])->toBe(" M routes/web.php\n?? boost.json\n$ git status --short\nexit code 0");
+        expect(pi_driver()->read(pi_thread(pi_node()), null)->entries[0]['text'])->toBe(" M routes/web.php\n?? boost.json\n$ git status --short\nexit code 0");
     });
 
     it('keeps file contents out of non-bash activity', function (): void {
@@ -298,9 +300,9 @@ describe('observe', function (): void {
             ]]],
             ['id' => 'e2', 'timestamp' => '2026-09-22T10:00:01.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-1', 'toolName' => 'read', 'isError' => false, 'content' => [['type' => 'text', 'text' => 'Always write tests.']]]],
         ];
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('idle', $entries))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('idle', $entries))]);
 
-        expect(pi_driver()->observe(pi_thread(pi_node()))->entries)->toBe([
+        expect(pi_driver()->read(pi_thread(pi_node()), null)->entries)->toBe([
             ['id' => 'e1:0', 'kind' => 'activity', 'label' => 'read', 'text' => 'Reading README.md', 'at' => '2026-09-22T10:00:01.000Z'],
         ]);
     });
@@ -312,25 +314,25 @@ describe('observe', function (): void {
             ]]],
             ['id' => 'e2', 'timestamp' => '2026-09-22T10:00:01.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-9', 'toolName' => 'search_docs', 'isError' => false, 'content' => [['type' => 'text', 'text' => 'Rate Limiting ...']]]],
         ];
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', $entries))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', $entries))]);
 
-        expect(array_last(pi_driver()->observe(pi_thread(pi_node()))->entries)['text'])->toBe('Searching docs for "queue rate limiting", "throttle"');
+        expect(array_last(pi_driver()->read(pi_thread(pi_node()), null)->entries)['text'])->toBe('Searching docs for "queue rate limiting", "throttle"');
     });
 
     it('carries the reported failure', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('failed', error: 'quota exceeded'))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('failed', error: 'quota exceeded'))]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect($observation->state)->toBe(AgentThreadState::Failed)->and($observation->error)->toBe('quota exceeded');
     });
 
     it('carries only recognized provider classifications on failed turns', function (string $state, ?string $category, ?string $expected): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response([
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response([
             ...pi_snapshot($state, error: 'Provider failure'), 'providerError' => $category,
         ])]);
 
-        $observation = pi_driver()->observe(pi_thread(pi_node()));
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
 
         expect($observation->providerError)->toBe($expected);
     })->with([
@@ -343,9 +345,9 @@ describe('observe', function (): void {
     ]);
 
     it('rejects a snapshot for another session', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', id: 'other'))]);
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', id: 'other'))]);
 
-        expect(fn () => pi_driver()->observe(pi_thread(pi_node())))->toThrow(AgentDriverException::class, 'Agent observation identity does not match.');
+        expect(fn () => pi_driver()->read(pi_thread(pi_node()), null))->toThrow(AgentDriverException::class, 'Agent observation identity does not match.');
     });
 
     it('reads the token breakdown from Pi usage', function (): void {
@@ -359,7 +361,7 @@ describe('observe', function (): void {
         $snapshot = pi_snapshot('done');
         $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'cacheWrite' => 10, 'total' => 130, 'calls' => 2, 'peakContext' => 80];
         $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
-        $observation = pi_driver()->observe($thread);
+        $observation = pi_driver()->read($thread, null);
 
         expect($observation->tokens)->toBe(130)
             ->and($observation->inputTokens)->toBe(40)
@@ -370,7 +372,7 @@ describe('observe', function (): void {
 
         $snapshot['usage'] = ['input' => 0, 'output' => 0, 'cacheRead' => 0, 'cacheWrite' => 0, 'total' => 0, 'calls' => 0, 'peakContext' => 0];
         $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
-        $zeros = pi_driver()->observe($thread);
+        $zeros = pi_driver()->read($thread, null);
         expect($zeros->inputTokens)->toBe(0)
             ->and($zeros->cachedInputTokens)->toBe(0)
             ->and($zeros->outputTokens)->toBe(0)
@@ -379,7 +381,7 @@ describe('observe', function (): void {
 
         $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'total' => 120, 'calls' => '2', 'peakContext' => null];
         $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
-        $partial = pi_driver()->observe($thread);
+        $partial = pi_driver()->read($thread, null);
         expect($partial->tokens)->toBe(120)
             ->and($partial->inputTokens)->toBeNull()
             ->and($partial->cachedInputTokens)->toBe(70)
@@ -401,11 +403,11 @@ describe('observe', function (): void {
     });
 
     it('redacts the Node token from transcript text', function (): void {
-        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', [
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(pi_snapshot('done', [
             ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'stop', 'content' => [['type' => 'text', 'text' => 'token '.PI_TOKEN]]]],
         ]))]);
 
-        expect(pi_driver()->observe(pi_thread(pi_node()))->entries[0]['text'])->toBe('token [REDACTED]');
+        expect(pi_driver()->read(pi_thread(pi_node()), null)->entries[0]['text'])->toBe('token [REDACTED]');
     });
 });
 
@@ -426,18 +428,18 @@ describe('events', function (): void {
             ->and($events[2]->data['entry'])->toMatchArray(['id' => 'e1', 'kind' => 'message', 'label' => 'user', 'text' => 'Go'])
             ->and($events[4]->data)->toMatchArray(['state' => 'done', 'tokens' => 300])
             ->and($events[4]->cursor)->toBe('run-1.10');
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream?max_bytes=16777216');
     });
 
-    it('streams the same snapshot and cursor that observe reads', function (): void {
+    it('streams the same snapshot and cursor that read returns', function (): void {
         $snapshot = pi_snapshot('working', array_slice(pi_check_transcript('token '.PI_TOKEN), 0, 3));
         Http::fake([
-            PI_BASE.'/sessions/session-1' => Http::response($snapshot),
             PI_BASE.'/sessions/session-1/stream*' => Http::response(json_encode($snapshot)."\n"),
+            PI_BASE.'/sessions/session-1*' => Http::response($snapshot),
         ]);
         $thread = pi_thread(pi_node());
 
-        $observation = pi_driver()->observe($thread);
+        $observation = pi_driver()->read($thread, null);
         $events = iterator_to_array(pi_driver()->events($thread, null), false);
 
         expect($events[0]->kind)->toBe('snapshot')
@@ -458,14 +460,14 @@ describe('events', function (): void {
             ->and($events[1]->data['entry'])->toMatchArray(['id' => 'e5', 'text' => 'Later.'])
             ->and($events[1]->cursor)->toBe('run-1.8')
             ->and($events[2]->cursor)->toBe('run-1.9');
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream?run=run-1&after=7');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream?max_bytes=16777216&run=run-1&after=7');
     });
 
     it('asks for a snapshot when the cursor is not a Pi cursor', function (string $cursor): void {
         $events = pi_events([pi_snapshot('idle')], $cursor);
 
         expect($events[0]->kind)->toBe('snapshot');
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream?max_bytes=16777216');
     })->with(['a sequence from an older Gateway' => '42', 'a foreign cursor' => 'abc', 'a run without a sequence' => 'run-1.']);
 
     it('ignores a resume for another session', function (): void {
@@ -582,7 +584,7 @@ describe('read', function (): void {
             ->and($observation->entries)->toBe(array_values($streamed))
             ->and(array_column($observation->entries, 'text'))->toBe(["token [REDACTED]\n$ composer check\nexit code 0", '$ ls (stopped without a result)'])
             ->and(json_encode($observation->toArray()))->not->toContain(PI_TOKEN);
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?run=run-1&after=7');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?max_bytes=16777216&run=run-1&after=7');
     });
 
     it('reads a snapshot when the server cannot resume the cursor or predates deltas', function (): void {
@@ -595,16 +597,15 @@ describe('read', function (): void {
         expect($resumable->delta)->toBeFalse()->and($resumable->cursor)->toBe('run-1.7')
             ->and(array_column($resumable->entries, 'kind'))->toBe(['message', 'message', 'activity', 'message'])
             ->and($opaque->delta)->toBeFalse();
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?run=run-0&after=3');
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?max_bytes=16777216&run=run-0&after=3');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?max_bytes=16777216');
     });
 
     it('refuses a session body over the limit before decoding it', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(str_repeat(' ', PiClient::SESSION_MAX_BYTES + 1))]);
         $thread = pi_thread(pi_node());
 
-        expect(fn () => pi_driver()->read($thread, null))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.')
-            ->and(fn () => pi_driver()->observe($thread))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
+        expect(fn () => pi_driver()->read($thread, null))->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
     });
 
     it('stops a transfer whose announced or received size passes the limit, within its time budget', function (): void {
@@ -616,7 +617,7 @@ describe('read', function (): void {
             $progress(PiClient::SESSION_MAX_BYTES, PiClient::SESSION_MAX_BYTES);
             $seen[] = [$options['timeout'], $options['decode_content']];
 
-            return Http::response(pi_snapshot('done'));
+            return Http::response([...pi_snapshot('done'), 'kind' => ($request->data()['view'] ?? null) === 'state' ? 'state' : 'snapshot']);
         });
         $thread = pi_thread(pi_node());
 
@@ -644,6 +645,93 @@ describe('read', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(['kind' => 'resumed', 'session' => ['id' => 'session-1']])]);
 
         expect(fn () => pi_driver()->read(pi_thread(pi_node()), 'run-1.7'))->toThrow(AgentDriverException::class, 'The Pi server returned an invalid snapshot.');
+    });
+});
+
+describe('large sessions', function (): void {
+    /** A session over the Gateway cap; Pi's state and bounded transcript views remain small. */
+    function pi_large_session(?float $expectedTimeout = null): void
+    {
+        $full = pi_snapshot('working', [
+            ['id' => 'old', 'timestamp' => '', 'message' => ['role' => 'user', 'content' => str_repeat('x', PiClient::SESSION_MAX_BYTES + 1)]],
+            ['id' => 'latest', 'timestamp' => '', 'message' => ['role' => 'assistant', 'content' => 'Still working.']],
+        ]);
+        Http::fake(function (Request $request, array $options) use ($full, $expectedTimeout): PromiseInterface {
+            if ($expectedTimeout !== null) {
+                expect($options['timeout'])->toBe($expectedTimeout);
+            }
+            if ($request->url() === PI_BASE.'/sessions/session-1?view=state') {
+                $state = [...$full, 'kind' => 'state'];
+                unset($state['entries']);
+
+                return Http::response($state);
+            }
+            if (($request->data()['max_bytes'] ?? null) === PiClient::SESSION_MAX_BYTES) {
+                return Http::response([...$full, 'entries' => [
+                    ['id' => 'orbit-transcript-truncated', 'timestamp' => '', 'message' => ['role' => 'system', 'content' => '[Transcript truncated: older entries omitted to fit the Gateway response budget.]']],
+                    $full['entries'][1],
+                ]]);
+            }
+
+            return Http::response($full);
+        });
+    }
+
+    it('records state and tokens without fetching an oversized transcript', function (): void {
+        pi_large_session();
+        $thread = pi_thread(pi_node());
+        $thread->update(['observation_error' => 'Agent observation unavailable.']);
+
+        $observation = app(AgentThreadObserver::class)->observe($thread);
+
+        expect($observation?->entries)->toBe([]);
+        $this->assertDatabaseHas('agent_threads', [
+            'id' => $thread->id, 'state' => 'working', 'tokens' => 120,
+            'input_tokens' => 100, 'output_tokens' => 20, 'observation_error' => null,
+        ]);
+        expect($thread->fresh()->observed_at)->not->toBeNull();
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1?view=state');
+    });
+
+    it('observes metadata from an older Pi snapshot without using its transcript or retrying', function (): void {
+        Http::fake([PI_BASE.'/sessions/session-1?view=state' => Http::response(pi_snapshot('working', pi_check_transcript('unused transcript')))]);
+        $thread = pi_thread(pi_node());
+
+        $observed = app(AgentThreadObserver::class)->observe($thread);
+
+        expect($observed?->state)->toBe(AgentThreadState::Working)
+            ->and($observed?->tokens)->toBe(120)
+            ->and($observed?->entries)->toBe([]);
+        Http::assertSentCount(1);
+    });
+
+    it('answers agent show with the current state and a visible truncation marker', function (): void {
+        pi_large_session();
+
+        pi_read_as_gateway(pi_thread(pi_node()))->assertOk()
+            ->assertJsonPath('data.kind', 'snapshot')
+            ->assertJsonPath('data.state', 'working')
+            ->assertJsonPath('data.tokens', 120)
+            ->assertJsonPath('data.cursor', 'run-1.7')
+            ->assertJsonPath('data.entries.0.label', 'system')
+            ->assertJsonPath('data.entries.0.text', '[Transcript truncated: older entries omitted to fit the Gateway response budget.]')
+            ->assertJsonPath('data.entries.1.text', 'Still working.');
+    });
+
+    it('archives the bounded transcript rather than a state-only observation', function (): void {
+        Storage::fake('local');
+        pi_large_session(expectedTimeout: 15.0);
+        $thread = pi_thread(pi_node());
+
+        app(ArchiveAgentTranscriptsAction::class)->execute($thread->task_group_id, $thread->node_id);
+
+        $saved = app(ArchiveAgentTranscriptsAction::class)->read($thread);
+        expect($saved)->toBeArray();
+        expect($saved['state'])->toBe('working')
+            ->and($saved['tokens'])->toBe(120)
+            ->and($saved['entries'][0]['label'])->toBe('system')
+            ->and($saved['entries'][1]['text'])->toBe('Still working.');
     });
 });
 

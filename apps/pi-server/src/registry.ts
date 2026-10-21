@@ -281,14 +281,14 @@ export class SessionRegistry {
      * delta: the current state and the events after the cursor, as a resumed stream sends them.
      * Otherwise returns a full snapshot.
      */
-    async read(id: string, after?: StreamCursor): Promise<Snapshot | Delta> {
+    async read(id: string, after?: StreamCursor, maxBytes?: number): Promise<Snapshot | Delta> {
         const live = await this.load(id);
         const replay = this.replay(live, after);
         if (replay === undefined) {
-            return this.buildSnapshot(live);
+            return this.buildSnapshot(live, maxBytes);
         }
 
-        return {
+        const delta: Delta = {
             kind: "delta",
             run: live.run,
             sequence: live.sequence,
@@ -298,6 +298,23 @@ export class SessionRegistry {
             usage: usage(live.session),
             context: replay.context,
             events: replay.missed,
+        };
+        return maxBytes !== undefined && Buffer.byteLength(JSON.stringify(delta)) > maxBytes
+            ? this.buildSnapshot(live, maxBytes)
+            : delta;
+    }
+
+    /** Reads current state and usage without building a transcript or replay. */
+    async observe(id: string): Promise<StateEvent & { session: { id: string } }> {
+        const live = await this.load(id);
+        return {
+            kind: "state",
+            run: live.run,
+            sequence: live.sequence,
+            session: { id: live.id },
+            ...this.derive(live),
+            turnId: latestTurn(live),
+            usage: usage(live.session),
         };
     }
 
@@ -310,13 +327,14 @@ export class SessionRegistry {
         id: string,
         listener: StreamListener,
         after?: StreamCursor,
+        maxBytes?: number,
     ): Promise<() => void> {
         const live = await this.load(id);
         live.listeners.add(listener);
         const replay = this.replay(live, after);
         const start: StreamEvent[] =
             replay === undefined
-                ? [this.buildSnapshot(live)]
+                ? [this.buildSnapshot(live, maxBytes)]
                 : [
                       {
                           kind: "resumed",
@@ -327,7 +345,14 @@ export class SessionRegistry {
                       },
                       ...replay.missed,
                   ];
-        start.forEach(listener);
+        if (
+            maxBytes !== undefined &&
+            start.some((event) => Buffer.byteLength(JSON.stringify(event)) > maxBytes)
+        ) {
+            listener(this.buildSnapshot(live, maxBytes));
+        } else {
+            start.forEach(listener);
+        }
 
         return () => {
             live.listeners.delete(listener);
@@ -531,10 +556,10 @@ export class SessionRegistry {
         }
     }
 
-    private buildSnapshot(live: LiveSession): Snapshot {
+    private buildSnapshot(live: LiveSession, maxBytes?: number): Snapshot {
         const { cwd, model, thinkingLevel } = live.record.config;
 
-        return {
+        const snapshot: Snapshot = {
             kind: "snapshot",
             run: live.run,
             sequence: live.sequence,
@@ -544,6 +569,41 @@ export class SessionRegistry {
             entries: transcript(live.session),
             usage: usage(live.session),
         };
+        if (maxBytes === undefined) {
+            return snapshot;
+        }
+
+        const marker: TranscriptEntry = {
+            id: "orbit-transcript-truncated",
+            timestamp: "",
+            message: {
+                role: "system",
+                content:
+                    "[Transcript truncated: older entries omitted to fit the Gateway response budget.]",
+            },
+        };
+        const entries: TranscriptEntry[] = [];
+        let bytes = Buffer.byteLength(JSON.stringify({ ...snapshot, entries }));
+        for (let index = snapshot.entries.length - 1; index >= 0; index--) {
+            const entry = snapshot.entries[index]!;
+            const size = Buffer.byteLength(JSON.stringify(entry)) + (entries.length === 0 ? 0 : 1);
+            if (bytes + size > maxBytes) {
+                break;
+            }
+            bytes += size;
+            entries.push(entry);
+        }
+        if (entries.length < snapshot.entries.length) {
+            const markerSize = Buffer.byteLength(JSON.stringify(marker));
+            while (entries.length > 0 && bytes + markerSize + 1 > maxBytes) {
+                bytes -=
+                    Buffer.byteLength(JSON.stringify(entries.pop())) +
+                    (entries.length === 0 ? 0 : 1);
+            }
+            entries.push(marker);
+        }
+        entries.reverse();
+        return { ...snapshot, entries };
     }
 
     private derive(live: LiveSession): DerivedState {
