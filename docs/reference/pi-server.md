@@ -193,7 +193,9 @@ This budget comes from the Gateway, which also bounds each read response and eac
 
 `GET /sessions/{id}?view=state` returns a `state` object with session ID, run, sequence, state, error, provider error, turn ID, and usage. It does not build or send transcript entries. Observation polling uses this read, so transcript growth does not interrupt state or token observation.
 
-State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers. Follow the [artifact rollout instructions](#roll-out-a-new-binary), then move the agent to a new task VM with the updated binary. Prepared VMs keep their existing binary until they are destroyed; updating the Gateway does not restart their agents.
+State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers.
+
+An agent gets the new binary only on a newly prepared task VM. A group keeps one VM for its whole life; only a new group claiming a VM gets a new one. Follow [Roll out a new binary](#roll-out-a-new-binary) for the artifact pin and its scope.
 
 A binary built before delta reads ignores `run` and `after` on `GET /sessions/{id}` and always answers a snapshot. A client tells the two answers apart by `kind`.
 

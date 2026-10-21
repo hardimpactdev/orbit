@@ -31,17 +31,6 @@ final readonly class AgentObservation
         public bool $delta = false,
     ) {}
 
-    public function lastText(string $role): ?string
-    {
-        foreach (array_reverse($this->entries) as $entry) {
-            if ($entry['kind'] === 'message' && $entry['label'] === $role) {
-                return mb_substr($entry['text'], 0, 400);
-            }
-        }
-
-        return null;
-    }
-
     /** @return array<string, mixed> */
     public function toArray(): array
     {
