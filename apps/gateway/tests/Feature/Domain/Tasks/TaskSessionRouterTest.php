@@ -92,8 +92,6 @@ function router_observation(Task $group, ?string $pendingApprovalId = null): Tas
                 idle: $pendingApprovalId === null,
                 pendingApprovalId: $pendingApprovalId,
                 pendingUserInputId: null,
-                lastAssistantText: 'I stopped after the models.',
-                lastUserText: 'Implement the models.',
                 hasNewCommitsSinceThreadStart: false,
                 prUrl: $group->pr_url,
                 ciSummary: null,

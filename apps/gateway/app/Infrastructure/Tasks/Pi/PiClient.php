@@ -66,7 +66,7 @@ final readonly class PiClient
     {
         $payload = $this->session($node, $sessionId, null, self::TIMEOUT, stateOnly: true);
         if (! in_array($payload['kind'] ?? null, ['state', 'snapshot'], true)) {
-            throw new AgentDriverException('The Pi server returned an invalid snapshot.');
+            throw new AgentDriverException('The Pi server returned an invalid state.');
         }
 
         unset($payload['entries']);
@@ -139,11 +139,11 @@ final readonly class PiClient
         try {
             return ValidatedData::object($this->ensure($response, $node)->json());
         } catch (InvalidArgumentException) {
-            throw new AgentDriverException('The Pi server returned an invalid snapshot.');
+            throw new AgentDriverException($stateOnly ? 'The Pi server returned an invalid state.' : 'The Pi server returned an invalid snapshot.');
         }
     }
 
-    private static function assertSessionSize(int $bytes): void
+    public static function assertSessionSize(int $bytes): void
     {
         if ($bytes > self::SESSION_MAX_BYTES) {
             throw new AgentDriverException('The Pi server session is larger than '.intdiv(self::SESSION_MAX_BYTES, 1024 * 1024).' MiB.');

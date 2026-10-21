@@ -412,6 +412,14 @@ describe('transcript and observation', function (): void {
 });
 
 describe('events', function (): void {
+    it('refuses an oversized stream line before decoding, with or without a newline', function (string $ending): void {
+        Http::fake([PI_BASE.'/sessions/session-1/stream*' => Http::response(str_pad('{"kind":"heartbeat"}', PiClient::SESSION_MAX_BYTES + 1).$ending)]);
+        $thread = pi_thread(pi_node());
+
+        expect(fn () => iterator_to_array(pi_driver()->events($thread, null), false))
+            ->toThrow(AgentDriverException::class, 'The Pi server session is larger than 16 MiB.');
+    })->with(['unterminated' => '', 'terminated' => "\n"]);
+
     it('streams a snapshot, then normalized entries and states, ignoring events before the snapshot', function (): void {
         $events = pi_events([
             pi_entry_event(1, ['id' => 'early', 'timestamp' => 't', 'message' => ['role' => 'user', 'content' => 'too early']]),
@@ -640,6 +648,13 @@ describe('read', function (): void {
 
         expect(fn () => pi_driver()->read(pi_thread(pi_node()), null))->toThrow(AgentDriverException::class, 'The Pi server failed with HTTP 500.');
     });
+
+    it('names an invalid state response in observation errors', function (array|string $payload): void {
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response($payload)]);
+
+        expect(fn () => pi_driver()->observe(pi_thread(pi_node())))
+            ->toThrow(AgentDriverException::class, 'The Pi server returned an invalid state.');
+    })->with(['wrong kind' => [['kind' => 'resumed']], 'malformed JSON' => 'not json']);
 
     it('refuses an answer that is neither a snapshot nor a delta', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1*' => Http::response(['kind' => 'resumed', 'session' => ['id' => 'session-1']])]);

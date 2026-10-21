@@ -111,7 +111,7 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 
 Older Pi server binaries send older error shapes. A binary built before this envelope answers `{"error": {"code", "message"}}` with underscore codes, such as `session_not_found`. A short-lived later build answers `http.not_found` with `"details": null`. The Gateway only quotes the code in its error message, so every binary works with it.
 
-[Task VMs](/reference/compute-drivers#configure-task-vms) run the artifact the Gateway pins. To roll out a new binary, update `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`. The Gateway uploads the changed artifact when it prepares a task VM, so the base image does not need a rebuild.
+[Task VMs](/reference/compute-drivers#configure-task-vms) run the artifact the Gateway pins. [Roll out a new binary](#roll-out-a-new-binary) explains how to change the pin and when it takes effect.
 
 | Route | Result |
 | --- | --- |
@@ -187,11 +187,13 @@ The server sends a snapshot instead when the cursor is missing or malformed, nam
 
 The read answers a full snapshot whenever the stream would start with one. The Gateway's [agent thread read](/reference/tasks#read-a-thread) uses the delta, so each poll carries only the events after the last one. A read does not change the stream or its sequence numbers.
 
-The Gateway sends `max_bytes` on transcript reads and streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state. This budget comes from the Gateway, which also bounds the transfer; the server has no second size setting.
+The Gateway sends `max_bytes` on transcript reads and streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state.
+
+This budget comes from the Gateway, which also bounds each read response and each NDJSON stream line before decoding. An oversized partial line fails before its newline arrives. The stream may carry any number of lines within the connection deadline; the server has no second size setting.
 
 `GET /sessions/{id}?view=state` returns a `state` object with session ID, run, sequence, state, error, provider error, turn ID, and usage. It does not build or send transcript entries. Observation polling uses this read, so transcript growth does not interrupt state or token observation.
 
-State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers. A rollout must build and pin the updated Pi artifact through `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, and update the recipe pin for new base images. Prepared VMs keep their existing binary until removal; updating the Gateway does not restart their agents.
+State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers. Follow the [artifact rollout instructions](#roll-out-a-new-binary), then move the agent to a new task VM with the updated binary. Prepared VMs keep their existing binary until they are destroyed; updating the Gateway does not restart their agents.
 
 A binary built before delta reads ignores `run` and `after` on `GET /sessions/{id}` and always answers a snapshot. A client tells the two answers apart by `kind`.
 
@@ -223,7 +225,7 @@ Transcripts persist as Pi session files. After a restart, the server reloads a s
 
 ## Roll out a new binary
 
-Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; [Run Pi on a task VM](#run-pi-on-a-task-vm) shows how the Gateway installs it. A task VM gets the binary when the Gateway prepares it at claim. A VM that is already prepared keeps its binary until it is destroyed, so no running turn restarts.
+Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; [Run Pi on a task VM](#run-pi-on-a-task-vm) shows how the Gateway installs it. A new task VM gets the binary when the Gateway prepares it at claim; the base image does not need a rebuild. A VM that is already prepared keeps its binary until it is destroyed, so no running turn restarts.
 
 ## Test worker file access
 
