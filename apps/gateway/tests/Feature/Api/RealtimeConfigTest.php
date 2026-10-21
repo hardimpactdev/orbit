@@ -37,6 +37,16 @@ describe('GET /api/v1/realtime', function (): void {
             ->assertJsonPath('data.channel', 'orbit');
     });
 
+    it('keeps config and auth available when only private DNS publication failed', function (): void {
+        [$server, $credentials] = activate_websocket_role();
+        $server->roles()->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'converge:private-dns', 'error_code' => 'app-dev.dns_config_failed']);
+
+        $this->getJson('/api/v1/realtime')->assertOk()
+            ->assertJsonPath('data.url', 'wss://reverb.orbit')->assertJsonPath('data.key', $credentials->appKey);
+        $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => 'private-orbit'])
+            ->assertOk()->assertJsonPath('auth', $credentials->appKey.':'.hash_hmac('sha256', '1.1:private-orbit', $credentials->appSecret));
+    });
+
     it('never leaks the Reverb secret or the generated APP_KEY', function (): void {
         activate_websocket_role();
 

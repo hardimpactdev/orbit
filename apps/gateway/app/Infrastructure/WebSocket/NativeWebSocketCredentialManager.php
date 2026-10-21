@@ -58,7 +58,6 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
     {
         $assignments = NodeRole::query()
             ->where('role', RoleName::WebSocket->value)
-            ->where('status', LifecycleStatus::Active->value)
             ->with('node')
             ->limit(2)
             ->get();
@@ -74,19 +73,33 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
             return null;
         }
 
-        // The Gateway's own realtime client reaches `reverb.orbit` where private DNS sends every other client:
-        // during a move, the old Node until the new Node's build serves the site.
-        // During a move it also publishes to and listens on the old Node until that Node withdraws.
-        $addresses = array_values(array_filter(
-            array_map(static fn (Node $serving): ?string => $serving->wireguard_ip, $this->dnsTarget->servingNodes($node)),
-            static fn (?string $address): bool => is_string($address) && $address !== '',
-        ));
+        // A role's convergence status does not describe its running process. Keep a confirmed Gateway
+        // app through unrelated DNS or registry publication failures, including an older applied revision.
+        $version = app(WebSocketRegistry::class)->version();
+        $confirmed = WebSocketRuntime::query()
+            ->where('required', true)
+            ->where('state', 'serving')
+            ->whereNotNull('boot_id')
+            ->where('epoch', $version['epoch'])
+            ->where('applied_revision', '>=', 1)
+            ->pluck('node_id')
+            ->all();
+        $addresses = [];
+        foreach ($this->dnsTarget->servingNodes($node) as $serving) {
+            if (in_array($serving->id, $confirmed, true) && $this->dnsTarget->isServing($serving->id)
+                && $serving->status === LifecycleStatus::Active && is_string($serving->wireguard_ip) && $serving->wireguard_ip !== '') {
+                $addresses[] = $serving->wireguard_ip;
+            }
+        }
+        if ($addresses === []) {
+            return null;
+        }
 
         return new WebSocketCredentials(
             $app->app_id,
             $app->key,
             $app->secret,
-            $addresses[0] ?? null,
+            $addresses[0],
             $addresses,
         );
     }

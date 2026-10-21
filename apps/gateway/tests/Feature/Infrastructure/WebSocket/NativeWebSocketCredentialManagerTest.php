@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\WebSocket\ReportWebSocketRuntimeAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketAppIssuer;
@@ -16,6 +17,7 @@ use App\Models\Setting;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 it('creates the Gateway app and the server APP_KEY once and keeps them stable across converges', function (): void {
     $node = websocketCredentialsNode();
@@ -78,6 +80,8 @@ it('reads the active assignment credentials through current()', function (): voi
     $manager->ensure($node);
     $ensured = WebSocketApp::query()->sole()->credentials();
 
+    confirm_websocket_runtime($node);
+    new WebSocketDnsTarget()->markServing($node->id);
     $current = $manager->current();
 
     expect($current)->not->toBeNull()
@@ -96,11 +100,14 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
         'user' => 'orbit',
     ]);
     new CaddySiteCertificates()->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
+    new WebSocketDnsTarget()->markServing($source->id);
     // The move stored the role row on the target, which has its certificate but no live build yet.
     $target = websocketCredentialsNode();
     new CaddySiteCertificates()->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
     $manager = app(WebSocketCredentialManager::class);
     $manager->ensure($target);
+    confirm_websocket_runtime($source);
+    confirm_websocket_runtime($target);
 
     expect($manager->current()?->servingAddress)->toBe('10.44.0.89')
         ->and($manager->current()?->addresses())->toBe(['10.44.0.89']);
@@ -113,7 +120,7 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
     // The old Node's withdrawal forgets its certificate record before its build and its mark after it.
     new CaddySiteCertificates()->forget($source->id, WebSocketCaddySiteSource::CertificateSlug);
 
-    expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
+    expect($manager->current()?->addresses())->toBe(['10.44.0.90', '10.44.0.89']);
 
     new WebSocketDnsTarget()->markServing($source->id);
 
@@ -123,6 +130,52 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
 
     expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
 });
+
+it('keeps the confirmed Gateway app configured across role lifecycle failures', function (LifecycleStatus $status): void {
+    [$node, $credentials] = activate_websocket_role();
+    $node->roles()->update(['status' => $status, 'failed_step' => 'converge:private-dns', 'error_code' => 'app-dev.dns_config_failed']);
+
+    $current = app(WebSocketCredentialManager::class)->current();
+
+    expect($current?->appId)->toBe($credentials->appId)
+        ->and($current?->addresses())->toBe([$node->wireguard_ip]);
+})->with([LifecycleStatus::Provisioning, LifecycleStatus::Failed, LifecycleStatus::Removing]);
+
+it('refuses an active assignment until its process and published site confirm serving', function (): void {
+    $node = websocketCredentialsNode();
+    $manager = app(WebSocketCredentialManager::class);
+    $manager->ensure($node);
+    new WebSocketDnsTarget()->markServing($node->id);
+    expect($manager->current())->toBeNull();
+
+    confirm_websocket_runtime($node);
+    new WebSocketDnsTarget()->forget($node->id);
+    expect($manager->current())->toBeNull();
+
+    new WebSocketDnsTarget()->markServing($node->id);
+    expect($manager->current())->not->toBeNull();
+});
+
+it('retains the served Gateway app across unrelated registry changes and delayed reports', function (): void {
+    [$node, $credentials] = activate_websocket_role();
+    new WebSocketAppIssuer()->issue('pending-app');
+    $this->travel(60)->seconds();
+
+    expect(app(WebSocketCredentialManager::class)->current()?->appKey)->toBe($credentials->appKey);
+});
+
+it('withdraws realtime for a new boot, abandoned runtime, changed history or inactive Node', function (string $change): void {
+    [$node] = activate_websocket_role();
+    $runtime = WebSocketRuntime::query()->where('node_id', $node->id)->sole();
+    match ($change) {
+        'new boot' => app(ReportWebSocketRuntimeAction::class)->register($runtime, (string) Str::uuid()),
+        'abandoned' => app(WebSocketRegistry::class)->abandonNode($node->id),
+        'history' => $runtime->update(['epoch' => (string) Str::uuid()]),
+        'inactive' => $node->update(['status' => LifecycleStatus::Failed]),
+    };
+
+    expect(app(WebSocketCredentialManager::class)->current())->toBeNull();
+})->with(['new boot', 'abandoned', 'history', 'inactive']);
 
 it('purges the server APP_KEY and keeps the apps', function (): void {
     $node = websocketCredentialsNode();

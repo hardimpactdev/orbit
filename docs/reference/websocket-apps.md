@@ -38,6 +38,8 @@ The name is a lowercase slug of at most 63 characters. `gateway` and a taken nam
 
 `websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
 
+A role failure keeps the saved app and its operation. App creation does not converge the role, restart Reverb, or publish private DNS. If delivery fails, keep the operation id and use `websocket:operation:show` or `websocket:sync` after recovery. Repeating the request with the same idempotency key returns the same app and operation. A pending unrelated app keeps the Gateway app available on processes that already serve it.
+
 ## Destroy an app
 
 Destroy an app when no Instance uses it any more.

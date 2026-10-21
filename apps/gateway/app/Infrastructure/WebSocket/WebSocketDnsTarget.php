@@ -35,6 +35,12 @@ final readonly class WebSocketDnsTarget
         $this->settings->put($this->scope($nodeId), self::SettingKey, CarbonImmutable::now('UTC')->toIso8601String());
     }
 
+    /** The site's Caddy build succeeded; DNS publication may still be pending. */
+    public function isServing(int $nodeId): bool
+    {
+        return $this->settings->get($this->scope($nodeId), self::SettingKey) !== null;
+    }
+
     /** Before the build that withdraws the site, or when the Node can no longer be reached. */
     public function forget(int $nodeId): void
     {
@@ -47,7 +53,7 @@ final readonly class WebSocketDnsTarget
      */
     public function node(?Node $roleNode): ?Node
     {
-        if (! $roleNode instanceof Node || $this->settings->get($this->scope($roleNode->id), self::SettingKey) !== null) {
+        if (! $roleNode instanceof Node || $this->isServing($roleNode->id)) {
             return $roleNode;
         }
 
@@ -84,7 +90,7 @@ final readonly class WebSocketDnsTarget
             return [];
         }
 
-        $roleServes = $roleNode instanceof Node && $this->settings->get($this->scope($roleNode->id), self::SettingKey) !== null;
+        $roleServes = $roleNode instanceof Node && $this->isServing($roleNode->id);
         $marked = Setting::query()
             ->where('scope_type', SettingScopeType::Node->value)
             ->where('key', self::SettingKey)

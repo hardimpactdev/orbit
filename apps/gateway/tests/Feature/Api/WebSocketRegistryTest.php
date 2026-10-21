@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
 use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketRegistry;
+use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketRuntime;
@@ -52,6 +54,37 @@ it('commits once and reports pending until both current process boots confirm', 
     }
     Http::assertSent(fn ($request): bool => $request->url() === 'https://reverb.orbit/internal/orbit/registry-changed'
         && array_keys($request->data()) === ['epoch', 'revision']);
+});
+
+it('keeps failed-DNS app creation recoverable without changing roles or Gateway realtime', function (): void {
+    [$server, $gatewayApp] = activate_websocket_role($this->server);
+    $server->roles()->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'converge:private-dns', 'error_code' => 'app-dev.dns_config_failed']);
+    $this->mock(PrivateDnsManager::class)->shouldNotReceive('converge');
+    $this->mock(WebSocketRuntimeLifecycle::class)->shouldNotReceive('converge');
+    Http::fake(fn () => Http::failedConnection());
+
+    $response = $this->withHeader('Idempotency-Key', 'hauzer-retry')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-prod'])
+        ->assertStatus(202)->assertJsonPath('operation.state', 'pending');
+    $id = $response->json('data.id');
+    $operation = $response->json('operation.id');
+    $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-prod'])->assertStatus(202)
+        ->assertJsonPath('data.id', $id)->assertJsonPath('operation.id', $operation);
+    expect(WebSocketApp::query()->where('name', 'hauzer-prod')->count())->toBe(1)
+        ->and($server->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+    $this->getJson('/api/v1/realtime')->assertOk()->assertJsonPath('data.key', $gatewayApp->appKey);
+    $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => 'private-orbit'])->assertOk();
+
+    // The process recovers its registry connection and confirms the saved snapshot on the same boot.
+    $runtime = $this->runtime->refresh();
+    $this->withServerVariables(['REMOTE_ADDR' => $server->wireguard_ip])->withHeader('Authorization', 'Bearer '.$runtime->registry_token)
+        ->putJson('/api/v1/websocket-registry/processes/'.$runtime->id, [
+            'boot_id' => $runtime->boot_id, 'sequence' => 2, ...app(WebSocketRegistry::class)->version(),
+            'state' => 'serving', 'app_count' => 2, 'connections' => [], 'messages' => [],
+        ])->assertNoContent();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->withoutHeader('Authorization')
+        ->getJson('/api/v1/websocket-operations/'.$operation)->assertOk()->assertJsonPath('operation.state', 'applied');
+    $this->withHeader('Idempotency-Key', 'hauzer-retry')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-prod'])
+        ->assertCreated()->assertJsonPath('data.id', $id)->assertJsonPath('operation.id', $operation);
 });
 
 it('restricts credential snapshots to an active peer and its runtime secret without caching them', function (): void {

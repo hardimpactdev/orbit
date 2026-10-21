@@ -26,6 +26,8 @@ describe('LogStreamBroadcaster during a websocket move', function (): void {
             'user' => 'orbit',
         ]);
         new CaddySiteCertificates()->record($source->id, WebSocketCaddySiteSource::CertificateSlug);
+        confirm_websocket_runtime($source);
+        new WebSocketDnsTarget()->markServing($source->id);
         [$target] = activate_websocket_role();
         new CaddySiteCertificates()->record($target->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->markServing($target->id);
