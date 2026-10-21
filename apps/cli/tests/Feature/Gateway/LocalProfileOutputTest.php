@@ -13,8 +13,6 @@ use Saloon\Http\PendingRequest;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-output-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);

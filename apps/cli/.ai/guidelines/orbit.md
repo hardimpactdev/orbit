@@ -13,5 +13,5 @@
 
 ## Verification
 
-- Use `composer test:affected` for Pest 5 development checks. CI runs checks across all projects; `composer test` also uses TIA.
+- During development, run the Pest 5 tests that cover the change with a file path or `--filter`. `composer test` runs the full suite, and CI runs checks across all projects.
 - Follow the root `AGENTS.md` check policy for task and non-task work. Pint, Larastan, and Rector are the configured PHP quality tools.

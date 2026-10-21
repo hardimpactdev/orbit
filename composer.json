@@ -20,7 +20,6 @@
         "tooling-baseline": "bin/tooling-baseline",
         "docs-nav": "bin/docs-nav",
         "test": "bin/test",
-        "test:affected": "@test",
         "audit:dependencies": "bin/dependency-audit",
         "check": [
             "Composer\\Config::disableProcessTimeout",

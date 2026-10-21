@@ -24,7 +24,7 @@ The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway s
 
 ## Read CI artifacts
 
-The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
+The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
 [Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites and the pull request's own `pull_request` suites for the [merge gate](/reference/tasks#merge-on-green).
 

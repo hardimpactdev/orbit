@@ -12,8 +12,6 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->previousColumns = getenv('COLUMNS');

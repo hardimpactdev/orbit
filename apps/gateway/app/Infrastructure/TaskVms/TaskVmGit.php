@@ -89,7 +89,7 @@ final readonly class TaskVmGit
             fi
             shift 2
         done
-        # origin/HEAD names the default branch, as a clone sets it. Pest's test selection reads it.
+        # origin/HEAD names the default branch, as a clone sets it. The @orbit/ci-caches setup step reads it.
         if [ -n "$head" ] && git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
             git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$head"
         fi

@@ -13,12 +13,12 @@ documentation corpus under the repository-root `docs/` directory.
 - Make generation an explicit write operation and keep linting, context lookup,
   tests, and CI read-only.
 - Add semantic rules only for current Orbit invariants and cover valid and
-  invalid cases through `composer test:affected`.
+  invalid cases with Pest tests.
 
 ## Verification
 
 - Run `composer docs:lint` after changing the root documentation corpus.
 - Run `composer context:build` after a change affects the context index.
-- Run `composer test:affected` for changes to this application or its
-  documentation contracts. Follow the root `AGENTS.md` check policy for task and
+- Run the Pest tests that cover a change to this application or its
+  documentation contracts, with a file path or `--filter`. Follow the root `AGENTS.md` check policy for task and
   non-task work.

@@ -21,8 +21,6 @@ use Illuminate\Support\Str;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 require_once __DIR__.'/../../../Support/OrbitHttps.php';
 
 beforeEach(function (): void {

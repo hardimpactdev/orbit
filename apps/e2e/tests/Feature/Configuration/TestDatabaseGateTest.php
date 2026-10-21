@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /** @return array{root: string, head: string, path: string} */
 function orb247_gate_fixture(): array
 {

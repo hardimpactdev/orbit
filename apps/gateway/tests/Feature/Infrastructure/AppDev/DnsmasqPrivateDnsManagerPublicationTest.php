@@ -23,8 +23,6 @@ use App\Models\Route;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\PrivateDnsPublishHarness;
 
-pest()->group('subprocess');
-
 it('publishes records and the requester catalog idempotently', function (): void {
     $harness = new PrivateDnsPublishHarness;
     $node = orb258_published_peer();

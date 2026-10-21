@@ -175,6 +175,7 @@
         "Tests\\Feature\\Database\\RemoveDevelopmentProjectRuntimeDefinitionsTest": 2.0204,
         "Tests\\Feature\\Database\\RemoveLegacyApplicationSchemaTest": 3.5274,
         "Tests\\Feature\\Database\\RemoveTaskBaseMergeGatesMigrationTest": 1.2101,
+        "Tests\\Feature\\Database\\RemoveTiaBaselineSetupStepsMigrationTest": 0.2,
         "Tests\\Feature\\Database\\RenameProjectDomainMigrationTest": 8.0042,
         "Tests\\Feature\\Database\\RepairImageBuildConvergenceHaltsMigrationTest": 0.215,
         "Tests\\Feature\\Database\\RouteDomainMigrationTest": 0.6026,
@@ -332,7 +333,6 @@
         "Tests\\Feature\\Domain\\Tasks\\TaskWorkspaceRoutingModeTest": 5.4227,
         "Tests\\Feature\\Domain\\Tasks\\TaskWorkspaceTeardownTest": 3.3359,
         "Tests\\Feature\\Domain\\Tasks\\WatchedPullRequestTest": 0.7468,
-        "Tests\\Feature\\Domain\\TiaBaselineSetupTest": 1.4765,
         "Tests\\Feature\\Domain\\ToolActionsTest": 1.5905,
         "Tests\\Feature\\Domain\\ToolDoctorProbeTest": 1.4406,
         "Tests\\Feature\\Domain\\ToolReadActionsTest": 0.2676,
@@ -494,7 +494,6 @@
         "Tests\\Feature\\Infrastructure\\Gateway\\NativeGatewayWebConvergerTest": 5.9003,
         "Tests\\Feature\\Infrastructure\\Gateway\\OpenSslGatewayCertificateIssuerTest": 18.6344,
         "Tests\\Feature\\Infrastructure\\GitHub\\CiCacheGitTransportTest": 4.5814,
-        "Tests\\Feature\\Infrastructure\\GitHub\\HttpGitHubTiaBaselineTest": 1.0053,
         "Tests\\Feature\\Infrastructure\\Hibernation\\RuntimeReadinessAgentViewTest": 0.8088,
         "Tests\\Feature\\Infrastructure\\InstanceEnvironmentOperationLockTest": 0.4186,
         "Tests\\Feature\\Infrastructure\\InstanceEnvironmentWriterTest": 2.6875,
@@ -864,6 +863,6 @@
         "Tests\\Unit\\Support\\NoSudoTest": 0.6775,
         "Tests\\Unit\\Support\\SubprocessFixtureTest": 0.2461
     },
-    "checksum": "bdfe5ae73d6839ad3eeab6047988015a",
+    "checksum": "30100272628f3bfca7dbf46bbb0113fa",
     "updated_at": "2026-10-20T12:49:55+00:00"
 }

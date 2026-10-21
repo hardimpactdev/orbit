@@ -10,8 +10,6 @@ use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalRegion;
 use Symfony\Component\Console\Output\StreamOutput;
 
-pest()->group('subprocess');
-
 /** @param list<float> $changes */
 function animation_cadence_is_readable(array $changes): bool
 {

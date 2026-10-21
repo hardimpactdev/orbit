@@ -10,8 +10,6 @@ use Symfony\Component\Process\Process;
 use Tests\Support\SilentPrivateDnsPortPair;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 it('returns a UDP upstream answer without waiting for the socket to close', function (): void {
     $codec = new PrivateDnsMessageCodec;
     $query = $codec->encodeQuery('example.com');

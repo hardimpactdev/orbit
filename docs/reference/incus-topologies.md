@@ -310,7 +310,7 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 
 ### After a merge
 
-`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, queues a TIA cache refresh, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
+`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Why it works this way
 

@@ -174,7 +174,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('do not silently skip it');
     });
 
-    it('runs the TIA guidance gate first without Laravel or Boost', function (): void {
+    it('runs the guidance gate first without Laravel or Boost', function (): void {
         /** @var array{require: array<string, string>, require-dev: array<string, string>, scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -190,7 +190,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
-    it('keeps every repository test command on TIA', function (): void {
+    it('runs the full suite on stock Pest from every repository test command', function (): void {
         /** @var array{scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -201,14 +201,15 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'])->not->toContain('@test');
 
         expect($composer['scripts']['test'] ?? null)
-            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never')
             ->and($composer['scripts'])
-            ->not->toHaveKey('test:full');
+            ->not->toHaveKey('test:full')
+            ->not->toHaveKey('test:affected');
 
         expect(repository_guidance_contents('README.md'))
-            ->toContain('composer test       # Pest suite with TIA (parallel)')
+            ->toContain('composer test       # full Pest suite in parallel')
             ->not->toContain('composer test:full')
-            ->not->toContain('local TIA');
+            ->not->toContain('TIA');
 
     });
 

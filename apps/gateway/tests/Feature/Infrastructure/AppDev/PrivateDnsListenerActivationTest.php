@@ -28,8 +28,6 @@ use Tests\Support\LoopbackRequesters;
 use Tests\Support\PrivateDnsPortPair;
 use Tests\Support\PrivateDnsPublishHarness;
 
-pest()->group('subprocess');
-
 it('keeps the installed listener untouched when its PHP disappears or fails its self-test', function (bool $missing): void {
     $harness = new PrivateDnsPublishHarness;
     orb307_published_cluster();

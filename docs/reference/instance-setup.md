@@ -155,7 +155,7 @@ orbit instance:setup <instance>
 
 One API request runs a whole list. The request's remote work ends after 570 seconds, and its forward work stops 20 seconds earlier to leave time for cleanup. Each step's timeout is cut to the time that remains.
 
-`instance:create` keeps 150 seconds back from its setup list for rollback: up to 60 seconds for the teardown list and 90 seconds for the removal. Nested operations, including TIA artifact retrieval, keep their own local timeout while preserving that hold and the request cleanup reserve. They cannot extend the parent request deadline. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole request.
+`instance:create` keeps 150 seconds back from its setup list for rollback: up to 60 seconds for the teardown list and 90 seconds for the removal. Nested operations, such as rendering a [Gateway-owned setup step](#gateway-owned-setup-steps), keep their own local timeout while preserving that hold and the request cleanup reserve. They cannot extend the parent request deadline. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole request.
 
 A step that the request deadline stops, or that has no time left to start, is not a failed command. The request returns `command.deadline_exceeded` (HTTP 504) with `outcome: deadline` and the step name. `instance:create` still rolls back and keeps that code. Lower the step timeouts until the list fits.
 
@@ -197,15 +197,11 @@ Add a first setup step that copies the website's `vendor` and `node_modules` fro
 
 Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required. No step runs a test suite: main CI fills the [main caches](/reference/implementation-loop#main-caches). Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
 
-Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Include each Composer project's `.orbit-tia`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
+Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
 
 ### Cache ownership
 
-Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default`. Nothing writes the store, so checkouts seed only from the publications it already holds.
-
-Create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately. Point any `ORBIT_MAIN_CACHE_STORE` override at `/fast/apps/orbit/default/.git/orbit-tia/v1`.
-
-Stop the old ext4 cache worker before retiring `/home/hardimpactdev/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
+Create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately.
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 
@@ -231,25 +227,7 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ## Gateway-owned setup steps
 
-A setup step whose command is `@orbit/tia-baseline` or `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. The Gateway renders its command right before the step runs, within the step's timeout. Development Instance setup and the task baseline setup list run it the same way. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
-
-## Restore a CI TIA baseline
-
-Add an opt-in setup step after dependency installation and asset builds:
-
-```bash
-orbit instance:setup-step:create tia-baseline --project=PROJECT --command='@orbit/tia-baseline' --timeout=60 --json
-```
-
-`@orbit/tia-baseline` is a Gateway-owned operation, not a shell command. It runs during development Instance setup and the task baseline setup list. Teardown rejects it. It supports a root-level Pest project with the TIA `--baseline` option. A monorepo needs its own setup policy.
-
-The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` for this one repository. It reads at most 100 successful runs of `tia-baseline.yml` on the repository's current default branch and chooses the newest trusted `push` or `workflow_dispatch` run that contains an unexpired `pest-tia-baseline` artifact. Pull request runs cannot supply a baseline. Configure the workflow to publish only after the complete suite passes. The Gateway requires a graph whose branch and commit match the selected run. Pest may omit its optional `complete` marker; in that case the baseline must contain recorded test results. An explicit incomplete marker is rejected. The successful full-suite workflow is the source of completeness.
-
-Only `graph.json` and the optional `js-module-graph.cache.json` travel to the Node. Archives and expanded files are each limited to 4 MiB. The Node receives no GitHub credential and needs no authenticated `gh`. The Gateway needs PHP's ZIP extension. A missing App, unaccepted permission, missing baseline, or invalid artifact fails the named setup step; opt in only after the first default-branch baseline exists.
-
-The restore runs as the managed user, as do setup and the task candidate check. It asks the installed Pest for its cache directory without running tests. The directory must be inside that user's home or this checkout, with no symlink components. It stages files under a cache lock and publishes a new directory atomically. A nonempty cache stays unchanged, so retries and later subtasks keep their own results. Remove an obsolete cache explicitly before requesting a fresh import. Pest remains responsible for rejecting an incompatible runtime fingerprint and recording a new local baseline when needed.
-
-This step does not provision a VM or change the CI publication policy. It follows the same setup ordering, hard timeout, and failure cleanup as other steps. The list's total timeout must still fit the Project setup limits.
+A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. The Gateway renders its command right before the step runs, within the step's timeout. Development Instance setup and the task baseline setup list run it the same way. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
 
 ## Import CI main caches
 

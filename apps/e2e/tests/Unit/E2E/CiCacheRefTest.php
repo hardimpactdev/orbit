@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 
 it('publishes and imports main CI quality cache refs only when they fit', function (): void {
     $repository = dirname(__DIR__, 5);
-    // Keep the fixture's repositories on the worktree filesystem, like the TIA cache fixture.
+    // Keep the fixture's repositories on the worktree filesystem.
     $temporary = $repository.'/orbit_ci_ref_'.bin2hex(random_bytes(8));
     $files = new Filesystem;
     $files->makeDirectory($temporary, 0700, true);

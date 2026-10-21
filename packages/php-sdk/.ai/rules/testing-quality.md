@@ -1,7 +1,7 @@
 # Testing and quality
 
-Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
-`composer test:affected` for red, green, and refactor. CI runs checks across all projects.
+Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run the
+tests that cover the change for red, green, and refactor. CI runs checks across all projects.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
   indexed file, or material path coverage is missing. The failure must give the

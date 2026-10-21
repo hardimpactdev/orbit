@@ -2368,7 +2368,6 @@
             "concepts": [
                 "Activity",
                 "Deployment",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -3172,8 +3171,7 @@
             "concepts": [
                 "Gateway",
                 "Instance",
-                "Process",
-                "Task"
+                "Process"
             ],
             "governing_adrs": []
         },
