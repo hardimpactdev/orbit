@@ -32,7 +32,7 @@ final readonly class DevelopmentCaddyConfigRenderer
             $sites
                 ->sortBy('domain')
                 ->map(function (DevelopmentSite $site) use ($bind, $publicBind): string {
-                    $handler = $this->handler($site);
+                    $handler = $this->websocketHandler($site).$this->handler($site);
                     $internal = $this->localUnixSite($site);
 
                     // Orbit disables certificate management Node-wide; only a public listener opts back
@@ -56,6 +56,68 @@ final readonly class DevelopmentCaddyConfigRenderer
                     return $internal === null ? $siteBlock : $internal.PHP_EOL.PHP_EOL.$siteBlock;
                 })
                 ->implode(PHP_EOL.PHP_EOL).PHP_EOL;
+    }
+
+    /**
+     * Reserve Pusher's prefixes on this app domain. Reverb verifies signatures; Caddy binds both
+     * protocols to this attachment's public identifiers. No secret enters the Node configuration.
+     * Match the decoded, uncleaned path: path/path_regexp clean dot segments before matching,
+     * while reverse_proxy forwards them. The path matcher also ignores case.
+     * Caddy 2.11.7 does not advertise RFC 8441; revisit GET/Upgrade if a later version enables it.
+     */
+    private function websocketHandler(DevelopmentSite $site): string
+    {
+        if ($site->websocketKey === null || $site->websocketAppId === null) {
+            return '';
+        }
+
+        $key = $site->websocketKey;
+        $id = preg_quote($site->websocketAppId, '~');
+        $root = self::ORBIT_ROOT_CA_PATH;
+        $proxy = <<<CADDY
+            reverse_proxy https://reverb.orbit:443 {
+                header_up Host reverb.orbit
+                transport http {
+                    tls_server_name reverb.orbit
+                    tls_trusted_ca_certs {$root}
+                }
+            }
+            CADDY;
+
+        return <<<CADDY
+            route {
+                @orbit_reverb_socket {
+                    method GET
+                    vars {http.request.uri.path} /app/{$key}
+                    header_regexp Connection (?i)(^|,)\\s*upgrade\\s*(,|$)
+                    header_regexp Upgrade (?i)^websocket$
+                }
+                handle @orbit_reverb_socket {
+                    {$proxy}
+                }
+                @orbit_reverb_publish {
+                    method POST
+                    vars_regexp {http.request.uri.path} ^/apps/{$id}/(events|batch_events|users/[^/]+/terminate_connections)$
+                    vars {http.request.uri.query.auth_key} {$key}
+                    query auth_signature=* auth_timestamp=* auth_version=1.0
+                }
+                handle @orbit_reverb_publish {
+                    {$proxy}
+                }
+                @orbit_reverb_read {
+                    method GET
+                    vars_regexp {http.request.uri.path} ^/apps/{$id}/(connections|channels|channels/[^/]+|channels/[^/]+/users)$
+                    vars {http.request.uri.query.auth_key} {$key}
+                    query auth_signature=* auth_timestamp=* auth_version=1.0
+                }
+                handle @orbit_reverb_read {
+                    {$proxy}
+                }
+                @orbit_reverb_reserved path /app /app/* /apps /apps/*
+                respond @orbit_reverb_reserved 404
+            }
+
+            CADDY;
     }
 
     private function localUnixSite(DevelopmentSite $site): ?string

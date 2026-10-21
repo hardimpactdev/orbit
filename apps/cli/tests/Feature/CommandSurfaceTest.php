@@ -822,7 +822,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name' => null, 'sqlite-source-path' => null, 'force' => false, 'json' => false],
         ],
         'instance:update' => [['instance'], ['branch' => null, 'shared-paths' => null, 'auto-deploy' => null, 'json' => false]],
-        'instance:websocket:add' => [['app'], ['instance' => null, 'json' => false]],
+        'instance:websocket:add' => [['app'], ['instance' => null, 'public' => false, 'json' => false]],
         'instance:websocket:remove' => [['app'], ['instance' => null, 'force' => false, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],

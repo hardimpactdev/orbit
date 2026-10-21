@@ -1889,7 +1889,7 @@ export interface paths {
         get?: never;
         /**
          * Attach a WebSocket app
-         * @description Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).
+         * @description Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).
          */
         put: operations["instance-websocket-add"];
         post?: never;
@@ -12033,7 +12033,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Publish Reverb on the existing public app Route */
+                    public?: boolean;
+                };
+            };
+        };
         responses: {
             /** @description The request succeeded. */
             200: {
@@ -12067,6 +12074,15 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

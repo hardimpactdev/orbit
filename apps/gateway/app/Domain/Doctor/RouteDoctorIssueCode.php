@@ -6,6 +6,8 @@ namespace App\Domain\Doctor;
 
 enum RouteDoctorIssueCode: string implements DoctorIssueCode
 {
+    case WebSocketCollision = 'route.websocket_collision';
+    case WebSocketInspectionFailed = 'route.websocket_inspection_failed';
     case LifecycleNotActive = 'route.lifecycle_not_active';
     case DomainReserved = 'route.domain_reserved';
     case DnsMismatch = 'route.dns_mismatch';
