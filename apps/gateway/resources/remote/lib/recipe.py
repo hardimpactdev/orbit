@@ -3,6 +3,7 @@
 from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 import gzip
+import fcntl
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import pwd
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -812,7 +814,8 @@ def inspect(tools):
             # A moving default can fetch a runtime even for node --version. Inspect exact cached defaults directly.
             default = json_file(scope / 'config.json').get('defaultNodeVersion', '')
             binary = scope / 'js_runtime/node' / default / 'bin/node' if isinstance(default, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', default) else None
-            versions[name] = binary_version(binary, prefix=prefix) if binary and binary.is_file() else None
+            pinned = json_file(scope / '.orbit-recipe-node.json').get('version') == default
+            versions[name] = binary_version(binary, prefix=prefix) if pinned and binary and not binary.parent.parent.is_symlink() and binary.is_file() else None
         else:
             raise RecipeFailure()
         if versions[name] is not None and not isinstance(versions[name], str):
@@ -1024,6 +1027,83 @@ def install_vite_runtime(scope, runtime, tools, lock_content, account):
     package_link(runtime, 'vp', package, uid, gid)
 
 
+def node_runtime_matches(source, installed, uid):
+    """Compare a store publication with the verified archive without running account-writable code."""
+    if installed.is_symlink() or not installed.is_dir():
+        return False
+    expected = {Path('.'), *(path.relative_to(source) for path in source.rglob('*'))}
+    actual = {Path('.'), *(path.relative_to(installed) for path in installed.rglob('*'))}
+    if expected != actual:
+        return False
+    for relative in expected:
+        original, current = source / relative, installed / relative
+        before, after = original.lstat(), current.lstat()
+        if after.st_uid != uid or stat.S_IFMT(before.st_mode) != stat.S_IFMT(after.st_mode):
+            return False
+        if stat.S_ISLNK(after.st_mode):
+            if os.readlink(original) != os.readlink(current):
+                return False
+        elif after.st_mode & 0o022 or (before.st_mode & 0o111) != (after.st_mode & 0o111):
+            return False
+        elif stat.S_ISREG(after.st_mode):
+            with original.open('rb') as left, current.open('rb') as right:
+                if hashlib.file_digest(left, 'sha256').digest() != hashlib.file_digest(right, 'sha256').digest():
+                    return False
+    return True
+
+
+def install_node_runtime(scope, source, version, identifier, uid, gid):
+    """Publish the recipe archive using the same immutable, real-directory layout as deploys."""
+    cache = safe_directory(scope / 'js_runtime', uid, gid)
+    cache = safe_directory(cache / 'node', uid, gid)
+    cached = cache / version
+    lock_path = scope / '.orbit-store.lock'
+    try:
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_RDWR, 0o644)
+        os.fchown(descriptor, uid, gid)
+    except FileExistsError:
+        descriptor = os.open(lock_path, os.O_NOFOLLOW | os.O_RDONLY)
+    with os.fdopen(descriptor, 'rb') as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
+            raise RecipeFailure(detail='The Vite+ store lock must belong to the store owner.')
+        # Normalize historical deploy-created locks in place; keep the shared lock inode.
+        os.fchmod(lock.fileno(), 0o644)
+        deadline = time.monotonic() + 120
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RecipeFailure(detail='Timed out waiting for the Vite+ store lock.') from None
+                time.sleep(0.1)
+        if cached.is_symlink():
+            previous = scope / 'recipe' / ('node-' + identifier) / source.name
+            if cached.lstat().st_uid != uid or Path(os.path.abspath(cached.parent / os.readlink(cached))) != previous:
+                raise RecipeFailure(detail=f'Refusing unrelated Node runtime link [{cached}].')
+        elif cached.exists():
+            if not node_runtime_matches(source, cached, uid):
+                raise RecipeFailure(detail=f'Existing Node runtime [{cached}] differs from the verified archive; the store owner must repair it.')
+        if cached.is_symlink() or not cached.exists():
+            with tempfile.TemporaryDirectory(prefix='.orbit-stage-', dir=cache) as directory:
+                candidate = Path(directory) / source.name
+                shutil.copytree(source, candidate, symlinks=True)
+                for parent, directories, files in os.walk(candidate):
+                    os.chown(parent, uid, gid)
+                    os.chmod(parent, 0o755)
+                    for entry in directories + files:
+                        path = Path(parent) / entry
+                        os.chown(path, uid, gid, follow_symlinks=False)
+                        if not path.is_symlink():
+                            os.chmod(path, path.stat().st_mode & 0o755)
+                if cached.is_symlink():
+                    cached.unlink()
+                os.rename(candidate, cached)
+        # Collection must retain the recipe runtime even when no Instance references it.
+        publish(scope / '.orbit-recipe-node.json', json.dumps({'version': version}).encode(), 0o644, uid, gid)
+
+
 def install_javascript(tools, downloads, work, account, vp_lock=None):
     """Keep the existing Vite+ scope and global store; replace only its pinned runtime inputs."""
     uid, gid = account.pw_uid, account.pw_gid
@@ -1040,8 +1120,11 @@ def install_javascript(tools, downloads, work, account, vp_lock=None):
         if name not in downloads:
             continue
         unpacked = extract(downloads[name], work / ('unpack-' + name))
-        # Every directory is content-addressed; no mutable installer/channel or package resolution runs.
+        # Artifact bytes are verified before extraction; no mutable installer or channel runs.
         identifier = hashlib.sha256(downloads[name].read_bytes()).hexdigest()
+        if name == 'node':
+            install_node_runtime(scope, next(unpacked.iterdir()), tools[name]['version'], identifier, uid, gid)
+            continue
         target = runtime / (name + '-' + identifier)
         if not target.exists():
             shutil.copytree(unpacked, target, symlinks=True)
@@ -1050,21 +1133,7 @@ def install_javascript(tools, downloads, work, account, vp_lock=None):
                 for entry in directories + files:
                     os.chown(Path(parent) / entry, uid, gid, follow_symlinks=False)
         safe_directory(target, uid, gid)
-        if name == 'node':
-            root = next(target.iterdir())
-            cache = safe_directory(scope / 'js_runtime', uid, gid)
-            cache = safe_directory(cache / 'node', uid, gid)
-            cached = cache / tools[name]['version']
-            if cached.is_symlink():
-                if cached.lstat().st_uid != uid:
-                    raise RecipeFailure()
-                cached.unlink()
-            elif cached.exists():
-                safe_directory(cached, uid, gid)
-                shutil.rmtree(cached)
-            cached.symlink_to(root, target_is_directory=True)
-            os.chown(cached, uid, gid, follow_symlinks=False)
-        elif name == 'vp-cli':
+        if name == 'vp-cli':
             publish(bin_dir / 'vp', (target / 'vp').read_bytes(), 0o755, uid, gid, replace_link=True)
             # Standalone Vite+ otherwise runs an unpinned installer on its first invocation.
             publish(bin_dir / '.vp-setup-complete', b'', 0o644, uid, gid)

@@ -7,6 +7,7 @@ import pathlib
 import platform
 import re
 import shutil
+import stat
 import tarfile
 import tempfile
 import urllib.parse
@@ -14,6 +15,19 @@ import urllib.request
 
 
 VERSION = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z')
+
+
+def store_lock(home):
+    descriptor = os.open(home / '.orbit-store.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o644)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError('The vp store lock must belong to the store owner')
+        os.fchmod(descriptor, 0o644)
+        return os.fdopen(descriptor, 'a')
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def store_paths(payload):
@@ -227,6 +241,14 @@ def prune(home, references):
     ledger_path = home / '.orbit-runtimes.json'
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
     keep = set()
+    recipe_pin = home / '.orbit-recipe-node.json'
+    if recipe_pin.exists() or recipe_pin.is_symlink():
+        if recipe_pin.is_symlink() or recipe_pin.stat().st_uid != os.getuid() or recipe_pin.stat().st_mode & 0o022:
+            raise ValueError('Invalid recipe Node reference')
+        version = json.loads(recipe_pin.read_text())['version']
+        if not isinstance(version, str) or not VERSION.fullmatch(version):
+            raise ValueError('Invalid recipe Node version')
+        keep.add('js_runtime/node/' + version)
     for reference in references:
         _, node, pm = store_paths(reference)
         keep.update((str(node.relative_to(home)), str(pm.relative_to(home))))

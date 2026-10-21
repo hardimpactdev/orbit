@@ -13,7 +13,7 @@ def main(payload):
         home = pathlib.Path(payload['store'])
         if home.is_symlink() or not home.is_absolute() or home.stat().st_uid != os.getuid():
             return 'failed', {}
-        with (home / '.orbit-store.lock').open('a') as lock:
+        with store_lock(home) as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             return 'pruned', {'removed': prune(home, payload['references'])}
     except (OSError, ValueError, KeyError, TypeError):

@@ -15,7 +15,7 @@ def main(payload):
         # Fast path remains strictly read-only, even when another installation holds the lock.
         if installed(payload):
             return 'installed', {'verified': {}}
-        with (home / '.orbit-store.lock').open('a') as lock:
+        with store_lock(home) as lock:
             deadline = time.monotonic() + min(max(float(payload.get('lock_timeout', 120)), 0), 120)
             while True:
                 try:

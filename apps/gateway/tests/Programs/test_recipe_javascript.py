@@ -21,6 +21,7 @@ class RecipeJavascriptTest(unittest.TestCase):
             (scope / 'bin/vp').touch()
             (scope / 'bin/.vp-setup-complete').touch()
             (scope / 'config.json').write_text('{"defaultNodeVersion":"24.22.1"}')
+            (scope / '.orbit-recipe-node.json').write_text('{"version":"24.22.1"}')
             node = scope / 'js_runtime/node/24.22.1/bin/node'
             node.parent.mkdir(parents=True)
             node.touch()
@@ -46,6 +47,7 @@ class RecipeJavascriptTest(unittest.TestCase):
             vp.chmod(0o755)
             (scope / 'bin/.vp-setup-complete').touch()
             (scope / 'config.json').write_text('{"defaultNodeVersion":"24.22.1"}')
+            (scope / '.orbit-recipe-node.json').write_text('{"version":"24.22.1"}')
             node = scope / 'js_runtime/node/24.22.1/bin/node'
             node.parent.mkdir(parents=True)
             node.write_bytes(vp.read_bytes())
