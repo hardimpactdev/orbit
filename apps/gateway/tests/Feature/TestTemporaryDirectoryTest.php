@@ -56,3 +56,22 @@ it('reuses the launcher temporary directory without registering worker cleanup',
     expect(trim($probe->getOutput()))->toBe($directory)
         ->and(is_dir($directory.'/fixture'))->toBeTrue();
 });
+
+it('lets cross-user fixtures traverse the launcher directory from a private role TMPDIR', function (string $role): void {
+    $private = TestOrbitHome::scratch('private-role');
+    $configured = $private.'/'.$role;
+    mkdir($configured, 0o700, true);
+    $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .' Tests\\Support\\TestTemporaryDirectory::bootstrap();'
+        .' mkdir(sys_get_temp_dir()."/fixture", 0755);'
+        .' (new Symfony\\Component\\Process\\Process(["sudo", "-n", "-u", "nobody", "--", "test", "-x", sys_get_temp_dir()."/fixture"]))->mustRun();'
+        .' fwrite(STDOUT, sys_get_temp_dir().PHP_EOL);';
+    $probe = new Process([base_path('../../bin/pest-plain'), PHP_BINARY, '-r', $script], base_path(), ['TMPDIR' => $configured], timeout: 30);
+    $directory = trim($probe->mustRun()->getOutput());
+
+    expect($directory)->toStartWith('/tmp/run-')
+        ->and(is_dir($directory))->toBeFalse()
+        ->and(fileperms($configured) & 0o777)->toBe(0o700);
+})->with(['orbit/tmp/agent-1000', 'orbit/tmp/check-1000', 'orbit-check-1000-example'])
+    ->group('privileged')
+    ->skip(PHP_OS_FAMILY !== 'Linux', 'Cross-user fixtures use Linux sudo.');

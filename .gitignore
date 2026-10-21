@@ -12,5 +12,3 @@ __pycache__/
 !/docs/generated/context.json
 
 node_modules/
-
-/.test-runtime/
