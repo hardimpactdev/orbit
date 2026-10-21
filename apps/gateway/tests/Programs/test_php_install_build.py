@@ -71,14 +71,14 @@ FAKES = {
     'phpdismod': 'echo "phpdismod $*" >> "$STATE/calls"; rm -f "$ROOT/etc/php/$2/$4/conf.d/20-$5.ini"',
     'systemctl': 'echo "systemctl $*" >> "$STATE/calls"; case "$1" in '
                  'is-active) [ -f "$STATE/active-$3" ];; '
-                 'restart) [ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
+                 'restart|reload) [ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
                  'list-units) for f in "$STATE"/active-orbit-*; do [ -f "$f" ] && echo "${f##*/active-} loaded active running"; done;; '
                  'show) echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/$3/php-fpm.conf }";; '
                  'esac',
 }
 # The CLI prints the modules of the links in its conf.d plus core; PHP-FPM does the same for its own conf.d.
 PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { [ -f "$STATE/fpm-invalid" ] && exit 78; exit 0; }\n'
-       'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/*.ini; do [ -e "$f" ] || [ -L "$f" ] '
+       'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/20-*.ini; do [ -e "$f" ] || [ -L "$f" ] '
        '|| continue; n="${f##*/20-}"; echo "${n%.ini}"; done; cat "$STATE/extra-modules" 2>/dev/null; true\n')
 
 
@@ -112,6 +112,9 @@ class InstallBuildTest(unittest.TestCase):
         for module in ('gd', 'intl'):
             for sapi in ('cli', 'fpm'):
                 (root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(f'/mods/{module}.ini')
+        for sapi in ('cli', 'fpm'):
+            (root / f'etc/php/8.5/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini').write_text(
+                'session.upload_progress.enabled = 0\n')
 
     def setUp(self):
         # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
@@ -199,7 +202,80 @@ class InstallBuildTest(unittest.TestCase):
         outcome, data = self.run_program()
 
         self.assertEqual((outcome, data['changed'], data['restarted']), ('current', [], []))
+        self.assertEqual(data['reloaded'], [])
         self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get'))])
+
+    def test_repairs_upload_progress_in_both_sapis_and_reloads_every_active_master_once(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        (self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')
+        masters = ['php8.5-fpm.service', 'orbit-shop-php8.5-fpm.service']
+        for master in masters:
+            (self.state / f'active-{master}').touch()
+        cli = self.root / 'etc/php/8.5/cli/conf.d/99-cve-2026-109618-upload-progress.ini'
+        fpm = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        cli.unlink()
+        fpm.write_text('session.upload_progress.enabled = 1\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data['changed'], data['restarted']), ('applied', [], []), data)
+        self.assertEqual(data['reloaded'], masters)
+        for path in (cli, fpm):
+            self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get', 'systemctl restart'))])
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+        self.assertEqual(self.run_program()[0], 'current')
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+
+    def test_image_install_writes_the_mitigation_for_every_version_without_services(self):
+        shutil.copytree(self.root / 'etc/php/8.5', self.root / 'etc/php/8.4', symlinks=True)
+        for version in ('8.4', '8.5'):
+            for sapi in ('cli', 'fpm'):
+                (self.root / f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini').unlink()
+        binary = self.root / 'usr/bin/php8.4'
+        binary.write_text((self.root / 'usr/bin/php8.5').read_text().replace('8.5', '8.4'))
+        binary.chmod(0o755)
+        payload = self.payload(fpm='none')
+        payload['versions']['8.4'] = payload['versions']['8.5']
+
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+
+        self.assertEqual(outcome, 'applied', data)
+        for version in ('8.4', '8.5'):
+            for sapi in ('cli', 'fpm'):
+                path = self.root / f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini'
+                self.assertTrue(path.is_file(), path)
+                self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl')])
+
+    def test_plan_does_not_write_upload_progress_files(self):
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+
+        self.assertEqual(self.run_program(mode='plan')[0], 'planned')
+
+        self.assertFalse(path.exists())
+        self.assertEqual(self.calls(), [])
+
+    def test_failed_mitigation_validation_restores_files_so_convergence_can_retry(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        (self.state / 'active-php8.5-fpm.service').touch()
+        (self.state / 'fpm-invalid').touch()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data.get('restored')), ('fpm_invalid', True), data)
+        self.assertFalse(path.exists())
+        self.assertNotIn('systemctl reload php8.5-fpm.service', self.calls())
+        (self.state / 'fpm-invalid').unlink()
+        self.assertEqual(self.run_program()[0], 'applied')
+        self.assertIn('systemctl reload php8.5-fpm.service', self.calls())
 
     def test_refuses_installed_packages_outside_the_recipe_before_any_change(self):
         self.install('php8.5-soap', '1.2.1')

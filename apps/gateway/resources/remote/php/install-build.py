@@ -443,6 +443,25 @@ def place_opentelemetry(host, version, enabled):
     host.run(['phpenmod' if enabled else 'phpdismod', '-v', version, '-s', 'fpm', 'opentelemetry'], privileged=True)
 
 
+def write_ini(host, path, content):
+    with tempfile.NamedTemporaryFile() as candidate:
+        candidate.write(content)
+        candidate.flush()
+        host.run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', str(path.parent)], privileged=True)
+        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', candidate.name, str(path)], privileged=True)
+
+
+def place_upload_progress(host, version, previous):
+    """Own the operator's emergency drop-in until the CVE-2026-109618/109619 fixes are deployed everywhere."""
+    content = b'session.upload_progress.enabled = 0\n'
+    for sapi in ('cli', 'fpm'):
+        path = host.path(f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini')
+        before = path.read_bytes() if path.is_file() else None
+        if before != content:
+            previous[path] = before
+            write_ini(host, path, content)
+
+
 def modules(host, binary):
     output = host.run([binary, '-m'], check=False).stdout
     return sorted({line.strip().lower() for line in output.splitlines() if line.strip() and not line.startswith('[')})
@@ -496,13 +515,13 @@ def fpm_units(host, version, scope):
     return units, []
 
 
-def restart(host, version, unit, configuration, opentelemetry=False):
-    """Validate, restart, and check one master. Returns the reason it failed, or None."""
+def restart(host, version, unit, configuration, opentelemetry=False, action='restart'):
+    """Validate, restart or reload, and check one master. Returns the reason it failed, or None."""
     binary = str(host.path(f'usr/sbin/php-fpm{version}'))
     test = [binary, '-t'] + (['--fpm-config', configuration] if not unit.startswith('php') else [])
     if not host.ok(test, privileged=True):
         return 'fpm_invalid'
-    if not host.ok(['systemctl', 'restart', unit], privileged=True) \
+    if not host.ok(['systemctl', action, unit], privileged=True) \
             or not host.ok(['systemctl', 'is-active', '--quiet', unit]):
         return 'the service did not start'
     loaded = modules(host, binary)
@@ -580,6 +599,7 @@ def main(payload):
     # build depend on its exact php<version>-common.
     added = sorted(name for name in pending if name not in packages)
     moved = []
+    previous_ini = {}
 
     def roll_back(reason, restarted):
         """Put the previous build back and check it. Returns True only when every package is at its old version."""
@@ -605,6 +625,11 @@ def main(payload):
             ok = host.ok(['mv', '--', str(kept), str(original)], privileged=True) and ok
         for version, recorded in before.items():
             restore_links(host, version, recorded)
+        for path, content in previous_ini.items():
+            if content is None:
+                ok = host.ok(['rm', '-f', '--', str(path)], privileged=True) and ok
+            else:
+                write_ini(host, path, content)
         for unit in restarted:
             ok = host.ok(['systemctl', 'restart', unit], privileged=True) and ok
             ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
@@ -638,29 +663,32 @@ def main(payload):
         for version, build in versions.items():
             place_pcov(host, version, payload['pcov'])
             place_opentelemetry(host, version, payload.get('opentelemetry', False))
+            place_upload_progress(host, version, previous_ini)
             check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
-    restarted, stale, deferred = [], [], []
+    restarted, reloaded, stale, deferred = [], [], [], []
     changed = bool(pending or repair or purge or moved) or any(links(host, version) != before[version] for version in versions)
+    action = 'restart' if changed else 'reload'
+    changed = changed or bool(previous_ini)
     if changed and payload['fpm'] != 'none':
         for version in versions:
             units, skipped = fpm_units(host, version, payload['fpm'])
             stale += skipped
             for unit, configuration in units:
-                reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False))
+                reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False), action)
                 if reason == 'fpm_invalid' and payload['fpm'] == 'shared':
                     # An Instance step leaves a running service alone when its pools fail validation, as before a
                     # change: the pool publication that follows removes a stale pool and reloads the service.
                     deferred.append(unit)
                     continue
                 if reason != 'fpm_invalid':
-                    restarted.append(unit)
+                    (restarted if action == 'restart' else reloaded).append(unit)
                 if reason is None:
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
-                     f'{unit}: {reason}', restarted)
-    result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'deferred': deferred,
+                     f'{unit}: {reason}', restarted + reloaded)
+    result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'reloaded': reloaded, 'deferred': deferred,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
 
