@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/DatabaseServersController.php
   - apps/gateway/app/Http/Requests/DatabaseServers/**
   - apps/gateway/app/Models/DatabaseServer.php
+  - apps/gateway/app/Infrastructure/Firewall/{NativeDatabaseServerFirewall.php,database_server_firewall.py}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
 ---
@@ -32,6 +33,7 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 | `--node=NODE` | required | Numeric Node ID or Node name. The Node must be an active Linux Node with Docker. |
 | `--driver=DRIVER` | `mysql` | `mysql`, `pgsql` or `redis`. |
 | `--tag=TAG` | `8.4` for mysql, `18` for pgsql, `8.1` for redis | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. |
+| `--lan-node=NODE` | none | Repeat to name active Nodes allowed to use the LAN endpoint. A create retry replaces the set; omission preserves it. The API accepts an empty list to clear it. |
 | `--port=PORT` | `3306` for mysql, `5432` for pgsql, `6379` for redis | Port published on the Node's WireGuard address and its LAN address when present. |
 
 ### A MySQL server
@@ -55,7 +57,7 @@ orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5
 
 PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, container port 5432, and first-start variable `POSTGRES_PASSWORD`. The default tag is `18`; accepted tags are `18`, `18.N`, and these versions with an image variant suffix. Other majors and `latest` return `validation.failed`. The named volume mounts at `/var/lib/postgresql`, because PostgreSQL 18 stores data in `/var/lib/postgresql/18/docker`. The pre-18 mount `/var/lib/postgresql/data` is wrong for this image. Readiness runs an authenticated TCP SQL query; the image's temporary initialization server is socket-only. A retry reuses the encrypted password, Process and volume, and finishes password removal before returning active.
 
-A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries. 
+A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries.
 
 Create application objects as the managed owner. Custom schemas need explicit operator grants. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
 
@@ -65,11 +67,15 @@ Create application objects as the managed owner. Custom schemas need explicit op
 
 All three drivers publish on WireGuard and, when set, `lan_ip`. The stored connection host stays WireGuard. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) explicitly select LAN for an active consumer in the server LAN peer list. A server never publishes on a wildcard or public address.
 
-Only IPv4 is published. LAN traffic is limited to the server Node and explicitly selected active peer Nodes. WireGuard admits all mesh peers, as today. Orbit installs a raw PREROUTING chain before Docker DNAT with an owned UFW `before.init` hook. Allowed traffic returns to Docker's own rules; other endpoint ingress drops. UFW must be installed and active or creation fails before publication. The database role adds no broad port allow.
+Only IPv4 is published. LAN traffic is limited to the server Node and explicitly selected active peer Nodes. WireGuard admits all mesh peers, as today. Orbit installs a raw PREROUTING chain before Docker DNAT with an owned UFW `before.init` hook. Allowed traffic returns to Docker's own rules; other endpoint ingress drops. UFW must be installed and active or creation fails before publication.
 
- Node provisioning, LAN address changes and removal reconcile peer sources automatically. Server address changes require a create retry before switching clients; the old Process binding stays filtered until replaced. Retrying an active MySQL server can recreate its container to repair publication drift.
+An owned INPUT chain permits only exact private endpoint hairpin traffic from `docker0`, including the LAN endpoint for local containers. A Docker service drop-in requires UFW and restores the filter before daemon startup. A failed check prevents Docker startup. The database role adds no broad port allow.
 
-Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database-server` family. Repeat creation repairs filter and publication drift.
+Filtering is enabled for a server only by its explicit create/retry. Existing servers stay unchanged until their operators retry create. Creating PostgreSQL on Services does not filter an existing Valkey server there. Node provisioning, LAN address changes and removal reconcile only enabled servers on that Node or naming it as a LAN peer. An unrelated enrollment never contacts database hosts.
+
+Expansion failure keeps the old peer identity; removal failure occurs before other removal effects. Server address changes require a create retry before switching clients; the old Process binding stays filtered until replaced. Retrying an active MySQL server can recreate its container to repair publication drift.
+
+Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database-server` family. Repeat creation repairs filter and publication drift. A failed repair keeps an active server active and records its failed step. Doctor inspection writes no files on the Node.
 
 ### A Valkey server
 
@@ -256,7 +262,7 @@ The Gateway takes these steps:
 
 Rebuilding the file repairs a server that cannot start because the file is lost. The Gateway waits for the admin login before it retries ACL commands. It uses the same program as creation. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The restart uses [`process:restart`](/cli/process).
 
-A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server changes nothing.
+A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server repairs private publication and filtering.
 
 ## Errors
 
@@ -321,3 +327,15 @@ The Gateway holds the admin password and each user's password and rules, so the 
 ### Adoption without a data move
 
 The Valkey on `services` holds the Gateway queue and the collector's state, and the Gateway already holds its password. Adoption keeps the volume and the port and restarts Valkey once. A new server and a move of the data would need a queue outage or a copy tool, a release, and a new collector setup. Adoption is refused for MySQL, whose root password may be unknown.
+
+### PostgreSQL shares the SQL server lifecycle
+
+PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisioning steps, connection and user actions. A separate manager would duplicate ownership and retry rules. PostgreSQL has its own statement renderer because its identifier and literal escaping differ from MySQL. SCRAM verifiers keep application passwords out of server SQL logs. The major-18 image restriction preserves the documented volume layout across the first-start container recreation.
+
+### LAN access names its peers
+
+A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. Explicit peer Nodes define both the connection projection and firewall source list. WireGuard stays the default; automatic selection would change existing consumers. A subnet allow would admit unregistered machines. UFW INPUT alone cannot filter Docker DNAT, so the owned raw chain runs first and returns allowed traffic to Docker. Enabling filtering through an explicit create retry gives existing servers an operator-controlled rollout.
+
+### Migration preserves connection identities
+
+A new canonical connection owns each restored database. Existing external connection IDs and their attachments stay intact, with their endpoints and application credentials updated. Replacing those IDs would break attachment and Vault identities. Importing source roles wholesale could carry superuser rights and stale grants. Plausible's PostgreSQL 18 target needs a disposable rehearsal because upstream does not certify that major; Services is not a compatibility test target.

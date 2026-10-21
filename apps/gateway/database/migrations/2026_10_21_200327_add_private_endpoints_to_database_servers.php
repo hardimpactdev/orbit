@@ -12,6 +12,7 @@ return new class extends Migration
     {
         Schema::table('database_servers', function (Blueprint $table): void {
             $table->json('lan_node_ids')->nullable();
+            $table->boolean('private_endpoints_managed')->default(false);
         });
         Schema::table('database_connection_targets', function (Blueprint $table): void {
             $table->string('network', 16)->default('wireguard');
@@ -21,6 +22,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('database_connection_targets', fn (Blueprint $table) => $table->dropColumn('network'));
-        Schema::table('database_servers', fn (Blueprint $table) => $table->dropColumn('lan_node_ids'));
+        Schema::table('database_servers', fn (Blueprint $table) => $table->dropColumn(['lan_node_ids', 'private_endpoints_managed']));
     }
 };

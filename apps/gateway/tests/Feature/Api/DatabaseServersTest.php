@@ -389,13 +389,65 @@ it('prunes retired and changed peer sources from the filter', function (): void 
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
     $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
     $reconciler = app(DatabaseServerFirewallReconciler::class);
-    $reconciler->reconcilePeers([$this->gateway->id => ['lan_ip' => '10.0.0.9']], expand: true);
+    $reconciler->reconcilePeer($this->gateway, ['lan_ip' => '10.0.0.9'], expand: true);
     $firewall = app(DatabaseServerFirewall::class);
     expect($firewall->calls[array_key_last($firewall->calls)]['expand'])->toBeTrue();
     $this->gateway->update(['lan_ip' => '10.0.0.9']);
-    $reconciler->reconcilePeers();
+    $reconciler->reconcilePeer($this->gateway);
     $rules = implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']);
     expect($rules)->toContain('-s 10.0.0.9/32')->not->toContain('-s 10.0.0.5/32');
-    $reconciler->reconcilePeers([$this->gateway->id => ['status' => LifecycleStatus::Removing]]);
+    $reconciler->reconcilePeer($this->gateway, ['status' => LifecycleStatus::Removing]);
     expect(implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']))->not->toContain('-s 10.0.0.9/32');
+});
+
+it('replaces LAN peers on an existing server and preserves the list when omitted', function (): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $request = database_server_request($this->dbNode);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->postJson('/api/v1/database-servers', [...$request, 'lan_node_ids' => [$this->gateway->id]])->assertOk()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
+    $this->postJson('/api/v1/database-servers', [...$request, 'lan_node_ids' => []])->assertOk()->assertJsonPath('data.lan_node_ids', []);
+});
+
+it('enables filtering only for the server explicitly created or retried', function (): void {
+    DatabaseServer::query()->create(['slug' => 'existing-redis', 'node_id' => $this->dbNode->id, 'driver' => 'redis', 'tag' => '8.1', 'port' => 6379, 'root_password' => 'fixture', 'status' => 'active']);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'slug' => 'managed-pg']))->assertCreated();
+    $filter = app(DatabaseServerFirewall::class);
+    foreach ($filter->calls as $call) {
+        expect(implode("\n", $call['rules']))->not->toContain('--dport 6379');
+    }
+    expect(DatabaseServer::query()->where('slug', 'existing-redis')->sole()->private_endpoints_managed)->toBeFalse()
+        ->and(DatabaseServer::query()->where('slug', 'managed-pg')->sole()->private_endpoints_managed)->toBeTrue();
+});
+
+it('keeps an active server available for database creation after a failed filter repair', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    app(DatabaseServerFirewall::class)->fail = true;
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active);
+    $this->postJson('/api/v1/database-connections', ['slug' => 'after-repair', 'server' => 'beast-mysql'])->assertCreated();
+});
+
+it('shows a LAN host only after the current LAN publication is managed', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->postJson('/api/v1/database-connections', ['slug' => 'lan-host-fixture', 'server' => 'beast-mysql'])->assertCreated()->assertJsonPath('data.lan_host', null);
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->getJson('/api/v1/database-connections/lan-host-fixture')->assertOk()->assertJsonPath('data.lan_host', null);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    $this->getJson('/api/v1/database-connections/lan-host-fixture')->assertOk()->assertJsonPath('data.lan_host', '10.0.0.6');
+});
+
+it('keeps an active server active after a publication repair fails and finishes on retry', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->runtime->failConverge = true;
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+        ->and(DatabaseServer::query()->sole()->failed_step)->toBe('publication');
+    $this->runtime->failConverge = false;
+    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.failed_step', null);
 });

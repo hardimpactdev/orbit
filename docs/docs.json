@@ -694,8 +694,7 @@
               "decisions/0223-run-one-gate-from-handoff-to-merge",
               "decisions/0224-give-each-task-group-one-holder-and-one-sender",
               "decisions/0225-make-node-changes-through-agent-commands",
-              "decisions/0226-split-private-dns-on-managed-peers",
-              "decisions/0227-manage-postgresql-and-private-database-endpoints"
+              "decisions/0226-split-private-dns-on-managed-peers"
             ]
           }
         ]
@@ -1625,6 +1624,10 @@
     {
       "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",
       "destination": "/reference/websocket-apps#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0227-manage-postgresql-and-private-database-endpoints",
+      "destination": "/reference/database-servers#why-it-works-this-way"
     }
   ]
 }

@@ -112,7 +112,12 @@ final readonly class CreateDatabaseServerAction
 
         $reserved = $this->reserve($data, $node, $adoption);
         $server = $reserved['server'];
+        // Only an explicit create/retry enables filtering for an existing server.
+        $server->update(['private_endpoints_managed' => true]);
 
+        if ($data->lanNodeIds !== null) {
+            $this->step($server, 'firewall', fn () => $this->firewall->replacePeers($server, $data->lanNodeIds));
+        }
         $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
 
         if ($server->status !== LifecycleStatus::Active) {
@@ -130,6 +135,8 @@ final readonly class CreateDatabaseServerAction
         $this->reconcilePublications($server, $node);
         $server->load('process');
         $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
+
+        $server->update(['failed_step' => null, 'error_code' => null]);
 
         return ['server' => $server->refresh(), 'created' => $reserved['created']];
     }
@@ -152,7 +159,6 @@ final readonly class CreateDatabaseServerAction
                         $existing->node_id !== $node->id
                         || $existing->driver !== $data->driver
                         || $existing->tag !== $data->tag
-                        || ($data->lanNodeIds !== null && $existing->lan_node_ids !== $data->lanNodeIds)
                         || ($data->processId === null ? $existing->port !== $data->port : $existing->process_id !== $data->processId)
                     ) {
                         throw $this->slugConflict($data->slug);
@@ -298,7 +304,7 @@ final readonly class CreateDatabaseServerAction
             return $operation();
         } catch (ResourceOperationException|ProcessOperationException $exception) {
             $server->update([
-                'status' => LifecycleStatus::Failed,
+                'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
                 'failed_step' => $step,
                 'error_code' => $exception->errorCode,
             ]);

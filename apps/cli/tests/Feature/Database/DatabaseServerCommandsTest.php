@@ -138,3 +138,10 @@ it('sends the close request and preserves the Gateway refusal', function (): voi
         ->and($tester->getDisplay(true))->toContain('database.server_in_use')
         ->and($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close');
 });
+
+it('sends PostgreSQL, an explicit port and LAN peers through the SDK', function (): void {
+    $mock = MockClient::global([CreateDatabaseServerRequest::class => MockResponse::make(['data' => [...database_server_cli_data(), 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434, 'lan_node_ids' => [4, 5]], 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 201)]);
+    $tester = new CommandTester(app(Kernel::class)->all()['database:server:create']);
+    expect($tester->execute(['slug' => 'services-postgres', '--node' => '17', '--driver' => 'pgsql', '--port' => '5434', '--lan-node' => ['4', '5'], '--json' => true]))->toBe(0);
+    $mock->assertSent(fn (CreateDatabaseServerRequest $request): bool => $request->body()->all() === ['slug' => 'services-postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql', 'lan_node_ids' => [4, 5]]);
+});

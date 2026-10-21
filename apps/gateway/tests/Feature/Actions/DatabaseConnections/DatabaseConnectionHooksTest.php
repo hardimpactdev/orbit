@@ -6,16 +6,21 @@ use App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
+use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Tests\Support\FakeDatabaseServerAdmin;
 
 final class TestDatabaseConnectionUpdateHook implements DatabaseConnectionUpdateHook
 {
@@ -138,4 +143,17 @@ it('wires the core PostgreSQL update hook and refuses changing managed credentia
 
 it('wires the core analytics database removal guard before database destruction', function (): void {
     expect(collect(app()->tagged(DatabaseConnectionRemovalGuard::class))->contains(fn ($guard): bool => $guard instanceof AnalyticsDatabaseConnectionGuard))->toBeTrue();
+});
+
+it('refuses dropping the managed analytics owner database while the role refers to its Process', function (): void {
+    $storage = analytics_storage_processes();
+    $node = $storage['node'];
+    $node->roles()->create(['role' => RoleName::Analytics, 'status' => 'active']);
+    app(AnalyticsRoleSettingsRepository::class)->store($node, new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id));
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'process_id' => $storage['postgres']->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => 'active']);
+    $connection = DatabaseConnection::query()->create(['slug' => 'plausible-db', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'host' => $node->wireguard_ip, 'port' => 5434, 'database' => 'plausible_db', 'username' => 'plausible_db', 'password' => 'owner-fixture']);
+    $admin = new FakeDatabaseServerAdmin;
+    app()->instance(DatabaseServerAdmin::class, $admin);
+    expect(fn () => app(DestroyDatabaseConnectionAction::class)->execute($connection))->toThrow(ResourceOperationException::class, 'Move or remove the analytics role');
+    expect($connection->fresh())->not->toBeNull()->and($admin->sql())->toBe('');
 });

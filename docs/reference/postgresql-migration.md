@@ -26,8 +26,17 @@ Use disposable dev/test storage and a separate Docker network with no production
 1. Run Plausible's own `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` against disposable PostgreSQL 16 and ClickHouse.
 2. Create a test account and site, ingest test pageviews, and exercise the site's dashboard with a known date range.
 3. Stop the disposable application. Dump `plausible_db` with a version-18 `pg_dump -Fc` client. Restore into a database owned by its managed application role on PostgreSQL 18 with `pg_restore --exit-on-error --no-owner --no-acl --role=<owner>`.
-4. Point the same Plausible image at PostgreSQL 18 and run the production startup chain `/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run` as the non-superuser database owner. Then sign in, and check dashboard summary, timeseries, top pages, sources, countries, filters, realtime and date comparisons. Check logs for SQL errors. Verify that the same account, site and events remain visible.
-5. Record commands, exit codes, migration output without credentials, HTTP results and any untested paths. A synthetic rehearsal does not prove every production query or extension.
+4. Start Plausible on PostgreSQL 18 with the production startup chain as the non-superuser owner.
+5. Sign in and check dashboard summary and timeseries. Check top pages and sources. Test countries and filters. Test realtime and date comparisons. Check logs for SQL errors.
+6. Verify the account, site and events remain visible. Record exit codes and HTTP results without credentials. Record untested paths.
+
+Use this startup chain for step 4:
+
+```bash
+/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run
+```
+
+A synthetic rehearsal does not prove every production query or extension.
 
 If restore, migration or a dashboard path fails, stop. Keep analytics on PostgreSQL 16 and report the error. Do not bypass the version gate to test on Services.
 
@@ -42,7 +51,7 @@ On Beast, isolated Docker containers on an internal network used only synthetic 
 | Plausible CE v3.2.1 | `sha256:33e60bfb40f2df5da00f8753b76fad04f67dba3abe6d73eb516e440e3fb62985` |
 | ClickHouse 24.12 alpine | `sha256:cd450891db46cc6ffe313ca2b0fb7dbfb897a6873ca74a724cbe050a2cf62621` |
 
-Plausible's `db createdb` and `db migrate` passed on PostgreSQL 16. The fixture had one account, one site, 222 schema migration records and three pageviews on distinct paths. A custom-format dump restored with `--no-owner --no-acl` into a PostgreSQL 18 database owned by a LOGIN role without superuser or CREATEDB rights. Plausible's own `db createdb` accepted the existing database without CREATEDB, `db migrate` exited 0, and `run` started successfully as the non-superuser owner. The restored account, site and all 222 migration records remained present.
+Plausible's `db createdb` and `db migrate` passed on PostgreSQL 16. The fixture had one account, one site, 222 schema migration records and three pageviews on distinct paths. A custom-format dump restored with `--no-owner --no-acl` into a PostgreSQL 18 database owned by a LOGIN role without superuser or CREATEDB rights. Plausible's own `db createdb` accepted the existing database without CREATEDB, `db migrate` exited 0, and the full `db createdb && db migrate && run` chain then started successfully as the non-superuser owner. All eight authenticated site/dashboard requests passed again after that full startup. The restored account, site and all 222 migration records remained present.
 
 Authenticated `/sites` and the site dashboard returned 200 after the move. The dashboard's `main-graph`, `top-stats`, `pages`, `sources`, `countries` and `current-visitors` APIs each returned 200 for the current day, realtime, a previous-period comparison and a page filter: 24 successful query requests. Page and source results retained the fixture. No PostgreSQL errors appeared in the migration output. T3 browser automation was unavailable because of the host's AppArmor browser-sandbox restriction, so these were direct HTTP checks, not a visual browser check. Geo data, production extensions, production query load, and every production filter combination remain untested. This result permits planning the PostgreSQL 18 cutover; it does not authorize it.
 
@@ -64,7 +73,9 @@ orbit database:create mealou-food-catalog --server=services-postgres
 orbit database:create device-catalog --server=services-postgres
 ```
 
-Run only the database-create command for the database whose move Nick approved. The hyphenated slugs derive `mealou_food_catalog` and `device_catalog`. The canonical managed connection owns the database and its owner credentials are encrypted in the Gateway and published by `vault:sync`. The source Processes and existing connection IDs stay intact. Confirm both private publications, intended-source filtering and Doctor before copying data. Do not change a Node's LAN address as part of this procedure.
+Run only the database-create command for the database whose move Nick approved. The hyphenated slugs derive `mealou_food_catalog` and `device_catalog`. The canonical managed connection owns the database and its owner credentials are encrypted in the Gateway and published by `vault:sync`. The source Processes and existing connection IDs stay intact. Confirm both private publications, intended-source filtering and Doctor before copying data.
+
+Before and after server creation, verify the Gateway Redis connection, Horizon workers, queue depths and collector freshness. The new PostgreSQL server does not enable filtering for existing Services Valkey servers; retrying those servers is a separate operator change. Do not change a Node's LAN address as part of this procedure.
 
 ## Dump and restore one database
 
@@ -75,17 +86,39 @@ pg_dump --format=custom --no-owner --no-acl --host=<source-host> --port=<source-
 pg_restore --exit-on-error --no-owner --no-acl --host=<target-host> --port=5434 --username=<target-owner> --dbname=<database> <private-archive>
 ```
 
-These commands use a separately configured private password file. Do not embed passwords in URLs. The target database already exists and is empty. Do not use `--create`, which would restore source ownership, or `--clean` against an unverified target. Pre-create required untrusted extensions as admin. Generate a table of contents with `pg_restore --list <private-archive>`, remove `COMMENT ... EXTENSION` entries from a private restore list, and pass `--use-list=<private-list>` to restore. Such comments require extension ownership and otherwise fail the owner restore under `--exit-on-error`. Review extension requirements before running any extension SQL. A failed restore leaves a partial target: keep consumers on the source, clear only the verified disposable target database, and repeat the restore. Never repeat into a partially populated database and ignore errors.
+These commands use a separately configured private password file. Do not embed passwords in URLs. The target database already exists and is empty. Do not use `--create`, which would restore source ownership, or `--clean` against an unverified target. Create untrusted extensions as admin before restore. On the target Node, resolve the managed Process's exact container name from `process:show`. Use its local PostgreSQL socket; the admin password is never returned:
+
+```bash
+sudo docker exec --user postgres <verified-target-container> psql --no-psqlrc --set=ON_ERROR_STOP=1 --dbname=<target-database> --command='CREATE EXTENSION IF NOT EXISTS <reviewed-extension>;'
+```
+
+Review the extension name, package availability and target database first. Run this only on the approved target, one reviewed extension at a time.
+
+Generate a table of contents with `pg_restore --list <private-archive>`, remove `COMMENT ... EXTENSION` entries from a private restore list, and pass `--use-list=<private-list>` to restore. Such comments require extension ownership and otherwise fail the owner restore under `--exit-on-error`. Review extension requirements before running any extension SQL.
+
+ A failed restore leaves a partial target: keep consumers on the source, clear only the verified disposable target database, and repeat the restore. Never repeat into a partially populated database and ignore errors.
 
 Compare schema, table counts, exact row counts for critical tables, sequence values, catalogue checksums and representative queries. Run ANALYZE. Verify the owner can perform application writes in a rolled-back transaction. Confirm each read-only user can connect, use public, SELECT existing tables, and SELECT a new table made by the owner, but cannot INSERT, create tables or create another database. Drop the test table afterwards. Restore `--no-acl` deliberately avoids source grants: apply managed grants after restore, including current objects and owner default privileges.
 
 ## Keep existing connections and users
 
-Create each needed secondary user on the canonical managed connection with `database:user:create`, using `--read-only` for readers. The CLI currently takes `--password`; use the authenticated API or SDK with a protected request body for secret-bearing user creation and connection updates, so credentials never enter argv or shell history. For connection 9, replace the source postgres login with the canonical managed owner and its privately retrieved credentials; never recreate postgres as an application user. Recreate each existing application user with its privately retrieved password and matching prior rights; do not import source admin roles. A repeated user-create resets its password and grants.
+### Recreate application logins
 
-Repoint each existing connection ID 9/10/11 by its resolved slug with `database:update --node=17 --host=<Services-WireGuard-IP> --port=5434 --database=<database> --username=<matching-user>`, and retain its existing password when the recreated application user uses it. Use a protected API body if credentials must change. Preserve its ID, slug and attachments. These records remain external aliases; the new canonical managed connection owns the database. Alias deletion never drops data. A `database:user:create` call needs the canonical managed connection, since an external alias has no server. Preserve the existing user records and their passwords for Vault identity; recreate those users on the target through the canonical managed connection with the same passwords. Do not rotate them during this move, since user password updates belong to the canonical managed record.
+Create each needed secondary user on the canonical managed connection with `database:user:create`, using `--read-only` for readers. The CLI currently takes `--password`; use the authenticated API or SDK with a protected request body for secret-bearing user creation and connection updates, so credentials never enter argv or shell history. For connection 9, replace the source postgres login with the canonical managed owner and its privately retrieved credentials; never recreate postgres as an application user.
 
-Reattach each consumer with its original prefix, then `env:sync` and restart or redeploy only that consumer. For a canonical managed connection, `instance:database:add ... --network=lan` explicitly selects LAN for an active consumer in the server LAN peer list. External aliases keep their explicit host; use LAN only when every attached consumer is an active peer. Doctor and attachment selection check aliases against that same policy. Keep a shared alias on WireGuard if any consumer is not eligible. WireGuard is the default for every other consumer. Run `vault:sync` and Doctor, check the consumer's health and application queries, then move the next consumer. A record update alone does not update attached environment values.
+Recreate each existing application user with its privately retrieved password and matching prior rights; do not import source admin roles. A repeated user-create resets its password and grants.
+
+### Repoint the aliases
+
+Repoint each existing connection ID 9/10/11 by its resolved slug with `database:update --node=17 --host=<Services-WireGuard-IP> --port=5434 --database=<database> --username=<matching-user>`, and retain its existing password when the recreated application user uses it. Use a protected API body if credentials must change. Preserve its ID, slug and attachments.
+
+These records remain external aliases; the new canonical managed connection owns the database. Alias deletion never drops data. A `database:user:create` call needs the canonical managed connection, since an external alias has no server. Preserve the existing user records and their passwords for Vault identity; recreate those users on the target through the canonical managed connection with the same passwords. Do not rotate them during this move, since user password updates belong to the canonical managed record.
+
+### Reattach and verify consumers
+
+Reattach each consumer with its original prefix, then `env:sync` and restart or redeploy only that consumer. For a canonical managed connection, `instance:database:add ... --network=lan` explicitly selects LAN for an active consumer in the server LAN peer list. External aliases keep their explicit host; use LAN only when every attached consumer is an active peer. Doctor and attachment selection check aliases against that same policy. Keep a shared alias on WireGuard if any consumer is not eligible. WireGuard is the default for every other consumer.
+
+ Run `vault:sync` and Doctor, check the consumer's health and application queries, then move the next consumer. A record update alone does not update attached environment values.
 
 ## Move analytics last
 
@@ -100,3 +133,11 @@ Before target writes, stop consumers, restore each saved alias endpoint and cred
 After target writes, switching endpoints alone loses those writes. Stop writers, take a target dump, and choose a reviewed reverse restore or application reconciliation before returning to the source. Never overwrite the retained source or merge divergent writes without Nick's approval.
 
 After the agreed observation window, get separate approval to remove old Processes or volumes. Keep backups under the established retention policy. Resume imports one at a time, verify they write to the target, and update their connection inventory. This PR performs none of these production actions.
+
+## Recover a filter installation
+
+Capture the original UFW hook, Orbit rule file and Docker drop-in privately before the first create retry on a Node. A retry repairs drift. Do not disable UFW to bypass a failed check. The Docker drop-in intentionally refuses a daemon start when UFW or the filter fails.
+
+If a filter must be withdrawn, get Nick's approval and pause affected consumers. Stop every filtered Database server Process on that Node before removing protection. Restore the previous Gateway release first so Node lifecycle operations cannot reinstall its filter. On that Node, remove only the block between `BEGIN ORBIT DATABASE FIREWALL` and `END ORBIT DATABASE FIREWALL` in `/etc/ufw/before.init`, then restore its saved mode and unrelated contents. Restore any prior Orbit files and drop-in from the snapshot. If none existed, remove only `/etc/orbit/database-firewall`, `/etc/orbit/database-firewall.rules`, and `/etc/systemd/system/docker.service.d/orbit-database-firewall.conf`.
+
+Delete all jumps to `ORBIT-DATABASE` from raw PREROUTING and to `ORBIT-DATABASE-LOCAL` from filter INPUT, then flush and delete only those two chains. Run `systemctl daemon-reload` and `ufw reload`. Inspect both tables and unrelated UFW rules. Keep database Processes stopped until their previous WireGuard-only publication and source restrictions are verified. Restart them individually and check Gateway Redis, queue workers and application connectivity. Never flush an entire iptables table or remove Docker's chains. This withdrawal is a manual recovery, not part of the migration or this PR's execution.

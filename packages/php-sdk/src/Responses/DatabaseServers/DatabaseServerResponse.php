@@ -19,7 +19,7 @@ final readonly class DatabaseServerResponse
     private const string STATUS_PATTERN = '/\A(?:provisioning|active|failed|removing)\z/D';
 
     /**
-     * @param list<int> $lanNodeIds
+     * @param  list<int>  $lanNodeIds
      * @param  list<DatabaseConnectionResponse>|null  $databases  Present only when the server is shown.
      */
     public function __construct(
@@ -37,7 +37,7 @@ final readonly class DatabaseServerResponse
         public array $lanNodeIds = [],
     ) {
         foreach ($lanNodeIds as $peer) {
-            if (! is_int($peer) || $peer < 1) {
+            if ($peer < 1) {
                 throw new InvalidArgumentException('Invalid Database server response field [lan_node_ids].');
             }
         }
@@ -173,6 +173,7 @@ final readonly class DatabaseServerResponse
 
         return $data[$key];
     }
+
     /** @param array<string, mixed> $data
      * @return list<int>
      */
@@ -187,7 +188,7 @@ final readonly class DatabaseServerResponse
                 throw new InvalidArgumentException('Invalid Database server response field [lan_node_ids].');
             }
         }
+
         return $peers;
     }
-
 }

@@ -435,7 +435,6 @@ it('creates a managed PostgreSQL database and non-superuser owner through the SQ
 
 it('refuses PostgreSQL Instance ownership before creating database objects', function (): void {
     $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
-    $instance = Instance::query()->first();
     expect(fn () => app(CreateServerDatabaseAction::class)->activeServer($this->server->slug))
         ->toThrow(ResourceOperationException::class, 'Instance-owned databases require MySQL.');
     expect($this->admin->sql())->toBe('');

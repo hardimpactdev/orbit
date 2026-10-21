@@ -4274,6 +4274,7 @@ export interface components {
             server?: string | null;
             owner_instance_id?: number | null;
             test_database?: string | null;
+            lan_host?: string | null;
         };
         DatabaseUser: {
             id?: number;
@@ -4293,6 +4294,7 @@ export interface components {
             port?: number;
             status?: string;
             databases_count?: number;
+            lan_node_ids?: number[];
         };
         InstanceDeployment: {
             id?: number;
@@ -8269,13 +8271,14 @@ export interface operations {
                     slug: string;
                     node_id: number;
                     /**
-                     * @description Server driver: mysql or redis. Defaults to mysql
+                     * @description Server driver: mysql, redis, or pgsql. Defaults to mysql
                      * @enum {string}
                      */
-                    driver?: "mysql" | "redis";
-                    /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis */
+                    driver?: "mysql" | "redis" | "pgsql";
+                    /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql */
                     tag?: string;
-                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis */
+                    lan_node_ids?: number[];
+                    /** @description Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql */
                     port?: number;
                     process_id?: number;
                     /** @description Existing redis connection for adoption */
@@ -10413,6 +10416,11 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /**
+                     * @description Connection network: wireguard (default) or lan
+                     * @enum {string}
+                     */
+                    network?: "wireguard" | "lan";
                     /** @description Environment key prefix; defaults to DB */
                     prefix?: string;
                 };

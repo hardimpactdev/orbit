@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
@@ -13,11 +14,29 @@ final readonly class DatabaseServerLanPolicy
 {
     public function eligible(DatabaseServer $server, Node $consumer): bool
     {
-        return $server->node->status === LifecycleStatus::Active
+        return $this->host($server) !== null
+            && $server->node->status === LifecycleStatus::Active
             && $consumer->status === LifecycleStatus::Active
             && self::ipv4($server->node->lan_ip)
             && self::ipv4($consumer->lan_ip)
             && ($server->node_id === $consumer->id || in_array($consumer->id, $server->lan_node_ids ?? [], true));
+    }
+
+    public function host(DatabaseServer $server): ?string
+    {
+        $address = $server->node->lan_ip;
+        if (! $server->private_endpoints_managed || $server->status !== LifecycleStatus::Active || ! self::ipv4($address)) {
+            return null;
+        }
+        $publications = $server->process?->runtime_config['ports'] ?? [];
+        foreach (is_array($publications) ? $publications : [] as $spec) {
+            $mapping = is_string($spec) ? DockerPublishedPort::parse($spec) : null;
+            if ($mapping !== null && $mapping->bindAddress === $address && $mapping->publishedPort === $server->port) {
+                return $address;
+            }
+        }
+
+        return null;
     }
 
     /** @param list<int> $peerIds */

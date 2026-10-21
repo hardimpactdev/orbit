@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\DatabaseServers\DatabaseServerFirewall;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -34,6 +35,7 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Cluster;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -42,6 +44,7 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeDatabaseServerFirewall;
 use Tests\Support\FakeToolManagerMaterializer;
 
 describe(ProvisionNodeAction::class, function (): void {
@@ -2765,3 +2768,53 @@ final class ProvisionNodeTldProjectionConverger implements AppDevTldConverger
         );
     }
 }
+
+describe('managed database LAN peer reconciliation during Node provisioning', function (): void {
+    beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+            {
+                return new NodeObservation('x86_64');
+            }
+        });
+        $this->databaseFirewall = new FakeDatabaseServerFirewall;
+        app()->instance(DatabaseServerFirewall::class, $this->databaseFirewall);
+        $this->databaseNode = Node::query()->create(['name' => 'database-host', 'wireguard_ip' => '10.44.0.80', 'lan_ip' => '10.0.0.6', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.80']);
+        $this->databaseServer = DatabaseServer::query()->create(['slug' => 'managed-pg', 'node_id' => $this->databaseNode->id, 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => true]);
+    });
+
+    it('does not contact unrelated database Nodes during enrollment', function (): void {
+        $this->databaseFirewall->fail = true;
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(name: 'unrelated-peer', publicSshHost: '192.0.2.97', architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned'));
+        expect($node->status)->toBe(LifecycleStatus::Active)->and($this->databaseFirewall->calls)->toBe([]);
+    });
+
+    it('does not install a filter for an existing server until an operator enables it', function (): void {
+        $this->databaseServer->update(['private_endpoints_managed' => false]);
+        $this->databaseFirewall->fail = true;
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(name: 'database-host', publicSshHost: '192.0.2.80', architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned'));
+        expect($node->status)->toBe(LifecycleStatus::Active)->and($this->databaseFirewall->calls)->toBe([]);
+    });
+
+    it('keeps the original Node identity when expansion fails and preserves the original error', function (): void {
+        $peer = Node::query()->create(['name' => 'lan-peer', 'wireguard_ip' => '10.44.0.97', 'lan_ip' => '10.0.0.4', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.97']);
+        $this->databaseServer->update(['lan_node_ids' => [$peer->id]]);
+        $this->databaseFirewall->fail = true;
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(name: 'lan-peer', publicSshHost: '192.0.2.97', lanIpProvided: true, lanIp: '10.0.0.9', architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned')))
+            ->toThrow(fn (ResourceOperationException $e): bool => $e->errorCode === 'database.server_firewall_failed');
+        expect($peer->refresh()->status)->toBe(LifecycleStatus::Active)->and($peer->lan_ip)->toBe('10.0.0.4')
+            ->and(array_unique(array_column($this->databaseFirewall->calls, 'node')))->toBe([$this->databaseNode->id]);
+    });
+
+    it('widens before a peer changes address and prunes its old source after activation', function (): void {
+        $peer = Node::query()->create(['name' => 'lan-peer', 'wireguard_ip' => '10.44.0.97', 'lan_ip' => '10.0.0.4', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.97']);
+        $this->databaseServer->update(['lan_node_ids' => [$peer->id]]);
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(name: 'lan-peer', publicSshHost: '192.0.2.97', lanIpProvided: true, lanIp: '10.0.0.9', architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned'));
+        $calls = $this->databaseFirewall->calls;
+        expect($node->status)->toBe(LifecycleStatus::Active)->and($calls[0]['expand'])->toBeTrue()
+            ->and($calls[array_key_last($calls)]['expand'])->toBeFalse()
+            ->and(implode("\n", $calls[array_key_last($calls)]['rules']))->toContain('-s 10.0.0.9/32')->not->toContain('-s 10.0.0.4/32');
+    });
+});

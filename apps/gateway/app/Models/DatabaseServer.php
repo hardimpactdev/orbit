@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A MySQL or Valkey server that Orbit runs as a Docker Node Process. The Gateway is the only holder
+ * A MySQL, PostgreSQL or Valkey server that Orbit runs as a Docker Node Process. The Gateway is the only holder
  * of its admin password, `root_password`, which the model encrypts at rest and never serializes.
  *
  * @property int $id
@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $node_id
  * @property int|null $process_id
  * @property string $tag
+ * @property bool $private_endpoints_managed
  * @property list<int>|null $lan_node_ids
  * @property int $port
  * @property bool $default_open
@@ -49,6 +50,7 @@ final class DatabaseServer extends Model
         'tag',
         'port',
         'lan_node_ids',
+        'private_endpoints_managed',
         'root_password',
         'status',
         'failed_step',
@@ -100,6 +102,7 @@ final class DatabaseServer extends Model
             'process_id' => 'integer',
             'port' => 'integer',
             'lan_node_ids' => 'array',
+            'private_endpoints_managed' => 'boolean',
             'root_password' => 'encrypted',
             'status' => LifecycleStatus::class,
         ];

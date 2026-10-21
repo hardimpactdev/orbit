@@ -7,6 +7,7 @@ use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
 use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\DatabaseServers\DatabaseServerFirewall;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\InstanceState;
@@ -40,6 +41,7 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
 use App\Models\Cluster;
+use App\Models\DatabaseServer;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
@@ -1474,3 +1476,41 @@ final class RemoveNodeCountingCleaner implements NodeRoleDependentCleaner
         $this->calls++;
     }
 }
+
+it('refuses peer removal before other effects when its managed database filter fails', function (): void {
+    $caller = remove_node_record('operator', '10.44.0.2');
+    $target = remove_node_record('lan-peer', '10.44.0.3');
+    $databaseNode = remove_node_record('database-host', '10.44.0.80');
+    $databaseNode->update(['lan_ip' => '10.0.0.6']);
+    $target->update(['lan_ip' => '10.0.0.4']);
+    $caller->accessibleNodes()->attach($target);
+    DatabaseServer::query()->create(['slug' => 'managed-pg', 'node_id' => $databaseNode->id, 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => true, 'lan_node_ids' => [$target->id]]);
+    $filter = app(DatabaseServerFirewall::class);
+    $filter->fail = true;
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $e): bool => $e->errorCode === 'database.server_firewall_failed');
+
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->metricsAccess->calls)->toBe(0)->and($this->peers->removed)->toBe([])
+        ->and($this->firewall->restored)->toBe([])->and($filter->calls[0]['node'])->toBe($databaseNode->id);
+});
+
+it('removes an unrelated Node without contacting database servers and prunes only opted in peers', function (bool $related, bool $enabled): void {
+    $caller = remove_node_record('operator', '10.44.0.2');
+    $target = remove_node_record('lan-peer', '10.44.0.3');
+    $databaseNode = remove_node_record('database-host', '10.44.0.80');
+    $databaseNode->update(['lan_ip' => '10.0.0.6']);
+    $target->update(['lan_ip' => '10.0.0.4']);
+    $caller->accessibleNodes()->attach($target);
+    DatabaseServer::query()->create(['slug' => 'managed-pg', 'node_id' => $databaseNode->id, 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => $enabled, 'lan_node_ids' => $related ? [$target->id] : []]);
+    $filter = app(DatabaseServerFirewall::class);
+    $filter->fail = ! ($related && $enabled);
+
+    app(RemoveNodeAction::class)->execute($target, $caller);
+
+    expect($target->fresh())->toBeNull()->and(count($filter->calls))->toBe($related && $enabled ? 1 : 0);
+    if ($related && $enabled) {
+        expect(implode("\n", $filter->calls[0]['rules']))->not->toContain('-s 10.0.0.4/32');
+    }
+})->with([[false, true], [true, false], [true, true]]);

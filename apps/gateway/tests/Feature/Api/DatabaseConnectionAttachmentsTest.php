@@ -470,6 +470,8 @@ it('persists explicit LAN selection for an eligible peer and keeps WireGuard as 
     $node->update(['lan_ip' => '10.0.0.4']);
     $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => LifecycleStatus::Active, 'lan_node_ids' => [$node->id]]);
     $this->caller->update(['lan_ip' => '10.0.0.6']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->caller->id, 'name' => 'managed-pg', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.0.0.6:5434:5432']], 'status' => 'active', 'desired_state' => 'running']);
+    $server->update(['private_endpoints_managed' => true, 'process_id' => $process->id]);
     $connection = DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'node_id' => $server->node_id, 'host' => $this->caller->wireguard_ip, 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
     $url = "/api/v1/instances/{$this->instance->id}/database-connections/catalog";
     $this->putJson($url, ['network' => 'lan'])->assertOk()->assertJsonPath('data.host', '10.0.0.6');

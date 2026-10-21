@@ -144,6 +144,7 @@ orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS
 | Option | Meaning |
 | --- | --- |
 | `--node=NODE` | Numeric Node ID or Node name. Required. |
+| `--lan-node=NODE` | Explicit active LAN peer Node. Repeat for each peer. Both Nodes need IPv4 LAN addresses. |
 | `--driver=DRIVER` | `mysql`, `pgsql` or `redis`. A `redis` server runs Valkey. Defaults to `mysql`. |
 | `--tag=TAG` | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. Defaults to `8.4` for mysql, `18` for pgsql and `8.1` for redis. |
 | `--port=PORT` | Port to publish on WireGuard and, when present, LAN. Defaults to `3306` for mysql, `5432` for pgsql and `6379` for redis. |

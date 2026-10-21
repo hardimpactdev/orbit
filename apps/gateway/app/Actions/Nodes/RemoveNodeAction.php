@@ -156,6 +156,18 @@ final readonly class RemoveNodeAction
         $node->update(['status' => LifecycleStatus::Removing]);
 
         try {
+            app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node, ['status' => LifecycleStatus::Removing]);
+        } catch (Throwable $exception) {
+            $node->update(['status' => $priorStatus]);
+            throw $this->failure(
+                step: 'database-firewall',
+                errorCode: 'database.server_firewall_failed',
+                message: "Could not revoke database LAN access for node [{$node->name}].",
+                previous: $exception,
+            );
+        }
+
+        try {
             $this->metricsAccess->revoke();
         } catch (Throwable $exception) {
             $node->update(['status' => $priorStatus]);
@@ -224,7 +236,6 @@ final readonly class RemoveNodeAction
             }
         }
 
-        app(DatabaseServerFirewallReconciler::class)->reconcilePeers([$node->id => ['status' => LifecycleStatus::Removing]]);
         $lanClusterId = $node->cluster_id;
 
         if ($node->wireguard_public_key !== null) {
