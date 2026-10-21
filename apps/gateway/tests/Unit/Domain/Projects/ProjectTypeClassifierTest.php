@@ -9,8 +9,8 @@ it('classifies the Orbit monorepo by repository identity', function (): void {
     $classifier = new ProjectTypeClassifier;
 
     expect($classifier->classify([
-        'slug' => 'orbit',
-        'repository_identity' => ProjectTypeClassifier::OrbitRepositoryIdentity,
+        'slug' => 'orbit-renamed',
+        'repository_identity' => 'github.com/hardimpactdev/orbit',
         'root' => 'apps/gateway/public',
         'has_production_php' => false,
     ]))->toBe(ProjectType::Monorepo);

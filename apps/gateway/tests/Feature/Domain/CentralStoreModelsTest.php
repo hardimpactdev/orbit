@@ -22,7 +22,7 @@ it('stores apps, Instances, and their process ownership', function (): void {
     $project = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -61,7 +61,7 @@ it('enforces one Instance name per app and one checkout path per node', function
     $project = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
     ]);
     Instance::query()->create([
         'project_id' => $project->id,

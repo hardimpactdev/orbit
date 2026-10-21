@@ -29,7 +29,7 @@ Loading task group...
 │
 ├  Instance              —
 │
-├  Pull request          https://github.com/nckrtl/orbit/pull/460
+├  Pull request          https://github.com/hardimpactdev/orbit/pull/460
 │
 ├  Review and merge      yes
 │
@@ -48,7 +48,7 @@ Loading task group...
 └  Duration              —
 
 Brief
-  Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.
+  Orbit reviews pull request https://github.com/hardimpactdev/orbit/pull/460.
 
  ┌──────────┬────┬──────────────┬───────────┬──────────────┬────────┬───────────┬──────────┬──────┬────────────┐
  │ POSITION │ ID │ TITLE        │ STATUS    │ DELIVERABLES │ TOKENS │ LINE DIFF │ DURATION │ KIND │ ASSISTANCE │

@@ -1,8 +1,8 @@
 {
-  "url": "https://api.github.com/repos/nckrtl/orbit/releases/258000001",
-  "assets_url": "https://api.github.com/repos/nckrtl/orbit/releases/258000001/assets",
-  "upload_url": "https://uploads.github.com/repos/nckrtl/orbit/releases/258000001/assets{?name,label}",
-  "html_url": "https://github.com/nckrtl/orbit/releases/tag/cli-v0.4681.0",
+  "url": "https://api.github.com/repos/hardimpactdev/orbit/releases/258000001",
+  "assets_url": "https://api.github.com/repos/hardimpactdev/orbit/releases/258000001/assets",
+  "upload_url": "https://uploads.github.com/repos/hardimpactdev/orbit/releases/258000001/assets{?name,label}",
+  "html_url": "https://github.com/hardimpactdev/orbit/releases/tag/cli-v0.4681.0",
   "id": 258000001,
   "author": {
     "login": "github-actions[bot]",
@@ -37,7 +37,7 @@
   "published_at": "2026-10-07T14:02:19Z",
   "assets": [
     {
-      "url": "https://api.github.com/repos/nckrtl/orbit/releases/assets/612000100",
+      "url": "https://api.github.com/repos/hardimpactdev/orbit/releases/assets/612000100",
       "id": 612000100,
       "node_id": "RA_kwDOUFw4mM4kfixture0",
       "name": "SHA256SUMS",
@@ -69,10 +69,10 @@
       "download_count": 0,
       "created_at": "2026-10-07T14:02:10Z",
       "updated_at": "2026-10-07T14:02:10Z",
-      "browser_download_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS"
+      "browser_download_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS"
     },
     {
-      "url": "https://api.github.com/repos/nckrtl/orbit/releases/assets/612000101",
+      "url": "https://api.github.com/repos/hardimpactdev/orbit/releases/assets/612000101",
       "id": 612000101,
       "node_id": "RA_kwDOUFw4mM4kfixture1",
       "name": "orbit-0.4681.0-linux-aarch64",
@@ -104,10 +104,10 @@
       "download_count": 0,
       "created_at": "2026-10-07T14:02:11Z",
       "updated_at": "2026-10-07T14:02:11Z",
-      "browser_download_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-aarch64"
+      "browser_download_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-aarch64"
     },
     {
-      "url": "https://api.github.com/repos/nckrtl/orbit/releases/assets/612000102",
+      "url": "https://api.github.com/repos/hardimpactdev/orbit/releases/assets/612000102",
       "id": 612000102,
       "node_id": "RA_kwDOUFw4mM4kfixture2",
       "name": "orbit-0.4681.0-linux-x86_64",
@@ -139,10 +139,10 @@
       "download_count": 0,
       "created_at": "2026-10-07T14:02:12Z",
       "updated_at": "2026-10-07T14:02:12Z",
-      "browser_download_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64"
+      "browser_download_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64"
     },
     {
-      "url": "https://api.github.com/repos/nckrtl/orbit/releases/assets/612000103",
+      "url": "https://api.github.com/repos/hardimpactdev/orbit/releases/assets/612000103",
       "id": 612000103,
       "node_id": "RA_kwDOUFw4mM4kfixture3",
       "name": "orbit-0.4681.0-macos-arm64",
@@ -174,10 +174,10 @@
       "download_count": 0,
       "created_at": "2026-10-07T14:02:13Z",
       "updated_at": "2026-10-07T14:02:13Z",
-      "browser_download_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-macos-arm64"
+      "browser_download_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-macos-arm64"
     }
   ],
-  "tarball_url": "https://api.github.com/repos/nckrtl/orbit/tarball/cli-v0.4681.0",
-  "zipball_url": "https://api.github.com/repos/nckrtl/orbit/zipball/cli-v0.4681.0",
+  "tarball_url": "https://api.github.com/repos/hardimpactdev/orbit/tarball/cli-v0.4681.0",
+  "zipball_url": "https://api.github.com/repos/hardimpactdev/orbit/zipball/cli-v0.4681.0",
   "body": "Orbit CLI 0.4681.0, built from 1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d.\n\nCommit: 1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n"
 }

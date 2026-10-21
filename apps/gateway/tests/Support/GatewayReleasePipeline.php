@@ -121,7 +121,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             {
                 public function run(ProcessInvocation $invocation): CommandResult
                 {
-                    return new CommandResult(0, "https://github.com/nckrtl/orbit.git\n", '', 1, false);
+                    return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
                 }
             },
             branch: 'main',
@@ -236,7 +236,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         {
             public function run(ProcessInvocation $invocation): CommandResult
             {
-                return new CommandResult(0, "https://github.com/nckrtl/orbit.git\n", '', 1, false);
+                return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
             }
         };
 

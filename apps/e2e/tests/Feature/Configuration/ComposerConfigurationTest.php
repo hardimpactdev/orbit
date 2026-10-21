@@ -187,7 +187,7 @@ describe('Composer configuration', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $publisher = $workflow['jobs']['publish-ci-cache'];
         expect($publisher['needs'])->toBe(['required'])
-            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
+            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
             ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
             ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
             ->and($publisher['steps'][1]['with']['pattern'])->toBe('sandbox-tia-*-${{ github.sha }}')

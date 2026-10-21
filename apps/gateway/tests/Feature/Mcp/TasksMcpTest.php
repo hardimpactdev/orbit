@@ -355,7 +355,7 @@ it('returns a structured MCP error for canceling a settling group with a pull re
         'title' => 'MCP settle',
         'brief' => 'Complete after review.',
         'status' => TaskGroupStatus::Settling,
-        'pr_url' => 'https://github.com/nckrtl/orbit/pull/7',
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/7',
     ]);
 
     $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [

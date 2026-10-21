@@ -8,7 +8,7 @@
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
-# A registration token comes from `gh api -X POST repos/nckrtl/orbit/actions/runners/registration-token --jq .token`
+# A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
 # and expires after an hour. The script never stores or prints it. Prefer ORBIT_RUNNER_TOKEN: an argument shows in
 # the host's process list. The script hands the token to the container on stdin, but config.sh takes it as an
 # argument, so it shows in the host's process list for the seconds that config.sh runs.
@@ -28,7 +28,7 @@ RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
-REPO_URL=https://github.com/nckrtl/orbit
+REPO_URL=https://github.com/hardimpactdev
 LABELS=self-hosted,Linux,X64,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
 # signal/ptrace to container processes whose label is stacked (profile//&...). This lets the container signal its own
@@ -184,7 +184,7 @@ register() {
     # shellcheck disable=SC2016
     printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
-      sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --work /home/runner/work --replace' \
+      sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --runnergroup Default --work /home/runner/work --replace' \
       config "$REPO_URL" "$name" "$LABELS" >/dev/null
   fi
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"

@@ -80,7 +80,7 @@ When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_cod
 
 ## bin/task-group-check
 
-Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
+Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
 
 ```bash
 bin/task-group-check --payload FILE [--kind auto|bug|feature]
@@ -112,7 +112,7 @@ A bug group's first code-changing subtask must carry `fails_on_base` `true` on a
 
 ## bin/pr-head-check
 
-Read the pull request, its reviews, its `Required checks` run, and its file diff. Pass only when those records match the current head and the diff has no leftover the [merge skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) already names. Do not merge.
+Read the pull request, its reviews, its `Required checks` run, and its file diff. Pass only when those records match the current head and the diff has no leftover the [merge skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) already names. Do not merge.
 
 ```bash
 bin/pr-head-check --pr URL

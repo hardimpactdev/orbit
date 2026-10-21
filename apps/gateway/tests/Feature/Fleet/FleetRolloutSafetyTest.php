@@ -294,8 +294,8 @@ describe('fleet rollout CLI fallback alert', function (): void {
         ['alerts' => $alerts] = FleetFixtures::bind();
         $ancestor = str_repeat('e', 40);
         $release = new CliReleaseName(4680);
-        $cli = DesiredCliReleaseData::available($release, $ancestor, 'https://github.com/nckrtl/orbit/releases/download/'.$release->tag().'/SHA256SUMS', [
-            new FleetReleaseAssetData('linux-x86_64', $release->assetName('linux-x86_64'), 'https://github.com/nckrtl/orbit/releases/download/'.$release->tag().'/'.$release->assetName('linux-x86_64'), str_repeat('c', 64)),
+        $cli = DesiredCliReleaseData::available($release, $ancestor, 'https://github.com/hardimpactdev/orbit/releases/download/'.$release->tag().'/SHA256SUMS', [
+            new FleetReleaseAssetData('linux-x86_64', $release->assetName('linux-x86_64'), 'https://github.com/hardimpactdev/orbit/releases/download/'.$release->tag().'/'.$release->assetName('linux-x86_64'), str_repeat('c', 64)),
         ]);
         $rollout = new FleetRollout()->forceFill(['id' => 7, 'commit' => FleetFixtures::Commit]);
 

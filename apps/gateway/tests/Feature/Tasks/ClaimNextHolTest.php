@@ -789,7 +789,7 @@ describe('the abandoned workspace sweep', function (): void {
         $group->taskable()->associate($workspace);
         test_update_task($group, [
             'status' => TaskGroupStatus::Settling,
-            'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
+            'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/120',
             'assistance_requested' => true,
             'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
