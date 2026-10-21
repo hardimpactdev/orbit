@@ -379,6 +379,8 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 ## Releases
 
+The Gateway pins agent `0.4.4`, which includes reconnect recovery after a reset, server close, missing pong, or blocked write. Complete the agent release, Gateway release, and fleet rollout before updating Reverb, so every agent can reconnect when the server restarts. Verify the Gateway Node separately because the fleet rollout excludes it.
+
 A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
 
 The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
