@@ -2165,6 +2165,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Cluster",
                 "Deployment",
                 "Gateway",
                 "Instance",
