@@ -734,7 +734,7 @@ it('fails without a result as an installation failure', function (): void {
         ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.php_install_failed'));
 });
 
-it('logs a skipped download and dedicated masters on the previous build', function (): void {
+it('logs a skipped download and dedicated masters that may still use the previous build or settings', function (): void {
     Log::spy();
     $transport = new AppDevFakeSshExecutor([
         new CommandResult(0, '{"outcome":"current","data":{"changed":[],"purged":[],"restarted":[],"deferred":[],"stale_masters":["orbit-shop-php8.5-fpm.service"]}}'."\n", '', 1, false),
@@ -744,7 +744,7 @@ it('logs a skipped download and dedicated masters on the previous build', functi
 
     expect($transport->commands)->toHaveCount(2);
     Log::shouldHaveReceived('info')->once()->with('PHP packages match the recipe; skipped the package download.', Mockery::any());
-    Log::shouldHaveReceived('warning')->once()->with(Mockery::pattern('/previous PHP build/'), Mockery::on(static fn (array $context): bool => $context['masters'] === ['orbit-shop-php8.5-fpm.service']));
+    Log::shouldHaveReceived('warning')->once()->with('Dedicated PHP-FPM masters were not restarted or reloaded; they may still use the previous PHP build or settings.', Mockery::on(static fn (array $context): bool => $context['masters'] === ['orbit-shop-php8.5-fpm.service']));
 });
 
 /** @return array<string, mixed> */

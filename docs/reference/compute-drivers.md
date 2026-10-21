@@ -166,7 +166,11 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 
 The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-upload-progress.ini` for every PHP version it installs. It writes `session.upload_progress.enabled = 0` to mitigate CVE-2026-109618 and CVE-2026-109619, which allow unauthenticated remote code execution through session upload progress in multipart requests. It replaces the operator's emergency file at the same path and repairs missing or changed files on later convergence.
 
-A settings-only change validates and reloads the active PHP-FPM masters selected by the caller; images write the files without running services. Task VM base images and topology guests receive the setting through this same installer. Remove this temporary mitigation once the patched PHP builds released on 21 October 2026 at 14:00 UTC are live everywhere. See the [early mitigation notice](https://ma.ttias.be/php-cve-2026-109618-early-mitigation/).
+A settings-only change validates and gracefully reloads every active PHP-FPM master, including dedicated production masters, regardless of the caller's FPM scope. Images have no active masters, so this reload is a no-op.
+
+Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step, `node:converge-recipe`, or the rollout after the PHP build bump. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
+
+Remove this temporary mitigation once the patched PHP builds released on 21 October 2026 at 14:00 UTC are live everywhere. See the [early mitigation notice](https://ma.ttias.be/php-cve-2026-109618-early-mitigation/).
 
 Before it changes anything, the installer checks the machine:
 

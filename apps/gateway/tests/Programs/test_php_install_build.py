@@ -231,6 +231,35 @@ class InstallBuildTest(unittest.TestCase):
         for master in masters:
             self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
 
+    def test_settings_only_change_reloads_dedicated_masters_regardless_of_the_callers_scope(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        (self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')
+        (self.root / 'etc/php/8.5/fpm/conf.d/20-opentelemetry.ini').symlink_to('/mods/opentelemetry.ini')
+        dedicated = 'orbit-shop-php8.5-fpm.service'
+        (self.state / f'active-{dedicated}').touch()
+        for scope in ('none', 'shared'):
+            with self.subTest(fpm=scope):
+                masters = [dedicated]
+                if scope == 'shared':
+                    (self.state / 'active-php8.5-fpm.service').touch()
+                    masters.insert(0, 'php8.5-fpm.service')
+                (self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini').unlink()
+                (self.state / 'calls').unlink(missing_ok=True)
+
+                outcome, data = self.run_program(fpm=scope, opentelemetry=True)
+
+                self.assertEqual((outcome, data['changed'], data['restarted']), ('applied', [], []), data)
+                self.assertEqual(data['reloaded'], masters)
+                self.assertEqual(data['stale_masters'], [])
+                self.assertEqual(data['deferred'], [])
+                for master in masters:
+                    self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+                self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get', 'systemctl restart'))])
+                self.assertEqual(self.run_program(fpm=scope, opentelemetry=True)[0], 'current')
+                for master in masters:
+                    self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+
     def test_image_install_writes_the_mitigation_for_every_version_without_services(self):
         shutil.copytree(self.root / 'etc/php/8.5', self.root / 'etc/php/8.4', symlinks=True)
         for version in ('8.4', '8.5'):
@@ -276,6 +305,23 @@ class InstallBuildTest(unittest.TestCase):
         (self.state / 'fpm-invalid').unlink()
         self.assertEqual(self.run_program()[0], 'applied')
         self.assertIn('systemctl reload php8.5-fpm.service', self.calls())
+
+    def test_shared_scope_does_not_defer_invalid_dedicated_master_on_settings_only_change(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        master = 'orbit-shop-php8.5-fpm.service'
+        (self.state / f'active-{master}').touch()
+        (self.state / 'fpm-invalid').touch()
+
+        outcome, data = self.run_program(fpm='shared')
+
+        self.assertEqual((outcome, data.get('restored'), data.get('unit')), ('fpm_invalid', True, master), data)
+        self.assertFalse(path.exists())
+        self.assertNotIn(f'systemctl reload {master}', self.calls())
+        (self.state / 'fpm-invalid').unlink()
+        self.assertEqual(self.run_program(fpm='shared')[0], 'applied')
+        self.assertIn(f'systemctl reload {master}', self.calls())
 
     def test_refuses_installed_packages_outside_the_recipe_before_any_change(self):
         self.install('php8.5-soap', '1.2.1')

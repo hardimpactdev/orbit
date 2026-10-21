@@ -247,7 +247,7 @@ final readonly class RemotePhpPackageManager
         }
         $stale = $outcome->data['stale_masters'] ?? [];
         if (is_array($stale) && $stale !== []) {
-            Log::warning('Dedicated PHP-FPM masters still run the previous PHP build until their next restart.', ['node' => $node->name, 'masters' => $stale]);
+            Log::warning('Dedicated PHP-FPM masters were not restarted or reloaded; they may still use the previous PHP build or settings.', ['node' => $node->name, 'masters' => $stale]);
         }
     }
 

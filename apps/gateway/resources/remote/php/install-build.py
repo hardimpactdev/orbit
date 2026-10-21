@@ -671,13 +671,14 @@ def main(payload):
     changed = bool(pending or repair or purge or moved) or any(links(host, version) != before[version] for version in versions)
     action = 'restart' if changed else 'reload'
     changed = changed or bool(previous_ini)
-    if changed and payload['fpm'] != 'none':
+    scope = 'all' if action == 'reload' else payload['fpm']
+    if changed and scope != 'none':
         for version in versions:
-            units, skipped = fpm_units(host, version, payload['fpm'])
+            units, skipped = fpm_units(host, version, scope)
             stale += skipped
             for unit, configuration in units:
                 reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False), action)
-                if reason == 'fpm_invalid' and payload['fpm'] == 'shared':
+                if reason == 'fpm_invalid' and scope == 'shared':
                     # An Instance step leaves a running service alone when its pools fail validation, as before a
                     # change: the pool publication that follows removes a stale pool and reloads the service.
                     deferred.append(unit)

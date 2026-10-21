@@ -46,15 +46,18 @@ The Instance records the selected version in its [source profile](/domains/appli
 
 The PHP step of the `app-dev` and `app-prod` roles installs the recipe's [PHP set](/reference/compute-drivers#php-build) of each selected version with `php.install-build`, the one [PHP build installer](/reference/compute-drivers#install-the-php-build). Recipe convergence, the task VM image build, and CI run the same program. The step reads the set from the recipe; it keeps no list of its own.
 
-The PHP step of an Instance uses these options:
+For package changes, the PHP step of an Instance uses these options:
 
 - It keeps PHP packages outside the recipe and installs with `--no-remove`, so a deploy never removes an extension that a site uses. Recipe convergence refuses such packages instead.
 - It loads PCOV in the CLI only on an `app-dev` Node.
-- It restarts only the shared `php<version>-fpm` service. It restarts a running service whose pools pass `php-fpm<version> -t`.
+- On app-dev, it restarts only the shared `php<version>-fpm` service. Its pools must pass `php-fpm<version> -t`.
+- A production Instance PHP step restarts no active master.
 - A service whose pools fail validation keeps running. The pool publication that follows removes a stale pool and reloads the service.
 - A stopped service stays stopped until pool publication starts it.
 
-The step restarts no dedicated production master. It logs the masters that still run the previous build. Their next restart, such as the next deployment, loads the new build.
+Package changes restart no dedicated production master. The step logs the masters left running, which may still use the previous PHP build or settings. Their next restart, such as the next deployment, loads the new build.
+
+A settings-only change follows the [PHP build installer's reload policy](/reference/compute-drivers#install-the-php-build): it validates and gracefully reloads every active master, including dedicated production masters. Failed validation restores the previous settings so the next installer run can retry.
 
 When every package is at its recipe version, the installer downloads nothing, and the step logs `PHP packages match the recipe; skipped the package download.` A refusal or a failed install fails the step with `app-dev.php_install_failed` or `app-prod.php_install_failed`. Another PHP apt source, a missing file, or an unsupported system fails it with `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. The error carries the installer's log.
 
