@@ -815,5 +815,4 @@ it('publishes Valkey only on explicit LAN and WireGuard addresses', function ():
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
     $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
     expect(DatabaseServer::query()->sole()->process->runtime_config['ports'])->toBe(['10.44.0.80:6379:6379', '10.0.0.6:6379:6379']);
-
 });

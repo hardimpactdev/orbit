@@ -64,7 +64,6 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
                         $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::PublicationMismatch,
                             'The Process publications differ from the managed private endpoints.', 'private endpoints', 'different');
                     }
-
                 }
                 if ($server->driver !== DatabaseDriver::Redis) {
                     if (! $this->sql->waitUntilReady($server, 5)) {
