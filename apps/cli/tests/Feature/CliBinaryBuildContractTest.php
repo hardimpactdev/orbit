@@ -92,7 +92,7 @@ it('keeps the workflow targets, artifact names, dest paths, and build runners al
     expect($workflow)->toBeString()
         ->and($builder)->toBeString()
         ->and($workflow)->toContain($target('linux-x64', 'ubuntu-26.04', 'linux', 'x64', 'orbit-linux-x64', 'apps/cli/builds/dist/linux/linux-x64', 'true'))
-        ->and($workflow)->toContain($target('linux-arm64', 'ubuntu-26.04-arm', 'linux', 'arm', 'orbit-linux-arm64', 'apps/cli/builds/dist/linux/linux-arm', 'true'))
+        ->and($workflow)->toContain($target('linux-arm64', 'ubuntu-26.04', 'linux', 'arm', 'orbit-linux-arm64', 'apps/cli/builds/dist/linux/linux-arm', 'false'))
         ->and($workflow)->toContain($target('macos-arm64', 'ubuntu-26.04', 'mac', 'arm', 'orbit-macos-arm64', 'apps/cli/builds/dist/mac/mac-arm', 'false'))
         ->and($workflow)->toContain('bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"')
         ->and($workflow)->toContain('test "$reported" = "Orbit ${VERSION}"')
