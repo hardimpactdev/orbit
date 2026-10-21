@@ -48,9 +48,14 @@ final class GatewayReleaseUnitProcessRunner implements ProcessRunner
             return new CommandResult($state === 'enabled' ? 0 : 1, $state."\n", '', 1, false);
         }
 
-        if (($invocation->arguments[2] ?? null) === 'enable'
-            && in_array($this->enabledStates[$invocation->arguments[4]] ?? '', ['masked', 'masked-runtime'], true)) {
-            return new CommandResult(1, '', 'Unit is masked.', 1, false);
+        if (($invocation->arguments[2] ?? null) === 'enable') {
+            $unit = $invocation->arguments[4];
+            $requiredUnits = $unit === 'logrotate.timer' ? ['logrotate.timer', 'logrotate.service'] : [$unit];
+            foreach ($requiredUnits as $requiredUnit) {
+                if (in_array($this->enabledStates[$requiredUnit] ?? '', ['masked', 'masked-runtime'], true)) {
+                    return new CommandResult(1, '', 'Unit is masked.', 1, false);
+                }
+            }
         }
 
         if (array_slice($invocation->arguments, 1, 2) === ['install', '-m']) {
@@ -139,8 +144,9 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
             '/etc/logrotate.d/orbit-gateway',
             '/etc/systemd/system/logrotate.timer.d/orbit-retention.conf',
         ])
-            ->and(array_slice($processes->ran, -4))->toBe([
+            ->and(array_slice($processes->ran, -5))->toBe([
                 ['sudo', 'systemctl', 'daemon-reload'],
+                ['sudo', 'systemctl', 'is-enabled', 'logrotate.service'],
                 ['sudo', 'systemctl', 'is-enabled', 'logrotate.timer'],
                 ['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer'],
                 ['sudo', 'systemctl', 'enable', '--now', 'orbit-gateway-release.timer'],
@@ -215,16 +221,16 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
         }
     });
 
-    it('leaves an operator-masked logrotate timer disabled without blocking releases', function (string $state, bool $logrotateMissing): void {
+    it('leaves the logrotate timer disabled when either unit is operator-masked without blocking releases', function (string $unit, string $state, bool $logrotateMissing): void {
         $processes = new GatewayReleaseUnitProcessRunner;
         $processes->logrotateMissing = $logrotateMissing;
-        $processes->enabledStates = ['logrotate.timer' => $state];
+        $processes->enabledStates = [$unit => $state];
 
         new NativeGatewayReleaseUnitConverger($processes, orbitHome: '/home/orbit/.orbit', workingDirectory: '/home/orbit/orbit/apps/gateway')->converge();
 
         expect($processes->ran)->not->toContain(['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer'])
             ->toContain(['sudo', 'systemctl', 'enable', '--now', 'orbit-gateway-release.timer']);
-    })->with(['masked', 'masked-runtime'])->with([false, true]);
+    })->with(['logrotate.service', 'logrotate.timer'])->with(['masked', 'masked-runtime'])->with([false, true]);
 
     it('attempts every mask cleanup and preserves the first failure', function (bool $packageFails): void {
         $processes = new GatewayReleaseUnitProcessRunner(fail: $packageFails ? 'logrotate' : null);

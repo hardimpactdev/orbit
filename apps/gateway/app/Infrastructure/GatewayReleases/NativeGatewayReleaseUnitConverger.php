@@ -64,7 +64,7 @@ final readonly class NativeGatewayReleaseUnitConverger implements GatewayRelease
             $this->install($path, $contents, 'gateway-retention-config');
         }
         $this->run('gateway-release-reload', ['sudo', 'systemctl', 'daemon-reload']);
-        if (! $this->isMasked('logrotate.timer')) {
+        if (! $this->isMasked('logrotate.service') && ! $this->isMasked('logrotate.timer')) {
             $this->run('gateway-retention-enable', ['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer']);
         }
         $this->run('gateway-release-enable', ['sudo', 'systemctl', 'enable', '--now', $this->units->timerName()]);
