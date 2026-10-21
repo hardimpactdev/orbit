@@ -48,7 +48,7 @@ final readonly class DatabaseServerProcess
             image: ($server->driver === DatabaseDriver::Pgsql ? 'postgres:' : 'mysql:').$server->tag,
             workingDirectory: null,
             environment: [self::passwordVariable($server) => $rootPassword],
-            // Publish private IPv4 endpoints only, after the ingress filter is verified.
+            // Bind each private address explicitly; Docker publication bypasses UFW.
             ports: self::publishedPorts($node, $server->port, $server->driver === DatabaseDriver::Pgsql ? 5432 : self::CONTAINER_PORT),
             volumes: [[
                 'source' => self::volume($server->slug),

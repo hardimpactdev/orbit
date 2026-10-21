@@ -2515,7 +2515,6 @@
             "concepts": [
                 "Activity",
                 "Cluster",
-                "Database server",
                 "Deployment",
                 "Doctor",
                 "Extension",
@@ -2650,7 +2649,6 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "Database server",
                 "Doctor",
                 "Extension",
                 "Gateway",

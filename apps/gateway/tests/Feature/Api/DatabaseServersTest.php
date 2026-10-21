@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\DatabaseServerFirewall;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -340,28 +340,16 @@ it('rejects PostgreSQL images outside major 18 before reserving a server', funct
     expect(DatabaseServer::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
 })->with(['16', '17-alpine', '19', 'latest', '180']);
 
-it('publishes SQL servers on both private addresses with exact peer rules', function (string $driver, int $port): void {
-    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+it('publishes SQL servers only on explicit private addresses even with a public interface', function (string $driver, int $port): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
     $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver, 'lan_node_ids' => [$this->gateway->id]]))
         ->assertCreated()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
     $server = DatabaseServer::query()->sole();
     expect($server->process->runtime_config['ports'])->toBe(["10.44.0.80:{$port}:{$port}", "10.0.0.6:{$port}:{$port}"]);
-    $calls = app(DatabaseServerFirewall::class)->calls;
-    expect($calls[0]['rules'])->toContain("-d 10.0.0.6/32 -p tcp --dport {$port} -s 10.0.0.5/32 -j RETURN", "-d 10.0.0.6/32 -p tcp --dport {$port} -j DROP");
+    $rendered = app(DockerProcessRenderer::class)->createArguments($server->process, app(ProcessTargetResolver::class)->forNodeAdmission($this->dbNode));
+    expect(implode(' ', $rendered))->not->toContain('0.0.0.0', '85.9.217.155', '[::]');
 })->with([['mysql', 3306], ['pgsql', 5432]]);
-
-it('fails before publishing when the ingress filter cannot be installed and resumes on retry', function (): void {
-    $firewall = app(DatabaseServerFirewall::class);
-    $firewall->fail = true;
-    $request = database_server_request($this->dbNode, ['driver' => 'pgsql', 'tag' => '18']);
-    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
-    expect(Process::query()->count())->toBe(0)->and(DatabaseServer::query()->sole()->failed_step)->toBe('firewall');
-    $password = DatabaseServer::query()->sole()->root_password;
-    $firewall->fail = false;
-    $this->postJson('/api/v1/database-servers', $request)->assertOk();
-    expect(DatabaseServer::query()->sole()->root_password)->toBe($password)->and(Process::query()->count())->toBe(1);
-});
 
 it('reconciles active SQL publications without restoring its password variable', function (): void {
     $request = database_server_request($this->dbNode);
@@ -384,22 +372,6 @@ it('resumes PostgreSQL initialization with the original password and Process aft
     expect($server->refresh()->process_id)->toBe($processId)->and($server->root_password)->toBe($password)->and($server->process->runtime_config['environment'])->toBe([]);
 });
 
-it('prunes retired and changed peer sources from the filter', function (): void {
-    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
-    $this->gateway->update(['lan_ip' => '10.0.0.5']);
-    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
-    $reconciler = app(DatabaseServerFirewallReconciler::class);
-    $reconciler->reconcilePeer($this->gateway, ['lan_ip' => '10.0.0.9'], expand: true);
-    $firewall = app(DatabaseServerFirewall::class);
-    expect($firewall->calls[array_key_last($firewall->calls)]['expand'])->toBeTrue();
-    $this->gateway->update(['lan_ip' => '10.0.0.9']);
-    $reconciler->reconcilePeer($this->gateway);
-    $rules = implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']);
-    expect($rules)->toContain('-s 10.0.0.9/32')->not->toContain('-s 10.0.0.5/32');
-    $reconciler->reconcilePeer($this->gateway, ['status' => LifecycleStatus::Removing]);
-    expect(implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']))->not->toContain('-s 10.0.0.9/32');
-});
-
 it('replaces LAN peers on an existing server and preserves the list when omitted', function (): void {
     $this->dbNode->update(['lan_ip' => '10.0.0.6']);
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
@@ -410,25 +382,23 @@ it('replaces LAN peers on an existing server and preserves the list when omitted
     $this->postJson('/api/v1/database-servers', [...$request, 'lan_node_ids' => []])->assertOk()->assertJsonPath('data.lan_node_ids', []);
 });
 
-it('enables filtering only for the server explicitly created or retried', function (): void {
+it('enables private endpoint management only for the selected server', function (): void {
     DatabaseServer::query()->create(['slug' => 'existing-redis', 'node_id' => $this->dbNode->id, 'driver' => 'redis', 'tag' => '8.1', 'port' => 6379, 'root_password' => 'fixture', 'status' => 'active']);
     $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'slug' => 'managed-pg']))->assertCreated();
-    $filter = app(DatabaseServerFirewall::class);
-    foreach ($filter->calls as $call) {
-        expect(implode("\n", $call['rules']))->not->toContain('--dport 6379');
-    }
     expect(DatabaseServer::query()->where('slug', 'existing-redis')->sole()->private_endpoints_managed)->toBeFalse()
         ->and(DatabaseServer::query()->where('slug', 'managed-pg')->sole()->private_endpoints_managed)->toBeTrue();
 });
 
-it('keeps an active server available for database creation after a failed filter repair', function (): void {
-    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
-    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
-    app(DatabaseServerFirewall::class)->fail = true;
-    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
-    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active);
-    $this->postJson('/api/v1/database-connections', ['slug' => 'after-repair', 'server' => 'beast-mysql'])->assertCreated();
-});
+it('refuses wildcard and public publication addresses before creating a server', function (string $field, string $address, string $driver): void {
+    $this->dbNode->update([$field => $address]);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver]))
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseServer::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+})->with([
+    ['wireguard_ip', '0.0.0.0'], ['lan_ip', '0.0.0.0'],
+    ['wireguard_ip', '85.9.217.155'], ['lan_ip', '85.9.217.155'],
+    ['lan_ip', '::'],
+])->with(['mysql', 'pgsql', 'redis']);
 
 it('shows a LAN host only after the current LAN publication is managed', function (): void {
     $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);

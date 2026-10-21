@@ -28,7 +28,7 @@ The role keeps its data in two Docker Processes. Create them first on an active 
 
 A Process needs a command. For PostgreSQL, use `postgres`. The ClickHouse image passes its own configuration file, so give it a server argument after two dashes, such as `-- --logger.level=warning`.
 
-Publish unmanaged PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the database Node's WireGuard address only. A managed PostgreSQL server may also publish its exact recorded LAN address with its [intended-source filter](/reference/database-servers#private-publication-and-filtering). Wildcard and public publication are refused. Analytics still connects over WireGuard.
+Publish unmanaged PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the database Node's WireGuard address only. A managed PostgreSQL server may also publish its exact recorded LAN address under the [private-network trust model](/reference/database-servers#private-publication). Wildcard and public publication are refused. Analytics still connects over WireGuard.
 
 For unmanaged storage, Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
 

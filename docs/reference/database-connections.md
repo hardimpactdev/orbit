@@ -148,7 +148,7 @@ Add and remove change stored configuration only. Run [`env:sync`](/reference/env
 
 `instance:database:add <slug> --instance=<instance> --network=lan` selects the managed server's LAN address for that attachment only. Both Nodes must be active with IPv4 LAN addresses. The consumer must be in the server's stored `lan_node_ids` list or be the server Node itself. Set peers with repeatable `--lan-node` when creating the server; Cluster membership does not grant access.
 
-Repeating server creation with `--lan-node` replaces the peer list; omitting it preserves the list. The API accepts an empty `lan_node_ids` list to remove all remote LAN peers. Orbit widens the filter before storing peers and prunes removed sources afterwards. Orbit refuses an ineligible selection with `database.lan_unavailable` before writing keys. `--network=wireguard` is the default. Reattach with that option to switch back.
+Repeating server creation with `--lan-node` replaces the peer list; omitting it preserves the list. The API accepts an empty `lan_node_ids` list to remove all remote LAN peers. The peer list controls LAN connection selection only; it is not a network access list. Managed servers trust their private networks and have no port firewall. Orbit refuses an ineligible selection with `database.lan_unavailable` before writing keys. `--network=wireguard` is the default. Reattach with that option to switch back.
 
 The attachment stores its network choice. Environment projection, `.env.testing`, and Doctor use that same choice. The connection's default host and Gateway inspection remain WireGuard. External connections do not derive LAN endpoints: record their intended host explicitly. `env:sync` is still required after reattachment.
 

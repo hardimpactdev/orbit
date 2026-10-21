@@ -63,7 +63,6 @@ use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\DatabaseServerFirewall;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
@@ -268,7 +267,6 @@ use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Firewall\NativeDatabaseServerFirewall;
 use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
@@ -524,7 +522,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
-        DatabaseServerFirewall::class => NativeDatabaseServerFirewall::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,

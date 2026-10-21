@@ -8,7 +8,6 @@ use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -156,21 +155,9 @@ final readonly class RemoveNodeAction
         $node->update(['status' => LifecycleStatus::Removing]);
 
         try {
-            app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node, ['status' => LifecycleStatus::Removing]);
-        } catch (Throwable $exception) {
-            $this->restoreRemovalStatus($node, $priorStatus);
-            throw $this->failure(
-                step: 'database-firewall',
-                errorCode: 'database.server_firewall_failed',
-                message: "Could not revoke database LAN access for node [{$node->name}].",
-                previous: $exception,
-            );
-        }
-
-        try {
             $this->metricsAccess->revoke();
         } catch (Throwable $exception) {
-            $this->restoreRemovalStatus($node, $priorStatus);
+            $node->update(['status' => $priorStatus]);
 
             throw $this->failure(
                 step: 'grafana-access-revocation',
@@ -185,7 +172,7 @@ final readonly class RemoveNodeAction
                 $this->metrics->retire($node);
             }
         } catch (Throwable $exception) {
-            $this->restoreRemovalStatus($node, $priorStatus);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = $this->restoreMetricsSelection();
 
             if ($rollbackFailure instanceof Throwable) {
@@ -220,7 +207,7 @@ final readonly class RemoveNodeAction
             try {
                 $this->firewall->restorePublicSsh($node, $node->user);
             } catch (Throwable $exception) {
-                $this->restoreRemovalStatus($node, $priorStatus);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = $this->restoreMetricsSelection();
 
                 if ($rollbackFailure instanceof Throwable) {
@@ -243,7 +230,7 @@ final readonly class RemoveNodeAction
                 $this->peers->remove($node);
                 $peerRemoved = true;
             } catch (Throwable $exception) {
-                $this->restoreRemovalStatus($node, $priorStatus);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = $this->restoreMetricsSelection();
 
                 if ($rollbackFailure instanceof Throwable) {
@@ -266,7 +253,7 @@ final readonly class RemoveNodeAction
                     clusterIds: [$lanClusterId],
                 );
             } catch (Throwable $exception) {
-                $this->restoreRemovalStatus($node, $priorStatus);
+                $node->update(['status' => $priorStatus]);
                 $rollbackFailure = null;
 
                 if ($peerRemoved) {
@@ -304,7 +291,7 @@ final readonly class RemoveNodeAction
         try {
             $this->dns->converge();
         } catch (Throwable $exception) {
-            $this->restoreRemovalStatus($node, $priorStatus);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = null;
 
             if ($peerRemoved) {
@@ -349,7 +336,7 @@ final readonly class RemoveNodeAction
                 $node->delete();
             });
         } catch (Throwable $exception) {
-            $this->restoreRemovalStatus($node, $priorStatus);
+            $node->update(['status' => $priorStatus]);
             $rollbackFailure = null;
 
             if ($peerRemoved) {
@@ -549,19 +536,6 @@ final readonly class RemoveNodeAction
         }
 
         return null;
-    }
-
-    private function restoreRemovalStatus(Node $node, LifecycleStatus $status): void
-    {
-        $node->update(['status' => $status]);
-        try {
-            app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node, expand: true);
-        } catch (Throwable $exception) {
-            Log::warning('Database LAN access could not be restored after Node removal failed; Doctor will report drift.', [
-                'node_id' => $node->id,
-                'exception' => $exception,
-            ]);
-        }
     }
 
     private function metricsRollbackFailure(Node $node, Throwable $previous): NodeRemovalException

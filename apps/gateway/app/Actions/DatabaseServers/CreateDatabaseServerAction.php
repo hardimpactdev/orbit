@@ -9,7 +9,6 @@ use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\DatabaseServers\DatabaseServerLanPolicy;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyProcessAdoption;
@@ -57,7 +56,6 @@ final readonly class CreateDatabaseServerAction
         private ProcessRuntimeManager $runtime,
         private ProcessSpecification $specifications,
         private DatabaseServerAdmin $admin,
-        private DatabaseServerFirewallReconciler $firewall,
         private DatabaseServerLanPolicy $lan,
         private ValkeyServerAdmin $valkey,
         private ValkeyProcessAdoption $adoption,
@@ -112,13 +110,12 @@ final readonly class CreateDatabaseServerAction
 
         $reserved = $this->reserve($data, $node, $adoption);
         $server = $reserved['server'];
-        // Only an explicit create/retry enables filtering for an existing server.
+        // Only an explicit create/retry opts an existing server into private publication checks.
         $server->update(['private_endpoints_managed' => true]);
 
         if ($data->lanNodeIds !== null) {
-            $this->step($server, 'firewall', fn () => $this->firewall->replacePeers($server, $data->lanNodeIds));
+            $server->update(['lan_node_ids' => array_values(array_unique($data->lanNodeIds))]);
         }
-        $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
 
         if ($server->status !== LifecycleStatus::Active) {
             if ($server->driver === DatabaseDriver::Redis) {
@@ -134,7 +131,6 @@ final readonly class CreateDatabaseServerAction
         }
         $this->reconcilePublications($server, $node);
         $server->load('process');
-        $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
 
         $server->update(['failed_step' => null, 'error_code' => null]);
 

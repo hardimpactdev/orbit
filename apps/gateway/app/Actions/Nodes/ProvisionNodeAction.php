@@ -14,7 +14,6 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Fleet\NodeCliConvergence;
@@ -61,7 +60,6 @@ use App\Models\Route;
 use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class ProvisionNodeAction
@@ -311,15 +309,6 @@ final readonly class ProvisionNodeAction
         }
         $rolelessOperator = $data->roles === [] && (! $node->exists || $node->roles()->doesntExist());
 
-        if ($node->exists && $lanIp !== $node->lan_ip) {
-            // Before persistence; a failure leaves the existing Node identity intact.
-            try {
-                app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node, ['lan_ip' => $lanIp, 'status' => LifecycleStatus::Active], expand: true);
-            } catch (Throwable $exception) {
-                $this->pruneDatabasePeersAfterFailure($node);
-                throw $exception;
-            }
-        }
         $node->fill([
             'status' => LifecycleStatus::Provisioning,
             'cluster_id' => $clusterId,
@@ -356,7 +345,6 @@ final readonly class ProvisionNodeAction
                 }
             });
         } catch (QueryException $exception) {
-            $this->pruneDatabasePeersAfterFailure($node);
             throw new ResourceOperationException(
                 errorCode: 'cluster.lan_ip_conflict',
                 message: 'The Node network identity conflicts with existing Cluster state.',
@@ -464,7 +452,6 @@ final readonly class ProvisionNodeAction
                     'error_code' => null,
                 ]);
             });
-            app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node);
         } catch (Throwable $exception) {
             $this->bestEffortPruneNetwork($lanClusterIds);
 
@@ -472,10 +459,7 @@ final readonly class ProvisionNodeAction
                 $this->restorePriorActiveState($node, $priorActiveState);
                 $this->bestEffortExpandNetwork($lanClusterIds);
                 $this->bestEffortPruneNetwork($lanClusterIds);
-            } else {
-                $node->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'database-firewall', 'error_code' => 'database.server_firewall_failed']);
             }
-            $this->pruneDatabasePeersAfterFailure($node);
 
             throw $exception;
         }
@@ -802,7 +786,6 @@ final readonly class ProvisionNodeAction
     /** @param list<int> $clusterIds */
     private function expandRouterLanIngress(Node $node, array $clusterIds): void
     {
-        app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node, ['lan_ip' => $node->lan_ip, 'status' => LifecycleStatus::Active], expand: true);
         $this->lanIngress()->expand(
             nodeOverrides: [
                 $node->id => [
@@ -1071,7 +1054,6 @@ final readonly class ProvisionNodeAction
     ): void {
         if ($priorActiveState === null) {
             $this->markFailed($node, $failure);
-            $this->pruneDatabasePeersAfterFailure($node);
 
             return;
         }
@@ -1079,7 +1061,6 @@ final readonly class ProvisionNodeAction
         try {
             $this->restorePriorActiveState($node, $priorActiveState);
             $this->syncRouterLanIngress($node);
-            $this->pruneDatabasePeersAfterFailure($node);
         } catch (Throwable) {
             throw new NodeProvisioningException(
                 step: 'node-rollback',
@@ -1104,15 +1085,6 @@ final readonly class ProvisionNodeAction
                 errorCode: 'node.reprovision_rollback_failed',
                 message: 'Node reprovisioning rollback failed.',
             );
-        }
-    }
-
-    private function pruneDatabasePeersAfterFailure(Node $node): void
-    {
-        try {
-            app(DatabaseServerFirewallReconciler::class)->reconcilePeer($node->refresh());
-        } catch (Throwable $exception) {
-            Log::warning('Database peer filter rollback needs repair; run Doctor.', ['node_id' => $node->id, 'exception' => $exception]);
         }
     }
 

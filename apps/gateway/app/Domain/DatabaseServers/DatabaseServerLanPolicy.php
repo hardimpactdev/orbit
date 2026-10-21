@@ -7,6 +7,7 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 
@@ -42,8 +43,8 @@ final readonly class DatabaseServerLanPolicy
     /** @param list<int> $peerIds */
     public function validate(Node $node, array $peerIds): void
     {
-        if (! self::ipv4($node->wireguard_ip) || (filled($node->lan_ip) && ! self::ipv4($node->lan_ip))) {
-            throw new ResourceOperationException('validation.failed', 'Database publication requires IPv4 addresses.', 422);
+        if (! self::privateIpv4($node->wireguard_ip) || (filled($node->lan_ip) && ! self::privateIpv4($node->lan_ip))) {
+            throw new ResourceOperationException('validation.failed', 'Database publication requires private IPv4 addresses.', 422);
         }
         if ($peerIds === []) {
             return;
@@ -57,6 +58,20 @@ final readonly class DatabaseServerLanPolicy
                 throw new ResourceOperationException('database.lan_unavailable', 'Every LAN peer must be active with an IPv4 LAN address.', 422);
             }
         }
+    }
+
+    private static function privateIpv4(?string $address): bool
+    {
+        if (! is_string($address) || ! self::ipv4($address)) {
+            return false;
+        }
+        foreach (['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] as $range) {
+            if (Ipv4Subnet::from($range)->contains($address)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function ipv4(?string $address): bool

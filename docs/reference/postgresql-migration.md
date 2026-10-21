@@ -73,9 +73,9 @@ orbit database:create mealou-food-catalog --server=services-postgres
 orbit database:create device-catalog --server=services-postgres
 ```
 
-Run only the database-create command for the database whose move Nick approved. The hyphenated slugs derive `mealou_food_catalog` and `device_catalog`. The canonical managed connection owns the database and its owner credentials are encrypted in the Gateway and published by `vault:sync`. The source Processes and existing connection IDs stay intact. Confirm both private publications, intended-source filtering and Doctor before copying data.
+Run only the database-create command for the database whose move Nick approved. The hyphenated slugs derive `mealou_food_catalog` and `device_catalog`. The canonical managed connection owns the database and its owner credentials are encrypted in the Gateway and published by `vault:sync`. The source Processes and existing connection IDs stay intact. Confirm both explicit private publications and Doctor before copying data.
 
-Before and after server creation, verify the Gateway Redis connection, Horizon workers, queue depths and collector freshness. The new PostgreSQL server does not enable filtering for existing Services Valkey servers; retrying those servers is a separate operator change. Do not change a Node's LAN address as part of this procedure.
+Before and after server creation, verify the Gateway Redis connection, Horizon workers, queue depths and collector freshness. The new PostgreSQL server does not change existing Services Valkey servers; retrying those servers is a separate operator change. Do not change a Node's LAN address as part of this procedure.
 
 ## Dump and restore one database
 
@@ -134,16 +134,8 @@ After target writes, switching endpoints alone loses those writes. Stop writers,
 
 After the agreed observation window, get separate approval to remove old Processes or volumes. Keep backups under the established retention policy. Resume imports one at a time, verify they write to the target, and update their connection inventory. This PR performs none of these production actions.
 
-## Recover a filter installation
-
-Capture the original UFW hook, Orbit rule file and Docker drop-in privately before the first create retry on a Node. A retry repairs drift. Do not disable UFW to bypass a failed check. The Docker drop-in intentionally refuses a daemon start when UFW or the filter fails.
-
-If a filter must be withdrawn, get Nick's approval and pause affected consumers. Stop every filtered Database server Process on that Node before removing protection. Restore the previous Gateway release first so Node lifecycle operations cannot reinstall its filter. On that Node, remove only the block between `BEGIN ORBIT DATABASE FIREWALL` and `END ORBIT DATABASE FIREWALL` in `/etc/ufw/before.init`, then restore its saved mode and unrelated contents. Restore any prior Orbit files and drop-in from the snapshot. If none existed, remove only `/etc/orbit/database-firewall`, `/etc/orbit/database-firewall.rules`, and `/etc/systemd/system/docker.service.d/orbit-database-firewall.conf`.
-
-Delete all jumps to `ORBIT-DATABASE` from raw PREROUTING and to `ORBIT-DATABASE-LOCAL` from filter INPUT, then flush and delete only those two chains. Run `systemctl daemon-reload` and `ufw reload`. Inspect both tables and unrelated UFW rules. Keep database Processes stopped until their previous WireGuard-only publication and source restrictions are verified. Restart them individually and check Gateway Redis, queue workers and application connectivity. Never flush an entire iptables table or remove Docker's chains. This withdrawal is a manual recovery, not part of the migration or this PR's execution.
-
 ## Recorded infrastructure checks
 
 On 2026-10-21, disposable PostgreSQL 18 retained a fixture database after its container was recreated without POSTGRES_PASSWORD, using the documented parent volume mount. Real SQL checks confirmed that downgrading a writer removed INSERT on current and future owner tables while keeping SELECT.
 
-A disposable Ubuntu 26.04 container with its own network namespace passed two UFW reloads, disable/enable and repeated filter expansion. Each left one first PREROUTING jump. A listed source reached a test endpoint through DNAT with HTTP 200; an unlisted source timed out. The runner refused to start Docker while UFW was inactive. The container used a stub for systemctl daemon-reload; it did not run a Docker daemon. Automated tests cover file rollback, normalized expansion, hook preservation and read-only inspection. Incus, reboot and a real Docker daemon restart remain unverified and must be checked before merge.
+Database publication uses explicit WireGuard and LAN bindings with no port firewall. Check the final Process bindings before each cutover: `10.44.0.3:5434:5432` and `10.0.0.6:5434:5432` only. Reject `0.0.0.0`, an unqualified port mapping, or Services' public address 85.9.217.155. The stored LAN peer list guides connection selection, not network access. Keep the private networks unreachable from the public internet. PostgreSQL uses SCRAM passwords and the image's stock `pg_hba.conf` defaults.

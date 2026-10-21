@@ -12,7 +12,7 @@ Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it ne
 
 The Gateway applies each rule over SSH, verifies it in the UFW status output, and records the result. The Node firewall catalog is the single source of Orbit-managed rules, so role provisioning and firewall commands use the same projection. Doctor checks the `firewall` family and reports a rule that is missing or different from its record without changing the machine.
 
-[Database servers](/reference/database-servers#private-publication-and-filtering) also own a filter before Docker DNAT. It is separate from named UFW operator rules, because INPUT rules alone cannot restrict published Docker ports. Server create/retry enables that filter for the selected server. The `database-server` Doctor family checks it. Do not use `firewall:allow` to bypass a refused LAN peer.
+[Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; named UFW rules do not restrict their Docker publications.
 
 ## Commands
 

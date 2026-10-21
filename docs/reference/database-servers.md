@@ -7,7 +7,6 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
   - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
   - apps/gateway/app/Models/DatabaseServer.php
-  - apps/gateway/app/Infrastructure/Firewall/{NativeDatabaseServerFirewall.php,database_server_firewall.py}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
 ---
@@ -32,7 +31,7 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 | `--node=NODE` | required | Numeric Node ID or Node name. The Node must be an active Linux Node with Docker. |
 | `--driver=DRIVER` | `mysql` | `mysql`, `pgsql` or `redis`. |
 | `--tag=TAG` | `8.4` for mysql, `18` for pgsql, `8.1` for redis | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. |
-| `--lan-node=NODE` | none | Repeat to name active Nodes allowed to use the LAN endpoint. A create retry replaces the set; omission preserves it. The API accepts an empty list to clear it. |
+| `--lan-node=NODE` | none | Repeat to name active Nodes eligible for LAN connection selection. A create retry replaces the set; omission preserves it. The API accepts an empty list to clear it. |
 | `--port=PORT` | `3306` for mysql, `5432` for pgsql, `6379` for redis | Port published on the Node's WireGuard address and its LAN address when present. |
 
 ### A MySQL server
@@ -62,19 +61,17 @@ Create application objects as the managed owner. Custom schemas need explicit op
 
 [Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
 
-### Private publication and filtering
+### Private publication
 
-All three drivers publish on WireGuard and, when set, `lan_ip`. The stored connection host stays WireGuard. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) explicitly select LAN for an active consumer in the server LAN peer list. A server never publishes on a wildcard or public address.
+Managed Database servers serve clients inside the Orbit network only. All three drivers publish one explicit IPv4 Docker binding on the Node's WireGuard IP and a second on its LAN IP when present. Publication requires RFC 1918 private IPv4 addresses. Orbit never binds `0.0.0.0`, an IPv6 wildcard, or the Node's public address. Services also has the public interface 85.9.217.155; that address must never appear in a Database server's bindings.
 
-Only IPv4 is published. LAN traffic is limited to the server Node and explicitly selected active peer Nodes. WireGuard admits all mesh peers, as today. Orbit installs a raw PREROUTING chain before Docker DNAT with an owned UFW `before.init` hook. Allowed traffic returns to Docker's own rules; other endpoint ingress drops. UFW must be installed and active or creation fails before publication.
+The private networks are the trust boundary. Nick accepts access from clients that can reach those private addresses without a port firewall. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. PostgreSQL keeps the image's stock `pg_hba.conf` defaults and SCRAM password authentication. Operators must keep these private addresses unreachable from the public internet.
 
-An owned INPUT chain permits only exact private endpoint hairpin traffic from `docker0`, including the LAN endpoint for local containers. A Docker service drop-in starts after UFW and restores the filter before daemon startup. Its `Wants=` dependency does not propagate an operator UFW stop or restart to Docker. A failed check prevents Docker startup. The database role adds no broad port allow.
+The stored connection host stays WireGuard. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the server's stored LAN peer list. This list records connection selection eligibility; it does not restrict network access. A shared Cluster is not required.
 
-Filtering is enabled for a server only by its explicit create/retry. Existing servers stay unchanged until their operators retry create. Doctor adds SQL login, publication and filter checks only after this choice. Existing MySQL servers stay outside this Doctor family until they opt in; existing Valkey ACL checks still run. Creating PostgreSQL on Services does not filter an existing Valkey server there. Node provisioning, LAN address changes and removal reconcile only enabled servers on that Node or naming it as a LAN peer. An unrelated enrollment never contacts database hosts.
+Existing servers keep their publications until an explicit create retry. That retry enables private publication and SQL Doctor checks for the selected server. Existing Valkey ACL checks still run. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
 
-Expansion failure keeps the old peer identity; removal failure occurs before other removal effects. Server address changes require a create retry before switching clients; the old Process binding stays filtered until replaced. Retrying an active MySQL server can recreate its container to repair publication drift.
-
-Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database_server` family. Repeat creation repairs filter and publication drift. A failed repair keeps an active server active and records its failed step. Doctor inspection writes no files on the Node.
+Doctor reports `database_server.publication_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database_server` family. Repeat creation repairs publication drift. A failed SQL repair keeps an active server active and records its failed step.
 
 ### A Valkey server
 
@@ -187,7 +184,7 @@ The Gateway refuses these inputs with `validation.failed`:
 - A key pattern that starts with `*`, `?`, `[`, or `\`. Each pattern needs a literal key prefix.
 - The rule `@all` or `@scripting`. A user gets only the categories and commands its clients need.
 
-The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-valkey-server-with-doctor) can compare them. `database:user:list` shows those rules.
+The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-server-with-doctor) can compare them. `database:user:list` shows those rules.
 
 The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know returns `database.acl_rules_invalid` with Valkey's message. A create that fails removes the user and records nothing. Concurrent ACL changes return `database.server_in_use`; retry after the other command finishes.
 
@@ -227,7 +224,7 @@ A new Valkey server with the slug of a removed one finds the old volume. It writ
 
 A Node that runs a server cannot be removed. [Node removal](/reference/node-provisioning#remove-a-node) refuses it with `node.has_database_servers`, also offline.
 
-## Check a Valkey server with Doctor
+## Check a server with Doctor
 
 The [Doctor](/cli/doctor) family `database_server` checks each Valkey server and each SQL server that opted in whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
 
@@ -242,7 +239,7 @@ The recorded users are `default` with the admin password and all rights, and one
 
 Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
 
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get authenticated login, initialization-secret, publication and filter checks. Existing MySQL servers stay outside this family until they opt in.
+An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication).
 
 ## Repair a Valkey server
 
@@ -261,7 +258,7 @@ The Gateway takes these steps:
 
 Rebuilding the file repairs a server that cannot start because the file is lost. The Gateway waits for the admin login before it retries ACL commands. It uses the same program as creation. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The restart uses [`process:restart`](/cli/process).
 
-A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server repairs private publication and filtering.
+A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server repairs private publication.
 
 ## Errors
 
@@ -278,7 +275,6 @@ The server commands return these codes.
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
 | `database.driver_unsupported` | 422 | The driver does not support this operation, including Instance-owned PostgreSQL databases. |
-| `database.server_firewall_failed` | 502 | The private endpoint filter could not be applied or verified. |
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
@@ -334,9 +330,11 @@ The Valkey on `services` holds the Gateway queue and the collector's state, and 
 
 PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisioning steps, connection and user actions. A separate manager would duplicate ownership and retry rules. PostgreSQL has its own statement renderer because its identifier and literal escaping differ from MySQL. SCRAM verifiers keep application passwords out of server SQL logs. Restricting the image to PostgreSQL 18 preserves the documented volume layout when the first-start container is recreated.
 
-### LAN access names its peers
+### Private networks are the boundary
 
-A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. Explicit peer Nodes define both the connection projection and firewall source list. WireGuard stays the default; automatic selection would change existing consumers. A subnet allow would admit unregistered machines. UFW INPUT alone cannot filter Docker DNAT, so the owned raw chain runs first and returns allowed traffic to Docker. Enabling filtering through an explicit create retry gives existing servers an operator-controlled rollout.
+This is the trust model for decision 0227, as directed by Nick for PR #1441. Managed servers are consumed only inside Orbit's private networks. Explicit WireGuard and LAN bindings keep Docker from listening on a public interface. Wildcard bindings were rejected because Docker bypasses UFW and Services has a public interface. A port firewall and custom `pg_hba.conf` source filtering were rejected: Nick accepts the risk within these private networks. No script-gate exception is needed.
+
+A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. Explicit peer Nodes guide connection selection only. WireGuard stays the default; automatic selection would change existing consumers.
 
 ### Migration preserves connection identities
 

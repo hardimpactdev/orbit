@@ -8,7 +8,6 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -26,7 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 {
-    public function __construct(private ValkeyServerAdmin $admin, private DatabaseServerAdmin $sql, private DatabaseServerFirewallReconciler $firewall) {}
+    public function __construct(private ValkeyServerAdmin $admin, private DatabaseServerAdmin $sql) {}
 
     public function family(): DoctorFamily
     {
@@ -65,10 +64,7 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
                         $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::PublicationMismatch,
                             'The Process publications differ from the managed private endpoints.', 'private endpoints', 'different');
                     }
-                    if (! $this->firewall->matches($server->node)) {
-                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::FilterMismatch,
-                            'The persistent or live ingress filter differs from the managed endpoints and peers.', 'managed filter', 'different');
-                    }
+
                 }
                 if ($server->driver !== DatabaseDriver::Redis) {
                     if (! $this->sql->waitUntilReady($server, 5)) {

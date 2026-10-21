@@ -6,7 +6,6 @@ namespace App\Actions\DatabaseServers;
 
 use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
@@ -18,7 +17,7 @@ use App\Models\Process;
  */
 final readonly class DestroyDatabaseServerAction
 {
-    public function __construct(private DestroyProcessAction $processes, private DatabaseServerFirewallReconciler $firewall) {}
+    public function __construct(private DestroyProcessAction $processes) {}
 
     public function execute(DatabaseServer $server): void
     {
@@ -47,7 +46,6 @@ final readonly class DestroyDatabaseServerAction
             $this->processes->execute($process, removedByOwningRole: true);
         }
 
-        $this->firewall->reconcile($server->node, $server->id);
         $server->delete();
     }
 }

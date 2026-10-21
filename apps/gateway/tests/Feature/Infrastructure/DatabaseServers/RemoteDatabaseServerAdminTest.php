@@ -19,6 +19,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Filesystem\Filesystem;
 
 const REMOTE_DATABASE_SERVER_ROOT = 'root-secret-aa12';
 
@@ -76,10 +77,10 @@ describe('RemoteDatabaseServerAdmin', function (): void {
         expect($rows)->toBe(['app', 'app_test'])
             ->and(array_slice($command->arguments, 0, 3))->toBe(['bash', '-eu', '-c'])
             ->and($command->arguments[3])->toBe(RemoteDatabaseServerAdmin::EXECUTE_SCRIPT)
-            ->toContain('read -r MYSQL_PWD')
-            ->toContain('docker container exec -i --env MYSQL_PWD -- "$1" mysql --user=root --batch --skip-column-names')
+            ->toContain('read -r "$password_variable"')
+            ->toContain('docker container exec -i --env "$password_variable" -- "$container" "$@"')
             ->not->toContain('--env-file')
-            ->and(array_slice($command->arguments, 4))->toBe(['orbit-database-server-sql', "orbit-process-{$server->process_id}-beast-mysql"])
+            ->and(array_slice($command->arguments, 4))->toBe(['orbit-database-server-sql', "orbit-process-{$server->process_id}-beast-mysql", 'MYSQL_PWD', 'mysql', '--user=root', '--batch', '--skip-column-names'])
             ->and(json_encode($command->arguments, JSON_THROW_ON_ERROR))
             ->not->toContain(REMOTE_DATABASE_SERVER_ROOT)
             ->not->toContain('information_schema')
@@ -133,8 +134,7 @@ describe('RemoteDatabaseServerAdmin', function (): void {
         expect($admin->waitUntilReady($server, 120))->toBeTrue()
             ->and($admin->waitUntilReady($server, 120))->toBeFalse()
             ->and($ssh->commands[0]->arguments[3])->toBe(RemoteDatabaseServerAdmin::READY_SCRIPT)
-            ->toContain('mysql --protocol=TCP --host=127.0.0.1 --user=root')
-            ->and(array_slice($ssh->commands[0]->arguments, 4))->toBe(['orbit-database-server-ready', "orbit-process-{$server->process_id}-beast-mysql", '120'])
+            ->and(array_slice($ssh->commands[0]->arguments, 4))->toBe(['orbit-database-server-ready', "orbit-process-{$server->process_id}-beast-mysql", '120', 'MYSQL_PWD', 'mysql', '--protocol=TCP', '--host=127.0.0.1', '--user=root', '--batch', '--skip-column-names'])
             ->and($ssh->commands[0]->timeout)->toBe(180.0)
             ->and($ssh->protectedInputs[0])->toBe(REMOTE_DATABASE_SERVER_ROOT."\n");
     });
@@ -202,8 +202,54 @@ it('executes PostgreSQL over authenticated TCP with protected input and psql err
     $ssh = new RemoteDatabaseServerFakeSsh([new CommandResult(0, "app\n", '', 5, false)]);
     expect(remote_database_server_admin($ssh)->execute($server, "SELECT datname FROM pg_database;\n"))->toBe(['app']);
     $command = $ssh->commands[0];
-    expect($command->arguments[3])->toBe(RemoteDatabaseServerAdmin::POSTGRES_EXECUTE_SCRIPT)
-        ->toContain('--host=127.0.0.1', '--no-psqlrc', '--set=ON_ERROR_STOP=1')
+    expect($command->arguments[3])->toBe(RemoteDatabaseServerAdmin::EXECUTE_SCRIPT)
+        ->and(array_slice($command->arguments, 6))->toBe(['PGPASSWORD', 'psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'])
         ->and(json_encode($command->arguments))->not->toContain(REMOTE_DATABASE_SERVER_ROOT, 'SELECT datname')
         ->and($ssh->protectedInputs[0])->toBe(REMOTE_DATABASE_SERVER_ROOT."\nSELECT datname FROM pg_database;\n");
 });
+
+it('forwards the fixed SQL client and protected password through the shared shell scripts', function (string $driver, bool $ready, int $clientExit): void {
+    $server = remote_database_server();
+    $server->update(['driver' => $driver]);
+    $ssh = new RemoteDatabaseServerFakeSsh;
+    $admin = remote_database_server_admin($ssh);
+    if ($ready) {
+        $admin->waitUntilReady($server, 0);
+    } else {
+        $admin->execute($server, "SELECT fixture;\n");
+    }
+    $directory = sys_get_temp_dir().'/orbit-sql-client-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    file_put_contents($directory.'/sudo', <<<'BASH'
+        #!/bin/bash
+        set -eu
+        [ "$1" = "--preserve-env=$EXPECT_PASSWORD_VARIABLE" ]
+        [ "${!EXPECT_PASSWORD_VARIABLE}" = 'root-secret-aa12' ]
+        printf '%s\n' "$@" > "$CAPTURE_PATH"
+        cat > "$INPUT_PATH"
+        exit "$CLIENT_EXIT"
+        BASH);
+    chmod($directory.'/sudo', 0700);
+    try {
+        $process = new Symfony\Component\Process\Process($ssh->commands[0]->arguments, env: [
+            'PATH' => $directory.':'.getenv('PATH'),
+            'EXPECT_PASSWORD_VARIABLE' => $driver === 'pgsql' ? 'PGPASSWORD' : 'MYSQL_PWD',
+            'CAPTURE_PATH' => $directory.'/argv',
+            'INPUT_PATH' => $directory.'/sql',
+            'CLIENT_EXIT' => (string) $clientExit,
+        ]);
+        $process->setInput($ssh->protectedInputs[0]);
+        $process->run();
+        expect($process->getExitCode())->toBe($ready && $clientExit !== 0 ? 75 : $clientExit);
+        $arguments = file($directory.'/argv', FILE_IGNORE_NEW_LINES);
+        expect(array_slice($arguments, 1))->toBe([
+            'docker', 'container', 'exec', '-i', '--env', $driver === 'pgsql' ? 'PGPASSWORD' : 'MYSQL_PWD', '--',
+            "orbit-process-{$server->process_id}-beast-mysql",
+            ...array_slice($ssh->commands[0]->arguments, $ready ? 8 : 7),
+        ]);
+        expect(file_get_contents($directory.'/sql'))->toBe($ready ? "SELECT 1;\n" : "SELECT fixture;\n");
+        expect(implode(' ', $arguments))->not->toContain(REMOTE_DATABASE_SERVER_ROOT);
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with(['mysql', 'pgsql'])->with([false, true])->with([0, 1]);
