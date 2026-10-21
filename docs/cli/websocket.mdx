@@ -21,7 +21,7 @@ Put an app on an Instance with [`instance:websocket:add`](/cli/instance#orbit-in
 | [`websocket:operation:show`](#orbit-websocketoperationshow) | Check application of a saved change. |
 | [`websocket:sync`](#orbit-websocketsync) | Wait for all serving processes to apply the registry. |
 
-Every command accepts `--json`. Changes return an operation ID. The Gateway waits up to five seconds for confirmation from every serving process. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `websocket:operation:show` to check it or `websocket:sync` to wait. Neither command restarts Reverb.
+Every command accepts `--json`. Changes return an operation ID. The Gateway sends a revision notification and returns current status without waiting for process reports. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `websocket:operation:show` to check it or `websocket:sync` to wait. Neither command restarts Reverb.
 
 ## orbit websocket:app:create
 
@@ -107,7 +107,7 @@ orbit websocket:sync [--wait=60] [--operation-key=<key>] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--wait` | Maximum wait in seconds, from 0 to 3600. Default: 60. The initial API request can take up to five seconds. |
+| `--wait` | Maximum wait in seconds, from 0 to 3600. Default: 60. The CLI polls operation status until the wait ends. |
 | `--operation-key` | Reuse this key to retry the same sync. |
 | `--json` | Return machine-readable JSON. |
 

@@ -50,7 +50,7 @@ The Gateway deletes the app and publishes a new registry revision. Each process 
 
 The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket#orbit-websocketappdestroy).
 
-A saved change stays pending until every serving process confirms it. After five seconds, an unconfirmed change returns HTTP 202 with an operation ID and status URL. Use registry sync to wait for application without restarting Reverb.
+A saved change stays pending until every serving process confirms it. The API sends a revision notification and returns the current status without waiting for process reports. An unconfirmed change returns HTTP 202 with an operation ID and status URL. The CLI polls the operation to wait for application without restarting Reverb.
 
 ## Add an app on an Instance
 

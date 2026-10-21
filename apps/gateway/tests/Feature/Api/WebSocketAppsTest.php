@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -34,6 +33,7 @@ use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
@@ -42,7 +42,6 @@ use Tests\Support\FakeToolManagerMaterializer;
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Http::fake();
-    app()->when(ReadWebSocketApplyStatusAction::class)->needs('$waitSeconds')->give(0.0);
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(NodeConverger::class, new FakeNodeConverger);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
@@ -68,6 +67,18 @@ beforeEach(function (): void {
 });
 
 describe('websocket:app:create', function (): void {
+    it('returns pending status without sleeping for runtime reports', function (): void {
+        websocket_apps_activate_role($this->caller);
+        Sleep::fake();
+        Sleep::whenFakingSleep(static fn () => throw new LogicException('API mutations must not wait for runtime reports.'));
+
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
+            ->assertStatus(202)
+            ->assertJsonPath('operation.state', 'pending');
+
+        Sleep::assertNeverSlept();
+    });
+
     it('creates an app without exposing its secret or converging the Reverb server', function (): void {
         websocket_apps_activate_role($this->caller);
 

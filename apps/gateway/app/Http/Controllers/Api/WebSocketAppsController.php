@@ -71,7 +71,7 @@ final class WebSocketAppsController extends Controller
     {
         $actor = $this->actor($request);
         $operation = $action->execute($kind, $name, $actor->id, $request->operationKey());
-        $applied = $status->wait($operation);
+        $applied = $status->notifyAndRead($operation);
 
         return response()->json([
             'data' => $operation->result, 'operation' => $applied,

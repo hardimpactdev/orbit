@@ -18,7 +18,6 @@ use Illuminate\Support\Str;
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Http::fake();
-    app()->when(ReadWebSocketApplyStatusAction::class)->needs('$waitSeconds')->give(0.0);
     $this->gateway = $this->markAsGateway(registryNode('gateway', '10.44.0.1'));
     $this->server = registryNode('services', '10.44.0.2');
     $this->runtime = WebSocketRuntime::query()->create([

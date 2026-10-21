@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -35,7 +34,6 @@ afterEach(function (): void {
 it('records the websocket app and attachment responses', function (): void {
     $this->travelTo(Carbon::parse('2026-01-01T00:00:00Z'));
     Http::preventStrayRequests();
-    app()->when(ReadWebSocketApplyStatusAction::class)->needs('$waitSeconds')->give(0.0);
     DB::table('websocket_registry')->update(['epoch' => '22222222-2222-4222-8222-222222222222']);
     Str::createUuidsUsingSequence(['33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444']);
     app()->instance(InstanceOperationPreflight::class, new WebSocketAppFixtureEnvironment);

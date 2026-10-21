@@ -12,24 +12,17 @@ use App\Models\WebSocketApp;
 use App\Models\WebSocketRegistryOperation;
 use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Sleep;
 
 final readonly class ReadWebSocketApplyStatusAction
 {
-    public function __construct(private WebSocketRegistryNotifier $notifier, private WebSocketDnsTarget $dns, private float $waitSeconds = 5) {}
+    public function __construct(private WebSocketRegistryNotifier $notifier, private WebSocketDnsTarget $dns) {}
 
     /** @return array<string, mixed> */
-    public function wait(WebSocketRegistryOperation $operation): array
+    public function notifyAndRead(WebSocketRegistryOperation $operation): array
     {
-        $deadline = microtime(true) + $this->waitSeconds;
         $this->notifier->notify($operation->epoch, $operation->revision);
-        do {
-            $status = $this->execute($operation);
-            if ($status['state'] !== 'pending' || microtime(true) >= $deadline) {
-                return $status;
-            }
-            Sleep::usleep(50000);
-        } while (true);
+
+        return $this->execute($operation);
     }
 
     /** @return array<string, mixed> */
