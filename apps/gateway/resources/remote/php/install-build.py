@@ -23,7 +23,6 @@ import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 SURY = re.compile(r'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php', re.I)
@@ -165,31 +164,54 @@ def keep(host, file, name):
     return target
 
 
-def download(host, pin, mirror, work, architecture):
-    """The pinned file from the cache, the Orbit mirror, or the pin's URL, checked before use."""
-    cached = host.path(CACHE) / f'{pin["name"]}_{pin["sha256"]}.deb'
-    if cached.is_file() and sha256(cached) == pin['sha256']:
-        return cached
-    candidate = work / (pin['name'] + '.deb')
-    sources = artifact_candidates(pin['name'], pin, mirror)
-    for url in sources:
-        candidate.unlink(missing_ok=True)
-        if not url.startswith('https://'):
-            continue
-        if not host.ok(['curl', '--fail', '--silent', '--show-error', '--location', '--proto', '=https',
-                        '--proto-redir', '=https', '--tlsv1.2', '--output', str(candidate), '--', url]):
-            continue
-        if sha256(candidate) != pin['sha256']:
-            log(f'{url} does not match its recipe SHA-256 digest')
-            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact digest mismatch'})
-        fields = deb_fields(host, candidate)
-        if fields.get('Package') != pin['name'] or fields.get('Version') != pin['version'] \
-                or fields.get('Architecture') not in (architecture, 'all'):
-            log(f'{url} does not carry the name, version, and architecture of its pin')
-            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact metadata mismatch'})
-        return keep(host, candidate, pin['name'])
-    raise Outcome('download_failed', {'package': pin['name'],
-                                      'reason': 'no source served the pinned file; Sury may have a newer build'})
+def download_files(host, pins, mirror, work, architecture):
+    """One interruptible curl process per source pass; only transport failures try the next source."""
+    files = {}
+    remaining = {}
+    for pin in pins:
+        name = pin['name']
+        cached = host.path(CACHE) / f'{name}_{pin["sha256"]}.deb'
+        if cached.is_file() and sha256(cached) == pin['sha256']:
+            files[name] = cached
+        else:
+            remaining[name] = [url for url in artifact_candidates(name, pin, mirror) if url.startswith('https://')]
+    by_name = {pin['name']: pin for pin in pins}
+    while remaining:
+        argv = ['curl', '--parallel', '--parallel-immediate', '--parallel-max', '4']
+        candidates = {}
+        for name, sources in remaining.items():
+            if not sources:
+                raise Outcome('download_failed', {'package': name,
+                                                  'reason': 'no source served the pinned file; Sury may have a newer build'})
+            candidate = work / (name + '.deb')
+            candidate.unlink(missing_ok=True)
+            if candidates:
+                argv.append('--next')
+            candidates[name] = candidate
+            argv += ['--fail', '--silent', '--show-error', '--location', '--proto', '=https',
+                     '--proto-redir', '=https', '--tlsv1.2', '--write-out', '%{json}\n',
+                     '--output', str(candidate), '--url', sources.pop(0)]
+        completed = host.run(argv, check=False)
+        # Parallel transfers finish out of order. curl reports each file's own transport result.
+        reports = [json.loads(line) for line in completed.stdout.splitlines()]
+        results = {report['filename_effective']: report['exitcode'] for report in reports}
+        if len(reports) != len(candidates) or set(results) != {str(path) for path in candidates.values()}:
+            raise Outcome('download_failed', {'reason': 'curl did not report every transfer'})
+        for name, candidate in candidates.items():
+            if results[str(candidate)] != 0:
+                continue
+            pin = by_name[name]
+            if sha256(candidate) != pin['sha256']:
+                log(f'{name} does not match its recipe SHA-256 digest')
+                raise Outcome('download_failed', {'package': name, 'reason': 'artifact digest mismatch'})
+            fields = deb_fields(host, candidate)
+            if fields.get('Package') != name or fields.get('Version') != pin['version'] \
+                    or fields.get('Architecture') not in (architecture, 'all'):
+                log(f'{name} does not carry the name, version, and architecture of its pin')
+                raise Outcome('download_failed', {'package': name, 'reason': 'artifact metadata mismatch'})
+            files[name] = keep(host, candidate, name)
+            del remaining[name]
+    return [files[pin['name']] for pin in pins]
 
 
 def previous_files(host, names, packages, repack, work, architecture):
@@ -608,9 +630,7 @@ def main(payload):
     before = {version: links(host, version) for version in versions}
     pools = disabled_pools(host, versions, packages)
     with workspace(host) as work:
-        with ThreadPoolExecutor(max_workers=4) as downloads:
-            files = list(downloads.map(lambda name: download(host, pins[name], payload.get('mirror', ''), work, architecture),
-                                       pending + repair))
+        files = download_files(host, [pins[name] for name in pending + repair], payload.get('mirror', ''), work, architecture)
         replaced = [name for name in pending + repair if name in packages] + purge
         previous = previous_files(host, replaced, packages, payload['repack'], work, architecture)
 

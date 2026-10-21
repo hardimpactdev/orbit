@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -13,7 +14,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from harness import execute, result
+from harness import REMOTE, assemble, execute, result
 
 FAKES = {
     'sudo': '[ "$1" = -n ] && shift; exec "$@"',
@@ -44,9 +45,27 @@ FAKES = {
                 'v=$(sed -n "s/^Version: //p" "$tree/DEBIAN/control"); printf "%s %s amd64\\n" "$n" "$v" > "$out"; '
                 'cp "$tree/DEBIAN/conffiles" "$STATE/built-conffiles-$n" 2>/dev/null; exit 0;; esac; '
                 'read -r n v a < "$2"; printf "Package: %s\\nVersion: %s\\nArchitecture: %s\\n" "$n" "$v" "$a"',
-    'curl': 'out=""; for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done; url="${@: -1}"; '
-            'echo "curl $url" >> "$STATE/calls"; src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"; '
-            '[ -f "$src" ] || exit 22; cp "$src" "$out"',
+    'curl': '''transfer() {
+    local out="" prev="" url="${@: -1}" src status=0
+    for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done
+    echo "curl $url" >> "$STATE/calls"
+    src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"
+    if [ -f "$src" ]; then cp "$src" "$out"; else status=22; fi
+    printf '{"filename_effective":"%s","exitcode":%s}\n' "$out" "$status"
+    return "$status"
+}
+parallel=0; arguments=()
+for a in "$@"; do
+    case "$a" in
+        --parallel) parallel=1;;
+        --next)
+            if [ "$parallel" = 1 ]; then transfer "${arguments[@]}" & else transfer "${arguments[@]}"; fi
+            arguments=();;
+        *) arguments+=("$a");;
+    esac
+done
+if [ "$parallel" = 1 ]; then transfer "${arguments[@]}" & wait; else transfer "${arguments[@]}"; fi
+''',
     'apt-get': 'echo "apt-get $*" >> "$STATE/calls"; [ -f "$STATE/fail-every-install" ] && exit 100; '
                '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
                'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
@@ -258,6 +277,61 @@ done
         self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
         self.assertEqual(len(self.cached()), 3)
         self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
+
+    def test_interrupt_stops_every_running_download_before_the_installer_exits(self):
+        curl = shutil.which('curl', path='/usr/bin:/bin')
+        if curl is None:
+            self.skipTest('requires curl')
+        source = assemble('php.install-build').encode()
+        wrapper = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        for interruption in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            with self.subTest(interruption=interruption):
+                with socket.create_server(('127.0.0.1', 0)) as listener:
+                    listener.settimeout(5)
+                    port = listener.getsockname()[1]
+                    # Real curl reaches a local peer that accepts TLS handshakes but never answers them.
+                    # Add the routing options to each transfer because --next resets local curl options.
+                    wrapper.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                                       f'options = ["--noproxy", "*", "--connect-to", "::127.0.0.1:{port}"]\n'
+                                       'arguments = list(options)\n'
+                                       'for argument in sys.argv[1:]:\n'
+                                       '    arguments.append(argument)\n'
+                                       '    if argument == "--next": arguments.extend(options)\n'
+                                       f'os.execv({curl!r}, [{curl!r}, *arguments])\n')
+                    process = subprocess.Popen(
+                        ['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        env=dict(os.environ, **self.environment), start_new_session=True,
+                    )
+                    connections = []
+                    try:
+                        process.stdin.write(source + b'\0' + json.dumps(self.payload()).encode())
+                        process.stdin.close()
+                        process.stdin = None
+                        for _ in self.pins:
+                            connection, _ = listener.accept()
+                            connections.append(connection)
+                            connection.settimeout(3)
+                            self.assertTrue(connection.recv(65536))
+                        # Signal only Python, not its process group: it must stop its own curl transfers.
+                        process.send_signal(interruption)
+                        try:
+                            process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            self.fail('The interrupted installer waited for stalled downloads')
+                        self.assertEqual(process.returncode, 128 + interruption)
+                        for connection in connections:
+                            self.assertEqual(connection.recv(1), b'')
+                        self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
+                    finally:
+                        # Also reap the old implementation's stuck workers when this regression fails.
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        process.communicate(timeout=5)
+                        for connection in connections:
+                            connection.close()
 
     def test_cleans_root_owned_repack_trees_before_installing_as_an_unprivileged_user(self):
         sudo = shutil.which('sudo', path='/usr/bin:/bin')
@@ -514,6 +588,20 @@ done
         self.assertEqual(self.run_program()[0], 'download_failed')
         self.assertNotIn(f'php8.5-cli_{pin["sha256"]}.deb', self.cached())
         self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
+
+    def test_retries_only_failed_files_after_a_partially_successful_mirror_pass(self):
+        name = 'php8.5-cli'
+        pin = self.pins[name]
+        origin = self.state / 'served' / pin['url'].removeprefix('https://').replace('/', '_')
+        mirror = self.state / 'served' / ('mirror.example_php_' + name + '_' + pin['sha256'] + '.deb')
+        mirror.write_bytes(origin.read_bytes())
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        self.assertNotIn('curl ' + pin['url'], self.calls())
+        for other in ('php-common', 'php8.5-pcov'):
+            self.assertIn('curl ' + self.pins[other]['url'], self.calls())
+        self.assertEqual(len(self.cached()), 3)
 
     def test_corrupt_mirror_stops_even_when_the_original_source_has_valid_bytes(self):
         pin = self.pins['php8.5-cli']
