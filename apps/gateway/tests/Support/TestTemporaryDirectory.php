@@ -26,6 +26,14 @@ final class TestTemporaryDirectory
 
     public static function bootstrap(): void
     {
+        $run = getenv('ORBIT_TEST_TMPDIR');
+
+        if (is_string($run) && $run !== '' && getenv('TMPDIR') === $run && is_dir($run)) {
+            self::use($run);
+
+            return;
+        }
+
         $configured = getenv('TMPDIR');
         $base = is_string($configured) && $configured !== '' ? $configured : '/tmp';
 

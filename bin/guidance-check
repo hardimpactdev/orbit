@@ -2,14 +2,8 @@
 
 # Guidance must not reuse Blade files owned by another gate user.
 set -euo pipefail
-
-runtime=$(mktemp -d "${TMPDIR:-/tmp}/orbit-guidance.XXXXXXXXXX")
-trap 'rm -rf -- "$runtime"' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-# Explicit modes also avoid sticky directories from alternative mkdir tools.
-mkdir -m 700 "$runtime/views"
-export VIEW_COMPILED_PATH="$runtime/views"
-
-vendor/bin/pest --configuration=phpunit.guidance.xml --compact "$@"
+exec "$(dirname "${BASH_SOURCE[0]}")/pest-plain" bash -c '
+    mkdir -m 700 "$TMPDIR/views"
+    export VIEW_COMPILED_PATH="$TMPDIR/views"
+    exec vendor/bin/pest --configuration=phpunit.guidance.xml --compact "$@"
+' guidance-check "$@"

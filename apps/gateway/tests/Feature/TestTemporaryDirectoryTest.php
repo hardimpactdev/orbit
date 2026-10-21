@@ -37,11 +37,22 @@ it('gives a test process its own directory, removes it at exit, and removes thos
 })->skip(! function_exists('posix_kill'), 'Abandoned directory cleanup needs ext-posix.');
 
 it('lets a child test process reuse the directory it inherits and leaves its removal to the owner', function (): void {
-    $inherited = sys_get_temp_dir();
+    $inherited = TestTemporaryDirectory::create(sys_get_temp_dir());
 
     expect(basename($inherited))->toStartWith(TestTemporaryDirectory::Prefix)
         ->and(trim(test_temporary_directory_probe($inherited)->mustRun()->getOutput()))->toBe($inherited)
         ->and(is_dir($inherited.'/fixture'))->toBeTrue();
 
     rmdir($inherited.'/fixture');
+});
+
+it('reuses the launcher temporary directory without registering worker cleanup', function (): void {
+    $directory = TestOrbitHome::scratch('launcher-temp');
+    mkdir($directory, 0o755, true);
+    $probe = test_temporary_directory_probe($directory);
+    $probe->setEnv(['TMPDIR' => $directory, 'ORBIT_TEST_TMPDIR' => $directory]);
+    $probe->mustRun();
+
+    expect(trim($probe->getOutput()))->toBe($directory)
+        ->and(is_dir($directory.'/fixture'))->toBeTrue();
 });
