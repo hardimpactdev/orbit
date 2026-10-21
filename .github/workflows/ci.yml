@@ -215,13 +215,20 @@ jobs:
       - name: Identify immutable Ubuntu snapshot metadata
         id: ubuntu-snapshot
         if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        env:
+          RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          echo "snapshot=$(jq -r '.ubuntu.snapshot' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
-          echo "architectures=$(jq -r '.architectures | sort | join("-")' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
+          if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "snapshot=$(jq -r '.ubuntu.snapshot' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
+            echo "architectures=$(jq -r '.architectures | sort | join("-")' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restore verified Ubuntu snapshot metadata
         id: ubuntu-metadata
-        if: steps.ubuntu-snapshot.outcome == 'success'
+        if: steps.ubuntu-snapshot.outputs.changed == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ubuntu-snapshot-metadata
@@ -230,17 +237,12 @@ jobs:
       # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot
         id: verify-ubuntu
-        if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: steps.ubuntu-snapshot.outputs.changed == 'true'
         env:
           ORBIT_RECIPE_SNAPSHOT_CACHE: ${{ runner.temp }}/ubuntu-snapshot-metadata
-          RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
-          if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
-            php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
-            echo "verified=true" >> "$GITHUB_OUTPUT"
-          fi
+          php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
+          echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Save verified Ubuntu snapshot metadata
         if: steps.verify-ubuntu.outputs.verified == 'true' && steps.ubuntu-metadata.outputs.cache-hit != 'true'

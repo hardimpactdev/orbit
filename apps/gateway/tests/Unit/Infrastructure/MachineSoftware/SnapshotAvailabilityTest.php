@@ -30,9 +30,9 @@ function snapshot_fixture_probe(): AuthenticatedUbuntuSnapshot
 function fake_signed_snapshot(?Closure $override = null): void
 {
     Http::preventStrayRequests();
-    Http::fake(function ($request) use ($override) {
+    Http::fake(function ($request, array $options) use ($override) {
         $url = $request->url();
-        $replacement = $override === null ? null : $override($url);
+        $replacement = $override === null ? null : $override($url, $options);
         if ($replacement !== null) {
             return $replacement;
         }
@@ -48,6 +48,20 @@ function fake_signed_snapshot(?Closure $override = null): void
 }
 
 describe('authenticated Ubuntu snapshot availability', function (): void {
+    it('allows slow metadata transfers while bounding connection time stalls and total time', function (): void {
+        fake_signed_snapshot(function (string $url, array $options) {
+            expect($options['connect_timeout'])->toBe(15)
+                ->and($options['timeout'])->toBe(120)
+                ->and($options['curl'][CURLOPT_LOW_SPEED_LIMIT])->toBe(1)
+                ->and($options['curl'][CURLOPT_LOW_SPEED_TIME])->toBe(15)
+                ->and($options['allow_redirects'])->toBeFalse();
+
+            return null;
+        });
+        snapshot_fixture_probe()->verify(snapshot_fixture_recipe());
+        Http::assertSentCount(18);
+    });
+
     it('uses signed index digests and resolves the exact package across both architectures and three pockets', function (): void {
         fake_signed_snapshot();
         snapshot_fixture_probe()->verify(snapshot_fixture_recipe());

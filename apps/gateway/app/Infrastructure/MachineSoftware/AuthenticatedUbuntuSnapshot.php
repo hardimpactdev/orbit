@@ -98,7 +98,7 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
         if ($cached !== null && is_file($cached)) {
             return $verify($cached);
         }
-        $file = $this->downloads->file($url, timeout: 15);
+        $file = $this->downloads->file($url, metadata: true);
         try {
             $result = $verify($file);
             if ($cached !== null) {
