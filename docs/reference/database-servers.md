@@ -74,7 +74,7 @@ Filtering is enabled for a server only by its explicit create/retry. Existing se
 
 Expansion failure keeps the old peer identity; removal failure occurs before other removal effects. Server address changes require a create retry before switching clients; the old Process binding stays filtered until replaced. Retrying an active MySQL server can recreate its container to repair publication drift.
 
-Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database-server` family. Repeat creation repairs filter and publication drift. A failed repair keeps an active server active and records its failed step. Doctor inspection writes no files on the Node.
+Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database_server` family. Repeat creation repairs filter and publication drift. A failed repair keeps an active server active and records its failed step. Doctor inspection writes no files on the Node.
 
 ### A Valkey server
 
@@ -229,7 +229,7 @@ A Node that runs a server cannot be removed. [Node removal](/reference/node-prov
 
 ## Check a Valkey server with Doctor
 
-The [Doctor](/cli/doctor) family `database_server` checks each Valkey server whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
+The [Doctor](/cli/doctor) family `database_server` checks each Valkey server and each SQL server that opted in whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
 
 | Code | Meaning | Remedy |
 | --- | --- | --- |
@@ -242,7 +242,7 @@ The recorded users are `default` with the admin password and all rights, and one
 
 Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
 
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get authenticated login, initialization-secret, publication and filter checks. Existing MySQL servers stay outside this family until they opt in.
 
 ## Repair a Valkey server
 
