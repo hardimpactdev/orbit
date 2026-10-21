@@ -298,8 +298,12 @@ SH);
             'Choose the main test selection', 'Run tests affected since the main graph',
             'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
         ]);
-        // Public project jobs stay hosted; the separately configured Gateway shards are unchanged.
-        expect($project['runs-on'])->toBe('ubuntu-26.04');
+        // Change-run quality checks share the orbit-shard pool; a full run keeps Sabre for its six-worker recording run.
+        expect($project['runs-on'])->toContain(
+            "(!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('[\"self-hosted\", \"sabre\"]')",
+            "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
+            "|| 'ubuntu-26.04' }}",
+        );
     });
 
     it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {
@@ -567,12 +571,12 @@ it('defines a handoff push and a change run once, and spells out the change run 
     $change = "github.event_name == 'pull_request' || ".$handoff;
 
     // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Steps read env; a
-    // job's `if` cannot, so the shards job spells out the change run.
+    // job's `if` and `runs-on` cannot, so the shards job and the project job's runner choice spell out the change run.
     expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
         ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
         ->and($workflow['jobs']['gateway-shards']['if'])->toBe($change)
-        ->and($workflow['jobs']['project']['runs-on'])->toBe('ubuntu-26.04')
-        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(3);
+        ->and($workflow['jobs']['project']['runs-on'])->toContain('!('.$change.')')
+        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(4);
 });
 
 it('keeps a running main push, only the newest waiting one, and every full run', function (): void {

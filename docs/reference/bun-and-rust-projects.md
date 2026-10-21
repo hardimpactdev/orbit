@@ -53,7 +53,7 @@ bun run build
 
 `bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps, and `bun run test` runs those same two stages in order to avoid competing browser workloads on smaller development machines.
 
-Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage. Both stages accept stock `--shard=N/M` (for example, `bun run test:unit -- --shard=1/2`); keep the shard count in the CI matrix if sharding is enabled.
+Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage.
 
 Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs Chromium's headless shell, WebKit, and their system libraries directly on the hosted runner. It uses Playwright's `--only-shell` option to avoid downloading full Chromium for headless tests.
 
@@ -75,7 +75,7 @@ bun run build
 
 `bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` and `aarch64` Linux binaries that Nodes run.
 
-Vitest runs test files in parallel with `maxWorkers: "100%"`. For a CI shard, pass `--shard=N/M` to `bun run test --`; keep the count in the CI matrix if sharding is enabled.
+Vitest runs test files in parallel with `maxWorkers: "100%"`.
 
 Run the tests on Linux. [Test worker file access](/reference/pi-server#test-worker-file-access) lists the tools they need.
 
