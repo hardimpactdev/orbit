@@ -2151,6 +2151,7 @@
             ],
             "concepts": [
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

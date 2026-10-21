@@ -209,28 +209,9 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
-      # A fresh job-private bytecode cache saves repeated PHP compilation, including in real PTY children.
-      # It starts empty here: quality checks do not prewarm it, and main's TIA-recording runs do not use it.
-      - name: Prepare CLI test bytecode cache
-        if: matrix.project.directory == 'apps/cli' && env.CHANGE_RUN == 'true'
-        run: |
-          cache_root=$(mktemp -d "$RUNNER_TEMP/orbit-cli-php.XXXXXX")
-          mkdir "$cache_root/ini" "$cache_root/bytecode"
-          printf '%s\n' \
-            'opcache.enable_cli=1' \
-            "opcache.file_cache=$cache_root/bytecode" \
-            'opcache.file_cache_only=1' \
-            'opcache.validate_timestamps=1' \
-            'opcache.revalidate_freq=0' > "$cache_root/ini/99-bytecode.ini"
-          printf 'PHP_INI_SCAN_DIR=%s:%s\n' "${PHP_INI_SCAN_DIR-}" "$cache_root/ini" >> "$GITHUB_ENV"
-
       - name: Run full PR test suite
         if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
-
-      - name: Validate CLI bytecode coverage
-        if: matrix.project.directory == 'apps/cli' && env.CHANGE_RUN == 'true'
-        run: vendor/bin/pest tests/Ci/BytecodeCacheCoverageTest.php --no-tia --compact --fail-on-empty-test-suite
 
       # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot

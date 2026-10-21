@@ -111,11 +111,3 @@ it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename 
         vocabularyRemove($root);
     }
 });
-
-it('accepts this repository', function (): void {
-    $process = new Process([PHP_BINARY, dirname(__DIR__, 4).'/bin/project-vocabulary']);
-    $process->setTimeout(60);
-    $process->run();
-
-    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
-});

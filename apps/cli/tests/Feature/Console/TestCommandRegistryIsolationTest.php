@@ -3,22 +3,21 @@
 declare(strict_types=1);
 
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Foundation\Testing\CachedState;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandRegistrySnapshot;
 
 pest()->group('subprocess');
 
-it('rebuilds fresh commands from cached classes with the complete uncached registry', function (): void {
-    $baseline = CachedState::$cachedConfig;
+it('discovers fresh commands with the complete independent registry', function (): void {
+    $baseline = CommandRegistrySnapshot::capture(app(Kernel::class));
     $command = app(Kernel::class)->all()['node:show'];
     $command->setDescription('A command mutation that must not survive a fresh application.');
 
     $this->refreshApplication();
 
-    expect(config('commands.paths'))->toBe([])
+    expect(config('commands.paths'))->toBe([app_path('Commands')])
         ->and(app(Kernel::class)->all()['node:show'])->not->toBe($command)
-        ->and(CachedState::$cachedConfig)->toBe($baseline);
+        ->and(CommandRegistrySnapshot::capture(app(Kernel::class)))->toBe($baseline);
 
     $process = new Process([
         PHP_BINARY, base_path('tests/Fixtures/Console/command-registry.php'),

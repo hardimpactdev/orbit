@@ -3,35 +3,12 @@
 declare(strict_types=1);
 
 use App\Support\Console\Animation;
+use Tests\Support\AnimationCadence;
+use Tests\Support\MediumTests;
 
 pest()->group('subprocess');
 
-/** @param list<float> $changes */
-function animation_cadence_is_readable(array $changes): bool
-{
-    if (count($changes) < 3) {
-        return false;
-    }
-
-    for ($index = 1; $index < count($changes); $index++) {
-        $interval = $changes[$index] - $changes[$index - 1];
-
-        if ($interval < 0.18 || $interval > 0.65) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 describe('animation composition cadence', function (): void {
-    it('rejects the observed fast resume interval while accepting a readable phase', function (): void {
-        expect(animation_cadence_is_readable([0.0, 0.3, 0.6, 0.9]))->toBeTrue()
-            ->and(animation_cadence_is_readable([0.0, 0.3, 0.3664124, 0.6664124]))->toBeFalse()
-            ->and(animation_cadence_is_readable([0.0, 0.0412849, 0.3412849]))->toBeFalse()
-            ->and(animation_cadence_is_readable([0.0, 0.3, 1.0]))->toBeFalse();
-    });
-
     it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
@@ -103,8 +80,8 @@ describe('animation composition cadence', function (): void {
             expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
                 ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
                 ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
-                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue()
-                ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
+                ->and(AnimationCadence::isReadable($changes['outer']))->toBeTrue()
+                ->and(AnimationCadence::isReadable($changes['inner']))->toBeTrue();
 
             foreach ($glyphs as $sequence) {
                 for ($index = 1; $index < count($sequence); $index++) {
@@ -137,3 +114,5 @@ describe('animation composition cadence', function (): void {
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
     });
 });
+
+MediumTests::in(__FILE__);

@@ -135,11 +135,9 @@ Keep one real binary smoke test for local profile output, and real PTY cases for
 
 Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests accept short work and renderer intervals for process ownership and cleanup checks; terminal recordings and production-cadence assertions retain the 300 ms interval and their original tick counts across admission and resume. Keep cold nested-panel startup and settlement inside the outer callback.
 
-CLI feature tests reuse resolved configuration with Laravel's `WithCachedConfig`, but still boot a fresh application and container for every case. Each worker discovers the application command classes once, then supplies those classes through Laravel Zero's `commands.add` configuration instead of scanning the same command directory for every case. Command objects are still constructed in each fresh container. A regression compares the cached registry, including aliases, visibility and input definitions, with an uncached subprocess.
+CLI and Docs tests have a stock PHPUnit limit of two seconds per test. An over-limit test fails the suite. Fix unnecessary work rather than adding retries, sleeps, skips, or longer deadlines. Genuine long integration proofs use only the documented `#[Medium]` exception, with a 30-second limit; see the [CI reference](/reference/implementation-loop#ci) for the complete list and enforcement regressions. There is no whole-suite or CI-step duration gate.
 
-Cold-boot and environment-sensitive proofs run in subprocesses without these in-memory caches. The CLI schedules its Unit suite first and keeps composition and print-line cadence proofs in separate files so stock parallel workers can overlap them with command tests.
-
-CLI pull-request and handoff CI jobs also use a private, initially empty PHP bytecode cache. This caches compiled code, not application state or test results. The [CI reference](/reference/implementation-loop#ci) describes its isolation, coverage and freshness checks.
+CLI feature tests build fresh applications, configuration, containers, and command objects. Isolation regressions check that mutations do not survive a refresh and compare the complete command registry, including aliases, visibility and input definitions, with an independent subprocess. Use real subprocesses for proofs that depend on a cold boot or the process environment. CI does not add a private bytecode cache.
 
 Consent matrices register only their command in the real application kernel. An affirmative case for each family retains full command discovery. Tests that validate prompt input deliver Backspace keys in one buffered read instead of rendering hundreds of unrelated frames. The prompt still processes every key. The real PTY driver polls readiness every 2 ms and drains queued output without waiting once the child has exited. Neither interval is a production-cadence assertion.
 
@@ -147,7 +145,7 @@ When a test must observe native cURL options, inject its option-setting callable
 
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
 
-Docs tests build each file's Git template once and copy it for isolated cases. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+Docs tests build a fresh Git repository for each isolated case. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
 The generated-merge cases share one private Git template. Its disposable route corpus keeps real core controllers and extension discovery, but only the endpoints and form requests needed to anchor the merge proofs and the generator's request-schema checks. This avoids evaluating unrelated request constants in PHP subprocesses. Both ADR and endpoint branches mark derived API artifacts as conflicting too, so the real merge replaces them without generating an unused baseline snapshot. Keep all Python cases in the Pest wrapper.
 

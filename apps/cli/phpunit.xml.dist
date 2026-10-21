@@ -3,13 +3,20 @@
          xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
+         enforceTimeLimit="true"
+         failOnRisky="true"
+         failOnPhpunitWarning="true"
+         defaultTimeLimit="2"
+         timeoutForSmallTests="2"
+         timeoutForMediumTests="30"
+         timeoutForLargeTests="2"
 >
     <testsuites>
-        <testsuite name="Unit">
-            <directory>./tests/Unit</directory>
-        </testsuite>
         <testsuite name="Feature">
             <directory>./tests/Feature</directory>
+        </testsuite>
+        <testsuite name="Unit">
+            <directory>./tests/Unit</directory>
         </testsuite>
     </testsuites>
     <source>
