@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
 use App\Actions\Instances\DestroyInstanceAction;
+use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Nodes\RoleName;
@@ -204,4 +207,78 @@ it('resolves a previous Doctor collision after removing public Reverb without in
         DoctorNodeReportData::fromFamilies($node->id, $node->name, [$family]),
     ]), now());
     expect($problem->refresh()->evidence['resolution'] ?? null)->toBe('fresh_doctor_success');
+});
+
+it('replaces its own public Reverb app without requiring detach', function (): void {
+    [$node, $instance, $route] = public_reverb_fixture();
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+    $other = WebSocketApp::query()->create(['name' => 'mealou-next', 'app_id' => 'next-id', 'key' => 'next-key', 'secret' => 'next-secret']);
+
+    $this->putJson(public_reverb_url($instance, 'mealou-next'), ['public' => true])->assertOk();
+
+    expect(WebSocketAppTarget::query()->sole()->websocket_app_id)->toBe($other->id)
+        ->and(WebSocketAppTarget::query()->sole()->route_id)->toBe($route->id)
+        ->and($instance->environmentValues()->where('env_key', 'REVERB_HOST')->sole()->env_value)->toBe('mealou.app')
+        ->and(app(DevelopmentSiteRepository::class)->forNode($node)->where('domain', 'mealou.app')->sole()->websocketKey)->toBe('next-key');
+});
+
+it('rejects public attachment until the Route transition has finished', function (array $transition): void {
+    [$node, $instance, $route] = public_reverb_fixture();
+    if (isset($transition['transition_node_id'])) {
+        $transition['transition_node_id'] = $node->id;
+    }
+    $route->update($transition);
+
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertConflict()->assertJsonPath('error.code',
+        isset($transition['failed_step']) ? 'env.owner_unavailable' : 'websocket.public_route_invalid');
+
+    expect(WebSocketAppTarget::query()->count())->toBe(0)
+        ->and($instance->environmentValues()->count())->toBe(0)
+        ->and(app(NodeCaddyBuilds::class)->built)->toBe([]);
+})->with([
+    'retained target intent' => [['target_set_intent' => ['targets' => [], 'dispositions' => []]]],
+    'partial target set' => [['target_set_step' => 'router-published']],
+    'placement transition' => [['transition_node_id' => 999]],
+    'failed transition' => [['failed_step' => 'router-published', 'error_code' => 'route.failed']],
+]);
+
+it('accepts public attachment after a target-set transition completes', function (): void {
+    [, $instance, $route] = public_reverb_fixture();
+    $route->update(['target_set_step' => 'completed']);
+
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+
+    expect(WebSocketAppTarget::query()->sole()->route_id)->toBe($route->id);
+});
+
+it('guards direct domain convergence before replacement starts', function (): void {
+    [, $instance, $route] = public_reverb_fixture();
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'other.app'))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('websocket.route_in_use');
+    });
+
+    expect(Route::query()->count())->toBe(1)->and($route->refresh()->domain)->toBe('mealou.app');
+});
+
+it('guards target-set changes before reserving intent', function (): void {
+    [, $instance, $route] = public_reverb_fixture();
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+
+    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute($route, new SetRouteTargetsData([], [])))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('websocket.route_in_use');
+    });
+
+    expect($route->refresh()->target_set_intent)->toBeNull()->and($route->targets()->count())->toBe(1);
+});
+
+it('guards a changed web root but accepts an unchanged web root', function (): void {
+    [, $instance, $route] = public_reverb_fixture();
+    $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
+
+    $this->patchJson('/api/v1/routes/'.$route->id, ['web_root' => 'other/public'])->assertConflict()->assertJsonPath('error.code', 'websocket.route_in_use');
+    $this->patchJson('/api/v1/routes/'.$route->id, ['web_root' => null])->assertOk();
+
+    expect($route->refresh()->web_root)->toBeNull()->and(WebSocketAppTarget::query()->sole()->route_id)->toBe($route->id);
 });

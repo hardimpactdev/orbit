@@ -46,7 +46,7 @@ final readonly class UpdateRouteAction
             );
         }
 
-        if (($data->domainProvided && $data->domain !== $route->domain) || ($data->publicationProvided && $data->publication !== $route->publication) || $data->webRootProvided) {
+        if (($data->domainProvided && $data->domain !== $route->domain) || ($data->publicationProvided && $data->publication !== $route->publication) || ($data->webRootProvided && $data->webRoot !== $route->web_root)) {
             WebSocketRouteSelection::assertMutable($route);
         }
 

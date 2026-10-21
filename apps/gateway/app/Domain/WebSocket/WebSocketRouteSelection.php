@@ -6,6 +6,7 @@ namespace App\Domain\WebSocket;
 
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Route;
@@ -27,10 +28,14 @@ final readonly class WebSocketRouteSelection
         $route = Route::query()->whereNull('web_root')
             ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))->first();
         if (! $instance->placedOnAppProd() || $instance->source_is_laravel !== true
-            || ! $route instanceof Route || ! $route->isApp() || $route->status !== RouteStatus::Active || ! $this->eligibility->publicEdgeIsLive($route)) {
+            || ! $route instanceof Route || ! $route->isApp() || $route->status !== RouteStatus::Active
+            || $route->target_set_intent !== null
+            || ($route->target_set_step !== null && $route->target_set_step !== RouteTargetSetStep::Completed->value)
+            || $route->transition_node_id !== null || $route->transition_cluster_id !== null
+            || ! $this->eligibility->publicEdgeIsLive($route)) {
             throw new ResourceOperationException('websocket.public_route_invalid', 'Public Reverb requires an active public app Route on a production Laravel Instance.', 409);
         }
-        if (WebSocketAppTarget::query()->where('route_id', $route->id)->where('websocket_app_id', '!=', $app->id)->exists()) {
+        if (WebSocketAppTarget::query()->where('route_id', $route->id)->where('instance_id', '!=', $instance->id)->where('websocket_app_id', '!=', $app->id)->exists()) {
             throw new ResourceOperationException('websocket.route_app_conflict', 'This Route already publishes another Reverb app.', 409);
         }
         foreach ($route->targets()->with('instance')->get() as $target) {

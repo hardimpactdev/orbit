@@ -45,9 +45,11 @@ final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInsp
                     routes = json.loads(result.stdout)
                     if not isinstance(routes, list) or any(not isinstance(r, dict) or not isinstance(r.get('uri'), str) for r in routes):
                         raise SystemExit(42)
-                    # A leading route parameter can also consume either reserved prefix.
-                    collision = any(r['uri'].strip('/').split('/')[0] in ('app', 'apps')
-                                    or r['uri'].lstrip('/').startswith('{') for r in routes)
+                    # Root fallback runs after explicit routes; the edge reserves its Pusher paths.
+                    # Any other leading parameter can consume either reserved prefix.
+                    uris = [r['uri'].strip('/') for r in routes]
+                    collision = any(uri.split('/')[0].lower() in ('app', 'apps')
+                                    or (uri.startswith('{') and uri != '{fallbackPlaceholder}') for uri in uris)
                     print('collision' if collision else 'clear')
                     PYTHON, $home, $instance->applicationDirectory(), 'php'.$version],
                 maxOutputBytes: 1024,

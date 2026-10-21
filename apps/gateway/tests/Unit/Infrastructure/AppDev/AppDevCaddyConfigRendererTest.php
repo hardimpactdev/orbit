@@ -468,11 +468,11 @@ describe('analytics tracking site', function (): void {
     });
 });
 
-it('routes only the selected Pusher paths before the existing application handler in real Caddy', function (): void {
+it('routes only the selected Pusher paths before the existing application handler in real Caddy', function (bool $php): void {
     $site = new DevelopmentSite(
         nodeId: 4, nodeAddress: '10.44.0.4', scope: 'app-instance-72',
-        checkoutPath: '', documentRoot: '', phpVersion: null, domain: 'mealou.app',
-        upstreamAddresses: ['10.44.0.20:443', '10.44.0.21:443'], publicListener: true,
+        checkoutPath: $php ? '/home/orbit-mealou/current' : '', documentRoot: $php ? 'public' : '', phpVersion: $php ? '8.5' : null, domain: 'mealou.app',
+        upstreamAddresses: $php ? [] : ['10.44.0.20:443', '10.44.0.21:443'], environment: 'production', publicListener: true,
         websocketKey: 'mealou-key', websocketAppId: 'mealou-id',
     );
     $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([$site]));
@@ -485,12 +485,17 @@ it('routes only the selected Pusher paths before the existing application handle
     // Keep Caddy's adapted route ordering and matchers. Replace only the destinations with
     // distinct responses, so this local test needs neither fleet certificates nor a Reverb server.
     $replace = function (array $value) use (&$replace): array {
+        if (($value['handler'] ?? null) === 'file_server') {
+            return ['handler' => 'static_response', 'status_code' => 200, 'body' => 'application'];
+        }
         if (($value['handler'] ?? null) === 'reverse_proxy') {
             return ['handler' => 'static_response', 'status_code' => 200,
                 'body' => $value['upstreams'][0]['dial'] === 'reverb.orbit:443' ? 'reverb' : 'application'];
         }
         foreach ($value as $key => $part) {
-            if (is_array($part)) {
+            if ($key === 'encodings') {
+                $value[$key] = array_map(static fn (array $encoding): object => (object) $encoding, $part);
+            } elseif (is_array($part)) {
                 $value[$key] = $replace($part);
             }
         }
@@ -506,7 +511,7 @@ it('routes only the selected Pusher paths before the existing application handle
     $json['admin'] = ['disabled' => true];
     $json['apps']['http']['servers'][$server]['listen'] = [$address];
     $json['apps']['http']['servers'][$server]['automatic_https'] = ['disable' => true];
-    unset($json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies']);
+    unset($json['logging'], $json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies'], $json['apps']['http']['servers'][$server]['logs']);
     $path = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-');
     file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
     $process = new Process([TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path]);
@@ -536,7 +541,7 @@ it('routes only the selected Pusher paths before the existing application handle
             ['POST', '/broadcasting/auth', false, 'application'],
         ] as [$method, $uri, $upgrade, $expected]) {
             $socket = stream_socket_client('tcp://'.$address, $error, $message, 3);
-            expect($socket)->toBeResource();
+            expect($socket)->toBeResource($process->getErrorOutput());
             stream_set_timeout($socket, 3);
             fwrite($socket, $method.' '.$uri." HTTP/1.1\r\nHost: mealou.app\r\nConnection: ".($upgrade ? 'keep-alive, Upgrade' : 'close')."\r\n".($upgrade ? "Upgrade: websocket\r\n" : '')."Content-Length: 0\r\n\r\n");
             $response = '';
@@ -557,4 +562,4 @@ it('routes only the selected Pusher paths before the existing application handle
         $process->stop();
         unlink($path);
     }
-});
+})->with(['proxy pool' => false, 'production PHP' => true]);
