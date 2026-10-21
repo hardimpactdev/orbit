@@ -51,7 +51,7 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the cache that selects affected tests. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the Pint and PHPStan caches. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
 
 Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
@@ -77,10 +77,10 @@ Then build the change and its tests. A bug fix adds a test that fails before the
 
 ## 5. Run the checks
 
-In an Orbit task, the implementer runs only `composer test:affected` in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
+In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
 
 ```bash
-composer test:affected
+composer test
 composer check
 ```
 

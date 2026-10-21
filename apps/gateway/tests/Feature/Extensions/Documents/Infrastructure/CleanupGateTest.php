@@ -12,8 +12,6 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->gateDirectory = sys_get_temp_dir().'/orbit-cleanup-gate-'.Str::uuid();
     config(['documents.cleanup_runtime' => $this->gateDirectory]);

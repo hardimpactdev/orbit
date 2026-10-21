@@ -22,8 +22,6 @@ use Tests\Support\RecordingProcessRunner;
 use Tests\Support\SshGuardedProcessRunner;
 use Tests\Support\UnreachableSshExecutor;
 
-pest()->group('subprocess');
-
 it('fakes SSH execution by default in Feature tests', function (): void {
     $ssh = app(SshExecutor::class);
     expect($ssh)->toBeInstanceOf(UnreachableSshExecutor::class);

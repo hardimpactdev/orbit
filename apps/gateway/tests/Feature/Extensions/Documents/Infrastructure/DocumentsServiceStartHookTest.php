@@ -11,8 +11,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /** The hook the Gateway installed while the renderer lived in core, for this checkout and Orbit home. */
 const DocumentsStartHookBytes = <<<'TEXT'
     #!/bin/bash

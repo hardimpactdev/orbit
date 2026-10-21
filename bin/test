@@ -38,7 +38,7 @@ def main():
                 with log.open('w') as output:
                     result = subprocess.run(
                         [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--parallel', f'--processes={share}',
-                         '--tia', '--compact', '--colors=never'],
+                         '--compact', '--colors=never'],
                         cwd=ROOT / project, env={**os.environ, 'ORBIT_CHECK_PROCESSES': str(share)},
                         stdout=output, stderr=subprocess.STDOUT, check=False,
                     )

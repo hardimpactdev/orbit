@@ -207,7 +207,7 @@ jobs:
       # The Gateway shards run the Gateway suite.
       - name: Run full test suite
         if: matrix.project.directory != 'apps/gateway'
-        run: vendor/bin/pest --parallel --no-tia --compact
+        run: vendor/bin/pest --parallel --compact
 
       - name: Identify immutable Ubuntu snapshot metadata
         id: ubuntu-snapshot
@@ -252,8 +252,7 @@ jobs:
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
-        # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT" --no-tia
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
 
       # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
       # the cache-ref publisher. Task workspaces import them; CI exports no test graph.
@@ -370,7 +369,7 @@ jobs:
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
+        run: vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     name: Gateway privileged
@@ -403,7 +402,7 @@ jobs:
       - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+        run: vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
@@ -436,6 +435,10 @@ jobs:
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
           if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
+      - name: Check runner PostgreSQL setup
+        run: |
+          shellcheck tools/ci-runners/setup.sh
+          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py' -v
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
         run: |

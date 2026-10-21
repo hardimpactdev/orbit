@@ -6,8 +6,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandRegistrySnapshot;
 
-pest()->group('subprocess');
-
 it('discovers fresh commands with the complete independent registry', function (): void {
     $baseline = CommandRegistrySnapshot::capture(app(Kernel::class));
     $command = app(Kernel::class)->all()['node:show'];

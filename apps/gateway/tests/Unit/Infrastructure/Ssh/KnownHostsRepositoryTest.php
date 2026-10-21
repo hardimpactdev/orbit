@@ -10,8 +10,6 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 it('installs and replaces pinned host keys atomically', function (): void {
     $directory = sys_get_temp_dir().'/orbit-known-hosts-'.Str::uuid();
     $path = $directory.'/ssh/known_hosts';

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Tests\Support\GuestScripts;
 
-pest()->group('subprocess');
-
 it('copies regular guest scripts and siblings with permissions while ignoring generated directories', function (): void {
     $source = temporaryPath('orbit-guest-sources-');
     mkdir($source.'/__pycache__', 0o700, true);

@@ -5,8 +5,6 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Tests\Support\ToolingBaselineFixture;
 
-pest()->group('subprocess');
-
 function toolingBaselineReplace(string $root, string $relative, string $search, string $replace): void
 {
     $path = $root.'/'.$relative;
@@ -39,7 +37,7 @@ it('fails when a project drifts from the baseline', function (string $relative, 
     }
 })->with([
     'renamed script' => ['apps/cli/composer.json', '"guidance:update"', '"guidance:generate"', 'apps/cli/composer.json is missing script guidance:update.'],
-    'changed script' => ['apps/e2e/composer.json', '--processes=$(../../bin/check-processes) --tia', '--processes=4 --tia', 'apps/e2e/composer.json script test:affected is'],
+    'changed script' => ['apps/e2e/composer.json', '--processes=$(../../bin/check-processes) --compact', '--processes=4 --compact', 'apps/e2e/composer.json script test is'],
     'serial Pint check' => ['apps/cli/composer.json', 'pint --test --parallel', 'pint --test', 'apps/cli/composer.json script format:check is'],
     'inline guidance check' => ['packages/php-sdk/composer.json', '"../../bin/guidance-check"', '"vendor/bin/pest --configuration=phpunit.guidance.xml"', 'packages/php-sdk/composer.json script guidance:check is'],
     'unsafe Rector cache reuse' => ['apps/gateway/composer.json', ' --clear-cache', '', 'apps/gateway/composer.json script rector is'],

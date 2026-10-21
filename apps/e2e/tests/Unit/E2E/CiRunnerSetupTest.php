@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * Runs `tools/ci-runners/setup.sh register NAME TOKEN` against an `incus` stub. The stub records each call, reports
  * the runner as unregistered unless `FAKE_REGISTERED` is set, and saves the stdin of the `config.sh` call.

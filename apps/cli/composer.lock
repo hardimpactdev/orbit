@@ -2556,7 +2556,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "ee064c1d35f655a6ab77893af20166381ca8fa25"
+                "reference": "37d13c35e1d452b48e94d7964b42da1acb0e2f99"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.13 || ^3.1",
@@ -2587,9 +2587,6 @@
                 }
             },
             "scripts": {
-                "test:affected": [
-                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never"
-                ],
                 "analyse": [
                     "vendor/bin/phpstan analyse --no-progress --memory-limit=1G"
                 ],
@@ -2615,7 +2612,7 @@
                     "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache"
                 ],
                 "test": [
-                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never"
+                    "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never"
                 ]
             },
             "license": [

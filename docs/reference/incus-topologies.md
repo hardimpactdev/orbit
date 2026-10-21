@@ -310,7 +310,7 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 
 ### After a merge
 
-`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, queues a TIA cache refresh, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
+`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Why it works this way
 
@@ -376,7 +376,7 @@ The harness records an `exec` only when you give it a label. Most commands are e
 
 ### A bridge for task workspace clones
 
-The harness expects every topology on a shared host to belong to a linked worktree of the primary checkout, which holds the host locks. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount. Finding the primary through the main cache store is rejected, because topologies would then depend on published test caches.
+The harness expects every topology on a shared host to belong to a linked worktree of the primary checkout, which holds the host locks. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount.
 
 ### Cleanup stays with the Project
 

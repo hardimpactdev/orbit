@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->pipeline = new GatewayReleasePipeline;
     $this->pipeline->adopt();

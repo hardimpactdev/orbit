@@ -19,8 +19,6 @@ use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
 
-pest()->group('subprocess');
-
 function instance_source_reply(string $class, array $data): array
 {
     return ['class' => $class, 'body' => ['data' => $data,

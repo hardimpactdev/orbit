@@ -19,10 +19,6 @@ if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') ===
     foreach ([
         'COLLISION_PRINTER',
         'PARATEST',
-        'PEST_TIA',
-        'PEST_TIA_BASELINED',
-        'PEST_TIA_FILTERED',
-        'PEST_TIA_LOCALLY',
         'TEST_TOKEN',
         'UNIQUE_TEST_TOKEN',
     ] as $name) {
@@ -38,7 +34,7 @@ if ($gateway && $command === 'check' && getenv('ORBIT_GATEWAY_ACTUAL_CHECK') ===
         exit($exitCode);
     }
 
-    passthru(escapeshellarg(PHP_BINARY).' vendor/bin/pest --no-tia --colors=never tests/Feature/Configuration/FeatureDatabaseTest.php', $exitCode);
+    passthru(escapeshellarg(PHP_BINARY).' vendor/bin/pest --colors=never tests/Feature/Configuration/FeatureDatabaseTest.php', $exitCode);
 
     exit($exitCode);
 }

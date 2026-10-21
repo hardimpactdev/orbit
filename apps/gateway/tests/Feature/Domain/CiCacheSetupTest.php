@@ -15,8 +15,6 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 
-pest()->group('subprocess');
-
 function ci_setup_run(string $checkout, string $command): Process
 {
     $process = new Process(['bash', '-c', $command], $checkout);
@@ -122,6 +120,6 @@ describe('CI main cache setup', function (): void {
             ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)
             ->and(fn () => $transport->runner()->run($instance, LifecyclePhase::Teardown))->toThrow(ResourceOperationException::class, 'setup-only')
             ->and(GatewaySetupSteps::owns(LifecycleStep::ImportCiCaches))->toBeTrue()
-            ->and(GatewaySetupSteps::owns('bin/tia-cache import-ci'))->toBeFalse();
+            ->and(GatewaySetupSteps::owns('@orbit/tia-baseline'))->toBeFalse();
     });
 });

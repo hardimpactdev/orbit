@@ -10,8 +10,6 @@ use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use Tests\Support\GatewayReleaseFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->fixture = new GatewayReleaseFixture;
     $this->live = $this->fixture->layout->currentPath();

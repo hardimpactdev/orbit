@@ -11,8 +11,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Support\Facades\Redis;
 use Tests\Support\GatewayReleasePipeline;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->pipeline = new GatewayReleasePipeline;
     $this->source = $this->pipeline->adopt();

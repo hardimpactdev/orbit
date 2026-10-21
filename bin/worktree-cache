@@ -2,18 +2,11 @@
 """Seed missing, portable quality caches from compatible Git worktrees."""
 
 import argparse
-import base64
-import functools
-import hashlib
-import importlib.machinery
-import importlib.util
-import json
 import os
 from pathlib import Path
 import shutil
 import stat
 import subprocess
-import sys
 import tempfile
 
 
@@ -65,70 +58,14 @@ def copy_missing(source, destination):
         os.unlink(temporary)
 
 
-@functools.cache
-def main_store(root):
-    """Resolve the store exactly as bin/tia-cache seed does, including the store registered for this origin."""
-    sys.dont_write_bytecode = True
-    loader = importlib.machinery.SourceFileLoader('tia_cache', str(Path(__file__).with_name('tia-cache')))
-    module = importlib.util.module_from_spec(importlib.util.spec_from_loader('tia_cache', loader))
-    loader.exec_module(module)
-    return module.seed_store(root, module.common_directory(root))[0]
-
-
-def seed_publication(root, project, tool, config, destination):
-    """Prefer durable main publications, including after their feature worktrees leave."""
-    try:
-        store = main_store(root)
-        path = store / 'quality' / project.replace('/', '-') / (tool.lower() + '.json')
-        snapshot = json.loads(path.read_text())
-        if (snapshot.get('schema') != 1 or snapshot.get('project') != project
-                or snapshot.get('tool') != tool.lower()):
-            return False
-        expected = fingerprint(root / project, config)
-        if expected is None:
-            return False
-        runtime = subprocess.check_output(
-            ['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'], text=True).strip()
-        identity = hashlib.sha256(expected[0] + b'\0' + expected[1] + b'\0' + runtime.encode()).hexdigest()
-        if snapshot.get('fingerprint') != identity:
-            return False
-        commit = snapshot['tested_commit']
-        if not isinstance(commit, str) or len(commit) not in (40, 64) or any(c not in '0123456789abcdef' for c in commit):
-            return False
-        if subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', commit, 'HEAD'],
-                          capture_output=True).returncode:
-            return False
-        data = base64.b64decode(snapshot['data'], validate=True)
-        if not data or hashlib.sha256(data).hexdigest() != snapshot['sha256']:
-            return False
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(prefix='.cache-publication-', dir=destination.parent)
-        try:
-            with os.fdopen(descriptor, 'wb') as output:
-                output.write(data)
-            try:
-                os.link(temporary, destination)
-            except FileExistsError:
-                return True
-        finally:
-            os.unlink(temporary)
-        print(f'[{project}] seeded {tool} cache from published main {commit[:12]}')
-        return True
-    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError, ImportError,
-            subprocess.CalledProcessError):
-        return False
-
-
 def seed(root):
-    sources = worktrees(root)[:1] if not os.environ.get('ORBIT_MAIN_CACHE_STORE') else []
+    sources = worktrees(root)[:1]
     sources = [source for source in sources if source != root and clean_main(source)]
     for relative_project in PROJECTS:
         project = root / relative_project
         for tool, config, relative_cache in CACHES:
             destination = project / relative_cache
             if os.path.lexists(destination):
-                continue
-            if seed_publication(root, relative_project, tool, config, destination):
                 continue
             expected = fingerprint(project, config)
             if expected is None:

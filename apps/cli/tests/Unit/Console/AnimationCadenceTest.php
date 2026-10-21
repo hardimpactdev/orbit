@@ -10,8 +10,6 @@ use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalRegion;
 use Symfony\Component\Console\Output\StreamOutput;
 
-pest()->group('subprocess');
-
 describe('animation composition cadence', function (): void {
     it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (bool $reverse): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],

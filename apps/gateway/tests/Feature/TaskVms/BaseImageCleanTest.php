@@ -5,8 +5,6 @@ declare(strict_types=1);
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * Runs a copy of `base-image-clean.sh` as the image build sends it, on stdin to `bash -s`, against a temporary root:
  * every absolute path of the script moves below it, and `systemctl`, `apt-get`, `journalctl`, and `cloud-init` are

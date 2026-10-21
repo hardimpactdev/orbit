@@ -9,8 +9,6 @@ use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 it('requires affirmative consent and restores the terminal before returning', function (array $case, array $keys, bool $confirmed): void {
     $directory = sys_get_temp_dir().'/orbit-websocket-consent-'.Str::uuid();
     new Filesystem()->ensureDirectoryExists($directory);

@@ -40,8 +40,6 @@ use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
 
-pest()->group('subprocess');
-
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
     $project = Project::query()->create([
         'name' => 'Dedicated PHP',

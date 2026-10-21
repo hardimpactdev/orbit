@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Support\Console\Animation;
 use Tests\Support\AnimationCadence;
 
-pest()->group('subprocess');
-
 describe('animation composition cadence', function (): void {
     it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],

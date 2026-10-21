@@ -26,8 +26,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 function start_hook(string $name, string $dropIn, string $description = 'test start hook', string $program = "#!/bin/bash\nexit 0\n"): GatewayServiceStartHook
 {
     return new readonly class($name, $dropIn, $description, $program) implements GatewayServiceStartHook
