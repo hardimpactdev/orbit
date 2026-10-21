@@ -1,7 +1,6 @@
 """Own one test run's temporary files and processes before PHP or ParaTest starts."""
 import ctypes
 import os
-from pathlib import Path
 import re
 import selectors
 import shutil
@@ -10,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 ANSI = re.compile(rb'\x1b\[[\d;?]*[a-zA-Z]')
 PARTIAL_ANSI = re.compile(rb'\x1b(?:\[[\d;?]*)?$')

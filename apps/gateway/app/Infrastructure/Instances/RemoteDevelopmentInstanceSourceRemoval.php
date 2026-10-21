@@ -35,7 +35,6 @@ use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskVm;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use stdClass;
@@ -310,7 +309,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 'source_identity' => $inventory->sourceIdentity,
                 'repository_identity' => $inventory->repositoryIdentity,
                 'force' => $force,
-                'stop_processes' => self::stopsCheckoutProcesses($instance),
                 'own_units' => self::ownUnits($instance),
             ],
             step: 'app-instance-source-remove',
@@ -458,7 +456,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     'grouping_directory' => $groupingDirectory,
                     'unresolved' => $member->starting_commit === null && ! $member->runtime_published,
                     'independent_worktree' => $this->independentForcedWorktree($member),
-                    'stop_processes' => self::stopsCheckoutProcesses($instance),
                     'own_units' => self::ownUnits($instance),
                 ],
                 step: 'app-instance-source-finalization',
@@ -1217,18 +1214,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     private function failureCode(bool $force): string
     {
         return $force ? 'instance.force_failed' : 'instance.remove_refused';
-    }
-
-    /**
-     * Whether removal stops the processes inside the Instance's checkout: only for a task workspace, the Instance
-     * a group owns on the Node of that group's live task VM. Agents and checks leave servers there, such as
-     * Playwright's. A development Instance can be the working directory of the operator's own daemons and
-     * terminals, which removal must leave alone.
-     */
-    private static function stopsCheckoutProcesses(Instance $instance): bool
-    {
-        return $instance->task_workspace_owner_id !== null
-            && TaskVm::query()->live()->where('group_id', $instance->task_workspace_owner_id)->where('node_id', $instance->node_id)->exists();
     }
 
     /**
