@@ -32,7 +32,7 @@ return [
         'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
         // The most releases deploy keeps, the current and the previous one included; at least 2, so the way back stays.
         'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 3),
-        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
+        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 3),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
         // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.
         'tick_confirmation_seconds' => max(60, (int) env('ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS', 180)),

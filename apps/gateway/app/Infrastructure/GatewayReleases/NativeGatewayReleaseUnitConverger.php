@@ -53,8 +53,41 @@ final readonly class NativeGatewayReleaseUnitConverger implements GatewayRelease
             $this->units->renderTimer(),
             'gateway-release-timer',
         );
+        $logrotate = $this->processes->run(new ProcessInvocation(['test', '-x', '/usr/sbin/logrotate'], timeout: 10.0));
+        if (! $logrotate->succeeded()) {
+            $this->installLogrotate();
+        }
+        foreach (new GatewayDiskRetention()->files($workingDirectory, $user) as $path => $contents) {
+            $this->run('gateway-retention-directory', ['sudo', 'install', '-d', '-m', '0755', dirname($path)]);
+            $this->install($path, $contents, 'gateway-retention-config');
+        }
         $this->run('gateway-release-reload', ['sudo', 'systemctl', 'daemon-reload']);
+        $this->run('gateway-retention-enable', ['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer']);
         $this->run('gateway-release-enable', ['sudo', 'systemctl', 'enable', '--now', $this->units->timerName()]);
+    }
+
+    private function installLogrotate(): void
+    {
+        $masked = [];
+
+        try {
+            foreach (['logrotate.service', 'logrotate.timer'] as $unit) {
+                $state = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', 'is-enabled', $unit]));
+                if (in_array(trim($state->stdout), ['masked', 'masked-runtime'], true)) {
+                    continue;
+                }
+
+                $this->run('gateway-retention-mask', ['sudo', 'systemctl', 'mask', '--runtime', $unit]);
+                $masked[] = $unit;
+            }
+
+            $this->run('gateway-retention-packages', ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', 'update']);
+            $this->run('gateway-retention-packages', ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--', 'logrotate']);
+        } finally {
+            foreach ($masked as $unit) {
+                $this->run('gateway-retention-unmask', ['sudo', 'systemctl', 'unmask', '--runtime', $unit]);
+            }
+        }
     }
 
     private function install(string $path, string $contents, string $step): void
