@@ -9,7 +9,7 @@ covers:
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
 # Compute drivers
@@ -21,8 +21,6 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 ## Machine software recipe
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
-
-The common tool set includes Ubuntu's `sqlite3` command-line package. Gateway schema dumps and file-database schema loading use it, so Gateway Nodes, task VMs, and runners receive it from this same recipe.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
@@ -108,7 +106,7 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 
 | Profile | Tools in addition to `common` |
 | --- | --- |
-| `common` | Bootstrap packages: `ca-certificates`, `curl`, Git and `git-man` from git-core, `gnupg`, `libnss-resolve`, `openssh-client`, `sqlite3`, `sudo`, `ufw`, and `wireguard` |
+| `common` | Bootstrap packages: `ca-certificates`, `curl`, Git and `git-man` from git-core, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
 | `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package, and `php:8.5` |
 | `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
 | `app-prod` | The application prerequisites and JavaScript/Composer managers, as for `app-dev`, and `php:8.5` only. The PHP step installs `php:8.4` when an Instance selects it |

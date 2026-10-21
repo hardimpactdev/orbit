@@ -16,6 +16,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        throw new RuntimeException('The schema baseline reference rows cannot be rolled back.');
+        // Reference rows may now hold configured state; leave them in place.
     }
 };

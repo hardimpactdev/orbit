@@ -178,6 +178,21 @@ it('orders member checkpoints and completes only after every row deletion', func
         ->toThrow(QueryException::class);
 });
 
+it('rejects a null branch in removal evidence for a resolved starting commit', function (): void {
+    [$instance, $route] = orb179_removal_fixture('null-branch');
+    $operation = orb179_removal_operation($instance);
+    $member = orb179_removal_member($instance, $route, 0);
+
+    expect(fn () => $operation->members()->create([...$member, 'branch' => null]))
+        ->toThrow(QueryException::class, 'Invalid Instance removal member contract.')
+        ->and($operation->members()->count())->toBe(0);
+
+    $item = $operation->members()->create($member);
+
+    expect($item->refresh()->branch)->toBe('main')
+        ->and($item->starting_commit)->toBe(str_repeat('a', 40));
+});
+
 it('persists source evidence without coupling it to the starting commit', function (): void {
     [$instance, $route] = orb179_removal_fixture('source-evidence');
     $operation = orb179_removal_operation($instance);

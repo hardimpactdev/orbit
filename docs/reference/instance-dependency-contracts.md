@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Actions/Instances/Dependencies/**
   - apps/gateway/app/Infrastructure/Instances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
   - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
-  - apps/gateway/database/migrations/*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
   - packages/php-sdk/src/Requests/Instances/{Show,Scan,Update}InstanceDependenciesRequest.php
   - packages/php-sdk/src/Requests/Instances/{ResolveInstanceRequest,ResolveDirectoryInstanceRequest}.php

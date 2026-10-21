@@ -636,6 +636,25 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
         ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit, fleet, 17, node_failed");
 });
 
+it('does not file an ambiguous historical SHA bucket without incident evidence', function (): void {
+    problem_filer_project();
+    $fingerprint = problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 2, [
+        'summary' => 'Smoke failed on two release attempts.',
+        'release_kind' => 'release_failed',
+        'release_shas' => [str_repeat('b', 40)],
+        'release_repository' => 'nckrtl/orbit',
+        ...problem_filer_windows(2),
+    ]);
+    $evidence = $fingerprint->evidence;
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->count())->toBe(0)
+        ->and($fingerprint->refresh()->task_group_id)->toBeNull()
+        ->and($fingerprint->filed_at)->toBeNull()
+        ->and($fingerprint->occurrences)->toBe(2)
+        ->and($fingerprint->evidence)->toBe($evidence);
+});
+
 it('does not file a release fingerprint without an occurrence', function (): void {
     problem_filer_project();
     problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 0, ['summary' => 'Smoke failed.']);

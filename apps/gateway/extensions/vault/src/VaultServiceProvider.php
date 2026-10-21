@@ -43,7 +43,6 @@ final class VaultServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->commands([VaultSyncCommand::class]);
         // Publishing is the feature itself, so the sync runs only while the switch is on. The next run after the switch
         // turns on again catches up: it creates, rewrites, and deletes whatever changed meanwhile.

@@ -65,17 +65,6 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
-    it('provides stock SQLite schema tooling on Nodes, task VMs, and runners', function (): void {
-        $recipe = new RecipeLoader()->load();
-
-        foreach (array_keys($recipe->profiles) as $profile) {
-            expect($recipe->profile($profile))->toContain('sqlite3');
-        }
-        expect($recipe->tools['sqlite3']->source)->toBe('ubuntu')
-            ->and($recipe->tools['sqlite3']->package)->toBe('sqlite3')
-            ->and(app(NodeBootstrapPackageCatalog::class)->forNode(new Node))->toContain('sqlite3');
-    });
-
     it('owns one git-core Git build in every profile and architecture', function (): void {
         $recipe = new RecipeLoader()->load();
 

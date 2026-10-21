@@ -1056,11 +1056,6 @@
                 }
             }
         },
-        "sqlite3": {
-            "source": "ubuntu",
-            "package": "sqlite3",
-            "version": "3.46.1-9ubuntu0.3"
-        },
         "wireguard": {
             "source": "ubuntu",
             "package": "wireguard",
@@ -1075,7 +1070,6 @@
         "gnupg",
         "libnss-resolve",
         "openssh-client",
-        "sqlite3",
         "sudo",
         "ufw",
         "wireguard"

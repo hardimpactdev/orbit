@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
-  - apps/gateway/database/migrations/*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - .github/workflows/orbit-agent-release.yml
   - tools/{check_agent_release,test_check_agent_release}.py
 ---

@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "apps/gateway/database/migrations/*"
+  - "apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php"
 ---
 
 # Projects

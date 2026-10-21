@@ -3,7 +3,7 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/extensions/documents/**
-  - apps/gateway/database/migrations/*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
   - apps/gateway/tests/Feature/Extensions/Documents/**

@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
-  - apps/gateway/{phpunit.xml,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/ForkedPythonPrograms.php,tests/Unit/Configuration/TestTimeLimitTest.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
+  - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/ForkedPythonPrograms.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
 ---
 
 # Feature delivery
@@ -320,6 +320,8 @@ The E2E tests for gate selection build one Git repository per file, with two com
 
 Gateway feature tests use Laravel's `LazilyRefreshDatabase`: the first query or transaction triggers the same real migrations and transaction setup. A test that inspects its ambient transaction level first issues a query to establish the test transaction. Guidance rendering does not use a database, so it pays no migration cost.
 
+The Gateway schema baseline records the squashed migration names and batches without choosing their row IDs. Earlier vendor migrations can occupy IDs first. The migration that seeds reference rows preserves existing configuration; its rollback leaves those rows in place. Documentation `covers` names the baseline file, not the whole migrations directory. New migrations belong to the pages that own their behaviour.
+
 The E2E checks for unusable caches and inherited databases run the Gateway's real renderer for strict guidance. They do not repeat its unrelated guidance tests. The inherited-database check also runs the real feature database test: its first query triggers migrations, and the caller's sentinel database must remain unchanged.
 
 Subprocess-group checks share one stock full-project PHPUnit XML listing across the configured suites. They prepare these listings once per file, with PCOV disabled because discovery needs no coverage. Every project except PHP SDK must list subprocess tests.
@@ -364,13 +366,9 @@ The gate checks the working tree as it is, including uncommitted and untracked f
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
 
-The vocabulary check scans SQL names and expressions in the committed SQLite schema, but leaves recorded trigger error messages unchanged. The stock dump preserves those messages from applied migrations; new migration source still uses the current vocabulary.
-
 When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or `bin/remote-programs-check`, the gate also runs `bin/remote-programs-check`. See [Remote programs](/reference/remote-programs#lint-and-direct-tests).
 
 For each Composer project, the gate runs `composer validate --strict` and `composer check`. Its `composer check` runs Pint and Rector only on the files that the candidate affects. [Changed-file quality checks](#changed-file-quality-checks) lists them.
-
-Files under `apps/gateway/tests/Rehearsal/` require an owned disposable VM and are only listed by this gate. Run these native rehearsals explicitly on that VM; the ordinary gate neither runs them on its host nor disables their safety checks.
 
 #### Projects run at the same time
 

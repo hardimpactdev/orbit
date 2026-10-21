@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging}.php
   - apps/gateway/app/Infrastructure/Logging/**
-  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/*}
+  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php

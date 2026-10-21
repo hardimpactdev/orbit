@@ -13,9 +13,7 @@ declare(strict_types=1);
  * credential, the Reverb app id, config/app.php, and the node storage member
  * apps are not this domain. Migrations up to and including the rename migration
  * keep the old names because they are the ordered path that creates that schema
- * and then renames it. A later migration is living database code. The stock SQLite
- * schema dump preserves recorded trigger diagnostics; its SQL names and expressions
- * remain subject to the check.
+ * and then renames it. A later migration is living database code.
  *
  * CamelCase appInstance and appId count, as do Laravel references to the apps
  * table: constrained(), on(), exists and unique rules, and Rule::exists().
@@ -163,15 +161,6 @@ function project_vocabulary_scan(string $root): array
             $contents = file_get_contents($path);
             if ($contents === false || str_contains($contents, "\0")) {
                 continue;
-            }
-
-            if ($relative === 'apps/gateway/database/schema/sqlite-schema.sql') {
-                // Ignore only recorded diagnostic literals, not SQL on the same line. Preserve line numbers.
-                $contents = preg_replace_callback(
-                    "/(\\bRAISE\\s*\\(\\s*(?:ABORT|FAIL|ROLLBACK)\\s*,\\s*)('(?:[^']|'')*')(\\s*\\))/i",
-                    static fn (array $match): string => $match[1]."''".str_repeat("\n", substr_count($match[2], "\n")).$match[3],
-                    $contents,
-                ) ?? throw new RuntimeException('Could not inspect the committed SQLite schema.');
             }
 
             $lines = preg_split('/\R/', $contents) ?: [];

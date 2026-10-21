@@ -96,7 +96,7 @@ Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launc
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 
-Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy, dnsmasq, and `sqlite3` are installed, installing only missing packages. This is the topology Gateway's prerequisite owner; Laravel's stock schema loader needs the `sqlite3` command to load the committed schema into a fresh file-backed database. Outside the harness, [Quickstart](/quickstart) installs it before the first migration, and the common [machine software recipe](/reference/compute-drivers#machine-software-recipe) supplies it to Gateway Nodes, task VMs, and runners.
+Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy and dnsmasq are installed, installing only missing packages.
 
 The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
 

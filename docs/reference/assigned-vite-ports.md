@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Domain/AppDev/{VitePortAllocator,VitePortRuntime,ViteProcessLifecycle,DevelopmentServerEndpoint}.php
   - apps/gateway/app/Infrastructure/AppDev/RemoteVitePortRuntime.php
   - apps/gateway/app/Domain/Processes/VpDevPreset.php
-  - apps/gateway/database/migrations/*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
 # Assigned Vite ports

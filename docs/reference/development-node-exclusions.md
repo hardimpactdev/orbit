@@ -3,7 +3,7 @@ title: "Development node exclusions"
 description: "How a Project skips selected app-dev Nodes for development placement, from the Project or from the Node, including MCP."
 covers:
   - apps/gateway/app/Domain/Projects/DevelopmentNodeExclusion.php
-  - apps/gateway/{app/Models/ProjectNodeExclusion.php,database/migrations/*}
+  - apps/gateway/{app/Models/ProjectNodeExclusion.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Data/Projects/**
   - apps/gateway/app/Http/Controllers/Api/{ProjectExcludedNodesController,NodeExcludedProjectsController}.php
   - apps/cli/app/Commands/Projects/{AddExcludedNode,ListExcludedNodes,RemoveExcludedNode}Command.php

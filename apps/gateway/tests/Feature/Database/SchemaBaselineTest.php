@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Larastan\Larastan\Properties\MigrationHelper;
@@ -94,12 +95,47 @@ it('preserves configured singleton rows when deploying over the applied migratio
     $migration = require database_path('migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php');
     $baseline = require database_path('migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php');
 
+    $migration->down();
+
     expect(DB::table('project_document_storages')->get()->all())->toEqual($storage)
         ->and(DB::table('task_vm_image_recipe')->get()->all())->toEqual($recipe)
         ->and($storage[0]->secret_access_key)->not->toBe('existing-secret')
         ->and(ProjectDocumentStorage::query()->findOrFail(1)->secret_access_key)->toBe('existing-secret')
-        ->and(fn () => $migration->down())->toThrow(RuntimeException::class, 'cannot be rolled back')
         ->and(fn () => $baseline->down())->toThrow(RuntimeException::class, 'cannot be rolled back');
+});
+
+it('allows earlier vendor migrations to occupy history IDs before the baseline runs', function (): void {
+    $history = DB::table('migrations')->pluck('migration')->all();
+    $vendorMigration = '2026_07_27_000000_create_vendor_fixture_table';
+    config()->set('database.connections.baseline_vendor', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'foreign_key_constraints' => true,
+    ]);
+    $connection = DB::connection('baseline_vendor');
+
+    try {
+        Schema::connection('baseline_vendor')->create('migrations', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('migration');
+            $table->integer('batch');
+        });
+        $connection->table('migrations')->insert([
+            ['id' => 1, 'migration' => '2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table', 'batch' => 1],
+            ['id' => 2, 'migration' => $vendorMigration, 'batch' => 1],
+        ]);
+
+        $this->artisan('migrate', ['--database' => 'baseline_vendor', '--force' => true])->assertExitCode(0);
+
+        expect($connection->table('migrations')->pluck('migration')->all())->toEqualCanonicalizing([...$history, $vendorMigration])
+            ->and((array) $connection->table('migrations')->where('id', 2)->sole())->toBe([
+                'id' => 2,
+                'migration' => $vendorMigration,
+                'batch' => 1,
+            ]);
+    } finally {
+        DB::purge('baseline_vendor');
+    }
 });
 
 it('records the complete squashed history exactly once and leaves no pending migrations', function (): void {
