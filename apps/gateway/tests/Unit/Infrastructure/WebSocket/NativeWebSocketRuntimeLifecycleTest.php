@@ -77,7 +77,7 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('[PROTECTED]');
 });
 
-it('fetches the configured repository when an existing checkout has an obsolete origin', function (): void {
+it('fetches the configured repository when an existing checkout origin needs repair', function (bool $missingOrigin): void {
     $directory = sys_get_temp_dir().'/orbit-websocket-'.Str::uuid();
     $repository = $directory.'/hardimpactdev/orbit-reverb';
     $checkout = $directory.'/existing checkout';
@@ -95,7 +95,11 @@ it('fetches the configured repository when an existing checkout has an obsolete 
         $git(['-C', $repository, 'add', 'VERSION']);
         $git(['-C', $repository, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'Release']);
         $git(['clone', '--quiet', '--no-checkout', '--', $repository, $checkout]);
-        $git(['-C', $checkout, 'remote', 'set-url', 'origin', $directory.'/removed-owner/orbit-reverb']);
+        if ($missingOrigin) {
+            $git(['-C', $checkout, 'remote', 'remove', 'origin']);
+        } else {
+            $git(['-C', $checkout, 'remote', 'set-url', 'origin', $directory.'/removed-owner/orbit-reverb']);
+        }
         $commands = [];
         $lifecycle = websocket_runtime_lifecycle($commands, repository: $repository, installPath: $checkout);
         $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
@@ -125,7 +129,10 @@ it('fetches the configured repository when an existing checkout has an obsolete 
     } finally {
         new Filesystem()->deleteDirectory($directory);
     }
-});
+})->with([
+    'obsolete origin' => false,
+    'missing origin' => true,
+]);
 
 it('throws a NodeRoleOperationException when convergence fails', function (): void {
     $commands = [];
