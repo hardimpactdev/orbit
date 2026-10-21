@@ -284,7 +284,7 @@ done
             self.skipTest('requires curl')
         source = assemble('php.install-build').encode()
         wrapper = Path(self.environment['PATH'].split(':')[0]) / 'curl'
-        for interruption in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        for interruption in (signal.SIGHUP.value, signal.SIGINT.value, signal.SIGTERM.value):
             with self.subTest(interruption=interruption):
                 with socket.create_server(('127.0.0.1', 0)) as listener:
                     listener.settimeout(5)
