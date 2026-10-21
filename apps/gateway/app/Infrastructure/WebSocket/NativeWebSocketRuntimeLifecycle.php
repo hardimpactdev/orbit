@@ -181,6 +181,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
                 install -d -m 0755 -o "\$managed_user" -g "\$managed_group" -- "\$install_path"
                 sudo -u "\$managed_user" -H git clone --quiet --no-checkout -- "\$repository" "\$install_path"
             fi
+            sudo -u "\$managed_user" -H git -C "\$install_path" remote set-url origin "\$repository"
             sudo -u "\$managed_user" -H git -C "\$install_path" fetch --quiet origin "\$ref"
             sudo -u "\$managed_user" -H git -C "\$install_path" checkout --quiet --force FETCH_HEAD
             sudo -u "\$managed_user" -H git -C "\$install_path" reset --quiet --hard FETCH_HEAD

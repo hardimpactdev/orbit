@@ -21,6 +21,9 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 it('installs prerequisites, then clones, installs and restarts Reverb on every converge', function (): void {
     $commands = [];
@@ -74,6 +77,56 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('[PROTECTED]');
 });
 
+it('fetches the configured repository when an existing checkout has an obsolete origin', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-websocket-'.Str::uuid();
+    $repository = $directory.'/hardimpactdev/orbit-reverb';
+    $checkout = $directory.'/existing checkout';
+    $git = static function (array $arguments): string {
+        $process = new Process(['git', ...$arguments]);
+        $process->mustRun();
+
+        return trim($process->getOutput());
+    };
+    mkdir($repository, 0o700, true);
+
+    try {
+        $git(['init', '--quiet', '--initial-branch=release-42', $repository]);
+        file_put_contents($repository.'/VERSION', 'current release');
+        $git(['-C', $repository, 'add', 'VERSION']);
+        $git(['-C', $repository, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'Release']);
+        $git(['clone', '--quiet', '--no-checkout', '--', $repository, $checkout]);
+        $git(['-C', $checkout, 'remote', 'set-url', 'origin', $directory.'/removed-owner/orbit-reverb']);
+        $commands = [];
+        $lifecycle = websocket_runtime_lifecycle($commands, repository: $repository, installPath: $checkout);
+        $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
+        $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), [new WebSocketCredentials('app-id', 'app-key', 'app-secret')]);
+        $lifecycle->converge(websocket_runtime_node(), $assignment, $credentials);
+        $runtime = $commands[2];
+        $sudo = <<<'BASH'
+            sudo() {
+                [ "$1" = -u ] && [ "$3" = -H ] || return 1
+                shift 3
+                if [ "$1" = env ]; then
+                    [ "$2" = COMPOSER_ALLOW_SUPERUSER=1 ] && [ "$3" = composer ] || exit 1
+                    exit 0
+                fi
+                [ "$1" = git ] || return 1
+                command "$@"
+            }
+            BASH;
+        $process = new Process(array_slice($runtime->arguments, 1));
+        $process->setInput($sudo."\n".stream_get_contents($runtime->protectedInput->stream()));
+
+        $process->mustRun();
+
+        expect($git(['-C', $checkout, 'remote', 'get-url', 'origin']))->toBe($repository);
+        expect(file_get_contents($checkout.'/VERSION'))->toBe('current release');
+        expect($git(['-C', $checkout, 'rev-parse', 'HEAD']))->toBe($git(['-C', $repository, 'rev-parse', 'HEAD']));
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
+    }
+});
+
 it('throws a NodeRoleOperationException when convergence fails', function (): void {
     $commands = [];
     $lifecycle = websocket_runtime_lifecycle($commands, failRuntime: true);
@@ -114,8 +167,12 @@ function websocket_runtime_node(): Node
     return $node;
 }
 
-function websocket_runtime_lifecycle(array &$commands, bool $failRuntime = false): NativeWebSocketRuntimeLifecycle
-{
+function websocket_runtime_lifecycle(
+    array &$commands,
+    bool $failRuntime = false,
+    string $repository = 'https://example.test/orbit-reverb.git',
+    string $installPath = '/opt/orbit/websocket',
+): NativeWebSocketRuntimeLifecycle {
     return new NativeWebSocketRuntimeLifecycle(
         commands: new NodeRolePrerequisiteCommandFactory,
         ssh: new class($commands, $failRuntime) implements SshExecutor
@@ -158,9 +215,9 @@ function websocket_runtime_lifecycle(array &$commands, bool $failRuntime = false
                 return new ManagedUserAccount('orbit-websocket', 'orbit-websocket', '/home/orbit-websocket');
             }
         },
-        repository: 'https://example.test/orbit-reverb.git',
+        repository: $repository,
         ref: 'release-42',
-        installPath: '/opt/orbit/websocket',
+        installPath: $installPath,
         port: 8790,
     );
 }

@@ -91,7 +91,7 @@ The role's converge writes every app, ordered by name, into the server's `.env` 
 REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
 ```
 
-[orbit-reverb](https://github.com/nckrtl/orbit-reverb)'s `config/reverb.php` makes one app of Reverb's `config` provider from each entry. Every app gets the same options: `allowed_origins` `*`, and client events from channel members.
+[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb)'s `config/reverb.php` makes one app of Reverb's `config` provider from each entry. Every app gets the same options: `allowed_origins` `*`, and client events from channel members.
 
 Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
 
@@ -103,7 +103,7 @@ See [convergence failure handling](/solutions/realtime-reverb#what-the-converge-
 
 Deploy multi-app support in this order. No automatic job converges the role, so keep explicit role and app changes paused until step 4.
 
-1. Merge [orbit-reverb#1](https://github.com/nckrtl/orbit-reverb/pull/1) first.
+1. Merge [orbit-reverb#1](https://github.com/hardimpactdev/orbit-reverb/pull/1) first.
 2. Release the Gateway with multi-app support.
 3. Confirm that the Gateway's `ORBIT_WEBSOCKET_REF` is unset or `main`.
 4. Run `orbit node:role:add <node> websocket --converge-existing`.
