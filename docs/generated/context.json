@@ -1074,8 +1074,7 @@
                 "0209",
                 "0211",
                 "0212",
-                "0218",
-                "0228"
+                "0218"
             ]
         },
         {
@@ -1262,30 +1261,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0228-serve-several-reverb-apps-on-the-websocket-role.md",
-            "title": "ADR 0228: Serve several Reverb apps on the websocket role",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0218",
-                "0228"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1348,8 +1323,7 @@
                 "0223",
                 "0224",
                 "0225",
-                "0226",
-                "0228"
+                "0226"
             ]
         },
         {
@@ -3023,9 +2997,7 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0228"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/wireguard-endpoints.md",

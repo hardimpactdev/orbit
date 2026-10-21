@@ -14,7 +14,7 @@ covers:
 
 # Reverb apps
 
-The [`websocket` role](/solutions/realtime-reverb) runs one Reverb server at `wss://reverb.orbit`. That server serves several Reverb apps. The Gateway publishes its own events with the app named `gateway`. Every other Project gets an app of its own. [ADR 0228](/decisions/0228-serve-several-reverb-apps-on-the-websocket-role) records the decision while it is built.
+The [`websocket` role](/solutions/realtime-reverb) runs one Reverb server at `wss://reverb.orbit`. That server serves several Reverb apps. The Gateway publishes its own events with the app named `gateway`. Every other Project gets an app of its own.
 
 ## An app
 
@@ -95,7 +95,22 @@ REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
 
 Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
 
+If runtime convergence succeeds but a later Caddy or DNS publication step fails, an existing role keeps Reverb running for every app. The command still reports the failure. Fix the publication error and converge again. On a newly assigned role, a publication failure removes the runtime as before.
+
 `ORBIT_WEBSOCKET_REF` must name an orbit-reverb commit that reads `REVERB_APPS`. With an older commit, Reverb starts without a usable app.
+
+## Deploy and recover
+
+Deploy multi-app support in this order. No automatic job converges the role, so keep explicit role and app changes paused until step 4.
+
+1. Merge [orbit-reverb#1](https://github.com/nckrtl/orbit-reverb/pull/1) first.
+2. Release the Gateway with multi-app support.
+3. Confirm that the Gateway's `ORBIT_WEBSOCKET_REF` is unset or `main`.
+4. Run `orbit node:role:add <node> websocket --converge-existing`.
+5. Verify Gateway realtime events.
+6. Only then run `orbit websocket:app:create <name>`.
+
+The migration moves the Gateway's Reverb credentials into the reserved `gateway` app and deletes the old Node settings. A Gateway code rollback does not undo migrations. The old code finds no Reverb app, so the Gateway stops broadcasting. Roll forward or restore the pre-release database backup to recover. See [Gateway recovery](/reference/gateway-recovery).
 
 ## Why it works this way
 
@@ -108,6 +123,14 @@ Reverb already keeps apps apart by key and secret. One server per Project would 
 ### A JSON list in the server's environment
 
 The `.env` is the one file the converge owns on the Node. A JSON list keeps orbit-reverb a plain Laravel app with Reverb's stock `config` provider. Rendering `config/reverb.php` into the checkout was rejected: the converge resets the checkout to its ref, so Orbit would overwrite a tracked file on every converge. Numbered keys such as `REVERB_APP_1_ID` were rejected, because the config would still loop over them. A custom app provider that asks the Gateway was rejected, because it puts Orbit code in the Reverb app.
+
+### Restart on every converge
+
+Reverb reads its apps when it starts. Every explicit converge restarts it so the code and app list agree. Conditional restarts need change detection and leave a crash window between writing the environment and restarting the server. The Gateway's subscriber reconnects, and Reverb's own restart command also closes every connection.
+
+### One credential source and one deploy order
+
+Keeping the old Node settings after migration would create a second credential path. Recover by rolling forward or restoring the database backup taken before release. The [deploy order](#deploy-and-recover) keeps the Gateway renderer and orbit-reverb config in step: old config cannot read `REVERB_APPS`, and the new config cannot read the old single-app keys. Either mismatch starts Reverb without a usable app even though `systemctl is-active` passes.
 
 ### An app is an attachment, like a database
 

@@ -24,7 +24,7 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        // A refusal here leaves a running Reverb alone; the rollback below would stop it.
+        // Refuse before changing a running Reverb.
         $this->publication->checkListenAddresses($node);
         $credentials = $this->credentials->ensure($node);
         $runtimeConverged = false;
@@ -35,7 +35,8 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
             $this->publication->converge($node);
         } catch (Throwable $exception) {
             try {
-                if ($runtimeConverged) {
+                // Existing assignments may serve every app, also while retrying a failed publication.
+                if ($runtimeConverged && $assignment->wasRecentlyCreated) {
                     $this->runtime->remove($node, $assignment, false);
                 }
             } catch (Throwable $rollback) {

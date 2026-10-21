@@ -34,7 +34,7 @@ it('generates credentials, then converges runtime before publication', function 
     ]);
 });
 
-it('rolls the runtime back when publication fails', function (): void {
+it('rolls a newly assigned runtime back when publication fails', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
     $events = [];
     $baseline = websocketBaseline($events, failure: 'publication:converge');
@@ -50,6 +50,31 @@ it('rolls the runtime back when publication fails', function (): void {
             'runtime:remove',
         ]);
 });
+
+it('keeps an existing runtime when publication fails after convergence is claimed', function (LifecycleStatus $status): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $assignment->update([
+        'status' => $status,
+        'failed_step' => $status === LifecycleStatus::Failed ? 'converge:baseline' : null,
+    ]);
+    $assignment = $assignment->fresh();
+    $assignment->claimConvergence();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: 'publication:converge');
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'publication:converge failed');
+
+    expect($events)->toBe([
+        'publication:check',
+        'credentials:ensure',
+        'runtime:converge',
+        'publication:converge',
+    ]);
+})->with([
+    'active role' => LifecycleStatus::Active,
+    'retry after failed converge' => LifecycleStatus::Failed,
+]);
 
 it('refuses a missing listen address before it touches a running Reverb', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
