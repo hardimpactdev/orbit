@@ -340,6 +340,7 @@
                 "Activity",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node"
             ],
             "governing_adrs": []

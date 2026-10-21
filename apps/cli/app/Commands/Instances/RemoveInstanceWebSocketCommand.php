@@ -25,9 +25,14 @@ final class RemoveInstanceWebSocketCommand extends WebSocketAppCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $name = $this->appName('app');
+
+        if ($name === null) {
+            return self::FAILURE;
+        }
+
         $instance = $this->instanceSelector();
 
-        if ($instance === null || $name === null) {
+        if ($instance === null) {
             return self::FAILURE;
         }
 

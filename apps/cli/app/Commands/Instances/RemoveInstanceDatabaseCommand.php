@@ -26,10 +26,20 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $slug = $this->slug();
+
+        if ($slug === null) {
+            return self::FAILURE;
+        }
+
         $instance = $this->instanceSelector();
+
+        if ($instance === null) {
+            return self::FAILURE;
+        }
+
         $prefix = $this->prefixOption();
 
-        if ($slug === null || $instance === null || ($this->input->getOption('prefix') !== null && $prefix === null)) {
+        if ($this->input->getOption('prefix') !== null && $prefix === null) {
             return self::FAILURE;
         }
 

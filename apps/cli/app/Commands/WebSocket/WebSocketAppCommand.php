@@ -15,13 +15,7 @@ abstract class WebSocketAppCommand extends GatewayCommand
 
     protected function instanceSelector(): ?string
     {
-        $selector = $this->stringOption('instance');
-
-        if ($selector === null) {
-            $this->renderGatewayFailure('websocket.instance_required', 'Instance ID or Route domain is required.');
-        }
-
-        return $selector;
+        return $this->requiredStringOption('instance', 'Instance ID or Route domain', 'websocket.instance_required');
     }
 
     protected function appName(string $argument): ?string

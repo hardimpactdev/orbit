@@ -7,7 +7,7 @@ covers:
 
 A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL or Valkey server as a Docker Node Process and keeps its admin password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
 
-[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
+[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd). Attachment commands require `--instance=SELECTOR`. An omitted or empty selector returns `database.instance_required` before the CLI sends a request.
 
 ## Commands
 

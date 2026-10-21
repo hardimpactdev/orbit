@@ -65,7 +65,9 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('composer install')
         ->toContain('systemd-analyze verify "$verify_directory/orbit-websocket.service"')
         ->toContain("systemctl daemon-reload\nsystemctl enable --quiet orbit-websocket\nsystemctl restart orbit-websocket\nsystemctl is-active --quiet orbit-websocket")
-        ->not->toContain('env_changed', 'cmp ', 'systemctl start orbit-websocket')
+        ->not->toContain('env_changed')
+        ->not->toContain('cmp ')
+        ->not->toContain('systemctl start orbit-websocket')
         ->not
         ->toContain('app-secret')
         ->not
