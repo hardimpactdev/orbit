@@ -2,7 +2,7 @@
     "schema_version": 1,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261019T000000Z"
+        "snapshot": "20261021T000000Z"
     },
     "architectures": [
         "amd64",
@@ -46,7 +46,7 @@
         "ca-certificates": {
             "source": "ubuntu",
             "package": "ca-certificates",
-            "version": "20260601~26.04.1"
+            "version": "20260816ubuntu0.26.04.1"
         },
         "caddy": {
             "source": "artifact",
@@ -245,7 +245,7 @@
         "libnss-resolve": {
             "source": "ubuntu",
             "package": "libnss-resolve",
-            "version": "259.5-0ubuntu3.4"
+            "version": "259.9-0ubuntu0.1"
         },
         "libnss3": {
             "source": "ubuntu",

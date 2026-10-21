@@ -7,8 +7,8 @@ namespace App\Infrastructure\WebSocket;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Shared\StoredValue;
@@ -36,7 +36,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
         private int $port = 0,
     ) {}
 
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $address = $this->address($node);
         $account = $this->accounts->resolve($node);
@@ -199,7 +199,8 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             install -o root -g root -m 0644 -- "\$verify_directory/orbit-websocket.service" "\$unit_candidate"
             mv -fT -- "\$unit_candidate" /etc/systemd/system/orbit-websocket.service
             systemctl daemon-reload
-            systemctl enable --now orbit-websocket
+            systemctl enable --quiet orbit-websocket
+            systemctl restart orbit-websocket
             systemctl is-active --quiet orbit-websocket
             BASH;
     }

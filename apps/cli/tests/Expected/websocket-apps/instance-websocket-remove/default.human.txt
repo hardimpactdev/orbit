@@ -1,0 +1,27 @@
+Removing WebSocket app...
+
+┌  Remove WebSocket app
+│
+├  ● Removed WebSocket app
+│
+└  Removed WebSocket app.
+
+
+┌  WebSocket app [hauzer] removed from Instance [1].
+│
+├  Instance ID     1
+│
+├  Name            hauzer
+│
+├  Keys            BROADCAST_CONNECTION, REVERB_APP_ID, REVERB_APP_KEY, REVERB_APP_SECRET, REVERB_HOST, REVERB_PORT, REVERB_SCHEME
+│
+├  Operation       detach
+│
+├  Changed         true
+│
+├  Stored keys     0
+│
+├  Workload file   unchanged
+│
+└  Request ID      0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

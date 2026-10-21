@@ -50,6 +50,8 @@ The Route create request type distinguishes an app Route with `instance_id` from
 
 The generated API types model Gateway rollback as a code switch without a `force` input. Database restoration is a separate operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back).
 
+The generated API types include [Reverb app](/reference/websocket-apps) create, list, show, and destroy operations, plus Instance attachments. App responses carry the app ID, public key, and attached Instance IDs. Attachment responses carry key names and stored key counts. Both omit the secret and environment values. These types add no web controls.
+
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.
@@ -189,7 +191,7 @@ A pane polls the one-shot read every 10 seconds instead when the Gateway refuses
 
 ## Installed app on iPhone and iPad
 
-Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
+Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/hardimpactdev/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
 
 The app shell is a `position: fixed` box with an opaque page background that fills the web view. iOS 26 blurs the top edge of an installed web app with its glass edge effect unless a fixed, opaque box covers that edge. The shell keeps the header sharp.
 

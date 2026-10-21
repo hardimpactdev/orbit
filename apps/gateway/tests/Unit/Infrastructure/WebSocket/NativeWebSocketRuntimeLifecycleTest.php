@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -21,12 +22,12 @@ use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
 
-it('installs prerequisites, then clones, installs and starts Reverb with the resolved config', function (): void {
+it('installs prerequisites, then clones, installs and restarts Reverb on every converge', function (): void {
     $commands = [];
     $lifecycle = websocket_runtime_lifecycle($commands);
     $node = websocket_runtime_node();
     $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
-    $credentials = new WebSocketCredentials('app-id', 'app-key', 'app-secret', 'base64:'.base64_encode('k'));
+    $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), [new WebSocketCredentials('app-id', 'app-key', 'app-secret')]);
 
     $lifecycle->converge($node, $assignment, $credentials);
 
@@ -63,7 +64,10 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
         ->toContain('fetch --quiet origin "$ref"')
         ->toContain('composer install')
         ->toContain('systemd-analyze verify "$verify_directory/orbit-websocket.service"')
-        ->toContain('systemctl enable --now orbit-websocket')
+        ->toContain("systemctl daemon-reload\nsystemctl enable --quiet orbit-websocket\nsystemctl restart orbit-websocket\nsystemctl is-active --quiet orbit-websocket")
+        ->not->toContain('env_changed')
+        ->not->toContain('cmp ')
+        ->not->toContain('systemctl start orbit-websocket')
         ->not
         ->toContain('app-secret')
         ->not
@@ -75,7 +79,7 @@ it('throws a NodeRoleOperationException when convergence fails', function (): vo
     $lifecycle = websocket_runtime_lifecycle($commands, failRuntime: true);
     $node = websocket_runtime_node();
     $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
-    $credentials = new WebSocketCredentials('app-id', 'app-key', 'app-secret', 'base64:'.base64_encode('k'));
+    $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), [new WebSocketCredentials('app-id', 'app-key', 'app-secret')]);
 
     expect(fn () => $lifecycle->converge($node, $assignment, $credentials))
         ->toThrow(NodeRoleOperationException::class);

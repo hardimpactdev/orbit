@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -58,9 +58,9 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | --- | --- |
 | Tag for commit `C` | `cli-v0.N.0`, where `N` is `git rev-list --count C` |
 | What `N` counts | Every commit that `C` reaches, not only first-parent commits. A shallow clone gives a wrong `N` |
-| Asset URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
+| Asset URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
 | Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
-| Checksums URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/SHA256SUMS` |
+| Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
 | Immutability | A published asset never changes. The tag points at `C`, and the release appears with all four assets at once |
 
@@ -77,12 +77,12 @@ bin/orbit-cli-release-version <commit>        # 0.4681.0
 bin/orbit-cli-release-version --tag <commit>  # cli-v0.4681.0
 ```
 
-The tag points at the commit. `https://api.github.com/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0` returns the commit SHA as `object.sha`. A 404 means the commit has no release yet, or never will because its checks did not pass.
+The tag points at the commit. `https://api.github.com/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0` returns the commit SHA as `object.sha`. A 404 means the commit has no release yet, or never will because its checks did not pass.
 
 To find the newest release without a checkout:
 
 ```bash
-git ls-remote --tags --refs https://github.com/nckrtl/orbit 'cli-v*' \
+git ls-remote --tags --refs https://github.com/hardimpactdev/orbit 'cli-v*' \
   | sed 's#.*/cli-v##' | sort -t. -k2,2n | tail -n 1
 ```
 
@@ -95,7 +95,7 @@ Download the binary and `SHA256SUMS`, check the digest, and install the file.
 ```bash
 version=0.4681.0
 asset="orbit-${version}-linux-x86_64"
-base="https://github.com/nckrtl/orbit/releases/download/cli-v${version}"
+base="https://github.com/hardimpactdev/orbit/releases/download/cli-v${version}"
 curl -fsSL -O "${base}/${asset}" -O "${base}/SHA256SUMS"
 grep "  ${asset}\$" SHA256SUMS | sha256sum --check
 sudo install -m 0755 "$asset" /usr/local/bin/orbit

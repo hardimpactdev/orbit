@@ -42,11 +42,11 @@ beforeEach(function (): void {
 function release_alert(
     ReleaseAlertKind $kind = ReleaseAlertKind::ReleaseFailed,
     string $summary = 'Smoke check web.index failed.',
-    ?string $evidenceUrl = 'https://github.com/nckrtl/orbit/actions/runs/42',
+    ?string $evidenceUrl = 'https://github.com/hardimpactdev/orbit/actions/runs/42',
 ): ReleaseAlert {
     return new ReleaseAlert(
         $kind,
-        new ReleaseAlertSubject('gateway', 'nckrtl/orbit', RELEASE_ALERT_SHA, '17'),
+        new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', RELEASE_ALERT_SHA, '17'),
         $summary,
         new ReleaseIncident('gateway', '17', $kind->value),
         $evidenceUrl,
@@ -67,7 +67,7 @@ describe('a raised alert', function (): void {
 
         $fingerprint = 'release|release_failed|gateway|17|release_failed';
         $activity = release_alert_activity();
-        $subject = ['target' => 'gateway', 'repository' => 'nckrtl/orbit', 'sha' => RELEASE_ALERT_SHA, 'release_id' => '17'];
+        $subject = ['target' => 'gateway', 'repository' => 'hardimpactdev/orbit', 'sha' => RELEASE_ALERT_SHA, 'release_id' => '17'];
 
         Http::assertSent(function (Request $request) use ($activity, $fingerprint, $subject): bool {
             $timestamp = (string) now()->timestamp;
@@ -82,8 +82,8 @@ describe('a raised alert', function (): void {
                     'kind' => 'release_failed',
                     'subject' => $subject,
                     'summary' => 'Smoke check web.index failed.',
-                    'evidence_url' => 'https://github.com/nckrtl/orbit/actions/runs/42',
-                    'text' => 'Release failed for gateway nckrtl/orbit@0123456789ab: Smoke check web.index failed. https://github.com/nckrtl/orbit/actions/runs/42',
+                    'evidence_url' => 'https://github.com/hardimpactdev/orbit/actions/runs/42',
+                    'text' => 'Release failed for gateway hardimpactdev/orbit@0123456789ab: Smoke check web.index failed. https://github.com/hardimpactdev/orbit/actions/runs/42',
                     'occurred_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
                     'request_id' => $activity->request_id,
                     'activity_id' => $activity->id,
@@ -109,7 +109,7 @@ describe('a raised alert', function (): void {
                 'kind' => 'release_failed',
                 'subject' => $subject,
                 'summary' => 'Smoke check web.index failed.',
-                'evidence_url' => 'https://github.com/nckrtl/orbit/actions/runs/42',
+                'evidence_url' => 'https://github.com/hardimpactdev/orbit/actions/runs/42',
                 'problem' => ['outcome' => 'done', 'fingerprint' => $fingerprint],
                 'webhook' => ['outcome' => 'done'],
             ])
@@ -117,9 +117,9 @@ describe('a raised alert', function (): void {
             ->and($problem->source)->toBe(ProblemSource::Release)
             ->and($problem->occurrences)->toBe(1)
             ->and($problem->evidence['summary'] ?? null)->toBe('Smoke check web.index failed.')
-            ->and($problem->evidence['release_repository'] ?? null)->toBe('nckrtl/orbit')
+            ->and($problem->evidence['release_repository'] ?? null)->toBe('hardimpactdev/orbit')
             ->and($problem->evidence['release_id'] ?? null)->toBe('17')
-            ->and($problem->evidence['evidence_urls'] ?? null)->toBe(['https://github.com/nckrtl/orbit/actions/runs/42'])
+            ->and($problem->evidence['evidence_urls'] ?? null)->toBe(['https://github.com/hardimpactdev/orbit/actions/runs/42'])
             ->and($problem->evidence['activity_ids'] ?? null)->toBe([$activity->id]);
     });
 
@@ -143,8 +143,8 @@ describe('a raised alert', function (): void {
             ->and($task->brief)->toContain("Symptom\nHealth check failed after migrations ran.")
             ->and($task->brief)->toContain("Count\n1")
             ->and($task->brief)->toContain("Activity ids: {$activityId}")
-            ->and($task->brief)->toContain('Evidence links: https://github.com/nckrtl/orbit/actions/runs/42')
-            ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit, gateway, 17, release_paused")
+            ->and($task->brief)->toContain('Evidence links: https://github.com/hardimpactdev/orbit/actions/runs/42')
+            ->and($task->brief)->toContain("Suspected entry point\nhardimpactdev/orbit, gateway, 17, release_paused")
             ->and(ProblemFingerprint::query()->sole()->task_group_id)->toBe($task->id);
     });
 
@@ -171,11 +171,11 @@ describe('a raised alert', function (): void {
             ->and(ProblemFingerprint::query()->count())->toBe(0);
         Http::assertNothingSent();
     })->with([
-        'short sha' => [fn () => new ReleaseAlertSubject('gateway', 'nckrtl/orbit', '0123456')],
-        'uppercase sha' => [fn () => new ReleaseAlertSubject('gateway', 'nckrtl/orbit', strtoupper(RELEASE_ALERT_SHA))],
-        'pipe in target' => [fn () => new ReleaseAlertSubject('gate|way', 'nckrtl/orbit', RELEASE_ALERT_SHA)],
+        'short sha' => [fn () => new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', '0123456')],
+        'uppercase sha' => [fn () => new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', strtoupper(RELEASE_ALERT_SHA))],
+        'pipe in target' => [fn () => new ReleaseAlertSubject('gate|way', 'hardimpactdev/orbit', RELEASE_ALERT_SHA)],
         'repository without owner' => [fn () => new ReleaseAlertSubject('gateway', 'orbit', RELEASE_ALERT_SHA)],
-        'release id with a space' => [fn () => new ReleaseAlertSubject('gateway', 'nckrtl/orbit', RELEASE_ALERT_SHA, 'release 1')],
+        'release id with a space' => [fn () => new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', RELEASE_ALERT_SHA, 'release 1')],
         'empty summary' => [fn () => release_alert(summary: '  ')],
         'non-http evidence link' => [fn () => release_alert(evidenceUrl: 'file:///etc/passwd')],
     ]);
@@ -269,7 +269,7 @@ it('keeps one incident across Gateway source changes and separates resource atte
     foreach ([['17', RELEASE_ALERT_SHA], ['17', str_repeat('b', 40)], ['18', str_repeat('b', 40)]] as [$attempt, $sha]) {
         app(ReleaseAlertNotifier::class)->alert(new ReleaseAlert(
             ReleaseAlertKind::ReleaseFailed,
-            new ReleaseAlertSubject('gateway', 'nckrtl/orbit', $sha, $attempt),
+            new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', $sha, $attempt),
             'Smoke failed.',
             new ReleaseIncident('gateway', $attempt, 'smoke'),
         ));
@@ -316,7 +316,7 @@ it('keeps a no-build nightly cycle independent of summary text and Gateway sourc
         expect(Artisan::call('problems:file'))->toBe(0);
     }
     $row = ProblemFingerprint::query()->sole();
-    expect($row->fingerprint)->toBe('release|rollout_halted|recipe-repository:nckrtl:orbit|nightly:20261018|github_list_failed')
+    expect($row->fingerprint)->toBe('release|rollout_halted|recipe-repository:hardimpactdev:orbit|nightly:20261018|github_list_failed')
         ->and(Task::topLevel()->count())->toBe(1)
         ->and(Task::topLevel()->sole()->brief)->toContain('GitHub list failed: b');
     $this->travel(1)->days();

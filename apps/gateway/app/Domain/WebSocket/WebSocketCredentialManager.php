@@ -9,17 +9,17 @@ use App\Models\Node;
 interface WebSocketCredentialManager
 {
     /**
-     * Returns the node's stored Reverb credentials, generating and persisting
-     * them on first use. Stable across every later converge.
+     * Returns what the node's Reverb server boots with. Generates the server's Laravel `APP_KEY` and the
+     * Gateway's own app on first use, and keeps both stable across every later converge.
      */
-    public function ensure(Node $node): WebSocketCredentials;
+    public function ensure(Node $node): WebSocketServerCredentials;
 
     /**
-     * Reads the currently active websocket role assignment's credentials
-     * without touching the node. Null when no role is assigned or nothing
-     * has been generated yet.
+     * Reads the Gateway's own app for the currently active websocket role
+     * assignment without touching the node. Null when no role is active.
      */
     public function current(): ?WebSocketCredentials;
 
+    /** Deletes the server's Laravel `APP_KEY`. The apps outlive the role. */
     public function purge(Node $node): void;
 }

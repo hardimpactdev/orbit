@@ -21,6 +21,8 @@ The clone response schema extends the Instance schema with required `data.warnin
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 
+The [Reverb app](/reference/websocket-apps) operations use the same attachment schema mapping as Database connections. Their Instance selector accepts a positive ID or an exact Route domain. App and attachment responses omit the secret. The app ID and public key stay in app responses.
+
 ## Same checkout, same file
 
 The contract is that `bin/docs-openapi` produces the same `docs/openapi.json` on every machine with the same checkout. The bytes match. The clock, the hostname, the locale, the absolute checkout path, directory order, `$ORBIT_HOME`, and which extensions a Gateway reports as enabled are not inputs to that contract.

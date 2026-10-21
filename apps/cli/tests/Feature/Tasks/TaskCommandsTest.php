@@ -409,7 +409,7 @@ describe('requests', function (): void {
 
         expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
         $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-        expect($output['watched_pr_url'])->toBe('https://github.com/nckrtl/orbit/pull/451')
+        expect($output['watched_pr_url'])->toBe('https://github.com/hardimpactdev/orbit/pull/451')
             ->and($output['watched_pr_number'])->toBe(451)
             ->and($output['watched_pr_state'])->toBe('open')
             ->and($output['pr_url'])->toBeNull();

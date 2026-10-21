@@ -290,7 +290,7 @@ For `gateway`, the Gateway opens the `orbit:gateway-https` firewall rule on the 
 
 Relocating `gateway` does not move `vpn`, the Gateway checkout, its SQLite database, the Orbit CA, or the SSH keys. It does not stop Caddy or PHP-FPM on the source, so clients that still use the old address keep working. [Relocate the gateway role](/solutions/relocate-gateway-role) gives the full order.
 
-For `websocket` and `metrics`, the Gateway copies role credentials that the target lacks, without overwriting any. It moves the assignment, converges the target, and removes the runtime and publication from the source.
+For `websocket`, the Gateway copies the Reverb server's Laravel `APP_KEY` only when the target lacks one. The [Reverb apps](/reference/websocket-apps) stay in the Gateway database, so every app keeps its credentials. For `metrics`, the Gateway copies role credentials that the target lacks, without overwriting any. It moves the assignment, converges the target, and removes the runtime and publication from the source.
 
 When a step on the target or the source fails, the role already runs on the target. The command fails with its usual code, `details.step` set to `converge:STEP` or `remove:STEP`, and `details.error_code` set to the step's own code. The message names the `--from` command that finishes the move. The Gateway reconciles Metrics once, after the source is done. A failed reconcile does not fail the move: `follow_up` names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command.
 

@@ -14,12 +14,8 @@ use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
-use Saloon\Http\PendingRequest;
-use Symfony\Component\Console\Input\StringInput;
-use Symfony\Component\Console\Output\BufferedOutput;
-use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Process\Process;
+use Tests\Support\CommandFixture;
 
 pest()->group('subprocess');
 
@@ -90,6 +86,18 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
 function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): array
 {
     $directory = sys_get_temp_dir().'/orbit-consent-'.Str::uuid();
+
+    if (! $pty) {
+        try {
+            config()->set('orbit.home', $directory.'/home');
+            app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
+
+            return CommandFixture::withReplies($case['arguments'], $case['replies']);
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
+    }
+
     new Filesystem()->makeDirectory($directory);
     $configuration = ['isolate_command' => true, ...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
         'keys' => array_map(base64_encode(...), $keys)];
@@ -98,37 +106,6 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
     $argv = [PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'];
 
     try {
-        if (! $pty) {
-            config()->set('orbit.home', $configuration['home']);
-            app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
-            $requests = [];
-            $replies = $case['replies'];
-            MockClient::global(['*' => static function (PendingRequest $pending) use (&$requests, &$replies): MockResponse {
-                $request = $pending->getRequest();
-                $requests[] = ['class' => $request::class, 'method' => $pending->getMethod()->value,
-                    'url' => $pending->getUrl(), 'body' => method_exists($request, 'body') ? $request->body()->all() : []];
-                $reply = array_shift($replies);
-                expect($request::class)->toBe($reply['class']);
-
-                return MockResponse::make($reply['body'], $reply['status'] ?? 200,
-                    ['X-Orbit-Request-Id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']);
-            }]);
-            test()->withoutMockingConsoleOutput();
-            $errors = new BufferedOutput;
-            $output = Mockery::mock(BufferedOutput::class.'[getErrorOutput,setErrorOutput]', ConsoleOutputInterface::class, []);
-            $output->shouldReceive('getErrorOutput')->andReturn($errors);
-            $input = new StringInput(implode(' ', array_map(escapeshellarg(...), $case['arguments'])));
-            $stream = fopen('php://memory', 'r+');
-            $input->setStream($stream);
-            try {
-                $status = Artisan::handle($input, $output);
-            } finally {
-                fclose($stream);
-            }
-
-            return ['status' => $status, 'output' => $output->fetch(), 'stderr' => $errors->fetch(), 'requests' => $requests];
-        }
-
         $process = new Process(['python3', $fixtures.'command-consent-pty.py', ...$argv],
             env: ['PAO_DISABLE' => '1']);
         $process->setTimeout(15);

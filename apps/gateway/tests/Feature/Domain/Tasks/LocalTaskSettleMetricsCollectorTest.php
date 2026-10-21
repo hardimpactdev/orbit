@@ -19,7 +19,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
     $project = Project::query()->create([
         'name' => 'metrics-app',
         'slug' => 'metrics-app',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
         'default_branch' => 'main',
     ]);
     $node = Node::query()->create([

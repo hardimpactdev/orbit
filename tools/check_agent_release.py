@@ -6,9 +6,10 @@ import re
 import subprocess
 import sys
 import tomllib
+from urllib.parse import urlsplit
 
 
-REPOSITORY = "nckrtl/orbit"
+REPOSITORY = "hardimpactdev/orbit"
 ARCHITECTURES = {"amd64": "x86_64", "arm64": "aarch64"}
 
 
@@ -22,9 +23,13 @@ def validate_pin(version, pin):
         raise ValueError("The agent recipe must pin both published Linux artifacts.")
     for architecture, target in ARCHITECTURES.items():
         name = f"orbit-agent-{version}-linux-{target}"
-        expected = f"https://github.com/{REPOSITORY}/releases/download/agent-v{version}/{name}"
         artifact = pin["artifacts"][architecture]
-        if artifact["url"] != expected or not re.fullmatch(r"[a-f0-9]{64}", artifact["sha256"]):
+        url = urlsplit(artifact["url"])
+        # Recipe URLs are immutable pins; a repository transfer must not roll the fleet.
+        expected_path = rf"/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/releases/download/agent-v{re.escape(version)}/{re.escape(name)}"
+        if (url.scheme != "https" or url.netloc != "github.com" or url.query or url.fragment
+                or not re.fullmatch(expected_path, url.path)
+                or not re.fullmatch(r"[a-f0-9]{64}", artifact["sha256"])):
             raise ValueError(f"Invalid agent release URL or SHA-256 for {architecture}.")
 
 

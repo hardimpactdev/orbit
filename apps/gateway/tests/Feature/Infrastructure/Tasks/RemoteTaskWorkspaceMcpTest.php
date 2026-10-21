@@ -28,7 +28,7 @@ function workspace_mcp_checkout(): string
 
 function workspace_mcp_instance(string $checkout): Instance
 {
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:hardimpactdev/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'workspace-mcp-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
 
     return test_ready_task_workspace($project, $node, ['name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14']);

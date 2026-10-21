@@ -44,7 +44,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
     $project = Project::query()->create([
         'name' => 'complete-app',
         'slug' => 'complete-app',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
         'default_branch' => 'main',
     ]);
     $node = Node::query()->create([
@@ -59,7 +59,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'title' => 'Complete me',
         'brief' => 'Remove the workspace after merge.',
         'status' => $status,
-        'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/543',
     ]);
     test_task_workspace($group, [
         'node_id' => $node->id,
@@ -226,9 +226,9 @@ function complete_ended_read(?string $state): void
     Http::preventStrayRequests();
     GitHubTestSupport::storeApp();
     Http::fake([
-        'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_complete'], 201),
-        'https://api.github.com/repos/nckrtl/orbit/pulls/544' => $state === null
+        'https://api.github.com/repos/hardimpactdev/orbit/pulls/544' => $state === null
             ? Http::response([], 503)
             : Http::response(['state' => $state === 'open' ? 'open' : 'closed', 'merged' => $state === 'merged', 'merged_at' => $state === 'merged' ? '2026-10-08T10:00:00Z' : null]),
     ]);
@@ -238,7 +238,7 @@ it('complete ended cancels open subtasks through the API and removes the workspa
     app(TaskExtensionState::class)->enable();
     complete_ended_read($state);
     $group = complete_group($status);
-    test_update_task($group, ['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544', 'watched_pr_state' => 'open', 'assistance_requested' => true, 'assistance_reason' => 'Watched pull request ended: prior notice.']);
+    test_update_task($group, ['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544', 'watched_pr_state' => 'open', 'assistance_requested' => true, 'assistance_reason' => 'Watched pull request ended: prior notice.']);
     $instance = $group->taskable;
     $instanceId = $instance->id;
     $this->markAsGateway($instance->node);
@@ -292,7 +292,7 @@ it('complete ended cancels open subtasks through the API and removes the workspa
         ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.assistance_requested', false)->assertJsonPath('data.taskable_id', null);
 
     expect($group->fresh()->watched_pr_completion)->toBe($state)
-        ->and($group->fresh()->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543')
+        ->and($group->fresh()->pr_url)->toBe('https://github.com/hardimpactdev/orbit/pull/543')
         ->and($group->fresh()->assistance_requested)->toBeFalse()
         ->and($group->fresh()->settled_at)->not->toBeNull()
         ->and($group->tasks()->orderBy('position')->get()->map(fn (Task $task): TaskStatus => $task->status)->all())->toBe([TaskStatus::Cancelled, TaskStatus::Cancelled, TaskStatus::Cancelled, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
@@ -324,8 +324,8 @@ it('complete ended still refuses other running or reviewing groups', function (T
         ->and(Instance::query()->find($group->taskable_id))->not->toBeNull();
 })->with([TaskGroupStatus::Running, TaskGroupStatus::Reviewing])->with([
     'missing URL' => ['merged', null],
-    'open' => ['open', 'https://github.com/nckrtl/orbit/pull/544'],
-    'unreadable' => [null, 'https://github.com/nckrtl/orbit/pull/544'],
+    'open' => ['open', 'https://github.com/hardimpactdev/orbit/pull/544'],
+    'unreadable' => [null, 'https://github.com/hardimpactdev/orbit/pull/544'],
     'wrong repository' => ['merged', 'https://github.com/another/orbit/pull/544'],
 ]);
 
@@ -333,7 +333,7 @@ it('complete ended resumes a committed authorization without GitHub after a stop
     app(TaskExtensionState::class)->enable();
     complete_ended_read('merged');
     $group = complete_group($status);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544']);
+    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
     $task = Task::query()->create([
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Open', 'brief' => 'Cancel atomically.',
         'status' => TaskStatus::Running,
@@ -439,7 +439,7 @@ it('complete ended holds stale transitions and start or send boundaries during i
     app(TaskExtensionState::class)->enable();
     complete_ended_read('merged');
     $group = complete_group($status);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544', 'implementer_agent_driver' => 'fake', 'reviewer_agent_driver' => 'fake']);
+    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544', 'implementer_agent_driver' => 'fake', 'reviewer_agent_driver' => 'fake']);
     $taskStatus = $status === TaskGroupStatus::Running ? TaskStatus::Running : TaskStatus::Reviewing;
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Acting', 'brief' => 'Stop.', 'status' => $taskStatus]);
     $todo = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Queued', 'brief' => 'Never start.', 'status' => TaskStatus::Todo]);
@@ -529,7 +529,7 @@ it('complete ended revalidates and stops a replacement reviewer and check before
     app(TaskExtensionState::class)->enable();
     complete_ended_read('merged');
     $group = complete_group(TaskGroupStatus::Running);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544']);
+    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Acting', 'brief' => 'Stop replacement.', 'status' => TaskStatus::Running]);
     $thread = AgentThread::query()->create([
         'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
@@ -605,7 +605,7 @@ it('complete ended refuses an interrupted baseline start and retries without Git
     app(TaskExtensionState::class)->enable();
     complete_ended_read('merged');
     $group = complete_group(TaskGroupStatus::Running);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544']);
+    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
     $instanceId = $group->taskable_id;
     $this->markAsGateway($group->taskable->node);
     $this->withServerVariables(['REMOTE_ADDR' => $group->taskable->node->wireguard_ip]);
@@ -686,7 +686,7 @@ it('complete ended retries workspace removal after the completion commit without
     app(TaskExtensionState::class)->enable();
     complete_ended_read('closed');
     $group = complete_group(TaskGroupStatus::Running);
-    $group->update(['watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544']);
+    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Open', 'brief' => 'Cancel.', 'status' => TaskStatus::Todo]);
     $remover = new class implements InstanceRemover
     {

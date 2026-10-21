@@ -666,7 +666,7 @@ Without the permission, phase 2 stops in prepare with `gateway.release_web_build
 As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state. Keep its logs, which record the run:
 
 ```bash
-git clone --quiet https://github.com/nckrtl/orbit.git /home/orbit/adopt-tmp
+git clone --quiet https://github.com/hardimpactdev/orbit.git /home/orbit/adopt-tmp
 git -C /home/orbit/adopt-tmp checkout --quiet --detach <SHA>
 composer --working-dir=/home/orbit/adopt-tmp/apps/gateway install --prefer-dist --no-interaction
 ln -s /home/orbit/orbit/apps/gateway/.env /home/orbit/adopt-tmp/apps/gateway/.env
@@ -837,7 +837,7 @@ The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with H
 | `subject` | `target`, `repository`, `sha`, and `release_id` |
 | `summary` | The redacted summary |
 | `evidence_url` | The evidence link, or null |
-| `text` | One line for a chat channel, such as `Release failed for gateway nckrtl/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
+| `text` | One line for a chat channel, such as `Release failed for gateway hardimpactdev/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
 | `occurred_at` | When the alert was raised, in ISO 8601 UTC |
 | `request_id` | The Activity entry's request ID |
 | `activity_id` | The Activity entry's id, or null when it could not be written |

@@ -49,7 +49,7 @@ it('requires the project matrix including Docs to succeed on every event', funct
     'full run skipped' => [false, 'skipped', 1],
 ]);
 
-it('provisions Gateway and web dependencies before the Docs merge proof can run', function (): void {
+it('provisions Gateway runtime and web dependencies before the Docs merge proof can run', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['project'];
     $steps = array_column($job['steps'], null, 'name');
@@ -70,7 +70,7 @@ it('provisions Gateway and web dependencies before the Docs merge proof can run'
         'name' => 'Install generated merge proof dependencies',
         'if' => "matrix.project.directory == 'apps/docs'",
         'working-directory' => '.',
-        'run' => "(cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)\n"
+        'run' => "(cd apps/gateway && cp .env.example .env && composer install --no-dev --no-interaction --prefer-dist)\n"
             ."(cd apps/web && bun install --frozen-lockfile)\n",
     ]);
     expect(array_search('Set up Bun for package cache and generated merge tests', $names, true))

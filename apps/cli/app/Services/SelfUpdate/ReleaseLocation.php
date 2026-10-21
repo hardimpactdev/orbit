@@ -12,7 +12,7 @@ use InvalidArgumentException;
  */
 final readonly class ReleaseLocation
 {
-    public const string Default = 'https://github.com/nckrtl/orbit/releases/download';
+    public const string Default = 'https://github.com/hardimpactdev/orbit/releases/download';
 
     public string $downloads;
 

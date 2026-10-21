@@ -627,7 +627,7 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
         'summary' => 'Node beast failed self-update.',
         'release_kind' => 'rollout_halted', 'incident_resource' => 'fleet', 'incident_attempt' => '17', 'incident_fault' => 'node_failed',
         'release_shas' => [str_repeat('a', 40)],
-        'release_repository' => 'nckrtl/orbit',
+        'release_repository' => 'hardimpactdev/orbit',
         ...problem_filer_windows(1),
     ]);
 
@@ -639,7 +639,7 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
 
     expect($task->title)->toBe('Rollout halted for fleet, attempt 17')
         ->and($task->brief)->toContain("Symptom\nNode beast failed self-update.")
-        ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit, fleet, 17, node_failed");
+        ->and($task->brief)->toContain("Suspected entry point\nhardimpactdev/orbit, fleet, 17, node_failed");
 });
 
 it('does not file a release fingerprint without an occurrence', function (): void {
@@ -904,17 +904,17 @@ it('normalizes SHA buckets once and adopts only untouched generated groups', fun
         $fingerprint = 'release|rollout_halted|machine-recipe-upcloud|'.$sha;
         $summary = $build->fenceMessage();
         $activity = Activity::query()->create(['request_id' => (string) Str::uuid(), 'log_name' => 'releases', 'description' => 'rollout_halted', 'command' => 'release:alert', 'status' => 'succeeded', 'properties' => [
-            'kind' => 'rollout_halted', 'subject' => ['target' => 'machine-recipe-upcloud', 'repository' => 'nckrtl/orbit', 'sha' => $sha, 'release_id' => 'recipe-build-'.$build->id],
+            'kind' => 'rollout_halted', 'subject' => ['target' => 'machine-recipe-upcloud', 'repository' => 'hardimpactdev/orbit', 'sha' => $sha, 'release_id' => 'recipe-build-'.$build->id],
             'summary' => $summary, 'evidence_url' => null, 'problem' => ['fingerprint' => $fingerprint],
         ]]);
         $stamp = now()->utc()->format('Y-m-d H:i:s').' UTC';
-        $brief = implode("\n\n", ['Filed by the outer loop.', "Symptom\n".$summary, "Fingerprint\n".$fingerprint, "First seen\n".$stamp, "Last seen\n".$stamp, "Count\n1", "Occurrences\n".$stamp.' 1', "Evidence\nActivity ids: ".$activity->id, "Suspected entry point\nnckrtl/orbit@".$sha.', release recipe-build-'.$build->id]);
+        $brief = implode("\n\n", ['Filed by the outer loop.', "Symptom\n".$summary, "Fingerprint\n".$fingerprint, "First seen\n".$stamp, "Last seen\n".$stamp, "Count\n1", "Occurrences\n".$stamp.' 1', "Evidence\nActivity ids: ".$activity->id, "Suspected entry point\nhardimpactdev/orbit@".$sha.', release recipe-build-'.$build->id]);
         $data = new CreateTaskGroupData(projectId: $project->id, title: 'Rollout halted for machine-recipe-upcloud at '.substr($sha, 0, 12), brief: $brief, status: TaskGroupStatus::Backlog, tasks: [
             new TaskInputData(title: 'Document the owning page', brief: $summary, deliverables: [['id' => 'docs', 'type' => 'review', 'description' => 'The owning page matches the fix, or no page changes.']]),
             new TaskInputData(title: 'Reproduce the failure and fix it', brief: $summary, deliverables: [['id' => 'test', 'type' => 'review', 'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.']]),
         ]);
         $group = app(CreateTaskGroupAction::class)->execute($data);
-        ProblemFingerprint::query()->create(['fingerprint' => $fingerprint, 'source' => ProblemSource::Release, 'occurrences' => 0, 'filed_at' => now(), 'task_group_id' => $group->id, 'evidence' => ['summary' => $summary, 'release_repository' => 'nckrtl/orbit', 'release_id' => 'recipe-build-'.$build->id]]);
+        ProblemFingerprint::query()->create(['fingerprint' => $fingerprint, 'source' => ProblemSource::Release, 'occurrences' => 0, 'filed_at' => now(), 'task_group_id' => $group->id, 'evidence' => ['summary' => $summary, 'release_repository' => 'hardimpactdev/orbit', 'release_id' => 'recipe-build-'.$build->id]]);
         $groups[] = $group;
     }
     if ($edit === 'brief') {

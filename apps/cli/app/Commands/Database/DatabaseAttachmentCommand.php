@@ -11,18 +11,7 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
 {
     protected function instanceSelector(): ?string
     {
-        $selector = $this->option('instance');
-
-        if (! is_string($selector) || $selector === '') {
-            $this->renderGatewayFailure(
-                'database.instance_required',
-                'Instance ID or Route domain is required.'
-            );
-
-            return null;
-        }
-
-        return $selector;
+        return $this->requiredStringOption('instance', 'Instance ID or Route domain', 'database.instance_required');
     }
 
     protected function prefixOption(): ?string

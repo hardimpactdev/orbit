@@ -1814,7 +1814,7 @@ it('keeps the reviewed pull request, writes settle metrics, after the last sign-
     $node = scheduler_node('settle-node', '10.44.0.95');
     $group = queued_group($project, 'Settle', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'settle', $owner));
     $instance = $group->taskable;
-    $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
+    $group->pr_url = 'https://github.com/hardimpactdev/orbit/pull/543';
     $group->save();
     $first = $group->tasks->first();
     $first?->update(['tokens' => 40]);
@@ -1864,7 +1864,7 @@ it('keeps the reviewed pull request, writes settle metrics, after the last sign-
     $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
     expect($settled->status)->toBe(TaskGroupStatus::WaitingForReview)
-        ->and($settled->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543')
+        ->and($settled->pr_url)->toBe('https://github.com/hardimpactdev/orbit/pull/543')
         ->and($settled->tokens)->toBe(40)
         ->and($settled->line_diff)->toBe(12)
         ->and($settled->duration_ms)->toBe(1500)

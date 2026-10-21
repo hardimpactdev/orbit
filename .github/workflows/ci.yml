@@ -130,12 +130,12 @@ jobs:
         if: matrix.project.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
-      # The Docs merge proof regenerates Gateway OpenAPI and web types in disposable clones.
+      # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
       - name: Install generated merge proof dependencies
         if: matrix.project.directory == 'apps/docs'
         working-directory: .
         run: |
-          (cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)
+          (cd apps/gateway && cp .env.example .env && composer install --no-dev --no-interaction --prefer-dist)
           (cd apps/web && bun install --frozen-lockfile)
 
       - name: Install all project dependencies for E2E integration tests
@@ -748,7 +748,7 @@ jobs:
     name: Publish CI cache ref
     needs: [required]
     # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
-    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     permissions:
       actions: read

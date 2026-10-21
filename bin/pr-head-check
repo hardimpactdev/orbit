@@ -257,7 +257,7 @@ delivery-line fixtures. A leftover added in product code still fails.
 On mismatch the JSON names it. The next step is to review the new head.
 
 Examples:
-  bin/pr-head-check --pr https://github.com/nckrtl/orbit/pull/945
+  bin/pr-head-check --pr https://github.com/hardimpactdev/orbit/pull/945
 """,
     )
     parser.add_argument('--pr', required=True, help='GitHub pull request URL or owner/repo#number.')

@@ -512,7 +512,7 @@ it('completes a settling group and removes its App instance', function (): void 
         'title' => 'Ready',
         'brief' => 'PR is merged.',
         'status' => TaskGroupStatus::Settling,
-        'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/543',
     ]);
     $instance = Instance::query()->create([
         'task_workspace_owner_id' => $group->id,
@@ -539,7 +539,7 @@ it('completes a settling group and removes its App instance', function (): void 
         ->assertOk()
         ->assertJsonPath('data.status', 'completed')
         ->assertJsonPath('data.taskable_id', null)
-        ->assertJsonPath('data.pr_url', 'https://github.com/nckrtl/orbit/pull/543');
+        ->assertJsonPath('data.pr_url', 'https://github.com/hardimpactdev/orbit/pull/543');
 });
 
 it('returns 409 tasks.not_settling when complete runs before settle', function (): void {
