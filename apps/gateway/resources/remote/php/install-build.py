@@ -601,7 +601,7 @@ def main(payload):
     moved = []
     previous_ini = {}
 
-    def roll_back(reason, restarted):
+    def roll_back(reason, restarted, reloaded):
         """Put the previous build back and check it. Returns True only when every package is at its old version."""
         log(f'Rolling back the PHP build: {reason}')
         ok = True
@@ -630,14 +630,15 @@ def main(payload):
                 ok = host.ok(['rm', '-f', '--', str(path)], privileged=True) and ok
             else:
                 write_ini(host, path, content)
-        for unit in restarted:
-            ok = host.ok(['systemctl', 'restart', unit], privileged=True) and ok
-            ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
+        for action, units in (('restart', restarted), ('reload', reloaded)):
+            for unit in units:
+                ok = host.ok(['systemctl', action, unit], privileged=True) and ok
+                ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
         return ok
 
-    def fail(outcome, data, reason, restarted):
+    def fail(outcome, data, reason, restarted, reloaded=()):
         """Roll back and end with `outcome` and restored: true, or with rollback_failed when the rollback failed."""
-        if not roll_back(reason, restarted):
+        if not roll_back(reason, restarted, reloaded):
             raise Outcome('rollback_failed', {**data, 'reason': f'{reason}; the rollback failed too'})
         raise Outcome(outcome, {**data, 'reason': data.get('reason', reason), 'restored': True})
 
@@ -678,9 +679,9 @@ def main(payload):
             stale += skipped
             for unit, configuration in units:
                 reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False), action)
-                if reason == 'fpm_invalid' and scope == 'shared':
-                    # An Instance step leaves a running service alone when its pools fail validation, as before a
-                    # change: the pool publication that follows removes a stale pool and reloads the service.
+                if reason == 'fpm_invalid' and (payload['fpm'] == 'shared' or action == 'reload' and payload['fpm'] == 'none'):
+                    # Instance pool publication can repair invalid configuration. Keep the settings so this master
+                    # loads them on its next successful reload or restart, and continue with the other masters.
                     deferred.append(unit)
                     continue
                 if reason != 'fpm_invalid':
@@ -688,7 +689,7 @@ def main(payload):
                 if reason is None:
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
-                     f'{unit}: {reason}', restarted + reloaded)
+                     f'{unit}: {reason}', restarted, reloaded)
     result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'reloaded': reloaded, 'deferred': deferred,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result

@@ -73,11 +73,12 @@ FAKES = {
                  'is-active) [ -f "$STATE/active-$3" ];; '
                  'restart|reload) [ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
                  'list-units) for f in "$STATE"/active-orbit-*; do [ -f "$f" ] && echo "${f##*/active-} loaded active running"; done;; '
-                 'show) echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/$3/php-fpm.conf }";; '
+                 'show) echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/${@: -1}/php-fpm.conf }";; '
                  'esac',
 }
 # The CLI prints the modules of the links in its conf.d plus core; PHP-FPM does the same for its own conf.d.
-PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { [ -f "$STATE/fpm-invalid" ] && exit 78; exit 0; }\n'
+PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { configuration="${3%/*}"; master="${configuration##*/}"; '
+       '[ -f "$STATE/fpm-invalid" ] || [ -f "$STATE/fpm-invalid-$master" ] && exit 78; exit 0; }\n'
        'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/20-*.ini; do [ -e "$f" ] || [ -L "$f" ] '
        '|| continue; n="${f##*/20-}"; echo "${n%.ini}"; done; cat "$STATE/extra-modules" 2>/dev/null; true\n')
 
@@ -306,22 +307,58 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(self.run_program()[0], 'applied')
         self.assertIn('systemctl reload php8.5-fpm.service', self.calls())
 
-    def test_shared_scope_does_not_defer_invalid_dedicated_master_on_settings_only_change(self):
+    def test_shared_scope_defers_invalid_shared_master_and_keeps_settings_for_pool_publication(self):
         self.run_program(fpm='none')
         path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
         path.unlink()
+        shared = 'php8.5-fpm.service'
         master = 'orbit-shop-php8.5-fpm.service'
+        (self.state / f'active-{shared}').touch()
         (self.state / f'active-{master}').touch()
-        (self.state / 'fpm-invalid').touch()
+        # Shared FPM uses the default configuration, without --fpm-config.
+        (self.state / 'fpm-invalid-').touch()
 
         outcome, data = self.run_program(fpm='shared')
 
-        self.assertEqual((outcome, data.get('restored'), data.get('unit')), ('fpm_invalid', True, master), data)
+        self.assertEqual((outcome, data.get('deferred'), data.get('reloaded')), ('applied', [shared], [master]), data)
+        self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertNotIn(f'systemctl reload {shared}', self.calls())
+        self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
+
+    def test_none_scope_defers_invalid_dedicated_master_without_undoing_other_reloads(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        first, second = 'orbit-aaa-php8.5-fpm.service', 'orbit-bbb-php8.5-fpm.service'
+        for master in (first, second):
+            (self.state / f'active-{master}').touch()
+        (self.state / f'fpm-invalid-{second}').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual((outcome, data.get('deferred'), data.get('reloaded')), ('applied', [second], [first]), data)
+        self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertEqual(self.calls().count(f'systemctl reload {first}'), 1)
+        self.assertNotIn(f'systemctl reload {second}', self.calls())
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
+
+    def test_convergence_rolls_back_settings_with_reload_after_a_later_master_fails_validation(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        first, second = 'orbit-aaa-php8.5-fpm.service', 'orbit-bbb-php8.5-fpm.service'
+        for master in (first, second):
+            (self.state / f'active-{master}').touch()
+        (self.state / f'fpm-invalid-{second}').touch()
+
+        outcome, data = self.run_program(fpm='all')
+
+        self.assertEqual((outcome, data.get('restored'), data.get('unit')), ('fpm_invalid', True, second), data)
         self.assertFalse(path.exists())
-        self.assertNotIn(f'systemctl reload {master}', self.calls())
-        (self.state / 'fpm-invalid').unlink()
-        self.assertEqual(self.run_program(fpm='shared')[0], 'applied')
-        self.assertIn(f'systemctl reload {master}', self.calls())
+        self.assertEqual(self.calls().count(f'systemctl reload {first}'), 2)
+        self.assertNotIn(f'systemctl reload {second}', self.calls())
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
 
     def test_refuses_installed_packages_outside_the_recipe_before_any_change(self):
         self.install('php8.5-soap', '1.2.1')

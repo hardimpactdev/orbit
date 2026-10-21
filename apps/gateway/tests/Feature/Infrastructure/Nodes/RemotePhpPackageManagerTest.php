@@ -747,6 +747,20 @@ it('logs a skipped download and dedicated masters that may still use the previou
     Log::shouldHaveReceived('warning')->once()->with('Dedicated PHP-FPM masters were not restarted or reloaded; they may still use the previous PHP build or settings.', Mockery::on(static fn (array $context): bool => $context['masters'] === ['orbit-shop-php8.5-fpm.service']));
 });
 
+it('logs invalid masters deferred while the Instance step continues to pool publication', function (): void {
+    Log::spy();
+    $masters = ['php8.5-fpm.service', 'orbit-shop-php8.5-fpm.service'];
+    $node = php_package_node(RoleName::AppDev);
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, json_encode(['outcome' => 'applied', 'data' => ['deferred' => $masters]], JSON_THROW_ON_ERROR)."\n", '', 1, false),
+    ]);
+
+    new RemotePhpPackageManager()->installForAppDev($node, collect(['8.5']), php_package_app_dev_ssh($transport));
+
+    expect($transport->commands)->toHaveCount(2);
+    Log::shouldHaveReceived('warning')->once()->with('PHP-FPM masters failed configuration validation; deferred their restart or reload until their configuration is repaired.', ['node' => $node->name, 'masters' => $masters]);
+});
+
 /** @return array<string, mixed> */
 function php_package_installer_input(RemoteCommand $command): array
 {

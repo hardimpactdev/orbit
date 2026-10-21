@@ -57,7 +57,9 @@ For package changes, the PHP step of an Instance uses these options:
 
 Package changes restart no dedicated production master. The step logs the masters left running, which may still use the previous PHP build or settings. Their next restart, such as the next deployment, loads the new build.
 
-A settings-only change follows the [PHP build installer's reload policy](/reference/compute-drivers#install-the-php-build): it validates and gracefully reloads every active master, including dedicated production masters. Failed validation restores the previous settings so the next installer run can retry.
+A settings-only change follows the [PHP build installer's reload policy](/reference/compute-drivers#install-the-php-build): it validates every active master, including dedicated production masters, and gracefully reloads those that pass. An Instance step keeps a master with invalid configuration running, reports it as deferred, logs it, and continues with the other masters. It keeps the INI so that master loads the setting at its next successful reload or restart. Pool publication can then repair the Instance's configuration without another master's invalid configuration blocking the step.
+
+Recipe convergence instead fails and restores the previous settings when a master fails validation. Rollback reloads masters that were reloaded and restarts only masters that were restarted.
 
 When every package is at its recipe version, the installer downloads nothing, and the step logs `PHP packages match the recipe; skipped the package download.` A refusal or a failed install fails the step with `app-dev.php_install_failed` or `app-prod.php_install_failed`. Another PHP apt source, a missing file, or an unsupported system fails it with `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. The error carries the installer's log.
 
