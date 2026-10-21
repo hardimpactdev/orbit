@@ -27,6 +27,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         private SettingRepository $settings,
         private WebSocketAppIssuer $apps = new WebSocketAppIssuer,
         private WebSocketDnsTarget $dnsTarget = new WebSocketDnsTarget,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     public function ensure(Node $node): WebSocketServerCredentials
@@ -35,7 +36,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         $laravelAppKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKeyLaravel)
             ?? $this->generateLaravelAppKey($scope);
 
-        $runtime = app(WebSocketRegistry::class)->write(function () use ($node): WebSocketRuntime {
+        $runtime = $this->registry->write(function () use ($node): WebSocketRuntime {
             if (! WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->exists()) {
                 $this->apps->issue(WebSocketApp::GatewayName);
             }
@@ -44,7 +45,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
             ]);
             if (! $runtime->required) {
                 $runtime->update(['required' => true, 'registry_token' => Str::random(64), 'notification_token' => Str::random(64),
-                    'boot_id' => null, 'epoch' => null, 'applied_revision' => null, 'reported_at' => null, 'state' => 'starting']);
+                    'boot_id' => null, 'epoch' => null, 'applied_revision' => null, 'reported_at' => null, 'state' => 'starting', 'error' => null]);
             }
 
             return $runtime;
@@ -94,7 +95,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
     {
         $this->settings->delete($this->scope($node), WebSocketFootprint::SettingKeyAppKeyLaravel);
         if ($runtimeStopped) {
-            app(WebSocketRegistry::class)->write(fn (): int => WebSocketRuntime::query()->where('node_id', $node->id)->where('slot', 'default')->update(['required' => false]));
+            $this->registry->write(fn (): int => WebSocketRuntime::query()->where('node_id', $node->id)->where('slot', 'default')->update(['required' => false]));
         }
     }
 

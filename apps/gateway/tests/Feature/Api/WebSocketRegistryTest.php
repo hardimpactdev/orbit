@@ -140,3 +140,25 @@ it('rejects idempotency key reuse for a different mutation', function (): void {
     $this->postJson('/api/v1/websocket-apps', ['name' => 'beta'])->assertConflict()->assertJsonPath('error.code', 'websocket.idempotency_conflict');
     expect(WebSocketApp::query()->count())->toBe(1);
 });
+
+
+it('returns the latest safe process error and clears it after recovery or a new boot', function (): void {
+    $operation = app(ChangeWebSocketRegistryAction::class)->execute('sync', null, $this->gateway->id, 'diagnostics');
+    $base = '/api/v1/websocket-registry/processes/'.$this->runtime->id;
+    $boot = (string) Str::uuid();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->server->wireguard_ip])->withHeader('Authorization', 'Bearer test-registry-secret');
+    $this->postJson($base.'/boots', ['boot_id' => $boot])->assertNoContent();
+    $report = ['boot_id' => $boot, ...app(WebSocketRegistry::class)->version(), 'state' => 'starting'];
+    $status = fn (): array => app(ReadWebSocketApplyStatusAction::class)->execute($operation);
+
+    $this->putJson($base, [...$report, 'sequence' => 1, 'error' => 'registry.unreachable'])->assertNoContent();
+    expect($status()['processes'][0]['error'])->toBe('registry.unreachable');
+    $this->putJson($base, [...$report, 'sequence' => 2, 'state' => 'serving', 'error' => null])->assertNoContent();
+    expect($status()['processes'][0]['error'])->toBeNull();
+    $this->putJson($base, [...$report, 'sequence' => 1, 'error' => 'registry.apply_failed'])->assertNoContent();
+    expect($status()['processes'][0]['error'])->toBeNull();
+    $this->putJson($base, [...$report, 'sequence' => 3, 'error' => 'registry.apply_failed'])->assertNoContent();
+    $this->postJson($base.'/boots', ['boot_id' => (string) Str::uuid()])->assertNoContent();
+    expect($status()['processes'][0]['error'])->toBeNull();
+    $this->putJson($base, [...$report, 'sequence' => 4, 'error' => 'credential-sentinel'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+});

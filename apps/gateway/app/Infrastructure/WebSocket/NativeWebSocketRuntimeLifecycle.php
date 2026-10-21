@@ -93,6 +93,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
                     $this->resolvedInstallPath(),
                     $this->resolvedRepository(),
                     $this->resolvedRef(),
+                    (string) $port,
                 ],
                 protectedInput: ProtectedInput::fromString($this->script($envContents, $unitContents)),
             ),
@@ -175,6 +176,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             install_path=\$3
             repository=\$4
             ref=\$5
+            port=\$6
             umask 0077
             install -d -m 0755 -- "\$(dirname "\$install_path")"
             exec 9>"\$install_path.install.lock"
@@ -224,7 +226,18 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             systemctl daemon-reload
             systemctl enable --quiet orbit-websocket
             systemctl restart orbit-websocket
-            systemctl is-active --quiet orbit-websocket
+            ready=0
+            for ((attempt = 0; attempt < 30; attempt++)); do
+                if (exec 3<>"/dev/tcp/127.0.0.1/\$port") 2>/dev/null; then
+                    ready=1
+                    break
+                fi
+                sleep 1
+            done
+            if [ "\$ready" != 1 ]; then
+                printf 'Reverb did not open its listener within 30 seconds on port %s.\n' "\$port" >&2
+                exit 1
+            fi
             for release in "\$releases"/release.* "\$releases"/previous.*; do
                 [ -d "\$release" ] || continue
                 if [ "\$release" != "\$candidate" ] && [ "\$release" != "\$previous" ]; then

@@ -31462,19 +31462,6 @@
                       "serving"
                     ]
                   },
-                  "app_count": {
-                    "type": "integer",
-                    "maximum": 10000,
-                    "minimum": 0
-                  },
-                  "connections": {
-                    "type": "array",
-                    "maxItems": 10000,
-                    "items": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  },
                   "error": {
                     "type": [
                       "string",
@@ -31492,9 +31479,7 @@
                   "epoch",
                   "revision",
                   "sequence",
-                  "state",
-                  "app_count",
-                  "connections"
+                  "state"
                 ],
                 "additionalProperties": false
               }
@@ -31569,7 +31554,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/websocket-registry/processes/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"boot_id\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"epoch\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"revision\": 1, \"sequence\": 1, \"state\": \"active\", \"app_count\": 0, \"connections\": [0]}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/websocket-registry/processes/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"boot_id\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"epoch\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"revision\": 1, \"sequence\": 1, \"state\": \"active\"}'\n"
           }
         ]
       }

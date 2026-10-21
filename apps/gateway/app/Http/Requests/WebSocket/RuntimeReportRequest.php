@@ -14,8 +14,7 @@ final class RuntimeReportRequest extends FormRequest
         return [
             'boot_id' => ['required', 'uuid'], 'epoch' => ['required', 'uuid'],
             'revision' => ['required', 'integer', 'min:1'], 'sequence' => ['required', 'integer', 'min:1'],
-            'state' => ['required', 'in:starting,serving'], 'app_count' => ['required', 'integer', 'min:0', 'max:10000'],
-            'connections' => ['present', 'array', 'max:10000'], 'connections.*' => ['integer', 'min:0'],
+            'state' => ['required', 'in:starting,serving'],
             'error' => ['nullable', 'in:registry.unreachable,registry.apply_failed,registry.registration_failed'],
         ];
     }

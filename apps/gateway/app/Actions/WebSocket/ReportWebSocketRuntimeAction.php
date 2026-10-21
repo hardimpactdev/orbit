@@ -24,7 +24,7 @@ final readonly class ReportWebSocketRuntimeAction
                 throw new ResourceOperationException('websocket.boot_superseded', 'This process boot has been superseded.', 409);
             }
             DB::table('websocket_runtime_boots')->insert(['runtime_id' => $runtime->id, 'boot_id' => $bootId]);
-            $runtime->update(['boot_id' => $bootId, 'epoch' => null, 'applied_revision' => null, 'report_sequence' => 0, 'reported_at' => null, 'state' => 'starting', 'measurements' => null]);
+            $runtime->update(['boot_id' => $bootId, 'epoch' => null, 'applied_revision' => null, 'report_sequence' => 0, 'reported_at' => null, 'state' => 'starting', 'error' => null]);
         });
     }
 
@@ -46,7 +46,7 @@ final readonly class ReportWebSocketRuntimeAction
             $runtime->update([
                 'epoch' => $report['epoch'], 'applied_revision' => $report['revision'], 'report_sequence' => $report['sequence'],
                 'reported_at' => now(), 'state' => $report['state'],
-                'measurements' => ['app_count' => $report['app_count'], 'connections' => $report['connections']],
+                'error' => $report['error'] ?? null,
             ]);
         });
     }

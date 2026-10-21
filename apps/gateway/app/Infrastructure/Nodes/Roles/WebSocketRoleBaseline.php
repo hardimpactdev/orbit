@@ -21,6 +21,7 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
         private WebSocketRuntimeLifecycle $runtime,
         private WebSocketPublicationManager $publication,
         private WebSocketCredentialManager $credentials,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -84,6 +85,6 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
     {
         $this->publication->removeUnreachable($node);
         $this->credentials->purge($node);
-        app(WebSocketRegistry::class)->abandonNode($node->id);
+        $this->registry->abandonNode($node->id);
     }
 }

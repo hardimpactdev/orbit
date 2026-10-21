@@ -59,6 +59,7 @@ final readonly class RemoveNodeAction
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     /**
@@ -116,7 +117,7 @@ final readonly class RemoveNodeAction
             $shed = $this->shedRoles($node, $force, $deleted);
         }
         if ($shed !== null) {
-            app(WebSocketRegistry::class)->abandonNode($node->id);
+            $this->registry->abandonNode($node->id);
         }
         if (WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
             throw new ResourceOperationException('websocket.runtime_shutdown_required', 'Stop every Reverb process first, or confirm an unreachable Node with --offline --force.', 409);

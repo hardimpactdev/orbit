@@ -21645,8 +21645,6 @@ export interface operations {
                     sequence: number;
                     /** @enum {string} */
                     state: "starting" | "serving";
-                    app_count: number;
-                    connections: number[];
                     /** @enum {string|null} */
                     error?: "registry.unreachable" | "registry.apply_failed" | "registry.registration_failed" | null;
                 };

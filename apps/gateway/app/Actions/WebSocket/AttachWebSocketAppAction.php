@@ -23,6 +23,7 @@ final readonly class AttachWebSocketAppAction
         private InstanceEnvironmentContextResolver $contexts,
         private InstanceEnvironmentStore $store,
         private WebSocketAppEnvProjection $projection,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     public function execute(Instance $instance, WebSocketApp $app): WebSocketAppAttachmentData
@@ -38,7 +39,7 @@ final readonly class AttachWebSocketAppAction
         return $this->operations->run([$instance->id], function () use ($instance, $app): WebSocketAppAttachmentData {
             $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: false);
 
-            return app(WebSocketRegistry::class)->write(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
+            return $this->registry->write(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
                 $app->refresh();
                 WebSocketAppTarget::query()->updateOrCreate(
                     ['instance_id' => $instance->id],

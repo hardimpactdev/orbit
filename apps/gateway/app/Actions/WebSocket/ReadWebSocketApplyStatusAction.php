@@ -50,7 +50,7 @@ final readonly class ReadWebSocketApplyStatusAction
             $allApplied = $allApplied && $applied;
             $processes[] = [
                 'id' => $runtime->id, 'node_id' => $runtime->node_id, 'boot_id' => $runtime->boot_id,
-                'applied_revision' => $runtime->applied_revision, 'state' => $applied ? 'applied' : ($fresh ? 'pending' : 'stale'),
+                'error' => $runtime->error, 'applied_revision' => $runtime->applied_revision, 'state' => $applied ? 'applied' : ($fresh ? 'pending' : 'stale'),
             ];
         }
 

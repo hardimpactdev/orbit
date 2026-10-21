@@ -197,8 +197,9 @@ it('preserves explicit operation keys across a transport retry', function (): vo
 it('maps pending applied and superseded operations without secret extras', function (string $state): void {
     $secret = 'registry-secret-extra-9f7e';
     $transport = [...websocket_apply_sdk_payload(), 'state' => $state, 'secret' => $secret, 'status_url' => 'https://attacker.test',
-        'processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'boot_id' => null, 'applied_revision' => null, 'state' => 'stale', 'secret' => $secret]]];
+        'processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'boot_id' => null, 'applied_revision' => null, 'state' => 'stale', 'error' => 'registry.unreachable', 'secret' => $secret]]];
     $dto = WebSocketApplyResponse::fromTransport($transport);
+    expect($dto->processes[0]['error'])->toBe('registry.unreachable');
     expect($dto->state)->toBe($state)->and(serialize($dto))->not->toContain($secret)
         ->and($dto->toArray()['status_url'])->toBe('/api/v1/websocket-operations/'.$dto->id);
 })->with(['pending', 'applied', 'superseded']);
@@ -208,6 +209,7 @@ it('rejects malformed apply reports at the SDK boundary', function (array $overr
 })->with([
     [['revision' => '2']], [['state' => 'saved']], [['id' => 'secret-invalid']], [['missing_node_ids' => [0]]],
     [['processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'state' => 'applied']]]],
+    [['processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'boot_id' => null, 'applied_revision' => null, 'state' => 'stale', 'error' => 'credential-sentinel']]]],
 ]);
 
 it('preserves separate Instance rollout status in a rotation response', function (): void {

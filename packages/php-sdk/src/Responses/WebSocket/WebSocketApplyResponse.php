@@ -11,7 +11,7 @@ use SensitiveParameter;
 final readonly class WebSocketApplyResponse
 {
     /**
-     * @param  list<array{id: string, node_id: int, boot_id: ?string, applied_revision: ?int, state: string}>  $processes
+     * @param  list<array{id: string, node_id: int, boot_id: ?string, applied_revision: ?int, state: string, error: ?string}>  $processes
      * @param  list<int>  $missingNodeIds
      */
     public function __construct(
@@ -39,10 +39,11 @@ final readonly class WebSocketApplyResponse
                 || ! is_int($process['node_id'] ?? null) || $process['node_id'] < 1
                 || ! array_key_exists('boot_id', $process) || ($process['boot_id'] !== null && (! is_string($process['boot_id']) || GatewayRequestId::fromTransport($process['boot_id']) === null))
                 || ! array_key_exists('applied_revision', $process) || ($process['applied_revision'] !== null && (! is_int($process['applied_revision']) || $process['applied_revision'] < 1))
+                || ! in_array($process['error'] ?? null, [null, 'registry.unreachable', 'registry.apply_failed', 'registry.registration_failed'], true)
                 || ! in_array($process['state'] ?? null, ['applied', 'pending', 'stale'], true)) {
                 throw new InvalidArgumentException('Invalid WebSocket process response.');
             }
-            $processes[] = ['id' => $process['id'], 'node_id' => $process['node_id'], 'boot_id' => $process['boot_id'], 'applied_revision' => $process['applied_revision'], 'state' => $process['state']];
+            $processes[] = ['id' => $process['id'], 'node_id' => $process['node_id'], 'boot_id' => $process['boot_id'], 'applied_revision' => $process['applied_revision'], 'state' => $process['state'], 'error' => $process['error'] ?? null];
         }
         foreach ($data['missing_node_ids'] as $id) {
             if (! is_int($id) || $id < 1) {

@@ -35,7 +35,7 @@ return new class extends Migration
             $table->unsignedBigInteger('report_sequence')->default(0);
             $table->timestamp('reported_at')->nullable();
             $table->string('state')->default('starting');
-            $table->json('measurements')->nullable();
+            $table->string('error')->nullable();
             $table->timestamps();
         });
         Schema::create('websocket_runtime_boots', static function (Blueprint $table): void {

@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $report_sequence
  * @property ?CarbonImmutable $reported_at
  * @property string $state
- * @property array<string, mixed>|null $measurements
+ * @property ?string $error
  * @property-read Node $node
  */
 final class WebSocketRuntime extends Model
@@ -45,7 +45,7 @@ final class WebSocketRuntime extends Model
     protected function casts(): array
     {
         return ['registry_token' => 'encrypted', 'notification_token' => 'encrypted', 'required' => 'boolean',
-            'applied_revision' => 'integer', 'report_sequence' => 'integer', 'reported_at' => 'immutable_datetime', 'measurements' => 'array'];
+            'applied_revision' => 'integer', 'report_sequence' => 'integer', 'reported_at' => 'immutable_datetime'];
     }
 
     /** @return BelongsTo<Node, $this> */

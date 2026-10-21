@@ -58,7 +58,7 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('orbit-websocket')
         ->toContain('/opt/orbit/websocket')
         ->toContain('https://example.test/orbit-reverb.git')
-        ->toContain('release-42')
+        ->toContain('release-42', '8790')
         ->and($runtime->protectedInput)
         ->not
         ->toBeNull();
@@ -74,7 +74,7 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('fetch --quiet origin "$ref"')
         ->toContain('composer install')
         ->toContain('systemd-analyze verify "$verify_directory/orbit-websocket.service"')
-        ->toContain("systemctl daemon-reload\nsystemctl enable --quiet orbit-websocket\nsystemctl restart orbit-websocket\nsystemctl is-active --quiet orbit-websocket")
+        ->toContain("systemctl daemon-reload\nsystemctl enable --quiet orbit-websocket\nsystemctl restart orbit-websocket")
         ->not->toContain('env_changed')
         ->not->toContain('cmp ')
         ->toContain('systemctl stop orbit-websocket')
@@ -186,7 +186,7 @@ it('throws a NodeRoleOperationException when convergence fails', function (): vo
     $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token');
 
     expect(fn () => $lifecycle->converge($node, $assignment, $credentials))
-        ->toThrow(NodeRoleOperationException::class);
+        ->toThrow(fn (NodeRoleOperationException $exception) => expect($exception->underlyingErrorCode)->toBe('websocket.runtime_convergence_failed'));
 });
 
 it('stops and disables the unit, purging the install path only when asked', function (): void {
@@ -274,7 +274,7 @@ function websocket_runtime_lifecycle(
     );
 }
 
-it('prepares a separate release before stopping the running service', function (bool $buildFails): void {
+it('prepares a separate release before stopping the running service', function (bool $buildFails, bool $listenerReady): void {
     $commands = [];
     websocket_runtime_lifecycle($commands)->converge(websocket_runtime_node(), new NodeRole, new WebSocketServerCredentials('base64:aw==', 'process', 'registry-token', 'notify-token'));
     $script = stream_get_contents($commands[2]->protectedInput->stream());
@@ -285,6 +285,11 @@ it('prepares a separate release before stopping the running service', function (
     file_put_contents($directory.'/current/version', 'old');
     mkdir($directory.'/current.releases/release.stale', 0700, true);
     mkdir($directory.'/current.releases/previous.stale', 0700);
+    $listener = stream_socket_server('tcp://127.0.0.1:0');
+    $port = parse_url('tcp://'.stream_socket_get_name($listener, false), PHP_URL_PORT);
+    if (! $listenerReady) {
+        fclose($listener);
+    }
     $scripts = [
         'sudo' => <<<'SH'
             #!/bin/bash
@@ -315,6 +320,7 @@ it('prepares a separate release before stopping the running service', function (
                 test "$(cat "$TEST_INSTALL_CURRENT/version")" = new || exit 3
             fi
             SH,
+        'sleep' => "#!/bin/bash\nprintf 'wait\\n' >> \"\$TEST_INSTALL_EVENTS\"\n",
         'systemd-analyze' => "#!/bin/bash\nexit 0\n",
         'chown' => "#!/bin/bash\nexit 0\n",
         'install' => <<<'SH'
@@ -335,7 +341,7 @@ it('prepares a separate release before stopping the running service', function (
     }
     $script = str_replace('/etc/systemd/system', $directory.'/systemd', $script);
     try {
-        $process = new Process(['bash', '-seu', '--', 'test-user', 'test-group', $directory.'/current', 'test-repository', 'test-ref'], env: [
+        $process = new Process(['bash', '-seu', '--', 'test-user', 'test-group', $directory.'/current', 'test-repository', 'test-ref', (string) $port], env: [
             'PATH' => $directory.'/bin:'.getenv('PATH'), 'TEST_INSTALL_EVENTS' => $directory.'/events',
             'TEST_INSTALL_PREVIOUS' => 'old', 'TEST_INSTALL_FAIL' => $buildFails ? '1' : '0', 'TEST_INSTALL_CURRENT' => $directory.'/current',
         ], input: $script);
@@ -345,6 +351,14 @@ it('prepares a separate release before stopping the running service', function (
             expect($process->isSuccessful())->toBeFalse()->and($events)->toBe("build\n")
                 ->and(file_get_contents($directory.'/current/version'))->toBe('old')
                 ->and(glob($directory.'/current.releases/release.*'))->toBe([$directory.'/current.releases/release.stale'])
+                ->and(is_dir($directory.'/current.releases/previous.stale'))->toBeTrue();
+        } elseif (! $listenerReady) {
+            expect($process->isSuccessful())->toBeFalse()
+                ->and($process->getErrorOutput())->toContain('did not open its listener within 30 seconds')
+                ->and(substr_count($events, "wait\n"))->toBe(30)
+                ->and(file_get_contents($directory.'/current/version'))->toBe('new')
+                ->and(glob($directory.'/current.releases/*'))->toHaveCount(4)
+                ->and(is_dir($directory.'/current.releases/release.stale'))->toBeTrue()
                 ->and(is_dir($directory.'/current.releases/previous.stale'))->toBeTrue();
         } else {
             expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
@@ -363,6 +377,13 @@ it('prepares a separate release before stopping the running service', function (
 
         }
     } finally {
+        if (is_resource($listener)) {
+            fclose($listener);
+        }
         new Filesystem()->remove($directory);
     }
-})->with(['build succeeds' => false, 'build fails' => true]);
+})->with([
+    'build and listener succeed' => [false, true],
+    'build fails' => [true, false],
+    'active process never listens' => [false, false],
+]);
