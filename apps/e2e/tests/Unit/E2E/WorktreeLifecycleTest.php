@@ -164,7 +164,8 @@ it('closes out a merged worktree when the repository has a long worktree listing
     ]);
 
     expect($result->successful())->toBeTrue($result->errorOutput());
-    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --background --repository='.$root);
+    // Removal queues no cache maintenance: CI publishes no main caches.
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
     expect(is_dir($worktree))->toBeFalse();
     expect(
         $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
@@ -196,7 +197,7 @@ it('removes a merged worktree with a topology attempt without calling the topolo
         ->toBeFalse();
 });
 
-it('does not queue cache refresh or remove an unmerged feature', function (): void {
+it('does not remove an unmerged feature', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
     $run->path($root)->run(['git', 'remote', 'add', 'origin', $root]);
     $run->path($root)->run(['git', 'fetch', 'origin']);

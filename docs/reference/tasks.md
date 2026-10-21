@@ -1807,7 +1807,7 @@ The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the works
 
 ### The full suite runs in CI at each handoff
 
-On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite in [one shard per shared runner](/reference/implementation-loop#gateway-shards).
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. CI runs the Gateway suite in [five stock Pest shards](/reference/implementation-loop#gateway-shards) on every event.
 
 The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
 

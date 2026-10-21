@@ -9,10 +9,11 @@ $read = static fn (string $relative): string => (string) file_get_contents($root
 it('reads complete worktree listings without early-exit SIGPIPE', function () use ($read): void {
     foreach ([$read('bin/worktree-create'), $read('bin/worktree-remove')] as $script) {
         expect($script)->not->toContain("awk '/^worktree / { print substr(\$0, 10); exit }'");
-        expect($script)->toContain("awk '/^worktree / && !found { print substr(\$0, 10); found=1 }'");
         expect($script)->not->toContain('grep -Fxq "worktree $worktree"');
         expect($script)->toContain('grep -Fx "worktree $worktree" >/dev/null');
     }
+    // Only worktree-create reads the primary checkout from the listing.
+    expect($read('bin/worktree-create'))->toContain("awk '/^worktree / && !found { print substr(\$0, 10); found=1 }'");
 });
 
 it('removes a worktree only after merge and never releases a topology', function () use ($read): void {
