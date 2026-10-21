@@ -1,5 +1,5 @@
 """Marker branch artifacts; real generators, Git drivers and two-parent merges."""
-from contextlib import ExitStack
+import argparse
 import importlib.machinery
 import importlib.util
 import json
@@ -31,18 +31,26 @@ def git(root, *args):
 
 
 class GeneratedMergeTest(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory(prefix='orbit-merge-test-')
+        self.tree = Path(self.scratch.name) / 'repo'
+        shutil.copytree(self.fixture, self.tree, symlinks=True)
+        self.assertFalse((self.tree / '.git/orbit/generated-merge').exists(),
+                         'each case must start without a generated-merge cache')
+        self.base = git(self.tree, 'rev-parse', 'HEAD')
+        self.scenarios = json.loads((self.tree / '.git/orbit/source-fixtures.json').read_text())
+
     @classmethod
-    def setUpClass(cls):
-        cls.scratch = tempfile.TemporaryDirectory(prefix='orbit-merge-test-')
-        cls.tree = Path(cls.scratch.name) / 'repo'
+    def prepare_fixture(cls, destination):
+        cls.tree = destination
         cls.tree.mkdir()
         git(cls.tree, 'init', '--quiet')
-        # A standalone repository keeps unrelated product history and files out
-        # of every real preview and generator checkout. Copy current sources,
-        # including uncommitted changes, rather than a stale HEAD snapshot.
+        # Prepare source inputs once, not generator results or a warm cache.
+        # Every case copies this whole repository, including its own Git data.
+        # Copy current sources, including uncommitted changes, not stale HEAD.
         paths = [
             '.gitignore', 'apps/docs/.gitignore', 'apps/gateway/.gitignore',
-            '.gitattributes', 'bin/generated-merge', 'bin/docs-openapi',
+            '.gitattributes', 'bin/generated-merge', 'bin/docs-merge-check', 'bin/docs-openapi',
             'bin/mcp-tools', 'bin/docs-nav',
             'apps/docs/app', 'apps/docs/artisan', 'apps/docs/bootstrap/app.php',
             'apps/docs/bootstrap/providers.php', 'apps/docs/config',
@@ -82,7 +90,15 @@ class GeneratedMergeTest(unittest.TestCase):
                 target.mkdir(parents=True)
                 shutil.copy2(ROOT / project / folder / '.gitignore', target / '.gitignore')
         # Boot real Laravel route discovery and the real Conn provider. Queue,
-        # deployment and console-command providers are not merge inputs.
+        # deployment and unrelated third-party providers are not merge inputs.
+        for project in ('apps/docs', 'apps/gateway'):
+            composer_path = cls.tree / project / 'composer.json'
+            composer = json.loads(composer_path.read_text())
+            composer['extra']['laravel']['dont-discover'] = ['*']
+            composer_path.write_text(json.dumps(composer, indent=2) + '\n')
+        (cls.tree / 'apps/docs/bootstrap/providers.php').write_text(r'''<?php
+return [App\Providers\AppServiceProvider::class, HardImpact\Librarian\LibrarianServiceProvider::class];
+''')
         shutil.copy2(ROOT / 'apps/docs/tests/Fixtures/GeneratedMerge/app.php',
                      cls.tree / 'apps/gateway/bootstrap/app.php')
         (cls.tree / 'apps/gateway/bootstrap/providers.php').write_text('<?php return [];\n')
@@ -95,6 +111,21 @@ class GeneratedMergeTest(unittest.TestCase):
                            'gc.auto': '0', 'maintenance.auto': 'false'}.items():
             git(cls.tree, 'config', key, value)
         TOOL.dependencies(cls.tree, ROOT)
+        # Build the locked CLI, not any schema output. Each timed driver still
+        # starts a cold Bun process; independent freshness uses the original CLI.
+        modules = cls.tree / 'apps/web/node_modules'
+        modules.unlink()
+        (modules / '.bin').mkdir(parents=True)
+        package = modules / 'openapi-typescript'
+        (package / 'bin').mkdir(parents=True)
+        shutil.copy2(ROOT / 'apps/web/node_modules/openapi-typescript/package.json', package / 'package.json')
+        run(cls.tree, 'bun', 'build', '--minify', '--target=bun',
+            str(ROOT / 'apps/web/node_modules/openapi-typescript/bin/cli.js'),
+            '--outfile', str(package / 'bin/cli.js'))
+        (modules / '.bin/openapi-typescript').symlink_to('../openapi-typescript/bin/cli.js')
+        # Keep all private web dependencies out of the source fixture's index.
+        with (cls.tree / '.git/info/exclude').open('a') as excluded:
+            excluded.write('\n/apps/web/node_modules\n')
         TOOL.install(cls.tree)
         # Keep real core and extension discovery without generating every core
         # endpoint. Activities anchors the navigation assertion; route:create is
@@ -132,25 +163,31 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             '# Mission\n\nOrbit checks documentation.\n\n## Principles\n\nAgents operate, humans steer.\n')
         for config in ('adr-legacy-allowlist', 'adr-retired-slugs', 'docs-covers-ratchet'):
             (cls.tree / f'apps/docs/config/{config}.php').write_text('<?php return [];\n')
-        git(cls.tree, 'add', '-A', '--', '.', ':!apps/web/node_modules')
+        git(cls.tree, 'add', '-A')
         git(cls.tree, 'add', '-f', 'docs/generated/context.json')
         git(cls.tree, 'commit', '--quiet', '--allow-empty', '-m', 'fixture baseline')
         cls.base = git(cls.tree, 'rev-parse', 'HEAD')
         git(cls.tree, 'update-ref', 'refs/remotes/origin/main', cls.base)
+        # Branch commits and expected trees are immutable source inputs. Build
+        # them once; the timed tests still exercise conflicts and cold drivers.
+        fixture = cls('test_base_freshness')
+        scenarios = {}
+        for kind in ('adr', 'endpoint'):
+            scenarios[kind] = {'commits': fixture.changes(kind), 'tree': fixture.combined(kind)}
+        fixture.fresh(cls.base)
+        (cls.tree / '.git/orbit').mkdir()
+        (cls.tree / '.git/orbit/source-fixtures.json').write_text(json.dumps(scenarios) + '\n')
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.scratch.cleanup()
+    def tearDown(self):
+        self.scratch.cleanup()
 
     def commit(self, message):
-        git(self.tree, 'add', '-u')
-        git(self.tree, 'add', 'docs/decisions')
+        git(self.tree, 'add', '-A')
         git(self.tree, 'commit', '--quiet', '-m', message)
         return git(self.tree, 'rev-parse', 'HEAD')
 
     def fresh(self, commit):
-        git(self.tree, 'reset', '--hard', commit)
-        git(self.tree, 'checkout', '--quiet', '--detach', commit)
+        git(self.tree, 'checkout', '--quiet', '--detach', '--force', commit)
         git(self.tree, 'clean', '-fd', '--', 'docs/decisions')
 
     def mark_derived(self, label, paths):
@@ -161,8 +198,8 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
 
     def check(self):
         tree = self.tree
-        # Read-only gates independently rebuild their expected output. None
-        # consumes another gate's writes, so check the result concurrently.
+        # Each gate independently rebuilds its expected output. Run them in
+        # sequence: ParaTest owns CPU allocation, not these nested consumers.
         before = {path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS}
         env = dict(os.environ, ORBIT_DOCS_ROOT=str(tree / 'docs'),
                    APP_CONFIG_CACHE=str(tree / 'private-config.php'))
@@ -172,16 +209,12 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             ['bin/mcp-tools', '--check'],
             ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
             ['bin/docs-nav'],
-            [str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+            ['bun', '--bun', str(ROOT / 'apps/web/node_modules/.bin/openapi-typescript'),
              str(tree / 'docs/openapi.json'), '-o', str(schema)],
         ]
-        with ExitStack() as processes:
-            checks = [processes.enter_context(subprocess.Popen(
-                command, cwd=tree, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-                for command in commands]
-            for command, process in zip(commands, checks):
-                stdout, stderr = process.communicate()
-                self.assertEqual(process.returncode, 0, f'{command}:\n{stdout}{stderr}')
+        for command in commands:
+            process = subprocess.run(command, cwd=tree, env=env, text=True, capture_output=True)
+            self.assertEqual(process.returncode, 0, f'{command}:\n{process.stdout}{process.stderr}')
         self.assertEqual(before['apps/web/src/api/schema.d.ts'], schema.read_bytes(),
                          'web types differ from a fresh build')
         for path, contents in before.items():
@@ -195,18 +228,17 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         self.changes(kind, branches=False)
         for path in TOOL.ARTIFACTS:
             shutil.copy2(FIXTURES / kind / path, self.tree / path)
-        git(self.tree, 'add', '-u')
-        git(self.tree, 'add', 'docs/decisions')
+        git(self.tree, 'add', '-A')
         return git(self.tree, 'write-tree')
 
     def changes(self, kind, branches=True):
         return (self.adr_additions if kind == 'adr' else self.endpoint_changes)(branches)
 
     def merge_order(self, kind, reverse=False, cache_lookups=False):
-        first, second = self.changes(kind)
+        first, second = self.scenarios[kind]['commits']
         if reverse:
             first, second = second, first
-        expected_tree = self.combined(kind)
+        expected_tree = self.scenarios[kind]['tree']
         self.fresh(first)
         vanilla = subprocess.run(['git', '-c', 'merge.orbit-generated.driver=git merge-file %A %O %B',
                                   'merge-tree', '--write-tree', first, second],
@@ -243,10 +275,10 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
                          'merge order changed maintained sources or generated output')
 
     def preview_order(self, kind, reverse=False):
-        first, second = self.changes(kind)
+        first, second = self.scenarios[kind]['commits']
         if reverse:
             first, second = second, first
-        result = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', first, '--head', second],
+        result = subprocess.run([str(self.tree / 'bin/docs-merge-check'), '--base', first, '--head', second],
                                 cwd=self.tree, text=True, capture_output=True)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('merge_conflict:', result.stderr)
@@ -389,6 +421,29 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         with self.assertRaises(ValueError):
             TOOL.merge_value({'a': 1}, {}, {'a': 2})
 
+    def test_generators_run_in_caller_sequence(self):
+        import threading
+
+        caller = threading.get_ident()
+        commands = []
+
+        def record(*arguments, cwd, env):
+            self.assertEqual(threading.get_ident(), caller, 'nested generator pool bypassed the caller')
+            self.assertEqual(cwd, self.tree)
+            self.assertEqual(env['APP_CONFIG_CACHE'], str(self.tree / 'private-config.php'))
+            self.assertEqual(env['ORBIT_DOCS_ROOT'], str(self.tree / 'docs'))
+            commands.append(arguments)
+
+        with mock.patch.object(TOOL, 'run', side_effect=record):
+            TOOL.regenerate(self.tree)
+        self.assertEqual(commands, [
+            ('php', str(self.tree / 'apps/docs/artisan'), 'orbit:docs-index'),
+            (str(self.tree / 'bin/docs-openapi'),),
+            (str(self.tree / 'bin/mcp-tools'),),
+            ('bun', '--bun', str(self.tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+             str(self.tree / 'docs/openapi.json'), '-o', str(self.tree / 'apps/web/src/api/schema.d.ts')),
+        ])
+
     def test_source_conflict_stays_unresolved(self):
         commits = []
         for value in ('one', 'two'):
@@ -414,4 +469,15 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
 
 
 if __name__ == '__main__':
-    unittest.main()
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--prepare-fixture', type=Path)
+    mode.add_argument('--fixture', type=Path)
+    arguments, tests = parser.parse_known_args()
+    if arguments.prepare_fixture is not None:
+        if tests:
+            parser.error('fixture preparation does not accept test selections')
+        GeneratedMergeTest.prepare_fixture(arguments.prepare_fixture)
+    else:
+        GeneratedMergeTest.fixture = arguments.fixture
+        unittest.main(argv=[__file__, *tests])

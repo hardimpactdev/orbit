@@ -19,11 +19,12 @@ it('detects an unchanged child after only its parent gains a property with a war
         file_put_contents($root.'/rector.php', <<<'PHP'
 <?php
 use Rector\Config\RectorConfig;
+use Rector\Php85\Rector\Property\AddOverrideAttributeToOverriddenPropertiesRector;
 return RectorConfig::configure()
     ->withCache(__DIR__.'/cache', null, __DIR__.'/container')
     ->withoutParallel()
     ->withPaths([__DIR__.'/src'])
-    ->withPhpSets();
+    ->withRules([AddOverrideAttributeToOverriddenPropertiesRector::class]);
 PHP);
         $composer = json_decode((string) file_get_contents($root.'/apps/gateway/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $command = [...explode(' ', $composer['scripts']['rector']), '--config', $root.'/rector.php'];

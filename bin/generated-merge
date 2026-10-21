@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -S
 """Merge maintained indexes, then regenerate contracts in a private source merge.
 
 Install with --install. Git calls --merge O A B path current-label other-label.
@@ -6,17 +6,11 @@ The inner --sources driver merges only maintained indexes. A stock no-op Git
 driver discards derived conflicts before regeneration; neither calls the outer
 driver. No network, hooks, or source-tree writes.
 """
-import fcntl
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
-import shlex
-import shutil
 import subprocess
 import sys
-import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 DRIVER = Path(__file__).resolve()
@@ -38,6 +32,8 @@ def git(root, *args):
 
 
 def install(root):
+    import shlex
+
     command = f'{shlex.quote(str(DRIVER))} --merge %O %A %B %P %X %Y'
     git(root, 'config', '--local', 'merge.orbit-generated.name', 'Regenerate Orbit contracts')
     git(root, 'config', '--local', 'merge.orbit-generated.driver', command)
@@ -103,6 +99,8 @@ def merge_value(base, ours, theirs):
 
 
 def merge_text(base, ours, theirs):
+    import tempfile
+
     with tempfile.TemporaryDirectory(prefix='orbit-text-merge-') as directory:
         files = [Path(directory) / name for name in ('ours', 'base', 'theirs')]
         for file, text in zip(files, (ours, base, theirs)):
@@ -149,6 +147,8 @@ def overview(base, ours, theirs):
 def sources(arguments):
     base, ours, theirs, path = arguments
     if path == 'docs/docs.json':
+        import json
+
         values = [json.loads(Path(file).read_text()) for file in (base, ours, theirs)]
         Path(ours).write_text(json.dumps(merge_value(*values), indent=2, ensure_ascii=False) + '\n')
     elif path == 'docs/decisions/overview.mdx':
@@ -168,6 +168,8 @@ def check_dependencies(tree, root):
 
 
 def dependencies(tree, root):
+    import shutil
+
     check_dependencies(tree, root)
     # Copy Composer's loader so its baseDir points into the preview, not into
     # the source checkout. Third-party packages themselves can be shared.
@@ -190,24 +192,22 @@ def dependencies(tree, root):
 
 
 def regenerate(tree):
-    from concurrent.futures import ThreadPoolExecutor
-
     env = dict(os.environ, APP_CONFIG_CACHE=str(tree / 'private-config.php'),
                ORBIT_DOCS_ROOT=str(tree / 'docs'))
-    # The context index reads Markdown, not API artifacts. Once OpenAPI is
-    # written, MCP and web types also have independent inputs and outputs.
-    with ThreadPoolExecutor(max_workers=3) as generators:
-        index = generators.submit(run, 'php', str(tree / 'apps/docs/artisan'),
-                                  'orbit:docs-index', cwd=tree, env=env)
-        run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
-        mcp = generators.submit(run, str(tree / 'bin/mcp-tools'), cwd=tree, env=env)
-        run('bun', '--bun', str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
-            str(tree / 'docs/openapi.json'), '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
-        index.result()
-        mcp.result()
+    # ParaTest already schedules cases across every CPU. Keep each cold driver
+    # to one generator at a time instead of adding a second scheduling layer.
+    run('php', str(tree / 'apps/docs/artisan'), 'orbit:docs-index', cwd=tree, env=env)
+    run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
+    run(str(tree / 'bin/mcp-tools'), cwd=tree, env=env)
+    run('bun', '--bun', str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+        str(tree / 'docs/openapi.json'), '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
 
 
 def merge(arguments):
+    import fcntl
+    import hashlib
+    import shutil
+
     _base, ours, _theirs, path, current, other = arguments
     if path not in ARTIFACTS:
         raise ValueError(f'unexpected generated path: {path}')
@@ -230,6 +230,9 @@ def merge(arguments):
     with (cache / f'{key}.lock').open('w') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX)
         if not output.exists():
+            import shlex
+            import tempfile
+
             # Commits are immutable and a published cache already passed this
             # check. Refuse changed locks before building, never guess that the
             # installed packages attest to a branch's lockfile.
