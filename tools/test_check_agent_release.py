@@ -8,9 +8,9 @@ from check_agent_release import validate_pin, validate_release
 
 class AgentReleaseTest(unittest.TestCase):
     def setUp(self):
-        self.version = "0.4.3"
+        self.version = "0.4.4"
         self.pin = {"source": "artifact", "version": self.version, "artifacts": {}}
-        self.release = {"tag_name": "agent-v0.4.3", "draft": False, "prerelease": False,
+        self.release = {"tag_name": "agent-v0.4.4", "draft": False, "prerelease": False,
                         "assets": [{"name": "SHA256SUMS"}]}
         self.sums = ""
         for architecture, target, digest in [("amd64", "x86_64", "a" * 64), ("arm64", "aarch64", "b" * 64)]:
@@ -34,7 +34,7 @@ class AgentReleaseTest(unittest.TestCase):
     def test_rejects_changed_release_paths_and_non_github_urls(self):
         original = self.pin["artifacts"]["amd64"]["url"]
         for url in [original.replace("https:", "http:"), original.replace("github.com", "example.com"),
-                    original.replace("agent-v0.4.3", "agent-v0.4.2"), original + "?asset=1",
+                    original.replace("agent-v0.4.4", "agent-v0.4.3"), original + "?asset=1",
                     original + "#asset", original.replace("github.com", "user@github.com")]:
             with self.subTest(url=url):
                 pin = copy.deepcopy(self.pin)
