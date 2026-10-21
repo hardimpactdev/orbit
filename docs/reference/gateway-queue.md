@@ -3,7 +3,7 @@ title: "Gateway queue"
 description: "The Gateway's Redis connection and ACL user, six queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
-  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
+  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
   - apps/gateway/config/{horizon,horizon-new-dawn,queue}.php
 ---
 
@@ -39,7 +39,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
-A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. Operations have a separate [recovery path](/reference/operations#recover-a-lost-worker). An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. A waiting Incus chain step therefore runs before an optional UpCloud build. Running jobs are not preempted. Two build workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
@@ -100,6 +100,12 @@ Operations need the queue too. An Instance deploy or rollback request answers `5
 Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
 The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and no Process of the Gateway Node runs `artisan horizon`. So the first release after you set the key starts Horizon. When the handoff cannot create or start the Process, it fails with `gateway.release_units_failed`. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
+
+### Reservation metadata failures
+
+Laravel reserves a Redis job before Horizon records its reservation in a separate Redis connection. A failed metadata write must not discard the job that Laravel already reserved. The Gateway binds Horizon's reservation listener to `GatewayHorizonReservation`: it tries the metadata write once, logs a failure, and returns the job to the worker for normal processing. It does not release the job, add an attempt, or retry the Redis command. Horizon still starts its job timer.
+
+The error `Horizon could not record a job reservation.` records the job UUID, queue connection, queue, host, worker PID, reservation attempt count, and exception class. It never records the job payload. Use these fields with the Horizon Process journal to distinguish a metadata failure from a worker that exited. A live worker PID alone does not prove that it still owns an attempt: Laravel can discard a popped job after a listener throws, while the worker continues polling.
 
 ## Dashboard
 

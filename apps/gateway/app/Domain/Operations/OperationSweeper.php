@@ -16,7 +16,7 @@ use Throwable;
  */
 final readonly class OperationSweeper
 {
-    /** A queued operation whose job has not started after this long counts as lost once the queue holds no job. */
+    /** A queued operation can be recovered after this long when no waiting job or held attempt lease explains the wait. */
     public const int QueuedJobLostSeconds = 600;
 
     public function __construct(
@@ -29,9 +29,9 @@ final readonly class OperationSweeper
     public function sweep(): int
     {
         $count = 0;
-        // Count before this sweep queues anything. An operation that waits has its job in the queue, so the queue is
-        // empty only when every waiting operation's job is gone.
-        $jobsGone = $this->dispatcher->jobs() === 0;
+        // A reservation can survive a discarded pop while its worker lives on. Only jobs that still wait for a
+        // worker block queued recovery; the attempt lease protects code that actually runs.
+        $jobsGone = $this->dispatcher->waitingJobs() === 0;
 
         foreach (Operation::query()->where('status', OperationStatus::Running->value)->orderBy('id')->get() as $operation) {
             $requeued = false;
@@ -54,7 +54,15 @@ final readonly class OperationSweeper
                 continue;
             }
 
-            if ($this->dispatch($operation)) {
+            $eligible = false;
+            $this->lease->hold($operation->id, function () use ($operation, $lostBefore, &$eligible): void {
+                $operation->refresh();
+                $eligible = $operation->status === OperationStatus::Queued
+                    && ($operation->dispatched_at === null || $operation->dispatched_at->lessThanOrEqualTo($lostBefore));
+            });
+
+            // Release the lease before publishing: an idle worker can consume the replacement during dispatch.
+            if ($eligible && $this->dispatch($operation)) {
                 $count++;
             }
         }

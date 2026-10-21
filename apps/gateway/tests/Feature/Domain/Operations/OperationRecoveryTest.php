@@ -23,8 +23,11 @@ use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Models\Process;
 use Illuminate\Database\DeadlockException;
+use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
@@ -314,6 +317,85 @@ describe('the sweep', function (): void {
         expect(app(OperationSweeper::class)->sweep())->toBe(0)
             ->and(app(OperationSweeper::class)->sweep())->toBe(0)
             ->and(DB::table('jobs')->where('queue', GatewayQueue::Operations->value)->count())->toBe(1);
+    });
+
+    it('recovers a discarded reservation before retry_after and ignores its late copy', function (): void {
+        $this->freezeTime();
+        $operation = app(OperationStore::class)->create('instance.deploy', 'instance', $this->fixture->instance->id, null, [], 'test', null);
+        app(OperationDispatcher::class)->dispatch($operation);
+        $queue = Queue::connection(GatewayQueue::Connection);
+        $discarded = $queue->pop(GatewayQueue::Operations->value);
+        expect($discarded)->not->toBeNull();
+        $this->travel(OperationSweeper::QueuedJobLostSeconds + 1)->seconds();
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(1)
+            ->and($queue->reservedSize('operations'))->toBe(1)
+            ->and($queue->pendingSize('operations'))->toBe(1)
+            ->and(app(OperationSweeper::class)->sweep())->toBe(0);
+        $replacement = $queue->pop('operations');
+        expect($replacement)->not->toBeNull();
+        $replacement->fire();
+        $discarded->fire();
+
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->attempts)->toBe(1)
+            ->and($this->fixture->deployment->activations)->toBe(1)
+            ->and($queue->size('operations'))->toBe(0);
+    });
+
+    it('runs a replacement consumed before the recovery dispatch returns', function (): void {
+        $this->freezeTime();
+        $operation = app(OperationStore::class)->create('instance.deploy', 'instance', $this->fixture->instance->id, null, [], 'test', null);
+        app(OperationDispatcher::class)->dispatch($operation);
+        DB::table('jobs')->delete();
+        $this->travel(OperationSweeper::QueuedJobLostSeconds + 1)->seconds();
+        $statusBeforeDispatchReturns = null;
+
+        Event::listen(JobQueued::class, static function (JobQueued $event) use ($operation, &$statusBeforeDispatchReturns): void {
+            if ($event->connectionName !== GatewayQueue::Connection || $event->queue !== GatewayQueue::Operations->value) {
+                return;
+            }
+
+            $replacement = Queue::connection(GatewayQueue::Connection)->pop(GatewayQueue::Operations->value);
+            expect($replacement)->not->toBeNull();
+            $replacement->fire();
+            $statusBeforeDispatchReturns = $operation->fresh()->status;
+        });
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(1)
+            ->and($statusBeforeDispatchReturns)->toBe(OperationStatus::Succeeded)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->attempts)->toBe(1)
+            ->and($this->fixture->deployment->activations)->toBe(1)
+            ->and(DB::table('jobs')->count())->toBe(0);
+    });
+
+    it('keeps a queued operation while its attempt holds the lease before claiming it', function (): void {
+        $this->freezeTime();
+        $operation = app(OperationStore::class)->create('instance.deploy', 'instance', $this->fixture->instance->id, null, [], 'test', null);
+        app(OperationDispatcher::class)->dispatch($operation);
+        DB::table('jobs')->delete();
+        $this->travel(OperationSweeper::QueuedJobLostSeconds + 1)->seconds();
+        $swept = null;
+
+        app(OperationAttemptLease::class)->hold($operation->id, static function () use (&$swept): void {
+            $swept = app(OperationSweeper::class)->sweep();
+        });
+
+        expect($swept)->toBe(0)
+            ->and(DB::table('jobs')->count())->toBe(0)
+            ->and(app(OperationSweeper::class)->sweep())->toBe(1);
+    });
+
+    it('keeps a delayed operation job instead of dispatching a duplicate', function (): void {
+        $this->freezeTime();
+        $operation = app(OperationStore::class)->create('instance.deploy', 'instance', $this->fixture->instance->id, null, [], 'test', null);
+        app(OperationDispatcher::class)->dispatch($operation);
+        DB::table('jobs')->update(['available_at' => now()->addHour()->timestamp]);
+        $this->travel(OperationSweeper::QueuedJobLostSeconds + 1)->seconds();
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(0)
+            ->and(DB::table('jobs')->count())->toBe(1);
     });
 
     it('queues a job again only for a queued operation whose job was lost', function (): void {
