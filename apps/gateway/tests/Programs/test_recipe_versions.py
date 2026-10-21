@@ -302,7 +302,7 @@ class RecipeVersionsTest(unittest.TestCase):
         def command(argv, **kwargs):
             if argv[:2] == ['apt-get', 'update'] and '-c' in argv:
                 indexes.append(Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::State::lists='))))
-                self.assertEqual(kwargs['timeout'], 60)
+                self.assertEqual(kwargs['timeout'], 120)
             if argv[:3] == ['apt-cache', 'policy', 'curl:amd64'] and '-c' in argv:
                 for path in indexes:
                     self.assertTrue(path.is_dir())

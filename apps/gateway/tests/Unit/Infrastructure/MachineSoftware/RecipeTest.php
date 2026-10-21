@@ -19,6 +19,7 @@ use App\Infrastructure\TaskVms\TaskVmCloudInit;
 use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -469,6 +470,34 @@ describe('recipe availability and artifact integrity', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
     });
+
+    it('keeps artifact retries separate and moves to the next URL immediately after connection failures', function (int $status, int $attempts): void {
+        Sleep::fake();
+        $url = 'https://origin.example/git_1.0.deb';
+        $digest = hash('sha256', 'exact bytes');
+        $mirror = 'https://mirror.example/git_'.$digest.'.deb';
+        Http::fake(function ($request, array $options) use ($url, $status) {
+            expect($options['timeout'])->toBe(600)
+                ->and($options['connect_timeout'])->toBe(15)
+                ->and($options['curl'] ?? [])->toBe([]);
+
+            if ($request->url() === $url) {
+                return Http::response('exact bytes');
+            }
+
+            return $status === 0 ? Http::failedConnection() : Http::response('', $status);
+        });
+        $pin = new ToolPin('artifact', '1.0', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], ['git' => $pin], [], '{}', artifactMirror: 'https://mirror.example');
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused');
+
+        Http::assertSentCount($attempts + 1);
+        expect(Http::recorded()->filter(fn ($pair) => $pair[0]->url() === $mirror))->toHaveCount($attempts);
+        Sleep::assertSleptTimes($attempts - 1);
+        if ($attempts > 1) {
+            Sleep::assertSequence([Sleep::for(500)->milliseconds(), Sleep::for(500)->milliseconds()]);
+        }
+    })->with([[0, 1], [501, 1], [503, 3]]);
 
     it('verifies Git from the durable mirror and falls back to the PPA when absent', function (bool $present): void {
         $url = 'https://ppa.example/git_2.55.0_amd64.deb';

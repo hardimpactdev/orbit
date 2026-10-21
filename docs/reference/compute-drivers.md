@@ -289,7 +289,15 @@ Online validation verifies that the exact snapshot exists for the release and ar
 
 Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
 
-Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+CI restores and stores verified InRelease files and compressed Packages indexes with stock `actions/cache` only when the recipe needs validation, keyed by snapshot identifier and architecture set. `ORBIT_RECIPE_SNAPSHOT_CACHE` selects the metadata directory. Cache reads repeat signature, release, architecture, size, and SHA-256 checks; a cache hit makes no network request. Cached metadata never substitutes for a missing pin.
+
+Snapshot metadata fetches retry HTTP 5xx and connection failures at the same pinned URL, with four attempts and waits of 10, 20, and 30 seconds. Each attempt allows 15 seconds to connect, stops if transfer speed stays below one byte per second for 15 seconds, and has a 120-second total cap. A slow transfer that keeps making progress can finish within that cap. Persistent HTTP failures or stalls normally exhaust the attempts in about two minutes; four transfers that each reach the total cap take at most nine minutes including backoff. HTTP 4xx and verification failures fail immediately.
+
+Artifact downloads keep their separate policy: a 600-second total cap per attempt, up to three attempts with 500-millisecond waits for HTTP 500/502/503/504, and no retry for connection failures before trying the next artifact URL.
+
+Node convergence uses the same four-attempt backoff for snapshot indexes and package downloads, with 15-second transport timeouts. A simple loop retries only explicit HTTP 5xx or connection-reset fetch failures. APT’s own retries stay disabled because they retry some HTTP 4xx and miss some HTTP 5xx. An unsigned-repository message caused by the same failed release fetch does not suppress the retry. Authentication, digest, package, and mixed failures stop immediately.
+
+Git build watch retries upstream 5xx and connection failures with four attempts, a 15-second request timeout, and waits of 10, 20, and 30 seconds. Its `check` job is an advisory update signal, not a required merge check; persistent failures remain visible. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
 | Failure | Required diagnostic |
 | --- | --- |

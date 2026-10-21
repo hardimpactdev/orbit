@@ -17,6 +17,7 @@ if (is_string($configuredHome) && $configuredHome !== '') {
 }
 
 return [
+    'recipe_snapshot_cache' => env('ORBIT_RECIPE_SNAPSHOT_CACHE'),
     'home' => rtrim(string: $orbitHome, characters: '/'),
     'gateway_checkout' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
