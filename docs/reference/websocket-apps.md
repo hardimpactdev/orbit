@@ -95,7 +95,7 @@ REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
 
 Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
 
-If runtime convergence succeeds but a later Caddy or DNS publication step fails, an existing role keeps Reverb running for every app. The command still reports the failure. Fix the publication error and converge again. On a newly assigned role, a publication failure removes the runtime as before.
+See [convergence failure handling](/solutions/realtime-reverb#what-the-converge-does).
 
 `ORBIT_WEBSOCKET_REF` must name an orbit-reverb commit that reads `REVERB_APPS`. With an older commit, Reverb starts without a usable app.
 

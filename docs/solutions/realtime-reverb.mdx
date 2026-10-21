@@ -38,7 +38,7 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
 7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 
-Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. When a step after the runtime fails, the converge stops the runtime again. A failed rollback reports `websocket.rollback_failed`.
+Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. The converge stops the runtime again only when it created the role assignment. An existing assignment keeps Reverb running and reports the failure. That covers `--converge-existing`, a retry after a failed converge, `websocket:app:create`/`destroy`, and a relocate target. A failed rollback reports `websocket.rollback_failed`.
 
 `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
