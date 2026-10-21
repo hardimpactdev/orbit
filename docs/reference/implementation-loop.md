@@ -108,7 +108,7 @@ Git build watch checks and uploads its report with a read-only token. A separate
 
 GitHub's repository SHA-pinning policy and Dependabot security updates must be enabled separately by an operator. Workflow changes do not change repository settings.
 
-The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job container. After Bun setup and dependency installation, `bunx playwright install --with-deps chromium webkit` installs both engines and their system libraries before the tests. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time.
+The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job container. After Bun setup and dependency installation, `bunx playwright install --with-deps --only-shell chromium webkit` installs Chromium's headless shell, WebKit, and their system libraries before the tests. All test launches are headless, so CI does not download the unused full Chromium browser. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time.
 
 ### One PHP build in CI
 

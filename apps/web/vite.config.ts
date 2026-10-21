@@ -11,6 +11,11 @@ import { orbitProfile } from "./dev/profile.ts";
 import { orbitBuild } from "./dev/build-id.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const verificationTests = [
+    "dev/web-verify/run.test.ts",
+    "dev/web-verify/idle.test.ts",
+    "dev/web-verify/session.test.ts",
+];
 
 /**
  * Points the dev server at a Gateway. Only `vp dev` needs this: the built app is served by the
@@ -167,15 +172,15 @@ export default defineConfig({
                     name: "unit",
                     environment: "node",
                     include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
-                    exclude: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                    exclude: verificationTests,
                 },
             },
-            // Real daemon lifecycles with independent temporary homes and servers.
+            // Real daemon lifecycles and independent browser-protocol checks.
             {
                 extends: true,
                 test: {
                     name: "verification",
-                    include: ["dev/web-verify/run.test.ts", "dev/web-verify/idle.test.ts"],
+                    include: verificationTests,
                     environment: "node",
                 },
             },

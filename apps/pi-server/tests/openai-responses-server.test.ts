@@ -94,10 +94,10 @@ it("publishes and reloads streamed task-VM provider failures using the deployed 
     );
     expect(snapshot.providerError).toBe("server_error");
     expect(snapshot.error).toBe("server_error: Servers overloaded");
-    expect(providerFetch).toHaveBeenCalled();
+    expect(providerFetch).toHaveBeenCalledTimes(1);
     harness = await h.restart();
     const reloaded = (await harness.request("GET", "/sessions/task-vm-error")).body;
     expect(reloaded.state).toBe("failed");
     expect(reloaded.providerError).toBe("server_error");
     expect(reloaded.turnId).toBe("k1");
-}, 30_000);
+});
