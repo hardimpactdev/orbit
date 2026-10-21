@@ -18,6 +18,8 @@ it('uses configured limits and the stable application path for host retention', 
 
     expect($files['/etc/systemd/journald.conf.d/orbit-retention.conf'])->toContain('SystemMaxUse=128M', 'SystemKeepFree=2048M', 'RuntimeMaxUse=16M', 'MaxRetentionSec=3day')
         ->and($files['/etc/logrotate.d/orbit-gateway'])->toContain('"/srv/gateway current/apps/gateway/storage/logs/laravel.log"', 'su orbit orbit', 'maxsize 8M', 'rotate 2', 'copytruncate')
-        ->not->toContain('postrotate', 'systemctl', 'laravel-*')
+        ->not->toContain('postrotate')
+        ->not->toContain('systemctl')
+        ->not->toContain('laravel-*')
         ->and($files['/etc/systemd/system/logrotate.timer.d/orbit-retention.conf'])->toContain('Persistent=false');
 });

@@ -25,6 +25,9 @@ final class GatewayReleaseUnitProcessRunner implements ProcessRunner
     /** @var array<string, string> */
     public array $enabledStates = [];
 
+    /** @var list<list<string>> */
+    public array $failedCommands = [];
+
     public bool $logrotateMissing = false;
 
     public function __construct(private readonly ?string $fail = null) {}
@@ -40,14 +43,23 @@ final class GatewayReleaseUnitProcessRunner implements ProcessRunner
         $this->ran[] = $invocation->arguments;
 
         if (($invocation->arguments[2] ?? null) === 'is-enabled') {
-            return new CommandResult(0, $this->enabledStates[$invocation->arguments[3]] ?? 'not-found', '', 1, false);
+            $state = $this->enabledStates[$invocation->arguments[3]] ?? 'not-found';
+
+            return new CommandResult($state === 'enabled' ? 0 : 1, $state."\n", '', 1, false);
+        }
+
+        if (($invocation->arguments[2] ?? null) === 'enable'
+            && in_array($this->enabledStates[$invocation->arguments[4]] ?? '', ['masked', 'masked-runtime'], true)) {
+            return new CommandResult(1, '', 'Unit is masked.', 1, false);
         }
 
         if (array_slice($invocation->arguments, 1, 2) === ['install', '-m']) {
             $this->installed[$invocation->arguments[5]] = (string) file_get_contents($invocation->arguments[4]);
         }
 
-        return ($this->logrotateMissing && $invocation->arguments[0] === 'test') || in_array($this->fail, $invocation->arguments, true)
+        return ($this->logrotateMissing && $invocation->arguments[0] === 'test')
+            || in_array($this->fail, $invocation->arguments, true)
+            || in_array($invocation->arguments, $this->failedCommands, true)
             ? new CommandResult(1, '', 'refused', 1, false)
             : new CommandResult(0, '', '', 1, false);
     }
@@ -127,8 +139,9 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
             '/etc/logrotate.d/orbit-gateway',
             '/etc/systemd/system/logrotate.timer.d/orbit-retention.conf',
         ])
-            ->and(array_slice($processes->ran, -3))->toBe([
+            ->and(array_slice($processes->ran, -4))->toBe([
                 ['sudo', 'systemctl', 'daemon-reload'],
+                ['sudo', 'systemctl', 'is-enabled', 'logrotate.timer'],
                 ['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer'],
                 ['sudo', 'systemctl', 'enable', '--now', 'orbit-gateway-release.timer'],
             ])
@@ -170,8 +183,8 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
             ['sudo', 'systemctl', 'mask', '--runtime', 'logrotate.service'],
             ['sudo', 'systemctl', 'is-enabled', 'logrotate.timer'],
             ['sudo', 'systemctl', 'mask', '--runtime', 'logrotate.timer'],
-            ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', 'update'],
-            ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--', 'logrotate'],
+            ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'update'],
+            ['sudo', 'env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=l', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--no-remove', '--', 'logrotate'],
             ['sudo', 'systemctl', 'unmask', '--runtime', 'logrotate.service'],
             ['sudo', 'systemctl', 'unmask', '--runtime', 'logrotate.timer'],
         ])->and($processes->installed)->toHaveKey('/etc/logrotate.d/orbit-gateway');
@@ -197,9 +210,40 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
         new NativeGatewayReleaseUnitConverger($processes, orbitHome: '/home/orbit/.orbit', workingDirectory: '/home/orbit/orbit/apps/gateway')->converge();
 
         foreach ($processes->ran as $arguments) {
-            expect($arguments)->not->toContain('mask', 'unmask');
+            expect($arguments)->not->toContain('mask')
+                ->not->toContain('unmask');
         }
     });
+
+    it('leaves an operator-masked logrotate timer disabled without blocking releases', function (string $state, bool $logrotateMissing): void {
+        $processes = new GatewayReleaseUnitProcessRunner;
+        $processes->logrotateMissing = $logrotateMissing;
+        $processes->enabledStates = ['logrotate.timer' => $state];
+
+        new NativeGatewayReleaseUnitConverger($processes, orbitHome: '/home/orbit/.orbit', workingDirectory: '/home/orbit/orbit/apps/gateway')->converge();
+
+        expect($processes->ran)->not->toContain(['sudo', 'systemctl', 'enable', '--now', 'logrotate.timer'])
+            ->toContain(['sudo', 'systemctl', 'enable', '--now', 'orbit-gateway-release.timer']);
+    })->with(['masked', 'masked-runtime'])->with([false, true]);
+
+    it('attempts every mask cleanup and preserves the first failure', function (bool $packageFails): void {
+        $processes = new GatewayReleaseUnitProcessRunner(fail: $packageFails ? 'logrotate' : null);
+        $processes->logrotateMissing = true;
+        $processes->failedCommands = [['sudo', 'systemctl', 'unmask', '--runtime', 'logrotate.service']];
+
+        $failure = null;
+        try {
+            new NativeGatewayReleaseUnitConverger($processes, orbitHome: '/home/orbit/.orbit', workingDirectory: '/home/orbit/orbit/apps/gateway')->converge();
+        } catch (NodeProvisioningException $exception) {
+            $failure = $exception;
+        }
+
+        expect($failure?->step)->toBe($packageFails ? 'gateway-retention-packages' : 'gateway-retention-unmask');
+        expect(array_slice($processes->ran, -2))->toBe([
+            ['sudo', 'systemctl', 'unmask', '--runtime', 'logrotate.service'],
+            ['sudo', 'systemctl', 'unmask', '--runtime', 'logrotate.timer'],
+        ]);
+    })->with([false, true]);
 });
 
 describe(SystemdGatewayReleaseUnitStarter::class, function (): void {
