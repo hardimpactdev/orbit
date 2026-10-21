@@ -27,17 +27,15 @@ env:
   # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
   # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
   # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
-  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
+  # job's `if`, so the shards job spells out CHANGE_RUN verbatim, and a test pins that.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
-    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
-    # on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
+    # Public repository: all project jobs stay hosted. Gateway shards have their own runner policy.
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -69,19 +67,11 @@ jobs:
           ref: ${{ github.sha }}
           repository: ${{ github.repository }}
 
-      # The recipe's exact PHP build (ADR 0216). A hosted runner installs it; Sabre only verifies it, because a job never
-      # installs software on a self-hosted runner.
+      # Install the recipe's exact PHP build on the hosted runner (ADR 0216).
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
           coverage: pcov
-
-      # Sabre's own node shim lives in a home directory the runner user cannot read. GitHub-hosted runners ship Node.
-      - name: Set up Node
-        if: runner.environment == 'self-hosted'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
 
       - name: Set up Bun for package cache and generated merge tests
         id: bun
