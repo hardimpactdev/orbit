@@ -136,7 +136,7 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
+    $php = in_array($role, [RoleName::WebSocket, RoleName::Vpn], true) ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
     $baseline = new NodeBootstrapPackageCatalog()->forRole($node, $role);
     // Recipe convergence pins the container runtime too; enrollment only asks apt for Docker.
     $runtime = in_array('docker.io', $baseline, true) ? ['containerd'] : [];
@@ -154,7 +154,7 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
     expect($pins)->toContain(...$recipe->php('8.5')->packagesFor(false))
         ->not->toContain('php8.4-cli')
         ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->cliExtensions()]);
-})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
+})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway, RoleName::Vpn]);
 
 it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
     $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
@@ -173,6 +173,23 @@ it('installs the PHP build with the one installer after the other tools, strictl
         ->and(array_keys($php->inputs[2]['versions']))->toBe(['8.5'])
         ->and($result['changes']['php'])->toMatchArray(['changed' => [], 'stale_masters' => []]);
 });
+
+it('applies the VPN FPM policy in both preflight and installation', function (array $roles, string $fpm): void {
+    $node = FleetFixtures::node('recipe-vpn-policy', $roles);
+    recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load());
+
+    expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
+        ->and(array_values(array_unique(array_column($php->inputs, 'fpm'))))->toBe([$fpm]);
+})->with([
+    'VPN only' => [[RoleName::Vpn], 'disabled'],
+    'VPN and websocket CLI' => [[RoleName::Vpn, RoleName::WebSocket], 'disabled'],
+    'VPN and Gateway FPM' => [[RoleName::Vpn, RoleName::Gateway], 'all'],
+    'VPN and application FPM' => [[RoleName::Vpn, RoleName::AppProd], 'all'],
+]);
 
 it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', function (): void {
     $node = FleetFixtures::node('recipe-beast', [RoleName::AppDev]);

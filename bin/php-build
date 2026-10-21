@@ -199,7 +199,7 @@ def installer_input(recipe, versions, *, profile, mode='apply', extras='refuse',
     policy = profile_policy(recipe, profile, versions[0])
     rollback = recipe['php']['rollback']
     return {'mode': mode, 'versions': sets, 'mirror': recipe['artifact_mirror'], **policy, 'extras': extras,
-            'fpm': fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
+            'fpm': 'disabled' if profile == 'vpn' else fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
             'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
 
 

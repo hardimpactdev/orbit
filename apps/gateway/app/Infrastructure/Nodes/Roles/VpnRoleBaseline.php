@@ -79,7 +79,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
             $installed = ($this->php ?? app(PhpBuildInstaller::class))->run(
                 $node, $recipe, $versions, 'apply',
                 pcov: array_intersect($profiles, $recipe->phpPolicy->pcovProfiles) !== [],
-                extras: 'keep', fpm: 'all',
+                extras: 'keep', fpm: PhpBuildInstaller::fpmForProfiles($profiles),
                 opentelemetry: array_intersect($profiles, $recipe->phpPolicy->opentelemetryProfiles) !== [],
             );
         } catch (RemoteProgramFailed $exception) {

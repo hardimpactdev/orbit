@@ -30,6 +30,50 @@ use Tests\Support\PrivateDnsPublishHarness;
 
 pest()->group('subprocess');
 
+it('keeps the installed listener untouched when its PHP disappears or fails its self-test', function (bool $missing): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->listenerManager($harness->listenerPhp());
+        $manager->converge();
+        $records = file_get_contents($harness->recordsPath());
+        $catalog = file_get_contents($harness->catalogPath());
+        $harness->breakListenerPhp($missing);
+        $harness->clearServiceLog();
+
+        expect(fn () => $manager->converge())->toThrow(RuntimeConvergenceException::class);
+
+        expect($harness->serviceCalls())->toBe([])
+            ->and(file_get_contents($harness->recordsPath()))->toBe($records)
+            ->and(file_get_contents($harness->catalogPath()))->toBe($catalog);
+    } finally {
+        $harness->cleanup();
+    }
+})->with(['missing PHP' => true, 'broken PHP' => false]);
+
+it('replaces a deleted listener executable behind its unchanged socket', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb307_published_cluster();
+
+    try {
+        $manager = $harness->listenerManager();
+        $manager->converge();
+        $harness->deletedListenerExecutable();
+        $harness->clearServiceLog();
+
+        $manager->converge();
+
+        expect(array_count_values($harness->serviceCalls())['restart orbit-private-dns.service'] ?? 0)->toBe(1)
+            ->and($harness->serviceCalls())->not->toContain('stop orbit-private-dns.socket', 'start orbit-private-dns.socket', 'restart dnsmasq');
+        $harness->clearServiceLog();
+        $manager->converge();
+        expect($harness->serviceCalls())->not->toContain('restart orbit-private-dns.service');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('activates the listener from an installed release behind its socket without rewriting LAN into the shared fragment', function (): void {
     $harness = new PrivateDnsPublishHarness;
     [$route, $member] = orb307_published_cluster();

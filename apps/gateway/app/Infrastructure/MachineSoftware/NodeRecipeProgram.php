@@ -96,7 +96,7 @@ final readonly class NodeRecipeProgram
         if ($versions === []) {
             return [];
         }
-        $result = $this->php->run($node, $recipe, $versions, 'plan', $this->pcov($node, $recipe), 'refuse', 'all', $this->opentelemetry($node, $recipe));
+        $result = $this->php->run($node, $recipe, $versions, 'plan', $this->pcov($node, $recipe), 'refuse', $this->fpm($node), $this->opentelemetry($node, $recipe));
         if ($result->outcome !== 'planned') {
             throw new ResourceOperationException('node.recipe_php_refused', PhpBuildInstaller::describe($result).' Nothing was changed.', 409);
         }
@@ -121,7 +121,7 @@ final readonly class NodeRecipeProgram
         if ($versions === []) {
             return $report;
         }
-        $result = $this->php->run($node, $recipe, $versions, 'apply', $this->pcov($node, $recipe), 'refuse', 'all', $this->opentelemetry($node, $recipe));
+        $result = $this->php->run($node, $recipe, $versions, 'apply', $this->pcov($node, $recipe), 'refuse', $this->fpm($node), $this->opentelemetry($node, $recipe));
         if (! in_array($result->outcome, PhpBuildInstaller::Succeeded, true)) {
             // Only the installer's own check of the old versions proves a restore (ADR 0216).
             $restored = match (true) {
@@ -161,6 +161,14 @@ final readonly class NodeRecipeProgram
         }
 
         return array_values(array_unique($names));
+    }
+
+    /** @return 'disabled'|'all' */
+    private function fpm(Node $node): string
+    {
+        $profiles = $node->roles->map(fn ($role): string => $role->role->value)->all();
+
+        return PhpBuildInstaller::fpmForProfiles(array_values($profiles));
     }
 
     /** PCOV loads only for the recipe's PCOV profiles, such as app-dev and ci-runner. */

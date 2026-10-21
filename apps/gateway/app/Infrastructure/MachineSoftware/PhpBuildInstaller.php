@@ -31,8 +31,8 @@ final readonly class PhpBuildInstaller
      * @param  'plan'|'apply'  $mode
      * @param  'refuse'|'keep'|'purge'  $extras  `refuse` for recipe convergence, `keep` for an Instance step, which never
      *                                           removes a site's extension, and `purge` only for the ci-runner profile.
-     * @param  'none'|'shared'|'all'  $fpm  Which active PHP-FPM masters restart after a change. `shared` defers a
-     *                                      service whose pools fail `php-fpm -t`; `all` rolls back instead.
+     * @param  'none'|'shared'|'all'|'disabled'  $fpm  Which active PHP-FPM masters restart after a change. `shared` defers a
+     *                                                 service whose pools fail `php-fpm -t`; `all` rolls back instead. `disabled` keeps the unused shared service off.
      */
     public function run(Node $node, MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry): ProgramResult
     {
@@ -46,7 +46,7 @@ final readonly class PhpBuildInstaller
      */
     public static function input(MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry, ?array $release = null): array
     {
-        if (! in_array($mode, ['plan', 'apply'], true) || ! in_array($extras, ['refuse', 'keep', 'purge'], true) || ! in_array($fpm, ['none', 'shared', 'all'], true)) {
+        if (! in_array($mode, ['plan', 'apply'], true) || ! in_array($extras, ['refuse', 'keep', 'purge'], true) || ! in_array($fpm, ['none', 'shared', 'all', 'disabled'], true)) {
             throw new InvalidArgumentException('Invalid PHP build installer options.');
         }
         $sets = [];
@@ -74,6 +74,18 @@ final readonly class PhpBuildInstaller
             'repack' => ['package' => $recipe->phpPolicy->rollbackTool, 'version' => $rollback->version ?? ''],
             'release' => $release,
         ];
+    }
+
+    /**
+     * VPN Nodes without an FPM role must not enable the unused shared master at boot.
+     *
+     * @param  list<string>  $profiles
+     * @return 'disabled'|'all'
+     */
+    public static function fpmForProfiles(array $profiles): string
+    {
+        return in_array('vpn', $profiles, true) && array_intersect($profiles, ['gateway', 'app-dev', 'app-prod']) === []
+            ? 'disabled' : 'all';
     }
 
     /** A one-line explanation of a refusal, for an operator. */

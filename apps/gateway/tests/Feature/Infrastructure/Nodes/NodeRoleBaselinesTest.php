@@ -332,11 +332,15 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         ->toThrow(NodeRoleValidationException::class, 'The VPN role cannot be removed.');
 });
 
-it('installs and verifies the recipe PHP runtime before completing VPN convergence', function (string $outcome): void {
+it('installs and verifies the recipe PHP runtime before completing VPN convergence', function (string $outcome, ?RoleName $fpmRole): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-php');
+    if ($fpmRole !== null) {
+        $node->roles()->create(['role' => $fpmRole, 'status' => LifecycleStatus::Active]);
+        $node->unsetRelation('roles');
+    }
     $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node, &$events): bool {
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node, &$events, $fpmRole): bool {
         $events[] = 'php:verify';
         $recipe = new RecipeLoader()->load();
         expect($target->id)->toBe($node->id)
@@ -344,9 +348,9 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
             ->and(array_keys($input['versions']))->toBe(['8.5'])
             ->and($input['mode'])->toBe('apply')
             ->and($input['extras'])->toBe('keep')
-            ->and($input['fpm'])->toBe('all')
-            ->and($input['pcov'])->toBeFalse()
-            ->and($input['opentelemetry'])->toBeFalse()
+            ->and($input['fpm'])->toBe($fpmRole === null ? 'disabled' : 'all')
+            ->and($input['pcov'])->toBe($fpmRole === RoleName::AppDev)
+            ->and($input['opentelemetry'])->toBe($fpmRole === RoleName::AppDev)
             ->and($input['versions']['8.5']['extensions'])->toContain('sockets', 'pcntl')
             ->and(array_column($input['versions']['8.5']['packages'], 'version', 'name')['php8.5-cli'])
             ->toBe($recipe->tools['php8.5-cli']->version);
@@ -359,14 +363,14 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
     $baseline->converge($node, $assignment);
 
     expect($events)->toBe(['ssh:vpn', 'php:verify', 'firewall:converge:vpn']);
-})->with(['applied', 'current']);
+})->with(['applied', 'current'])->with([null, RoleName::Gateway, RoleName::AppDev, RoleName::AppProd]);
 
 it('verifies VPN PHP before Gateway publication regardless of requested role order', function (bool $installFails): void {
     $events = [];
     $runner = Mockery::mock(RemoteProgramRunner::class);
     $runner->shouldReceive('run')->once()->andReturnUsing(function (Node $node, RemoteProgram $program, array $input) use (&$events, $installFails): ProgramResult {
         expect($program->name)->toBe('php.install-build')
-            ->and($input['fpm'])->toBe('all');
+            ->and($input['fpm'])->toBe('disabled');
         $events[] = 'php:verify';
 
         return $installFails
