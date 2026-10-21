@@ -35,7 +35,7 @@ jobs:
   project:
     name: ${{ matrix.project.name }}
     # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
-    # all four shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
+    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
     # on self-hosted runners.
     runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
     strategy:
@@ -211,7 +211,7 @@ jobs:
 
       - name: Run full PR test suite
         if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
+        run: vendor/bin/pest --parallel --no-tia --compact
 
       # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot
@@ -229,7 +229,7 @@ jobs:
       # Gateway's phpunit.xml excludes privileged; a CLI exclusion would disable TIA recording.
       - name: Run full test suite and refresh Pest TIA graph
         if: env.CHANGE_RUN != 'true'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
+        run: vendor/bin/pest --parallel --tia --fresh --compact
 
       - name: Run redaction cases without PCRE JIT
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
@@ -293,7 +293,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Change runs use four stock shards. Main keeps one recording run for a complete TIA graph.
+  # Change runs use the static stock shard matrix from tools/gateway-shards.json. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
     # env.CHANGE_RUN, spelled out.
@@ -303,7 +303,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: apps/gateway
@@ -367,9 +367,8 @@ jobs:
         uses: ./.github/actions/no-sudo
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
-      # Four workers per shard leave room for other jobs on these shared hosts.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact
+        run: vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     name: Gateway privileged
@@ -402,7 +401,7 @@ jobs:
       - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+        run: vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:

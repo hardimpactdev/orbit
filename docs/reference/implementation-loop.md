@@ -5,7 +5,7 @@ covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
   - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
-  - tools/check_budget.py
+  - tools/{check_budget.py,gateway-shards.json}
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
@@ -83,8 +83,8 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 
 | Job | Checks |
 | --- | --- |
-| One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On PRs, Gateway runs quality checks and the shard-union check here; its tests run in the four shard jobs |
-| Gateway shards (1), (2), (3), (4) | Every pull request: four stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
+| One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On PRs, Gateway runs quality checks and the shard-union check here; its tests run in the shard jobs |
+| Gateway shards (one per shared runner) | Every pull request: stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
 | Gateway privileged | Every CI event: the whole privileged group on one disposable GitHub-hosted runner |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, separate `bun run test:unit` and `bun run test:browser` steps, and build. A run on `main` also publishes the build |
@@ -142,7 +142,7 @@ Then the pull request's CI runs, and `main` stays green after the merge. After t
 
 `Required checks` requires the project matrix, including Docs, on every event. It also requires every Gateway shard to succeed on pull requests. The PR-only shard jobs must be skipped on main pushes, nightly runs and manual runs.
 
-The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among four shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
+The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among the configured shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
 
 Full suites include architecture and subprocess tests. CI has no subprocess-only lanes or affected-test selector. A test that starts PHP still declares `pest()->group('subprocess')` so the coverage limitation stays explicit: runtime coverage cannot link the child process's code to its parent test. The workflow contract uses Pest's stock XML test listing once per configured suite. It checks both full-suite inclusion and subprocess-group membership from that listing, including each source file that starts PHP.
 
@@ -150,7 +150,7 @@ The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` 
 
 Every main push, scheduled run and manual dispatch runs each Composer project's full suite with `pest --parallel --tia --fresh`. The fork records a fresh graph while running every test; no restored graph selects CI tests. After a passing run on main, the export requires that graph to record the tested SHA and a result for every linked test file. The job saves the graph and quality caches for [task workspaces](#ci-cache-refs). Local task checks retain TIA, as the [contributor guide](/contributor-guide#3-implement-and-verify) describes.
 
-A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with four Gateway shards and no cache saves.
+A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with the configured Gateway shards and no cache saves.
 
 A new push to a pull request, or to a handoff branch, cancels the older run of that pull request or branch. Pushes to `main` share one concurrency group and never cancel a running run. GitHub keeps one running and one waiting run per group, and a newer push replaces the waiting one. So when several merges land close together, the newest `main` commit is tested next. The commits in between get a cancelled run instead of a result.
 
@@ -176,11 +176,11 @@ The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP
 
 Docs quality checks, including Docs lint and the ADR lifecycle rules, and the full Docs test suite run once in the project matrix. Like the other project lanes, Docs checks out the immutable event commit, `github.sha`: the merge commit on pull requests. There is no second Docs merge-ref job.
 
-Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use the same uutils coreutils as a Node.
+Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use the same uutils coreutils as a Node. Every parallel CI test run omits `--processes` so stock ParaTest detects all available CPUs: 6 in each self-hosted runner container and 4 on GitHub-hosted runners. ParaTest uses Fidry CPU Core Counter, which counts the process's allowed CPUs intersected with the online CPUs on Linux. A read-only call to the installed detector in `ci-beast-1` on 2026-10-21 returned 6, matching `nproc`, rather than the host's 16 threads.
 
 ### Gateway shards
 
-Each PR runs a static matrix `[1, 2, 3, 4]` with `vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=N/4`. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all four shards. No planner, plan artifact, API polling or hand-built class filter is involved.
+Each PR runs one stock Pest shard per shared runner. `tools/gateway-shards.json` defines the count in one place. After changing that number, run `bin/check-pest-shards --write-matrix` to update the committed static CI matrix. `bin/check-pest-shards` rejects a matrix that differs from the configured count. Each job runs `vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=N/COUNT`; the workflow takes `COUNT` from `strategy.job-total`, so the denominator follows the matrix. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all shards. No planner, plan artifact, API polling or hand-built class filter is involved.
 
 #### Gateway tests and privilege
 
@@ -192,45 +192,45 @@ On macOS, `LinuxHost::delegate()` keeps the selected case's privilege group when
 
 Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
-Before ordinary Gateway checks or tests, after system setup, the shared `.github/actions/no-sudo` action denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all four PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
+Before ordinary Gateway checks or tests, after system setup, the shared `.github/actions/no-sudo` action denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
 
 Stock PHPUnit `Before` and `After` fixture hooks also put a denying `sudo` shim first on PATH and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`. This shim is a fast net, not a security boundary: it does not catch absolute `/usr/bin/sudo` calls or hand-pinned PATHs that omit it. The runner check that ordinary runners have no sudo is the boundary. A fixture that models a remote root boundary may fake that boundary, but must never forward it to host sudo.
 
 Composer supervisor and check-runner fixtures set `COMPOSER_ALLOW_SUPERUSER=1` so Composer does not run its unrelated `sudo -K` credential cleanup. The check-runner fixture sets it in its account's login profile, which loads after the real check program filters its environment, including for authenticated setup and nested Composer scripts. The guard regression runs failing fixture cases through Pest to prove that a new sudo call fails the suite.
 
-The privileged group runs in one job on a disposable GitHub-hosted runner with passwordless sudo. It runs the whole group with four parallel processes, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. `Required checks` requires this job to pass.
+The privileged group runs in one job on a disposable GitHub-hosted runner with passwordless sudo. It runs the whole group with all detected CPUs, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. `Required checks` requires this job to pass.
 
 The privileged job installs the recipe PHP build, Composer dependencies, ACL tools, and the `caddy` Unix account. It does not install Homebrew, Caddy, OpenSSL, WireGuard tools, or Node. The Valkey tests keep `ORBIT_TEST_DOCKER=1`; Docker pulls their image when a test first starts a container.
 
-Stock Pest reads the committed `apps/gateway/tests/.pest/shards.json` for time balancing. Refresh it with a real full run on a disposable Linux machine with the privileged prerequisites. In `apps/gateway`, copy `phpunit.xml` to `phpunit.shard-refresh.xml` and remove its `<groups>` element so the recording includes both ordinary and privileged cases. Run `ORBIT_TEST_DOCKER=1 php -d auto_prepend_file=tests/bootstrap.php vendor/bin/pest --configuration=phpunit.shard-refresh.xml --parallel --processes=4 --no-tia --update-shards`, remove the temporary configuration, and commit the changed timings in a PR.
+Stock Pest reads the committed `apps/gateway/tests/.pest/shards.json` for time balancing. This file stores class timings, not a shard count or fixed assignments. Stock Pest rebalances those timings for the requested count, so changing capacity needs no new timing recording or custom plan generator. The union check runs the stock listings for every configured shard, including newly added classes. `Required checks` requires the whole shard matrix to succeed, whatever its size.
+
+Refresh the timings with a real full run on a disposable Linux machine with the privileged prerequisites. In `apps/gateway`, copy `phpunit.xml` to `phpunit.shard-refresh.xml` and remove its `<groups>` element so the recording includes both ordinary and privileged cases. Run `ORBIT_TEST_DOCKER=1 php -d auto_prepend_file=tests/bootstrap.php vendor/bin/pest --configuration=phpunit.shard-refresh.xml --parallel --no-tia --update-shards`, remove the temporary configuration, and commit the changed timings in a PR.
 
 Loading the test bootstrap first gives Pest's parent and workers the same temporary directory for timing files. CI never restores this file from Actions cache or writes it back. All shards therefore read the same timings from the tested commit, including on a partial rerun. Pest distributes new classes even before timings are refreshed.
 
-The Gateway quality job runs `bin/check-pest-shards`. It uses Pest's own `--list-tests` output for the full non-privileged suite and each of the four stock shards. It requires their union to equal the full listing and rejects duplicate assignments. A class that lands in no shard fails CI. Architecture and subprocess tests are part of this listing too.
+The Gateway quality job runs `bin/check-pest-shards`. It uses Pest's own `--list-tests` output for the full non-privileged suite and each configured stock shard. It requires their union to equal the full listing and rejects duplicate assignments. A class that lands in no shard fails CI. Architecture and subprocess tests are part of this listing too.
 
 Ordinary runs on main never shard; the privileged job runs on every CI event. Each main run keeps one full non-privileged Gateway recording run, because Pest writes one whole TIA graph per run. That graph and the exported cache artifact must describe the tested commit.
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each of the four shards take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite, because its six workers do not fit a [shard runner](#self-hosted-shard-runners) container with four CPUs and 8 GiB. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite. All six self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
 On Sabre the job skips the Homebrew and system package steps, because Sabre already has Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP step only [verifies](#one-php-build-in-ci) that Sabre runs the recipe's PHP build. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`. On a shard runner container, the PR quality job keeps the PHP CLI default for that setting, because none of its steps needs `0`.
 
-A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest runs 6 processes there instead of 4.
+A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest detects the container's CPU count without a worker override.
 
-The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
+The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH.
 
-Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege). The hand-made `/etc/sudoers.d/github-runner` grant is absent.
+Sabre runs two Incus runner containers, `ci-sabre-1` and `ci-sabre-2`. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
 
 Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
-The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. The rule covers only the runner user's traffic, which is another reason the user must not have sudo. The runner accepts only code from this repository.
-
 ### Self-hosted shard runners
 
-The four Gateway PR shards use the `self-hosted` and `orbit-shard` labels. Both `sabre-1` and `sabre-2` carry `orbit-shard`, as do `ci-beast-1` and `ci-beast-2` on Beast and `ci-shark-1` on Shark. The container runners do not carry `sabre`. The workflow selects runners by label, not by name; shards are not restricted to Beast and Shark.
+The Gateway PR shards use the `self-hosted` and `orbit-shard` labels. The six runner containers are `ci-beast-1` and `ci-beast-2`, `ci-shark-1` and `ci-shark-2`, and `ci-sabre-1` and `ci-sabre-2`. The Sabre containers also carry `sabre` for full recording runs. The workflow selects runners by label, not by name.
 
 Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
 
@@ -243,7 +243,7 @@ Beast and Shark are app-dev Nodes with live Instances and task workspaces. So ea
 
 Create an organization registration token with `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
-The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The setup script's default profile specifies 4 CPUs and 8 GiB. The six deployed runners override those defaults with `limits.cpu=6` and `limits.memory=12GiB`; each runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
 
 Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
 
@@ -251,7 +251,9 @@ The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast,
 
 Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install --profile=ci-runner`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build`, the recipe, and the remote program tree that `bin/php-build` reads into the container, and runs that install. A later run replaces the copy and updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
 
-The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+The job installs Node 24 with the Node setup step, and each shard uses all detected container CPUs. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+
+Six Gateway workers fit the 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
 
 Two limits remain:
 
@@ -345,7 +347,7 @@ The floor of one can overcommit memory and OOM when less than the reserve plus o
 
 Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget and let stock ParaTest detect all runner CPUs, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
 
 ### The candidate gate
 
@@ -670,7 +672,7 @@ The [declaration-data audit](/solutions/test-impact-declaration-data) found that
 
 Nick decided on 2026-10-20 that each task handoff runs the full suites in sharded CI on the pushed handoff commit, as [Tasks: Handoff CI](/reference/tasks#handoff-ci) describes. The task VM keeps only the fast checks. So no handoff, rework, or fixup depends on a TIA selection. A false green from declaration data cannot pass a handoff. Running the full suites in the task VM is a rejected alternative: there the Gateway suite alone took 2614 seconds on one worker, and CI shards it. TIA stays the implementer's fast feedback through `composer test:affected`.
 
-Gateway uses stock Pest time-balanced shards to keep the full PR run short. Committed timings keep all four jobs on one version without a planner or cache race. Quality checks overlap the shards. Sharding on main remains rejected because Pest writes one whole graph per run.
+Gateway uses stock Pest time-balanced shards to keep the full PR run short. Committed timings keep all shard jobs on one version without a planner or cache race. Quality checks overlap the shards. Sharding on main remains rejected because Pest writes one whole graph per run.
 
 ### CI caches stay separate
 
