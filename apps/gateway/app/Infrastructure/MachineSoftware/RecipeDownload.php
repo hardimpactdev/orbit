@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -12,17 +13,17 @@ use Throwable;
 final readonly class RecipeDownload
 {
     /** Download to a disposable file so release artifacts need not fit in PHP memory. Caller removes it. */
-    public function file(string $url, bool $redirects = false): string
+    public function file(string $url, bool $redirects = false, int $timeout = 600): string
     {
         $path = tempnam(sys_get_temp_dir(), 'orbit-recipe-');
         if ($path === false) {
             throw new RuntimeException('Cannot create a temporary recipe download file.');
         }
         try {
-            $response = Http::connectTimeout(15)->timeout(600)->retry(
-                3,
-                500,
-                fn (?Throwable $exception): bool => $exception instanceof RequestException && in_array($exception->response->status(), [500, 502, 503, 504], true),
+            $response = Http::connectTimeout(15)->timeout($timeout)->retry(
+                [10000, 20000, 30000],
+                when: fn (?Throwable $exception): bool => $exception instanceof ConnectionException
+                    || ($exception instanceof RequestException && $exception->response->serverError()),
                 throw: false,
             )->withOptions([
                 'allow_redirects' => $redirects ? ['max' => 5, 'protocols' => ['https']] : false,

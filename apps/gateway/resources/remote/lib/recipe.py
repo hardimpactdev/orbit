@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 import zipfile
 from urllib.parse import urlsplit
@@ -161,10 +162,9 @@ def temporary_indexes(source):
                    '-o', 'Dir::Etc::sourceparts=-', '-o', 'Dir::State::lists=' + str(work / 'lists'),
                    '-o', 'Dir::Cache=' + str(work / 'cache'), '-o', 'Dir::Log=' + str(work / 'log'),
                    '-o', 'Debug::NoLocking=true', '-o', 'APT::Sandbox::User=',
-                   '-o', 'Acquire::Languages=none', '-o', 'Acquire::Retries=0',
-                   '-o', 'Acquire::http::Timeout=15', '-o', 'Acquire::https::Timeout=15',
+                   '-o', 'Acquire::Languages=none', *apt_fetch_options(),
                    '-o', 'APT::Update::Error-Mode=any']
-        run(['apt-get', 'update', *options], env=apt_environment(options), timeout=60)
+        apt_fetch(['apt-get', 'update', *options], env=apt_environment(options), timeout=120)
         yield options
 
 
@@ -663,8 +663,39 @@ def snapshot_options(payload, work):
     return apt_source_options(path)
 
 
+def apt_fetch_options():
+    # APT's built-in retries include 4xx and omit some 5xx. The fetch boundary owns retries.
+    return ['-o', 'Acquire::Retries=0',
+            '-o', 'Acquire::http::Timeout=15', '-o', 'Acquire::https::Timeout=15']
+
+
+def apt_fetch(argv, **kwargs):
+    kwargs['env'] = dict(kwargs.get('env') or os.environ, LC_ALL='C')
+    for delay in (10, 20, 30, None):
+        try:
+            return run(argv, **kwargs)
+        except RecipeInterrupted:
+            raise
+        except RecipeFailure as error:
+            output = (error.result.stdout + '\n' + error.result.stderr) if error.result is not None else ''
+            failures = re.findall(r'^[EW]: Failed to fetch (\S+)[ \t]+([^\n]+)', output, re.MULTILINE)
+            # A failed Release fetch also produces a derived "not signed" error on a fresh list.
+            unsigned = re.findall(r"^E: The repository '(\S+) (\S+) (?:InRelease|Release)' is not signed\.$", output, re.MULTILINE)
+            derived_unsigned = unsigned and all(any(
+                url in (root.rstrip('/') + '/dists/' + suite + '/InRelease', root.rstrip('/') + '/dists/' + suite + '/Release')
+                for url, _ in failures) for root, suite in unsigned)
+            # Retry only explicit transport failures, never authentication, digest, or other package errors.
+            if (delay is None or not failures
+                    or re.search(r'(?i)hash sum mismatch|unexpected size|signature|NO_PUBKEY', output)
+                    or ('not signed' in output and not derived_unsigned)
+                    or not all(re.match(r'5\d\d\b', reason) or any(message in reason for message in ('Connection reset by peer', 'Connection failed'))
+                               for _, reason in failures)):
+                raise
+            time.sleep(delay)
+
+
 def apt_source_options(path):
-    return ['-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
+    return [*apt_fetch_options(), '-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
             '-o', 'APT::Get::List-Cleanup=false', '-o', 'APT::Update::Error-Mode=any',
             '-o', 'Acquire::Languages=none', '-o', 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled=false',
             '-o', 'Acquire::IndexTargets::deb::CNF::DefaultEnabled=false']
@@ -685,7 +716,8 @@ def refresh_ubuntu_indexes(payload, resources):
 
 def package_command(argv, packages, **kwargs):
     try:
-        return run(argv, **kwargs)
+        execute = apt_fetch if argv[:2] in (['apt-get', 'update'], ['apt-get', 'install']) else run
+        return execute(argv, **kwargs)
     except RecipeFailure as error:
         error.packages = packages
         raise

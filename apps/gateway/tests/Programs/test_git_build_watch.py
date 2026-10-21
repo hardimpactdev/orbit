@@ -1,10 +1,12 @@
 """Git's update signal is conservative, paginated, and fails visibly when an upstream check fails."""
 import importlib.machinery
 import importlib.util
+import io
+import urllib.error
 import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[4]
 loader = importlib.machinery.SourceFileLoader('git_build_watch', str(ROOT / 'bin/git-build-watch'))
@@ -20,6 +22,42 @@ def notice(identifier, package, published):
 
 
 class GitBuildWatchTest(unittest.TestCase):
+    def test_fetch_recovers_from_503_and_connection_reset(self):
+        for error in (urllib.error.HTTPError(watch.PPA, 503, 'Unavailable', {}, None), ConnectionResetError('reset')):
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.geturl.return_value = watch.PPA
+            response.read.return_value = b'{"entries": []}'
+            with self.subTest(error=error), patch.object(watch.urllib.request, 'urlopen', side_effect=[error, response]) as fetch, \
+                 patch.object(watch.time, 'sleep') as sleep:
+                self.assertEqual(watch.fetch_json(watch.PPA), {'entries': []})
+                self.assertEqual(fetch.call_count, 2)
+                fetch.assert_called_with(watch.PPA, timeout=15)
+                sleep.assert_called_once_with(10)
+
+    def test_persistent_5xx_fails_after_four_attempts_with_backoff(self):
+        error = urllib.error.HTTPError(watch.PPA, 503, 'Unavailable', {}, None)
+        with patch.object(watch.urllib.request, 'urlopen', side_effect=error) as fetch, patch.object(watch.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'after 4 attempts'):
+                watch.fetch_json(watch.PPA)
+            self.assertEqual(fetch.call_count, 4)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [10, 20, 30])
+
+    def test_4xx_and_invalid_json_never_retry(self):
+        with patch.object(watch.time, 'sleep') as sleep:
+            for code in (404, 429):
+                with patch.object(watch.urllib.request, 'urlopen', side_effect=urllib.error.HTTPError(watch.PPA, code, 'Client error', {}, None)) as fetch:
+                    with self.assertRaises(urllib.error.HTTPError):
+                        watch.fetch_json(watch.PPA)
+                    self.assertEqual(fetch.call_count, 1)
+            response = io.BytesIO(b'invalid JSON')
+            response.geturl = lambda: watch.PPA
+            with patch.object(watch.urllib.request, 'urlopen', return_value=response) as fetch:
+                with self.assertRaises(ValueError):
+                    watch.fetch_json(watch.PPA)
+                self.assertEqual(fetch.call_count, 1)
+            sleep.assert_not_called()
+
     def test_flags_a_newer_ppa_build_and_git_usn_but_not_libgit2_or_reviewed_notices(self):
         pages = [
             {'entries': [{'source_package_version': PIN}, {'source_package_version': NEW}]},

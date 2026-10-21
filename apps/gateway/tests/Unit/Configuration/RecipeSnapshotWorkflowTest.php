@@ -33,7 +33,7 @@ printf '%s\n' "$*" >> "$RECIPE_CALLS"
 SH);
     chmod($root.'/bin/php', 0700);
     $run = static fn (array $argv, string $cwd = ''): string => new Process($argv, $cwd === '' ? $root : $cwd,
-        ['PATH' => $root.'/bin:'.getenv('PATH'), 'RECIPE_CALLS' => $calls, 'HANDOFF_PUSH' => false, 'CHANGE_RUN' => false])->mustRun()->getOutput();
+        ['PATH' => $root.'/bin:'.getenv('PATH'), 'RECIPE_CALLS' => $calls, 'HANDOFF_PUSH' => false, 'CHANGE_RUN' => false, 'GITHUB_OUTPUT' => $root.'/outputs'])->mustRun()->getOutput();
     try {
         $run(['git', 'init', '--quiet']);
         File::put($root.'/apps/gateway/resources/machine-software/recipe.json', '{}');
@@ -67,4 +67,17 @@ SH);
     } finally {
         File::deleteDirectory($root);
     }
+});
+
+it('caches signed Ubuntu metadata by snapshot and architecture without a rolling restore key', function (): void {
+    $workflow = Yaml::parseFile(dirname(base_path(), 2).'/.github/workflows/ci.yml');
+    $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
+    $restore = $steps['Restore verified Ubuntu snapshot metadata'];
+    $save = $steps['Save verified Ubuntu snapshot metadata'];
+    expect($restore['uses'])->toStartWith('actions/cache/restore@')
+        ->and($restore['with']['key'])->toContain('steps.ubuntu-snapshot.outputs.snapshot', 'steps.ubuntu-snapshot.outputs.architectures')
+        ->and($restore['with'])->not->toHaveKey('restore-keys')
+        ->and($save['uses'])->toStartWith('actions/cache/save@')
+        ->and($save['if'])->toContain("steps.verify-ubuntu.outputs.verified == 'true'")
+        ->and($steps['Verify Ubuntu recipe pins against the named snapshot']['env']['ORBIT_RECIPE_SNAPSHOT_CACHE'])->toBe($restore['with']['path']);
 });
