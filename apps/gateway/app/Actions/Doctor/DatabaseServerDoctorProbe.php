@@ -58,14 +58,16 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 
         foreach ($servers as $server) {
             try {
-                $port = $server->driver->defaultPort() ?? 3306;
-                if (($server->process?->runtime_config['ports'] ?? []) !== DatabaseServerProcess::publishedPorts($server->node, $server->port, $port)) {
-                    $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::PublicationMismatch,
-                        'The Process publications differ from the managed private endpoints.', 'private endpoints', 'different');
-                }
-                if (! $this->firewall->matches($server->node)) {
-                    $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::FilterMismatch,
-                        'The persistent or live ingress filter differs from the managed endpoints and peers.', 'managed filter', 'different');
+                if ($server->private_endpoints_managed) {
+                    $port = $server->driver->defaultPort() ?? 3306;
+                    if (($server->process?->runtime_config['ports'] ?? []) !== DatabaseServerProcess::publishedPorts($server->node, $server->port, $port)) {
+                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::PublicationMismatch,
+                            'The Process publications differ from the managed private endpoints.', 'private endpoints', 'different');
+                    }
+                    if (! $this->firewall->matches($server->node)) {
+                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::FilterMismatch,
+                            'The persistent or live ingress filter differs from the managed endpoints and peers.', 'managed filter', 'different');
+                    }
                 }
                 if ($server->driver !== DatabaseDriver::Redis) {
                     if (! $this->sql->waitUntilReady($server, 5)) {
