@@ -13,6 +13,7 @@ use App\Domain\Tools\ToolInspector;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\RecipeProgramInput;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
@@ -521,3 +522,16 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
         ->and($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
     expect(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, ' apply ')))->toBe([]);
 })->with([null, 'dpkg-log-missing', 'snapshot-unavailable', 'snapshot-unproved', 'snapshot-lookup-limit']);
+
+it('embeds and runs the account store publisher in recipe programs', function (): void {
+    $program = file_get_contents(resource_path('remote/lib/recipe.py'));
+    $program = str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $program);
+    $program .= "\ndef store_probe():\n    report = subprocess.run(['python3', '-I', '-c', VP_STORE_PROGRAM], input=json.dumps({'mode': 'inspect', 'store': '/nonexistent-orbit-store'}), text=True, capture_output=True, check=True)\n    print(report.stdout.strip())\n    return 0\n";
+    $source = RecipeProgramInput::source($program, [], 'store_probe');
+    $process = new Process(['python3', '-I', '-']);
+    $process->setInput($source);
+    $process->mustRun();
+
+    expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))
+        ->toBe(['outcome' => 'inspected', 'data' => ['version' => null]]);
+});

@@ -32,9 +32,10 @@ class RecipeJavascriptTest(unittest.TestCase):
                  patch.object(recipe, 'vite_scope', return_value=scope), \
                  patch.object(recipe.pwd, 'getpwnam', return_value=account), \
                  patch.object(recipe.os, 'geteuid', return_value=0), \
-                 patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'v24.22.1', '')) as command:
+                 patch.object(recipe, 'run', side_effect=lambda argv, **kwargs: subprocess.CompletedProcess(
+                     argv, 0, json.dumps({'outcome': 'inspected', 'data': {'version': '24.22.1'}}) if '-c' in argv else 'v24.22.1', '')) as command:
                 recipe.inspect(tools)
-            self.assertEqual(command.call_count, 3)
+            self.assertEqual(command.call_count, 4)
             for call in command.call_args_list:
                 self.assertEqual(call.args[0][:6], ['sudo', '-u', 'runner', '-H', 'env', 'VP_HOME=' + str(scope)])
 

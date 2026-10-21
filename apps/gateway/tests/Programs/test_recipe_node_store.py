@@ -40,7 +40,7 @@ class RecipeNodeStoreTest(unittest.TestCase):
         self.identifier = hashlib.sha256(self.archive.read_bytes()).hexdigest()
 
     def install(self, scope, module=recipe):
-        safe, publish = module.safe_directory, module.publish
+        safe, publish, run = module.safe_directory, module.publish, module.run
         with tempfile.TemporaryDirectory(dir=self.home) as directory:
             def safe_dir(path, uid=0, gid=0):
                 return self.home if str(path) == '/opt/orbit' else safe(path, uid, gid)
@@ -48,6 +48,11 @@ class RecipeNodeStoreTest(unittest.TestCase):
                 if not str(path).startswith('/usr/local/bin/'):
                     publish(path, *args, **kwargs)
             def command(argv, **kwargs):
+                if '-c' in argv:
+                    if os.geteuid() == 0:
+                        self.assertEqual(argv[:4], ['sudo', '-u', self.account.pw_name, '-H'])
+                    self.assertEqual(argv[4:6] if argv[0] == 'sudo' else argv[:2], ['env', 'VP_HOME=' + str(scope)])
+                    return run(argv[4:] if argv[0] == 'sudo' else argv, **kwargs)
                 self.assertEqual(argv[-3:], ['env', 'default', self.version])
                 (scope / 'config.json').write_text(json.dumps({'defaultNodeVersion': self.version}))
             with patch.object(module, 'vite_scope', return_value=scope), \
@@ -177,4 +182,57 @@ class RecipeNodeStoreTest(unittest.TestCase):
         self.assertEqual(lock.stat().st_ino, inode)
         self.assertEqual(lock.stat().st_mode & 0o777, 0o644)
         self.assertEqual(result('tools.inspect-vp-store', {'environments': [self.seed_manager(scope)]}),
+                         ('inspected', {'installed': [True]}))
+
+    def test_converge_migrates_all_recipe_versions_and_collection_keeps_adopted_content(self):
+        scope = self.scope('all-versions')
+        for version in ('24.22.0', self.version):
+            old = scope / 'recipe' / ('node-' + (self.identifier if version == self.version else 'a' * 64))
+            old.mkdir(parents=True)
+            source = recipe.extract(self.archive, old / 'unpack') / self.root_name
+            target = old / self.root_name.replace(self.version, version)
+            source.rename(target)
+            (target / 'bin/node').chmod(0o775)
+            node = scope / 'js_runtime/node' / version
+            node.parent.mkdir(parents=True, exist_ok=True)
+            node.symlink_to(target)
+        # The root recipe delegates publication to the account, including all historical versions.
+        with patch.object(recipe.os, 'geteuid', return_value=0):
+            self.install(scope)
+        payload = self.seed_manager(scope)
+        older = {**payload, 'node_version': '24.22.0'}
+        for version in ('24.22.0', self.version):
+            self.assertFalse((scope / 'js_runtime/node' / version).is_symlink())
+            self.assertEqual((scope / 'js_runtime/node' / version / 'bin/node').stat().st_mode & 0o777, 0o755)
+        self.assertEqual(result('tools.inspect-vp-store', {'environments': [payload, older]}),
+                         ('inspected', {'installed': [True, True]}))
+        self.assertEqual(result('tools.install-vp-environment', older), ('installed', {'verified': {}}))
+        self.assertEqual(result('tools.prune-vp-store', {'store': str(scope), 'references': []}),
+                         ('pruned', {'removed': []}))
+        self.assertTrue((scope / 'js_runtime/node/24.22.0/bin/node').is_file())
+        self.assertEqual(json.loads((scope / '.orbit-recipe-node.json').read_text()), {'version': self.version})
+        self.assertNotIn('js_runtime/node/24.22.0', json.loads((scope / '.orbit-runtimes.json').read_text()))
+        # A legacy link for an older version also forces adoption with an already-current default/reference.
+        older_node = scope / 'js_runtime/node/24.22.0'
+        shutil.rmtree(older_node)
+        older_node.symlink_to(scope / 'recipe' / ('node-' + 'a' * 64) / 'node-v24.22.0-linux-x64')
+        with patch.object(recipe, 'vite_scope', return_value=scope), patch.object(recipe, 'packages', return_value={}):
+            self.assertEqual(recipe.inspect(self.tools), {'node': None})
+        self.install(scope)
+        self.assertFalse(older_node.is_symlink())
+
+    def test_owner_publisher_normalizes_writable_store_components_and_preserves_real_runtime(self):
+        scope = self.scope('beast-modes')
+        self.install(scope)
+        node = scope / 'js_runtime/node' / self.version
+        inode = node.stat().st_ino
+        for component in (scope, scope / 'js_runtime', node.parent):
+            component.chmod(0o775)
+        payload = self.seed_manager(scope)
+        self.assertEqual(result('tools.inspect-vp-store', {'environments': [payload]})[0], 'invalid')
+        self.install(scope)
+        self.assertEqual(node.stat().st_ino, inode)
+        for component in (scope, scope / 'js_runtime', node.parent):
+            self.assertEqual(component.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(result('tools.inspect-vp-store', {'environments': [payload]}),
                          ('inspected', {'installed': [True]}))

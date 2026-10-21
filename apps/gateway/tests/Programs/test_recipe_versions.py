@@ -14,6 +14,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+from harness import assemble
+
 RESOURCE = Path(__file__).resolve().parents[2] / 'resources/machine-software'
 spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE.parent / 'remote/lib/recipe.py')
 recipe = importlib.util.module_from_spec(spec)
@@ -24,6 +26,8 @@ image = importlib.util.module_from_spec(image_spec)
 exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), image.__dict__)
 image_spec.loader.exec_module(image)
 exec(compile((RESOURCE / 'build-image.py').read_text(), 'build-image.py', 'exec'), image.__dict__)
+
+recipe.VP_STORE_PROGRAM = image.VP_STORE_PROGRAM = assemble('tools.publish-recipe-node')
 
 PIN = '8.18.0-1ubuntu2.7'
 NEWER = '8.18.0-1ubuntu2.8'

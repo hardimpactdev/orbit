@@ -1,5 +1,7 @@
 # Shared owner-only vp store operations. No Project code or package lifecycle hooks run here.
 import base64
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -10,9 +12,12 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 
+
+RECIPE_NODE_REFERENCE = '.orbit-recipe-node.json'
 
 VERSION = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z')
 
@@ -30,21 +35,50 @@ def store_lock(home):
         raise
 
 
+@contextmanager
+def locked_store(home, timeout=120):
+    with store_lock(home) as lock:
+        deadline = time.monotonic() + min(max(float(timeout), 0), 120)
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Timed out waiting for the vp store lock') from None
+                time.sleep(0.1)
+        yield
+
+
+def store_home(home):
+    if not home.is_absolute() or home.is_symlink() or not home.is_dir() or home.stat().st_uid != os.getuid() or home.stat().st_mode & 0o022:
+        raise ValueError('The vp store must belong to the enrolled account')
+    return home
+
+
+def check_store_path(home, target):
+    for part in (target, *target.parents):
+        if part == home:
+            break
+        if part.is_symlink() or (part.exists() and (part.stat().st_uid != os.getuid() or part.stat().st_mode & 0o022)):
+            raise ValueError('Runtime paths must belong to the store owner')
+    return target
+
+
+def node_runtime_path(home, version):
+    store_home(home)
+    if not isinstance(version, str) or not VERSION.fullmatch(version):
+        raise ValueError('Exact supported runtime versions required')
+    return check_store_path(home, home / 'js_runtime' / 'node' / version)
+
+
 def store_paths(payload):
     home = pathlib.Path(payload['store'])
     node, manager, version = (payload[key] for key in ('node_version', 'package_manager', 'package_manager_version'))
-    if not home.is_absolute() or home.is_symlink() or home.stat().st_uid != os.getuid() or home.stat().st_mode & 0o022:
-        raise ValueError('The vp store must belong to the enrolled account')
-    if not VERSION.fullmatch(node) or not VERSION.fullmatch(version) or manager not in ('npm', 'pnpm'):
+    node_path = node_runtime_path(home, node)
+    if not VERSION.fullmatch(version) or manager not in ('npm', 'pnpm'):
         raise ValueError('Exact supported runtime versions required')
-    node_path = home / 'js_runtime' / 'node' / node
-    pm_path = home / 'package_manager' / manager / version
-    for target in (node_path, pm_path):
-        for part in (target, *target.parents):
-            if part == home:
-                break
-            if part.is_symlink() or (part.exists() and (part.stat().st_uid != os.getuid() or part.stat().st_mode & 0o022)):
-                raise ValueError('Runtime paths must belong to the store owner')
+    pm_path = check_store_path(home, home / 'package_manager' / manager / version)
     return home, node_path, pm_path
 
 
@@ -241,7 +275,7 @@ def prune(home, references):
     ledger_path = home / '.orbit-runtimes.json'
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
     keep = set()
-    recipe_pin = home / '.orbit-recipe-node.json'
+    recipe_pin = home / RECIPE_NODE_REFERENCE
     if recipe_pin.exists() or recipe_pin.is_symlink():
         if recipe_pin.is_symlink() or recipe_pin.stat().st_uid != os.getuid() or recipe_pin.stat().st_mode & 0o022:
             raise ValueError('Invalid recipe Node reference')
@@ -265,3 +299,127 @@ def prune(home, references):
             del ledger[name]
     write_ledger(home, ledger)
     return removed
+
+
+def node_runtime_matches(source, installed):
+    """Compare a store publication with the verified archive without running account-writable code."""
+    if installed.is_symlink() or not installed.is_dir():
+        return False
+    expected = {pathlib.Path('.'), *(path.relative_to(source) for path in source.rglob('*'))}
+    actual = {pathlib.Path('.'), *(path.relative_to(installed) for path in installed.rglob('*'))}
+    if expected != actual:
+        return False
+    for relative in expected:
+        original, current = source / relative, installed / relative
+        before, after = original.lstat(), current.lstat()
+        if after.st_uid != os.getuid() or stat.S_IFMT(before.st_mode) != stat.S_IFMT(after.st_mode):
+            return False
+        if stat.S_ISLNK(after.st_mode):
+            if os.readlink(original) != os.readlink(current):
+                return False
+        elif after.st_mode & 0o022 or (before.st_mode & 0o111) != (after.st_mode & 0o111):
+            return False
+        elif stat.S_ISREG(after.st_mode):
+            with original.open('rb') as left, current.open('rb') as right:
+                if hashlib.file_digest(left, 'sha256').digest() != hashlib.file_digest(right, 'sha256').digest():
+                    return False
+    return True
+
+
+
+def legacy_node_links(home):
+    cache = home / 'js_runtime/node'
+    links = []
+    if cache.is_symlink():
+        raise ValueError('Runtime paths must belong to the store owner')
+    for link in cache.iterdir() if cache.is_dir() else ():
+        if not link.is_symlink():
+            continue
+        target = pathlib.Path(os.path.abspath(link.parent / os.readlink(link)))
+        relative = str(target.relative_to(home)) if target.is_relative_to(home) else ''
+        pattern = r'recipe/node-[a-f0-9]{64}/node-v' + re.escape(link.name) + r'-(?:linux|darwin)-(?:x64|arm64)'
+        if not VERSION.fullmatch(link.name) or link.lstat().st_uid != os.getuid() or not re.fullmatch(pattern, relative):
+            raise ValueError('Refusing unrelated Node runtime link')
+        check_store_path(home, target)
+        if not target.is_dir():
+            raise ValueError('Former recipe runtime is missing')
+        links.append((link, target))
+    return links
+
+
+def normalize_store_directories(home):
+    # Only the enrolled account repairs the historical writable store components.
+    for path in (home, home / 'js_runtime', home / 'js_runtime/node'):
+        if path.is_symlink() or not path.is_absolute():
+            raise ValueError('Runtime paths must belong to the store owner')
+        if path.exists():
+            info = path.stat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+                raise ValueError('Runtime paths must belong to the store owner')
+            path.chmod(stat.S_IMODE(info.st_mode) & ~0o022)
+        else:
+            owner_directories(path)
+
+
+def migrate_recipe_nodes(home):
+    for link, source in legacy_node_links(home):
+        with tempfile.TemporaryDirectory(prefix='.orbit-stage-', dir=link.parent) as directory:
+            candidate = pathlib.Path(directory) / 'node'
+            shutil.copytree(source, candidate, symlinks=True)
+            for parent, directories, files in os.walk(candidate):
+                pathlib.Path(parent).chmod(0o755)
+                for name in directories + files:
+                    path = pathlib.Path(parent) / name
+                    if not path.is_symlink():
+                        path.chmod(path.stat().st_mode & 0o755)
+            # rename cannot replace a symlink with a directory. Keep the old target for running processes.
+            link.unlink()
+            candidate.rename(link)
+
+
+def recipe_node_version(home):
+    store_home(home)
+    if legacy_node_links(home):
+        return None
+    pin = home / RECIPE_NODE_REFERENCE
+    if pin.is_symlink() or not pin.is_file() or pin.stat().st_uid != os.getuid() or pin.stat().st_mode & 0o022:
+        return None
+    version = json.loads(pin.read_text()).get('version')
+    node = node_runtime_path(home, version)
+    default = json.loads((home / 'config.json').read_text()).get('defaultNodeVersion')
+    return version if version == default and (node / 'bin/node').is_file() else None
+
+
+def publish_verified_node(home, version, archive, sha256):
+    data = pathlib.Path(archive).read_bytes()
+    if not re.fullmatch(r'[a-f0-9]{64}', sha256) or hashlib.sha256(data).hexdigest() != sha256:
+        raise ValueError('Node checksum mismatch')
+    # Permit only owned real directories before taking the shared lock; normalize under the lock.
+    if not home.is_absolute() or home.is_symlink() or not home.is_dir() or home.stat().st_uid != os.getuid():
+        raise ValueError('The vp store must belong to the enrolled account')
+    with locked_store(home):
+        normalize_store_directories(home)
+        migrate_recipe_nodes(home)
+        destination = node_runtime_path(home, version)
+        with tempfile.TemporaryDirectory(prefix='.orbit-stage-', dir=destination.parent) as directory:
+            stage = pathlib.Path(directory)
+            extract(data, stage)
+            system = {'Linux': 'linux', 'Darwin': 'darwin'}[platform.system()]
+            arch = {'x86_64': 'x64', 'aarch64': 'arm64', 'arm64': 'arm64'}[platform.machine()]
+            source = stage / f'node-v{version}-{system}-{arch}'
+            if not source.is_dir() or source.is_symlink():
+                raise ValueError('Node archive has an unexpected layout')
+            if destination.exists():
+                if not node_runtime_matches(source, destination):
+                    raise ValueError('Existing Node runtime differs from the verified archive')
+            else:
+                source.rename(destination)
+        with tempfile.NamedTemporaryFile(mode='w', prefix='.orbit-recipe-', dir=home, delete=False) as stream:
+            temporary = pathlib.Path(stream.name)
+            try:
+                json.dump({'version': version}, stream)
+                stream.flush()
+                temporary.chmod(0o644)
+                temporary.replace(home / RECIPE_NODE_REFERENCE)
+            finally:
+                temporary.unlink(missing_ok=True)
