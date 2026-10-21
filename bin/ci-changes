@@ -32,29 +32,49 @@ JOB_PROJECTS = {
 }
 ALL = set().union(*JOB_PROJECTS.values())
 RULES = [
-    # bin/docs-openapi reads Gateway, CLI command and SDK sources. Docs' real
-    # generated_merge_test.py exercises those generators and web type generation.
-    ('apps/cli/*', {'cli', 'docs', 'api-reference'}),
-    ('apps/gateway/*', {'gateway', 'docs', 'api-reference'}),
-    ('apps/docs/*', {'docs'}),
+    # Docs' merge proof runs the real generators; E2E's bootstrap/gate tests
+    # use real Composer projects. docs-openapi reads Gateway, CLI and SDK sources.
+    ('apps/cli/*', {'cli', 'docs', 'e2e', 'api-reference'}),
+    ('apps/gateway/*', {'gateway', 'docs', 'e2e', 'api-reference'}),
+    ('apps/docs/*', {'docs', 'e2e', 'api-reference'}),
     ('apps/e2e/*', {'e2e'}),
-    # CLI's composer.json has the SDK path repository; Gateway's response tests
-    # read packages/php-sdk/fixtures through tests/Support/ResponseFixtures.php.
-    ('packages/php-sdk/*', {'php-sdk', 'cli', 'gateway'}),
-    ('packages/php-sdk/src/*', {'docs', 'api-reference'}),
-    # Desktop's Tauri config consumes the web app; Docs' merge proof builds types.
-    ('apps/web/*', {'web', 'desktop', 'docs'}),
+    # CLI has the SDK Composer path repository. Gateway and CLI response tests
+    # read SDK fixtures; Docs' api-fixtures check reads all SDK and web fixtures.
+    ('packages/php-sdk/*', {'php-sdk', 'cli', 'gateway', 'docs', 'e2e', 'api-reference'}),
+    # Web demos and API tests import SDK fixtures directly (including glob imports).
+    ('packages/php-sdk/fixtures/*', {'web'}),
+    # Desktop's Tauri config consumes web; Docs' merge proof generates web types.
+    # Docs and API reference also run repository vocabulary checks over web/Pi sources.
+    ('apps/web/*', {'web', 'desktop', 'docs', 'api-reference'}),
     ('apps/pi-server/*', {'pi-server'}),
+    ('apps/pi-server/src/*', {'docs', 'api-reference'}),
+    ('apps/desktop/*', {'desktop'}),
     ('apps/agent/*', {'agent'}),
     # Gateway's log tests share the agent's real redaction and journal fixtures.
     ('apps/agent/tests/*', {'gateway'}),
-    # tools/check_agent_release.py validates this pin against apps/agent/Cargo.toml.
+    # tools/check_agent_release.py compares this pin with apps/agent/Cargo.toml.
     ('apps/gateway/resources/machine-software/recipe.json', {'agent'}),
+    # TaskTopologyCatalogParityTest and TopologySeedContractTest read the E2E catalog/harness.
+    ('apps/e2e/resources/topology-nodes.json', {'gateway'}),
+    ('apps/e2e/app/E2E/Value/TopologyRecipe.php', {'gateway'}),
+    ('apps/e2e/app/E2E/IncusHost.php', {'gateway'}),
+    # ToolingBaselineTest and ComposerConfigurationTest inspect shared PHP tooling.
+    ('apps/*/composer.*', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/pint.json', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/rector.php', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/phpstan.neon', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/phpunit.*', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/AGENTS.md', {'docs', 'e2e', 'api-reference'}),
     ('docs/*', {'docs'}),
     ('docs/api/*', {'api-reference'}),
-    ('docs/docs.json', {'api-reference'}),
-    # OpenAPI feeds web schema generation, SDK/CLI contracts and Gateway MCP tools.
-    ('docs/openapi.json', {'api-reference', 'web', 'php-sdk', 'cli', 'gateway'}),
+    # CLI CommandSurfaceTest/BoostGuidanceTest read these maintained command contracts.
+    ('docs/cli/*', {'cli'}),
+    ('docs/reference/cli-command-vocabulary.md', {'cli'}),
+    ('docs/reference/cli-ux.md', {'cli'}),
+    ('docs/reference/delivery-line.md', {'e2e'}),
+    ('docs/docs.json', {'e2e', 'api-reference'}),
+    # OpenAPI feeds web schemas, SDK/CLI/E2E contracts and Gateway MCP tools.
+    ('docs/openapi.json', {'api-reference', 'web', 'php-sdk', 'cli', 'gateway', 'e2e'}),
     # Shared workflow/actions, executables, analysis rules and root configuration.
     ('.github/*', ALL),
     ('bin/*', ALL),
@@ -88,13 +108,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base', default='origin/main')
     parser.add_argument('--head', default='HEAD')
-    parser.add_argument('--event', default=os.environ.get('GITHUB_EVENT_NAME', 'workflow_dispatch'))
-    parser.add_argument('--ref', default=os.environ.get('GITHUB_REF', ''))
+    parser.add_argument('--change-run', choices=['true', 'false'], default=os.environ.get('CHANGE_RUN', 'false'))
     parser.add_argument('--github-output', type=Path)
     args = parser.parse_args()
-    change_run = args.event == 'pull_request' or (
-        args.event == 'push' and args.ref.startswith('refs/heads/task-') and args.ref.endswith('-handoff')
-    )
+    if args.change_run not in ('true', 'false'):
+        parser.error('CHANGE_RUN must be true or false')
+    change_run = args.change_run == 'true'
     result = selection(changed_paths(args.base, args.head, Path.cwd()) if change_run else [], full=not change_run)
     print(json.dumps(result))
     if args.github_output:

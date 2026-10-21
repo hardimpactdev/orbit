@@ -21,17 +21,59 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(result['matrix']['project'], [{'name': 'Docs', 'directory': 'apps/docs'}])
         self.assertEqual([job for job, selected in result['jobs'].items() if selected], ['project'])
 
-    def test_sdk_fixtures_start_sdk_cli_and_gateway(self):
+    def test_sdk_fixtures_start_sdk_cli_gateway_and_their_real_consumers(self):
         result = ci.selection(['packages/php-sdk/fixtures/nodes/show.json'])
-        self.assertEqual([p['name'] for p in result['matrix']['project']], ['CLI', 'Gateway', 'PHP SDK'])
+        self.assertEqual([p['name'] for p in result['matrix']['project']], ['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK'])
         self.assertEqual([job for job, selected in result['jobs'].items() if selected],
-                         ['project', 'gateway-shards', 'privileged', 'remote-programs'])
+                         ['project', 'gateway-shards', 'privileged', 'remote-programs', 'api-reference', 'web'])
 
     def test_sdk_sources_also_check_the_generators_that_read_them(self):
         result = ci.selection(['packages/php-sdk/src/Requests/Nodes/GetNodeRequest.php'])
         self.assertEqual([p['name'] for p in result['matrix']['project']],
-                         ['CLI', 'Docs', 'Gateway', 'PHP SDK'])
+                         ['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK'])
         self.assertTrue(result['jobs']['api-reference'])
+
+    def test_cross_project_contract_readers_are_selected(self):
+        cases = {
+            # GuestScriptContractTest, real bootstrap/gate inputs and delivery line tests.
+            'apps/cli/app/Commands/NodeListCommand.php': ('e2e', 'docs', 'api-reference'),
+            'apps/gateway/tests/Support/SubprocessFixture.php': ('e2e',),
+            'apps/docs/app/Console/Commands/DocsLintCommand.php': ('e2e',),
+            'packages/php-sdk/composer.json': ('e2e', 'docs', 'api-reference'),
+            'docs/openapi.json': ('e2e',),
+            'docs/docs.json': ('e2e',),
+            'docs/reference/delivery-line.md': ('e2e',),
+            # Gateway parity/seed tests read these E2E inputs.
+            'apps/e2e/resources/topology-nodes.json': ('gateway',),
+            'apps/e2e/app/E2E/Value/TopologyRecipe.php': ('gateway',),
+            'apps/e2e/app/E2E/IncusHost.php': ('gateway',),
+            # CLI's command and guidance contract tests read maintained guides.
+            'docs/cli/node.mdx': ('cli',),
+            'docs/reference/cli-command-vocabulary.md': ('cli',),
+            'docs/reference/cli-ux.md': ('cli',),
+            # Whole-repository tooling/vocabulary checks and fixture validation.
+            'apps/e2e/composer.json': ('docs', 'api-reference'),
+            'apps/e2e/pint.json': ('docs', 'api-reference'),
+            'apps/e2e/phpstan.neon': ('docs', 'api-reference'),
+            'apps/e2e/rector.php': ('docs', 'api-reference'),
+            'apps/e2e/phpunit.xml': ('docs', 'api-reference'),
+            'apps/pi-server/src/main.ts': ('docs', 'api-reference'),
+            'apps/web/src/main.tsx': ('docs', 'api-reference'),
+            'apps/web/feature-map.json': ('docs', 'api-reference'),
+            'apps/web/fixtures/fleet/nodes.json': ('docs',),
+            'packages/php-sdk/fixtures/project-documents/list/default.json': ('docs', 'web'),
+        }
+        for path, consumers in cases.items():
+            with self.subTest(path=path):
+                result = ci.selection([path])
+                projects = {key for key, value in ci.PROJECTS.items() if value in result['matrix']['project']}
+                projects.update(job for job, selected in result['jobs'].items() if selected)
+                self.assertTrue(set(consumers) <= projects, f'{path}: missing {set(consumers) - projects}')
+
+    def test_desktop_changes_start_only_desktop(self):
+        result = ci.selection(['apps/desktop/src-tauri/src/lib.rs'])
+        self.assertEqual(result['matrix'], {'project': []})
+        self.assertEqual([job for job, selected in result['jobs'].items() if selected], ['desktop'])
 
     def test_shared_and_unknown_paths_start_everything(self):
         for path in ['.github/workflows/ci.yml', '.github/actions/php/action.yml', 'composer.json',
@@ -45,7 +87,7 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue(docs['jobs']['api-reference'])
         self.assertFalse(docs['jobs']['web'])
         api = ci.selection(['docs/openapi.json'])
-        self.assertEqual([p['name'] for p in api['matrix']['project']], ['CLI', 'Docs', 'Gateway', 'PHP SDK'])
+        self.assertEqual([p['name'] for p in api['matrix']['project']], ['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK'])
         self.assertTrue(api['jobs']['web'])
         self.assertTrue(api['jobs']['api-reference'])
 
@@ -57,7 +99,7 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue(web['jobs']['web'])
 
     def test_a_non_composer_project_has_an_empty_skipped_matrix(self):
-        result = ci.selection(['apps/pi-server/src/main.ts'])
+        result = ci.selection(['apps/pi-server/package.json'])
         self.assertEqual(result['matrix'], {'project': []})
         self.assertFalse(result['jobs']['project'])
         self.assertTrue(result['jobs']['pi-server'])
@@ -69,8 +111,8 @@ class SelectionTest(unittest.TestCase):
         for event, ref in [('push', 'refs/heads/main'), ('schedule', 'refs/heads/main'),
                            ('workflow_dispatch', 'refs/heads/task-example-handoff')]:
             with self.subTest(event=event, ref=ref):
-                result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--event', event,
-                                         '--ref', ref, '--base', 'does-not-exist'],
+                result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--base', 'does-not-exist'],
+                                        env={**os.environ, 'CHANGE_RUN': 'false', 'GITHUB_EVENT_NAME': event, 'GITHUB_REF': ref},
                                         text=True, capture_output=True, check=True)
                 self.assertTrue(all(json.loads(result.stdout)['jobs'].values()))
 
@@ -107,8 +149,8 @@ class DiffTest(unittest.TestCase):
             for event, ref in [('pull_request', 'refs/pull/1/merge'),
                                ('push', 'refs/heads/task-123-handoff')]:
                 output = root / 'github-output'
-                result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--event', event,
-                                         '--ref', ref, '--base', 'main', '--head', head,
+                result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--change-run', 'true',
+                                         '--base', 'main', '--head', head,
                                          '--github-output', str(output)], cwd=root,
                                         env=env, text=True, capture_output=True, check=True)
                 selected = json.loads(result.stdout)
@@ -119,7 +161,7 @@ class DiffTest(unittest.TestCase):
                                                 output.read_text().splitlines())['jobs']), selected['jobs'])
 
     def test_an_invalid_diff_fails_instead_of_selecting_nothing(self):
-        result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--event', 'pull_request',
+        result = subprocess.run(['python3', str(ROOT / 'bin/ci-changes'), '--change-run', 'true',
                                  '--base', 'does-not-exist'], text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
 

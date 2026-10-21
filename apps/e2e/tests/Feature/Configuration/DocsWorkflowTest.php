@@ -82,8 +82,24 @@ it('provisions Gateway runtime and web dependencies before the Docs merge proof 
 /** @return array{project: list<array{name: string, directory: string}>} */
 function docsWorkflowMatrix(): array
 {
-    $process = new Process(['python3', 'bin/ci-changes', '--event', 'workflow_dispatch'], base_path('../..'));
+    $process = new Process(['python3', 'bin/ci-changes', '--change-run', 'false'], base_path('../..'));
     $process->mustRun();
 
     return json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['matrix'];
 }
+
+it('checks environment documentation in Docs so ordinary docs changes need only the Docs job', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
+    $step = $steps['Check that every environment variable is documented'];
+
+    expect($step)->toMatchArray([
+        'if' => "matrix.project.directory == 'apps/docs'",
+        'working-directory' => '.',
+        'run' => 'php bin/env-docs',
+    ]);
+    $process = new Process(['bash', '-ec', $step['run']], base_path('../..'));
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+});

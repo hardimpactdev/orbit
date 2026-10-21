@@ -32,7 +32,7 @@ it('tests the path map before emitting selections from the PR head and base', fu
 it('gates every suite before allocating a runner and filters the Composer matrix before expansion', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $required = $workflow['jobs']['required'];
-    $process = new Process(['python3', 'bin/ci-changes', '--event', 'workflow_dispatch'], base_path('../..'));
+    $process = new Process(['python3', 'bin/ci-changes', '--change-run', 'false'], base_path('../..'));
     $process->mustRun();
     $selection = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 

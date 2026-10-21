@@ -138,6 +138,11 @@ jobs:
         if: matrix.project.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
+      - name: Check that every environment variable is documented
+        if: matrix.project.directory == 'apps/docs'
+        working-directory: .
+        run: php bin/env-docs
+
       # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
       - name: Install generated merge proof dependencies
         if: matrix.project.directory == 'apps/docs'
@@ -489,9 +494,6 @@ jobs:
 
       - name: Reject App-domain names
         run: php bin/project-vocabulary
-
-      - name: Check that every environment variable is documented
-        run: php bin/env-docs
 
       - name: Check that the projects share their tooling baseline
         run: php bin/tooling-baseline

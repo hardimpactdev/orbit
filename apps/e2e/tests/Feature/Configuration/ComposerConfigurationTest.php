@@ -436,7 +436,7 @@ SH);
     it('keeps one project lane per suite and preserves main cache indexes', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         expect($workflow['jobs']['project']['strategy']['matrix'])->toBe('${{ fromJSON(needs.changes.outputs.matrix) }}');
-        $process = new Process(['python3', 'bin/ci-changes', '--event', 'workflow_dispatch'], base_path('../..'));
+        $process = new Process(['python3', 'bin/ci-changes', '--change-run', 'false'], base_path('../..'));
         $process->mustRun();
         $matrix = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['matrix'];
 
@@ -532,7 +532,7 @@ it('lets stock ParaTest use every available CPU in each CI test run', function (
     }
 });
 
-it('builds the agent and desktop app on a handoff push only when it changes them since main', function (string $job, string $output): void {
+it('gates the agent and desktop jobs with the shared change selection', function (string $job, string $output): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $gated = $workflow['jobs'][$job];
 
