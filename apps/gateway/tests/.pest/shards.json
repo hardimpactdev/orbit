@@ -748,7 +748,6 @@
         "Tests\\Unit\\Domain\\SourceControl\\GitRepositoryOriginTest": 0.0165,
         "Tests\\Unit\\Domain\\Tasks\\TaskCheckOutputBuilderTest": 0.9771,
         "Tests\\Unit\\Domain\\Tasks\\TaskDeliverableVerifierTest": 0.0195,
-        "Tests\\Unit\\Domain\\Tasks\\TaskObserverRegistrationTest": 0.1772,
         "Tests\\Unit\\Domain\\Tasks\\TaskPullRequestDescriptionTest": 0.0055,
         "Tests\\Unit\\Domain\\Tasks\\TaskReviewContextTest": 0.0045,
         "Tests\\Unit\\Domain\\Tasks\\TaskReviewPacketTest": 0.0473,
@@ -863,6 +862,6 @@
         "Tests\\Unit\\Support\\NoSudoTest": 0.6775,
         "Tests\\Unit\\Support\\SubprocessFixtureTest": 0.2461
     },
-    "checksum": "30100272628f3bfca7dbf46bbb0113fa",
+    "checksum": "92448af2cecf854af56d06db191e139d",
     "updated_at": "2026-10-20T12:49:55+00:00"
 }

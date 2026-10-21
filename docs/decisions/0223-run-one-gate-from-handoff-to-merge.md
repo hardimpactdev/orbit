@@ -14,13 +14,19 @@ In progress.
 
 Principle: [One way, one name](/mission#principles). One local gate, one integration gate, one definition of the checks, one cache transport, and one rule for the process count. It also serves [Lean](/mission#principles): about 17 hours of main-merge gates in five days, and the implementer's duplicate run, are deleted. No principle exception is proposed.
 
-Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/hardimpactdev/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/hardimpactdev/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
+Nick amended this decision on 2026-10-19; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) owns the resulting rule. The [declaration-data audit](/solutions/test-impact-declaration-data) found false greens for enum cases, constants, property and parameter defaults, and attribute arguments. A declaration selector would widen about 86% of Gateway app changes, so Nick rejected it. [PR #1378](https://github.com/hardimpactdev/orbit/pull/1378) added `peer-dns` to `NodeFootprint`, but TIA missed the container-wiring contract that still expected the old artifact list. Main then failed in [run 39265936348](https://github.com/hardimpactdev/orbit/actions/runs/39265936348). That incident showed why a TIA false green must be caught before merge.
 
 Nick amended this decision again on 2026-10-20:
 
 - A handoff's full test suite runs in sharded GitHub Actions CI on the pushed handoff commit, not in the task VM. [Tasks: Handoff CI](/reference/tasks#handoff-ci) owns the rule.
 - The reason: on 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and TIA selected a median of the whole suite once its selection was correct.
 - It replaces item 3 and the local `composer test:affected` of item 4. Build step 4 deletes the test base instead of building it.
+
+Nick amended this decision a third time on 2026-10-20:
+
+- Orbit runs no test impact analysis (TIA). An implementer runs the tests of the files it touches with stock Pest filters, and CI runs the full suites.
+- The reason: once its selection was sound, TIA selected a median of the whole suite, and recording coverage added about 19% to test time.
+- `composer test:affected`, `bin/tia-cache` and the `@orbit/tia-baseline` setup step are gone. `@orbit/ci-caches` stays, and imports only Pint and PHPStan caches.
 
 Nick approved this decision on 2026-10-18. He left one choice open in item 3, between two test bases. This ADR chose the subtask start commit, from the data below, until the 2026-10-20 amendment removed the local test run.
 
@@ -112,14 +118,14 @@ The decision has eight parts. They change the Gateway, the root `bin` and `tools
 
 - The Gateway handoff check is the only local run of the Project check in a task.
 - `TaskTurnInstructions::implementer` no longer says "and `<check>` passes". It says that Orbit runs the Project check when the implementer hands off.
-- The engine stays generic. The Orbit repository's guidance tells a task implementer to run `composer test:affected` in each project it changed, and not to run `composer check` or `bin/review-check`. Work outside a task keeps the full checks, because no Gateway gate runs for it.
+- The engine stays generic. The Orbit repository's guidance tells a task implementer to run the tests of the files it changed, and not to run `composer check` or `bin/review-check`. Work outside a task keeps the full checks, because no Gateway gate runs for it.
 - A failed handoff check returns to the implementer as a reminder with the end of the output, as today. A failed handoff CI result returns the same way, with the failed jobs and their log excerpts.
 - A failed handoff check gets its own failed-check budget: three failed handoff checks in a row for one subtask. The fourth asks for assistance. A passing check resets the count. Today one reminder per `completion_attempt` is allowed, so without this failed-check budget two failed handoffs in a row would stop the group.
 - The `project-check` deliverable goes. Every settling fixup gets the `review` deliverable `fixup-review`, also when the Project has a task check. A final-review fixup and a GitHub-review fixup keep their `review` deliverable. Their handoff check runs the Project check, as every handoff does.
 
 ### 2. CI on the merge ref is the only integration gate
 
-- Nick chose full suites at merge and fast TIA in the task loop, rather than a declaration selector; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) defines the checks.
+- Nick chose full suites at merge rather than a declaration selector; the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) defines the checks. The third amendment removed TIA from the task loop too.
 - Orbit runs no Project check on a main merge. `TaskCheckKind::BaseMerge` goes.
 - Orbit does not merge main before a final review. The first final review still starts at the merge base of `HEAD` and `origin/{default branch}`, so it reviews the whole branch.
 - Orbit does not merge main before a push.
@@ -160,7 +166,7 @@ This item replaced, on 2026-10-20, the start-commit test base that it chose on 2
 - One enum classifies GitHub's conclusions for check runs and suites, and states where the two differ.
 - The approval stores the commit CI passed and commits nothing. A HEAD that left that commit, or an Orbit-owned HEAD change during the review, reopens the handoff with its reason; the CI result stays as it is.
 - The merge still needs the full suite on the final head. Because the approval stores the handoff commit, a head whose handoff passed CI needs no further run.
-- `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base. `composer test:affected` stays for the implementer.
+- `--tia-base`, the handoff cache, and `ORBIT_TASK_CHECK_BASE` go: no local test run needs a test base.
 
 The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selection needed a test base, a cache and fork internals, and once correct it selected a median of the whole suite.
 
@@ -173,7 +179,7 @@ The 2026-10-18 data stays as the reason TIA cannot decide a handoff: its selecti
 - `bin/review-check` reads it.
 - The Gateway reads `stage_budgets` from the same file to report baseline, handoff and review time overruns.
 - Path triggers select only the checks that TIA cannot narrow: the web app, the Pi server, the generated artifacts, the fixtures, and the extra architecture triggers.
-- Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today. TIA narrows their tests.
+- Path triggers never drop the commands of a PHP project. Every local gate, the baseline included, runs the commands of all five PHP projects, as `selected_projects` does today.
 - A handoff and a local `composer check` run a triggered check when a changed path matches its triggers.
 - The baseline check uses no path triggers. Its branch diff is empty, so triggers would select nothing.
 - CI reads the same file through `bin/review-check`.
