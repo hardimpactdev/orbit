@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
+use Tests\Support\CommandFixture;
 
 pest()->group('subprocess');
 
@@ -39,14 +40,10 @@ afterEach(function (): void {
 it('sends the exact package identity and does not decide ownership itself', function (): void {
     $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
 
-    expect(Artisan::call('tool:adopt', [
-        'package' => 'wireguard-tools',
-        '--node' => '2',
-        '--manager' => 'unlisted',
-        '--constraint' => '^1.2',
-        '--yes' => true,
-        '--json' => true,
-    ]))->toBe(0);
+    $result = CommandFixture::run([
+        'tool:adopt', 'wireguard-tools', '--node=2', '--manager=unlisted', '--constraint=^1.2', '--yes', '--json',
+    ]);
+    expect($result['status'])->toBe(0)->and($result['stderr'])->toBe('');
 
     $pending = $mock->getLastPendingRequest();
     expect($mock->getLastRequest())
@@ -69,13 +66,8 @@ it('sends the exact package identity and does not decide ownership itself', func
 it('omits a missing constraint instead of inventing one', function (): void {
     $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
 
-    expect(Artisan::call('tool:adopt', [
-        'package' => 'jq',
-        '--node' => '2',
-        '--manager' => 'apt',
-        '--yes' => true,
-        '--json' => true,
-    ]))->toBe(0);
+    $result = CommandFixture::run(['tool:adopt', 'jq', '--node=2', '--manager=apt', '--yes', '--json']);
+    expect($result['status'])->toBe(0)->and($result['stderr'])->toBe('');
     expect($mock->getLastPendingRequest()?->body()->all())
         ->toBe([
             'node_id' => 2,
@@ -87,29 +79,31 @@ it('omits a missing constraint instead of inventing one', function (): void {
 it('requires consent before any adoption request when it cannot prompt', function (array $arguments): void {
     $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
 
-    expect(Artisan::call('tool:adopt', $arguments))->toBe(1);
-    $output = Artisan::output();
+    $result = CommandFixture::run(['tool:adopt', ...$arguments]);
+    expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('');
+    $output = $result['output'];
     expect($output)->toContain('Supply --yes to confirm this operation.');
-    if (($arguments['--json'] ?? false) === true) {
+    if (in_array('--json', $arguments, true)) {
         expect($output)->toContain('input.confirmation_required');
     }
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'human' => [['package' => 'jq', '--node' => '2', '--manager' => 'apt']],
-    'json' => [['package' => 'jq', '--node' => '2', '--manager' => 'apt', '--json' => true]],
+    'human' => [['jq', '--node=2', '--manager=apt']],
+    'json' => [['jq', '--node=2', '--manager=apt', '--json']],
 ]);
 
 it('rejects invalid identity before consent or a request', function (array $arguments, string $code): void {
     $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
 
-    expect(Artisan::call('tool:adopt', [...$arguments, '--yes' => true, '--json' => true]))->toBe(1);
-    expect(Artisan::output())->toContain($code);
+    $result = CommandFixture::run(['tool:adopt', ...$arguments, '--yes', '--json']);
+    expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('');
+    expect($result['output'])->toContain($code);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'node' => [['package' => 'jq', '--node' => '0', '--manager' => 'apt'], 'tool.node_id_invalid'],
-    'manager' => [['package' => 'jq', '--node' => '2'], 'tool.manager_required'],
-    'package' => [['package' => "jq\nname", '--node' => '2', '--manager' => 'apt'], 'tool.package_invalid'],
-    'oversized package' => [['package' => str_repeat('x', 256), '--node' => '2', '--manager' => 'apt'], 'tool.package_invalid'],
+    'node' => [['jq', '--node=0', '--manager=apt'], 'tool.node_id_invalid'],
+    'manager' => [['jq', '--node=2'], 'tool.manager_required'],
+    'package' => [["jq\nname", '--node=2', '--manager=apt'], 'tool.package_invalid'],
+    'oversized package' => [[str_repeat('x', 256), '--node=2', '--manager=apt'], 'tool.package_invalid'],
 ]);
 
 it('asks for default-No ownership consent and cancels before the adoption request', function (array $keys, bool $accepted): void {
@@ -169,6 +163,8 @@ it('does not prompt for consent when --yes is explicit', function (bool $json): 
 
     expect($result['status'])->toBe(0)
         ->and($result['prompt_seen'])->toBeFalse()
+        ->and($result['output'])->not->toContain('Take ownership of package')
+        ->and($result['restored'])->toBeTrue()
         ->and($result['requests'])->toHaveCount(1)
         ->and($result['requests'][0]['class'])->toBe(AdoptToolRequest::class);
 })->with([
@@ -194,7 +190,7 @@ it('refuses JSON consent from a terminal without sending the adoption request', 
  * @param  list<array<string, mixed>>  $replies
  * @return array<string, mixed>
  */
-function run_tool_adopt_consent(array $arguments, array $keys, array $replies, bool $pty = true): array
+function run_tool_adopt_consent(array $arguments, array $keys, array $replies): array
 {
     $directory = sys_get_temp_dir().'/orbit-tool-adopt-consent-'.Str::uuid();
     new Filesystem()->makeDirectory($directory);
@@ -212,16 +208,12 @@ function run_tool_adopt_consent(array $arguments, array $keys, array $replies, b
     $argv = [PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'];
 
     try {
-        $process = new Process($pty ? ['python3', $fixtures.'command-consent-pty.py', ...$argv] : $argv, env: ['PAO_DISABLE' => '1']);
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', ...$argv], env: ['PAO_DISABLE' => '1']);
         $process->setTimeout(15);
         $process->run();
-        if ($pty) {
-            expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $result['output'] = base64_decode((string) $result['raw']);
-        } else {
-            $result = ['status' => $process->getExitCode(), 'output' => $process->getOutput(), 'stderr' => $process->getErrorOutput()];
-        }
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $result['output'] = base64_decode((string) $result['raw']);
         $result['requests'] = is_file($configuration['trace']) ? array_map(
             static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
             file($configuration['trace'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],

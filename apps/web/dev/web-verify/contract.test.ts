@@ -15,7 +15,7 @@ import {
     validateMap,
 } from "./map";
 import { parseCommand } from "./parse";
-import { assessRoute } from "./session";
+import { assessRoute } from "./route";
 
 const mapFile = join(fileURLToPath(new URL("../../feature-map.json", import.meta.url)));
 const loaded = loadFeatureMap(mapFile);

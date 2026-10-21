@@ -24,7 +24,7 @@ concurrency:
 jobs:
   mirror:
     name: Mirror the recipe Debian artifacts
-    if: github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main'
+    if: github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       contents: write

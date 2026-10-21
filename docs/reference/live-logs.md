@@ -185,6 +185,14 @@ Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_no
 | `logs.stream_not_found` | 404 | The stream does not exist, has ended, belongs to another record, or was opened by another Node. |
 | `node_access.required` | 403 | The caller has no access grant to the serving Node. |
 
+## Stream tests
+
+The agent's Laravel controller integration reads real log files, checks redaction, and ends the stream when a link replaces the source. It waits for each expected frame with a bounded Tokio timeout, using the paused clock to advance polling and flush intervals without waiting for wall time.
+
+Journal fixture tests flush until the expected output arrives within a bounded Tokio timeout instead of sleeping for startup. To check silence, they send a barrier through the follower's real stdout pipe and the line sink. Receiving it proves that earlier records were consumed; unexpected lines or an early stream end still fail the test. Process cleanup checks wait until the child has been reaped. Large-entry fixtures build their text without wide `awk` formatting, which exceeds the default buffer on some Nodes.
+
+Both real-journal tests keep their real observation intervals because they have no fixture barrier. The test that follows a real unit remains ignored by default. [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent) lists the agent test commands.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

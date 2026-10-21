@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+  # A push to task-*-handoff is Orbit's handoff commit, which CI tests as it tests a pull request
+  # (docs/reference/tasks.md#handoff-ci). No pull request has such a branch as head.
   push:
-    branches: [main]
+    branches: [main, 'task-*-handoff']
   # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
   schedule:
     - cron: '17 3 * * *'
@@ -12,23 +14,30 @@ on:
 permissions:
   contents: read
 
-# A pull request keeps only its newest run. Pushes to main share one group: a running main run always
-# finishes, and a newer push replaces only the waiting one, so after a burst of merges the newest commit
-# is tested next. Every main run tests every project in full. Scheduled and
-# manual runs get a group per commit, so a push never cancels a full run.
+# Scheduled and manual runs get a group per ref and commit, so a push never cancels a full run. Every other run groups
+# by its ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the
+# newest commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge
+# ref or a handoff branch, keeps only its newest run, so neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
+  # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
+  # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
+  # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
+  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
+  HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # On PRs this Gateway job checks quality while all four shards run independently.
-    # Main keeps one full recording run. Fork PRs never run on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
+    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
+    # on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,12 +76,11 @@ jobs:
         with:
           coverage: pcov
 
-      # Sabre's own node shim lives in a home directory the runner user cannot read. GitHub-hosted runners ship Node.
+      # Pin the project runtime on hosted runners and self-hosted shards alike.
       - name: Set up Node
-        if: runner.environment == 'self-hosted'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Set up Bun for package cache and generated merge tests
         id: bun
@@ -121,23 +129,23 @@ jobs:
         if: matrix.project.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
-      # The Docs merge proof regenerates Gateway OpenAPI and web types in disposable clones.
+      # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
       - name: Install generated merge proof dependencies
         if: matrix.project.directory == 'apps/docs'
         working-directory: .
         run: |
-          (cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)
+          (cd apps/gateway && cp .env.example .env && composer install --no-dev --no-interaction --prefer-dist)
           (cd apps/web && bun install --frozen-lockfile)
 
       - name: Install all project dependencies for E2E integration tests
         if: matrix.project.directory == 'apps/e2e'
         working-directory: .
-        run: bin/bootstrap --skip-checks
+        run: bin/bootstrap --dependencies-only
 
       - name: Validate Composer metadata
         run: composer validate --strict
 
-      # A pull request restores quality caches only from main and saves none.
+      # A change run restores quality caches only from main and saves none.
       - name: Compute PHPStan result cache prefix
         id: orbit-phpstan-key
         working-directory: .
@@ -150,9 +158,9 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            ${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
 
       - name: Compute Pint cache prefix
         id: orbit-lint-key
@@ -166,39 +174,43 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            ${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
+
+      # docs/reference/implementation-loop.md: runner policy, not PATH, is the sudo boundary.
+      - name: Require no sudo for ordinary Gateway tests
+        id: gateway-no-sudo
+        if: matrix.project.directory == 'apps/gateway'
+        uses: ./.github/actions/no-sudo
 
       - name: Verify Gateway shard coverage
-        if: matrix.project.directory == 'apps/gateway' && github.event_name == 'pull_request'
+        if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
-        env:
-          ORBIT_CHECK_PROCESSES: ${{ runner.environment == 'self-hosted' && 6 || 4 }}
         run: composer check
 
       - name: Check classification fakes
         run: php ../../bin/check-classification-fakes tests
 
       - name: Save PHPStan result cache
-        if: success() && github.event_name != 'pull_request'
+        if: success() && env.CHANGE_RUN != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Save Pint cache
-        if: success() && github.event_name != 'pull_request'
+        if: success() && env.CHANGE_RUN != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Run full PR test suite
-        if: matrix.project.directory != 'apps/gateway' && github.event_name == 'pull_request'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
+        if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
+        run: vendor/bin/pest --parallel --no-tia --compact
 
       # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot
@@ -206,21 +218,24 @@ jobs:
         env:
           RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
           if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
             php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
           fi
 
-      # Full mode records the graph without using it to select tests, on every non-PR event.
+      # Full mode records the graph without using it to select tests, on every event but a change run.
+      # Gateway's phpunit.xml excludes privileged; a CLI exclusion would disable TIA recording.
       - name: Run full test suite and refresh Pest TIA graph
-        if: github.event_name != 'pull_request'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
+        if: env.CHANGE_RUN != 'true'
+        run: vendor/bin/pest --parallel --tia --fresh --compact
 
       - name: Run redaction cases without PCRE JIT
-        if: always() && matrix.project.directory == 'apps/gateway'
+        if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT" --no-tia
 
       # A full run records this commit in the graph.
       # Stage the same-run exports for the cache-ref publisher and the background main cache store.
@@ -277,16 +292,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # PRs use four stock shards. Main keeps one recording run for a complete TIA graph.
+  # Change runs use the static stock shard matrix below as the only source of the shard count. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
-    if: github.event_name == 'pull_request'
+    # env.CHANGE_RUN, spelled out.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: apps/gateway
@@ -305,10 +321,9 @@ jobs:
           coverage: pcov
 
       - name: Set up Node
-        if: runner.environment == 'self-hosted'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Set up Bun for package cache tests
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -346,16 +361,18 @@ jobs:
           cp .env.example .env
           composer install --no-interaction --prefer-dist
 
+      - name: Require no sudo for ordinary Gateway tests
+        uses: ./.github/actions/no-sudo
+
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
-      # Four workers per shard leave room for other jobs on these shared hosts.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/4 --compact
+        run: vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     name: Gateway privileged
-    # A GitHub-hosted runner gives every run a fresh machine with passwordless sudo and leaves Sabre to the Gateway suite.
+    # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: apps/gateway
@@ -368,39 +385,21 @@ jobs:
         uses: ./.github/actions/php
         with:
           coverage: none
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: runner.environment == 'self-hosted'
-        with:
-          node-version: '24'
-      - uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
-        if: runner.environment == 'github-hosted'
-      - name: Install hosted runner prerequisites
-        if: runner.environment == 'github-hosted'
+      # The tests need ACL tools and the caddy Unix identity, not the Caddy binary or a package manager.
+      - name: Install privileged test prerequisites
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
-          brew install caddy openssl@3
-          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
       - name: Install Gateway dependencies
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      # ORBIT_TEST_DOCKER runs the Valkey Database server tests against a real valkey/valkey:8.1 in Docker.
-      - name: Pull the current Valkey test image
-        run: |
-          docker pull valkey/valkey:8.1
-          docker run --rm valkey/valkey:8.1 valkey-server --version
-      - name: Run every privileged test
+      # Valkey tests pull their image on the first real docker run.
+      - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
-      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
-      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
-      - name: Remove root-owned files from the workspace
-        if: always() && runner.environment == 'self-hosted'
-        working-directory: ${{ github.workspace }}
-        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
+        run: vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
@@ -413,24 +412,26 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Refuse Gateway script growth
-        env:
-          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
-        run: |
-          python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
-          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
           coverage: none
-      - name: Install shellcheck and ruff
+      - name: Install shellcheck and Python test tools
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
           python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+      - name: Refuse Gateway script growth
+        env:
+          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
+        run: |
+          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
+          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
         run: |
@@ -496,6 +497,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
 
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
       - name: Set up Bun
         id: bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -526,10 +532,13 @@ jobs:
         run: bun run check
 
       - name: Install the test browsers
-        run: bunx playwright install --with-deps chromium webkit
+        run: bunx playwright install --with-deps --only-shell chromium webkit
 
-      - name: Run tests
-        run: bun run test
+      - name: Run unit and verification tests
+        run: bun run test:unit
+
+      - name: Run browser tests
+        run: bun run test:browser
 
       # Open pages compare their build with version.json, so the published build must hold it beside index.html.
       - name: Build
@@ -561,6 +570,11 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
 
       - name: Set up Bun
         id: bun
@@ -606,20 +620,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          fetch-depth: 2
-      # A pull request that changes neither the agent nor this workflow cannot change the agent build.
+          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
+      # A change run that changes neither the agent nor this workflow cannot change the agent build.
       # Pushes to main and manual runs always build it.
       - name: Detect agent changes
         id: changes
         working-directory: .
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
+          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
+          base=HEAD^1
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
             echo "agent=true" >> "$GITHUB_OUTPUT"
           else
             echo "agent=false" >> "$GITHUB_OUTPUT"
-            echo "The pull request does not change apps/agent or ci.yml; skipping the agent build."
+            echo "The change does not touch apps/agent or ci.yml; skipping the agent build."
           fi
       - name: Install Rust toolchain
         if: steps.changes.outputs.agent == 'true'
@@ -653,12 +669,18 @@ jobs:
 
       # Keep this after the builds so a version bump can prove its binaries before tagging.
       # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      - name: Install Python test tools
+        working-directory: .
+        run: |
+          python3 -m venv "$RUNNER_TEMP/agent-tests"
+          "$RUNNER_TEMP/agent-tests/bin/pip" install --quiet -r apps/gateway/tests/Programs/requirements.txt
+          echo "$RUNNER_TEMP/agent-tests/bin" >> "$GITHUB_PATH"
       - name: Check agent release delivery
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m unittest discover -s tools -p 'test_check_agent_release.py'
+          pytest -n auto --dist=load -q tools/test_check_agent_release.py
           python3 tools/check_agent_release.py
 
   desktop:
@@ -673,21 +695,28 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          fetch-depth: 2
-      # A pull request that changes neither the desktop app nor this workflow cannot change its build.
+          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
+      # A change run that changes neither the desktop app nor this workflow cannot change its build.
       # Pushes to main and manual runs always check it.
       - name: Detect desktop changes
         id: changes
         working-directory: .
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
+          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
+          base=HEAD^1
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
-            echo "The pull request does not change apps/desktop or ci.yml; skipping the desktop checks."
+            echo "The change does not touch apps/desktop or ci.yml; skipping the desktop checks."
           fi
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
       - name: Set up Bun
         id: bun
         if: steps.changes.outputs.desktop == 'true'
@@ -737,7 +766,7 @@ jobs:
     name: Publish CI cache ref
     needs: [required]
     # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
-    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     permissions:
       actions: read
@@ -762,7 +791,6 @@ jobs:
     steps:
       - name: Require every project to pass
         env:
-          EVENT: ${{ github.event_name }}
           PROJECT_RESULT: ${{ needs.project.result }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
@@ -774,7 +802,7 @@ jobs:
           DESKTOP_RESULT: ${{ needs.desktop.result }}
         run: |
           test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
-            if [ "$EVENT" = pull_request ]; then
+            if [ "$CHANGE_RUN" = true ]; then
               test "$GATEWAY_SHARDS_RESULT" = success
             else
               test "$GATEWAY_SHARDS_RESULT" = skipped

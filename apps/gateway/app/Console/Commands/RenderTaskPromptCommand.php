@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
@@ -47,7 +48,7 @@ final class RenderTaskPromptCommand extends Command
             $this->rawLine(json_encode([
                 'role' => $role,
                 'prompt' => $prompt,
-                'source_commit' => is_string(config('app.version')) ? config('app.version') : 'dev',
+                'source_commit' => GatewayVersion::current(),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;

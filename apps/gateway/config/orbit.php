@@ -1,9 +1,6 @@
 <?php
 
 declare(strict_types=1);
-use App\Domain\Tasks\TaskReviewRequestLogins;
-use App\Domain\Tasks\TaskReviewTrust;
-use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
 $reviewerEffort = env('ORBIT_TASKS_REVIEWER_EFFORT');
@@ -33,7 +30,8 @@ return [
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
     'gateway_releases' => [
         'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
-        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', GatewayReleasePromoter::KeptReleases),
+        // The most releases deploy keeps, the current and the previous one included; at least 2, so the way back stays.
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 3),
         'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
         // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.
@@ -54,7 +52,7 @@ return [
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
     // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
     'cli_releases' => [
-        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit'),
         'git_directory' => base_path(),
     ],
     // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
@@ -69,7 +67,7 @@ return [
     // seconds belongs to a request that was killed.
     'activity_interrupted_after' => 900,
     'websocket' => [
-        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
+        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit-reverb.git'),
         'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),
         'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
         'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
@@ -86,15 +84,16 @@ return [
         'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
     ],
     'tasks' => [
-        // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs,
-        // from `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
-        // branch-provided settings.
-        'github_reviewers' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_GITHUB_REVIEWERS')),
-        // ADR 0203: numeric GitHub account IDs whose pull requests Orbit reviews and merges, per repository.
-        'pull_request_authors' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_PULL_REQUEST_AUTHORS')),
+        // Operator-owned repair trust: github.com owner/repository and positive integer account IDs, as
+        // `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
+        // branch-provided settings. TaskReviewTrust reads it.
+        'github_reviewers' => (string) env('ORBIT_TASKS_GITHUB_REVIEWERS', ''),
+        // ADR 0203: numeric GitHub account IDs whose pull requests Orbit reviews and merges, per repository, in the
+        // same form.
+        'pull_request_authors' => (string) env('ORBIT_TASKS_PULL_REQUEST_AUTHORS', ''),
         // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
         // Unset or empty requests no one. The pull request author is omitted at request time.
-        'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),
+        'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
         // Models for new groups. Unset keeps TaskAgentDefaults.

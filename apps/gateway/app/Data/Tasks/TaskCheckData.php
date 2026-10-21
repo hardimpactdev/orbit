@@ -25,6 +25,7 @@ final class TaskCheckData extends Data
         public array $changedPaths,
         public ?string $failedStep,
         public ?string $output,
+        public ?string $commitSha,
     ) {}
 
     public static function fromModel(TaskCheck $check): self
@@ -39,6 +40,7 @@ final class TaskCheckData extends Data
             changedPaths: $check->changed_paths ?? [],
             failedStep: $check->failed_step,
             output: $check->output,
+            commitSha: $check->commit_sha,
         );
     }
 }

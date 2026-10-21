@@ -522,7 +522,12 @@ def wait_for_tick(options, budget):
     threshold = options.since or (utc_now() - timedelta(seconds=options.tick_within))
     detail = {'command': 'orbit tasks:status', 'tick_after': iso(threshold), 'last_tick_at': None, 'reads': 0}
     while True:
-        body = orbit_json(options, budget, 'tasks:status')
+        try:
+            body = orbit_json(options, budget, 'tasks:status')
+        except CheckTimedOut:
+            if budget.remaining() > 0:
+                raise
+            break
         detail['reads'] += 1
         if body.get('enabled') is False:
             raise CheckSkipped('The tasks extension is disabled, so the scheduler does not run tasks:tick.', detail)
@@ -533,9 +538,11 @@ def wait_for_tick(options, budget):
         if started is not None and started >= threshold:
             return f'tasks:tick started at {iso(started)}, at or after {iso(threshold)}.', detail
         if budget.remaining() <= TICK_POLL_SECONDS:
-            seen = iso(started) if started else 'never'
-            raise CheckFailed('tick_stale', f'No tasks:tick started at or after {iso(threshold)}. The last one started {seen}.', detail)
+            break
         time.sleep(TICK_POLL_SECONDS)
+    started = parse_time(detail['last_tick_at'])
+    seen = iso(started) if started else 'never'
+    raise CheckFailed('tick_stale', f'No tasks:tick started at or after {iso(threshold)}. The last one started {seen}.', detail)
 
 
 def check_agent_view(options, budget):

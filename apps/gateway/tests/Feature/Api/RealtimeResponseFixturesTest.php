@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Settings\SettingRepository;
-use App\Domain\Settings\SettingScope;
-use App\Domain\Settings\SettingScopeType;
-use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
+use App\Models\WebSocketApp;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 
 /**
@@ -29,16 +25,11 @@ describe('realtime response fixtures', function (): void {
     });
 
     it('records the realtime connection when the websocket role is active', function (): void {
-        [$node] = activate_websocket_role();
+        activate_websocket_role();
 
         // Deterministic fixture: overwrite the generated app key with a fixed
         // value, since the rest of the credentials never reach this response.
-        app(SettingRepository::class)->put(
-            new SettingScope(SettingScopeType::Node, $node->id),
-            WebSocketFootprint::SettingKeyAppKey,
-            'orbit-reverb-app-key',
-            SettingValueProtection::Plain,
-        );
+        WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->update(['key' => 'orbit-reverb-app-key']);
 
         record_fixture(
             $this->getJson('/api/v1/realtime')->assertOk(),

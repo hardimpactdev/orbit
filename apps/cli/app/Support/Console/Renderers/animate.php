@@ -37,14 +37,20 @@ try {
         throw new RuntimeException('Invalid presentation frames.');
     }
 
+    $interval = $configuration['interval'] ?? null;
+
+    if ((! is_int($interval) && ! is_float($interval)) || ! is_finite($interval) || $interval <= 0) {
+        throw new RuntimeException('Invalid presentation interval.');
+    }
+
     $lines = substr_count($frames[0], "\n");
     $clear = "\r".($lines > 0 ? "\e[{$lines}A" : '')."\e[J";
     $initialClear = is_string($configuration['clear'] ?? null) ? $configuration['clear'] : '';
     $epoch = is_numeric($configuration['epoch'] ?? null) && $configuration['epoch'] > 0 ? (float) $configuration['epoch'] : microtime(true);
-    $phase = (int) floor(max(0, microtime(true) - $epoch) / 0.3);
+    $phase = (int) floor(max(0, microtime(true) - $epoch) / $interval);
     $index = $phase % count($frames);
     $writeOutput("\e[?25l".$initialClear.$frames[$index]);
-    $nextTick = hrtime(true) / 1000000000 + 0.3;
+    $nextTick = hrtime(true) / 1000000000 + $interval;
     $ready = fopen('php://fd/3', 'w');
 
     $receipt = json_encode(['ready' => true, 'epoch' => $epoch], JSON_THROW_ON_ERROR)."\n";
@@ -108,7 +114,7 @@ try {
             $pending = null;
             $index = ($index + 1) % count($frames);
             $writeOutput($clear.$frames[$index]);
-            $nextTick = hrtime(true) / 1000000000 + 0.3;
+            $nextTick = hrtime(true) / 1000000000 + $interval;
             $lines = substr_count($frames[$index], "\n");
             $clear = "\r".($lines > 0 ? "\e[{$lines}A" : '')."\e[J";
 

@@ -379,9 +379,6 @@ final readonly class RelocateNodeRoleAction
     {
         return match ($role) {
             RoleName::WebSocket => [
-                [WebSocketFootprint::SettingKeyAppId, SettingValueProtection::Plain],
-                [WebSocketFootprint::SettingKeyAppKey, SettingValueProtection::Plain],
-                [WebSocketFootprint::SettingKeyAppSecret, SettingValueProtection::Secret],
                 [WebSocketFootprint::SettingKeyAppKeyLaravel, SettingValueProtection::Secret],
             ],
             RoleName::Metrics => [

@@ -13,14 +13,14 @@ use Tests\Feature\GitHub\GreenCommitFixtures;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
-    $this->repository = GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git');
+    $this->repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git');
 });
 
 describe('HttpGitHubApi check runs', function (): void {
     it('reads every page and maps status, head_sha, and the App', function (): void {
         $pages = GreenCommitFixtures::checkRunPages();
         $sha = $pages[0]['check_runs'][0]['head_sha'];
-        Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-runs*" => Http::sequence()
+        Http::fake(["https://api.github.com/repos/hardimpactdev/orbit/commits/{$sha}/check-runs*" => Http::sequence()
             ->push($pages[0])->push($pages[1])->push($pages[2])]);
 
         $runs = app(GitHubApi::class)->checkRuns('ghs_checks', $this->repository, $sha);
@@ -43,7 +43,7 @@ describe('HttpGitHubApi check runs', function (): void {
     it('sends the check name filter and keeps only runs of that exact name', function (): void {
         $page = GreenCommitFixtures::checkRunPages()[0];
         $sha = $page['check_runs'][0]['head_sha'];
-        Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-runs*" => Http::response(['total_count' => 5] + $page)]);
+        Http::fake(["https://api.github.com/repos/hardimpactdev/orbit/commits/{$sha}/check-runs*" => Http::response(['total_count' => 5] + $page)]);
 
         $runs = app(GitHubApi::class)->checkRuns('ghs_checks', $this->repository, $sha, 'Required checks');
 
@@ -54,7 +54,7 @@ describe('HttpGitHubApi check runs', function (): void {
     it('fails when the list moves or ends before total_count', function (array $second): void {
         $pages = GreenCommitFixtures::checkRunPages();
         $sha = $pages[0]['check_runs'][0]['head_sha'];
-        Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-runs*" => Http::sequence()
+        Http::fake(["https://api.github.com/repos/hardimpactdev/orbit/commits/{$sha}/check-runs*" => Http::sequence()
             ->push($pages[0])->push($second)->push($pages[2])]);
 
         expect(fn () => app(GitHubApi::class)->checkRuns('ghs_checks', $this->repository, $sha))
@@ -71,7 +71,7 @@ describe('HttpGitHubApi check runs', function (): void {
 
     it('fails instead of truncating more than ten pages', function (): void {
         $run = GreenCommitFixtures::checkRunPages()[0]['check_runs'][0];
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/commits/*/check-runs*' => Http::response([
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/commits/*/check-runs*' => Http::response([
             'total_count' => 1001, 'check_runs' => array_fill(0, 100, $run),
         ])]);
 
@@ -81,7 +81,7 @@ describe('HttpGitHubApi check runs', function (): void {
     });
 
     it('fails on a refused or unknown commit', function (): void {
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/commits/*/check-runs*' => Http::response([
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/commits/*/check-runs*' => Http::response([
             'message' => 'No commit found for SHA: 0000000000000000000000000000000000000001', 'status' => '422',
         ], 422)]);
 
@@ -90,10 +90,44 @@ describe('HttpGitHubApi check runs', function (): void {
     });
 });
 
+describe('HttpGitHubApi check suites', function (): void {
+    it('reads every page and maps the App, status, and conclusion', function (): void {
+        $sha = str_repeat('a', 40);
+        $suite = static fn (int $id, string $slug, string $status, ?string $conclusion): array => ['id' => $id, 'status' => $status, 'conclusion' => $conclusion, 'app' => ['slug' => $slug]];
+        Http::fake(["https://api.github.com/repos/hardimpactdev/orbit/commits/{$sha}/check-suites*" => Http::sequence()
+            ->push(['total_count' => 3, 'check_suites' => [$suite(1, 'github-actions', 'completed', 'cancelled'), $suite(2, 'mintlify', 'completed', 'success')]])
+            ->push(['total_count' => 3, 'check_suites' => [$suite(3, 'github-actions', 'in_progress', null)]])]);
+
+        $suites = app(GitHubApi::class)->checkSuites('ghs_checks', $this->repository, $sha);
+
+        expect(array_map(static fn ($suite): array => $suite->toArray(), $suites))->toBe([
+            ['id' => 1, 'status' => 'completed', 'conclusion' => 'cancelled', 'app_slug' => 'github-actions'],
+            ['id' => 2, 'status' => 'completed', 'conclusion' => 'success', 'app_slug' => 'mintlify'],
+            ['id' => 3, 'status' => 'in_progress', 'conclusion' => null, 'app_slug' => 'github-actions'],
+        ])->and($suites[0]->completed())->toBeTrue()->and($suites[2]->completed())->toBeFalse();
+        foreach ([1, 2] as $page) {
+            Http::assertSent(static fn (Request $request): bool => GreenCommitFixtures::query($request) === ['per_page' => '100', 'page' => (string) $page]
+                && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
+        }
+    });
+
+    it('fails when the list moves, ends early, or holds a suite without an id', function (array $second): void {
+        $sha = str_repeat('a', 40);
+        Http::fake(["https://api.github.com/repos/hardimpactdev/orbit/commits/{$sha}/check-suites*" => Http::sequence()
+            ->push(['total_count' => 2, 'check_suites' => [['id' => 1, 'status' => 'completed', 'conclusion' => 'success']]])->push($second)]);
+
+        expect(fn () => app(GitHubApi::class)->checkSuites('ghs_checks', $this->repository, $sha))->toThrow(GitHubApiException::class);
+    })->with([
+        'count changed' => [['total_count' => 3, 'check_suites' => [['id' => 2, 'status' => 'queued']]]],
+        'early empty page' => [['total_count' => 2, 'check_suites' => []]],
+        'a suite without an id' => [['total_count' => 2, 'check_suites' => [['status' => 'queued']]]],
+    ]);
+});
+
 describe('HttpGitHubApi branch commits', function (): void {
     it('lists the branch head by its full ref with parents in order', function (): void {
         $commits = GreenCommitFixtures::commits();
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/commits?*' => Http::response($commits)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/commits?*' => Http::response($commits)]);
 
         $listed = app(GitHubApi::class)->branchCommits('ghs_contents', $this->repository, 'main');
 
@@ -106,7 +140,7 @@ describe('HttpGitHubApi branch commits', function (): void {
     });
 
     it('fails on a missing branch or a malformed commit', function (int $status, array $body): void {
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/commits?*' => Http::response($body, $status)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/commits?*' => Http::response($body, $status)]);
 
         expect(fn () => app(GitHubApi::class)->branchCommits('ghs_contents', $this->repository, 'main'))
             ->toThrow(GitHubApiException::class);
@@ -122,7 +156,7 @@ describe('HttpGitHubApi commit comparison', function (): void {
     it('reads each real comparison status', function (string $name, GitHubComparisonStatus $status, bool $descends): void {
         $comparison = GreenCommitFixtures::comparison($name);
         $base = $comparison['base_commit']['sha'];
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/compare/*' => Http::response($comparison)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response($comparison)]);
 
         $read = app(GitHubApi::class)->compareCommits('ghs_contents', $this->repository, $base, str_repeat('b', 40));
 
@@ -130,7 +164,7 @@ describe('HttpGitHubApi commit comparison', function (): void {
             ->and($read->baseSha)->toBe($base)
             ->and($read->mergeBaseSha)->toBe($comparison['merge_base_commit']['sha'])
             ->and($read->headDescendsFromBase())->toBe($descends);
-        Http::assertSent(static fn (Request $request): bool => str_starts_with($request->url(), "https://api.github.com/repos/nckrtl/orbit/compare/{$base}...".str_repeat('b', 40).'?')
+        Http::assertSent(static fn (Request $request): bool => str_starts_with($request->url(), "https://api.github.com/repos/hardimpactdev/orbit/compare/{$base}...".str_repeat('b', 40).'?')
             && GreenCommitFixtures::query($request) === ['per_page' => '1']);
     })->with([
         ['ahead', GitHubComparisonStatus::Ahead, true],
@@ -141,7 +175,7 @@ describe('HttpGitHubApi commit comparison', function (): void {
 
     it('fails when GitHub answers about another base or an unknown status', function (array $changes): void {
         $comparison = array_replace_recursive(GreenCommitFixtures::comparison('ahead'), $changes);
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/compare/*' => Http::response($comparison)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response($comparison)]);
         $base = GreenCommitFixtures::comparison('ahead')['base_commit']['sha'];
 
         expect(fn () => app(GitHubApi::class)->compareCommits('ghs_contents', $this->repository, $base, str_repeat('b', 40)))
@@ -153,7 +187,7 @@ describe('HttpGitHubApi commit comparison', function (): void {
     ]);
 
     it('fails when a commit is unknown', function (): void {
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/compare/*' => Http::response(['message' => 'Not Found', 'status' => '404'], 404)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/compare/*' => Http::response(['message' => 'Not Found', 'status' => '404'], 404)]);
 
         expect(fn () => app(GitHubApi::class)->compareCommits('ghs_contents', $this->repository, str_repeat('a', 40), str_repeat('b', 40)))
             ->toThrow(GitHubApiException::class);

@@ -14,6 +14,53 @@ from test_recipe_versions import recipe, image
 
 
 class RecipeJavascriptTest(unittest.TestCase):
+    def test_root_inspection_runs_store_executables_as_the_managed_account(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scope = Path(directory)
+            (scope / 'bin').mkdir()
+            (scope / 'bin/vp').touch()
+            (scope / 'bin/.vp-setup-complete').touch()
+            (scope / 'config.json').write_text('{"defaultNodeVersion":"24.22.1"}')
+            node = scope / 'js_runtime/node/24.22.1/bin/node'
+            node.parent.mkdir(parents=True)
+            node.touch()
+            account = types.SimpleNamespace(pw_name='runner')
+            tools = {name: {'source': 'artifact'} for name in ('node', 'vp-cli', 'bun')}
+            with patch.dict(os.environ, SUDO_USER='runner'), \
+                 patch.object(recipe, 'packages', return_value={}), \
+                 patch.object(recipe, 'vite_scope', return_value=scope), \
+                 patch.object(recipe.pwd, 'getpwnam', return_value=account), \
+                 patch.object(recipe.os, 'geteuid', return_value=0), \
+                 patch.object(recipe, 'run', return_value=subprocess.CompletedProcess([], 0, 'v24.22.1', '')) as command:
+                recipe.inspect(tools)
+            self.assertEqual(command.call_count, 3)
+            for call in command.call_args_list:
+                self.assertEqual(call.args[0][:6], ['sudo', '-u', 'runner', '-H', 'env', 'VP_HOME=' + str(scope)])
+
+    def test_scope_reaches_child_after_sudo_environment_reset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scope = Path(directory)
+            (scope / 'bin').mkdir()
+            vp = scope / 'bin/vp'
+            vp.write_text('#!/bin/sh\n[ "$VP_HOME" = "' + str(scope) + '" ] || exit 73\necho v24.22.1\n')
+            vp.chmod(0o755)
+            (scope / 'bin/.vp-setup-complete').touch()
+            (scope / 'config.json').write_text('{"defaultNodeVersion":"24.22.1"}')
+            node = scope / 'js_runtime/node/24.22.1/bin/node'
+            node.parent.mkdir(parents=True)
+            node.write_bytes(vp.read_bytes())
+            node.chmod(0o755)
+            sudo = scope / 'bin/sudo'
+            sudo.write_text('#!/bin/sh\nshift 3\nexec /usr/bin/env -i PATH=/usr/bin:/bin "$@"\n')
+            sudo.chmod(0o755)
+            tools = {name: {'source': 'artifact'} for name in ('node', 'vp-cli')}
+            with patch.dict(os.environ, SUDO_USER='runner', VP_HOME='/wrong', PATH=str(scope / 'bin') + ':' + os.environ['PATH']), \
+                 patch.object(recipe, 'packages', return_value={}), \
+                 patch.object(recipe, 'vite_scope', return_value=scope), \
+                 patch.object(recipe.pwd, 'getpwnam', return_value=types.SimpleNamespace(pw_name='runner')), \
+                 patch.object(recipe.os, 'geteuid', return_value=0):
+                self.assertEqual(recipe.inspect(tools), {'node': '24.22.1', 'vp-cli': '24.22.1'})
+
     def test_old_dependency_tree_does_not_block_locked_runtime_upgrade(self):
         for module in (recipe, image):
             with self.subTest(module=module.__name__), tempfile.TemporaryDirectory() as directory:

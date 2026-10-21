@@ -31,9 +31,9 @@ function cli_release_fixture_json(string $name): array
 function fake_cli_release_github(array $overrides = []): void
 {
     $responses = [
-        '/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('tag-ref.json')),
-        '/repos/nckrtl/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
-        '/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(cli_release_fixture('SHA256SUMS')),
+        '/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('tag-ref.json')),
+        '/repos/hardimpactdev/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
+        '/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(cli_release_fixture('SHA256SUMS')),
         ...$overrides,
     ];
 

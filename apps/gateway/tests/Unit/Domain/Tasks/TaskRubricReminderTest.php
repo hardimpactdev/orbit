@@ -36,7 +36,7 @@ it('tells the reviewer to leave the workspace tree unchanged but lets it verify 
     expect(TaskTurnInstructions::reviewer())
         ->toContain('Leave the workspace tree as you found it: Orbit checks that no tracked or untracked workspace file changed when your turn ends.')
         ->toContain('You may run commands, use sudo, and create disposable files outside the workspace, such as under /tmp.')
-        ->toContain('Do not edit or commit the code; Orbit commits after you approve.')
+        ->toContain('Do not edit or commit the code; Orbit commits the work itself.')
         ->not->toContain('read-only')
         ->toContain('--outcome=approved')
         ->toContain('--outcome=changes_requested')

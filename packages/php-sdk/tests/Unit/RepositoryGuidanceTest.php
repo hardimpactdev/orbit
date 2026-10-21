@@ -104,6 +104,12 @@ use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
 use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
+use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
+use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
 
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
@@ -237,6 +243,14 @@ describe('repository guidance bootstrap', function (): void {
             CreateDatabaseServerRequest::class,
             DestroyDatabaseServerRequest::class,
         ];
+        $webSocketRequests = [
+            ListWebSocketAppsRequest::class,
+            ShowWebSocketAppRequest::class,
+            CreateWebSocketAppRequest::class,
+            DestroyWebSocketAppRequest::class,
+            AddInstanceWebSocketAppRequest::class,
+            RemoveInstanceWebSocketAppRequest::class,
+        ];
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
@@ -333,7 +347,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -490,6 +504,13 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(array_values(array_filter(
             $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\WebSocket\\'),
+        )))
+            ->toHaveCount(count($webSocketRequests))
+            ->toEqualCanonicalizing($webSocketRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
             static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\GitHub\\'),
         )))
             ->toHaveCount(count($gitHubRequests))
@@ -515,14 +536,23 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($taskRequests))
             ->toEqualCanonicalizing($taskRequests);
+
+        foreach ([
+            '.ai/rules/public-contract.md' => '/The SDK models exactly (\d+) concrete public Gateway API operations:/',
+            'README.md' => '/The SDK exposes exactly (\d+) public Gateway operations\./',
+        ] as $path => $pattern) {
+            preg_match($pattern, repository_guidance_contents($path), $matches);
+
+            expect((int) ($matches[1] ?? 0))->toBe($expectedOperationCount);
+        }
     });
 
-    it('documents the 210-operation SDK surface including Project Documents', function (): void {
+    it('documents the SDK surface including Project Documents and Reverb apps', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 214 concrete public Gateway API operations:')
+            ->toContain('- Reverb apps: create, list, show, and destroy; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -597,7 +627,6 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 214 public Gateway operations.',
                 'The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

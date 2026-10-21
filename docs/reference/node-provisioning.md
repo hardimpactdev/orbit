@@ -93,6 +93,12 @@ Each failure names the check or step that stopped the request.
 
 ## Converge a Node to a recipe
 
+When a profile includes Node.js, the recipe is its single runtime owner. Convergence verifies the recipe runtime before removing a duplicate `nodejs` APT package. APT simulation must remove only `nodejs`; dependencies are never removed automatically. Convergence validates NodeSource entries, backs them up outside APT source directories, then removes them. Mixed or unexpected entries stop convergence. Profiles without Node.js keep their APT ownership unchanged.
+
+Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` preferences and its keyring. Unexpected preferences or a keyring still used by another source stop convergence. It removes only dangling `/usr/bin/{yarn,yarnpkg,pnpm,pnpx}` links to Corepack, preserving working or unrelated links. Dry runs report `remove_nodejs_package`, `retire_node_source`, `retire_node_config`, and `remove_corepack_links`. APT removal suppresses needrestart; application owners restart affected processes after convergence.
+
+Vite+ caches and running processes are separate: update project pins, deploy retained releases, and restart affected services before retiring old cached runtimes.
+
 On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run] [--profile=ci-runner]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
 The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
@@ -105,9 +111,11 @@ A roleless Node that runs CI jobs, such as Sabre, uses the recipe's `ci-runner` 
 
 A dry run writes no files, refreshes no apt indexes, takes no remote lock, and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
 
-Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content and refreshes the normal indexes before assessing installed versions.
+Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content.
 
-Recipe package resolution uses a temporary snapshot source. It downloads and verifies pinned release artifacts, installs missing or older Ubuntu packages at the selected pins, exact artifacts, and their dependencies with package removal disabled, and verifies installed versions. Exact Debian artifacts can downgrade after a dependency simulation; Ubuntu recipe packages and other dependencies cannot. Installation ends with `apt-get check`.
+Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com` on amd64, or `ports.ubuntu.com` on arm64.
+
+Recipe package resolution uses a temporary snapshot source. It refreshes the snapshot indexes only when an Ubuntu package or Debian artifact needs installation. Index refreshes fetch package metadata without translations, desktop metadata, or command suggestions, and retain APT's cached lists. It downloads and verifies pinned release artifacts, installs missing or older Ubuntu packages at the selected pins, exact artifacts, and their dependencies with package removal disabled, and verifies installed versions. Exact Debian artifacts can downgrade after a dependency simulation; Ubuntu recipe packages and other dependencies cannot. Installation ends with `apt-get check`.
 
 Before installation, Orbit checks the name, complete version (including any epoch), and architecture in each Debian artifact. The architecture must match the Node or be `all`. See the [recipe schema](/reference/compute-drivers#recipe-schema).
 
@@ -270,7 +278,7 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 | Binary | `/usr/local/bin/orbit-<version>`, `root:root` mode `0755` |
 | Link | `/usr/local/bin/orbit`, a link to the binary. `orbit self-update` switches it with one rename and keeps the previous release |
 | Profile | `/root/.orbit/config.json`, `root:root` mode `0600`: the active profile `gateway` with the URL `https://<Gateway WireGuard address>` and the root certificate `/etc/orbit/agent/ca.pem`, which the agent converge writes |
-| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
+| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
@@ -372,6 +380,8 @@ A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 | Caddy | The `.deb` of a pinned [Caddy release](https://github.com/caddyserver/caddy/releases) on GitHub | None |
 
 For PHP, the Gateway sends each pin's URL, version, and SHA-256 digest to the Node with [`php.install-build`](/reference/compute-drivers#install-the-php-build). The Node downloads only over HTTPS, from Orbit's mirror first, and refuses a file whose digest, package name, version, or architecture differs. Orbit adds no PHP apt source. The installer deletes the Sury source that earlier Orbit releases wrote and refuses any other PHP apt source, such as `ppa:ondrej/php`. When every package is at its recipe version, it downloads nothing.
+
+The installer also repairs the [managed PHP settings](/reference/compute-drivers#install-the-php-build) when the packages already match. A settings-only repair validates every active FPM master, including dedicated production masters, and gracefully reloads those that pass. Instance steps defer and log invalid masters while keeping the INI and continuing with the other masters. Recipe convergence instead fails and restores the previous settings. The log also warns when masters are left running without a restart or reload because they may still use the previous build or settings.
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 

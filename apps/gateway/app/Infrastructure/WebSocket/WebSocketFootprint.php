@@ -37,11 +37,5 @@ final readonly class WebSocketFootprint
 
     public const string WireGuardInterface = 'orbit';
 
-    public const string SettingKeyAppId = 'websocket.reverb.app_id';
-
-    public const string SettingKeyAppKey = 'websocket.reverb.app_key';
-
-    public const string SettingKeyAppSecret = 'websocket.reverb.app_secret';
-
     public const string SettingKeyAppKeyLaravel = 'websocket.reverb.laravel_app_key';
 }

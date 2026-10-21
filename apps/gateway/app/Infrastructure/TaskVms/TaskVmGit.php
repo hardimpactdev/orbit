@@ -189,10 +189,14 @@ final readonly class TaskVmGit
                     '+refs/orbit/ci-cache/*:refs/orbit/ci-cache/*',
                 ], $access, timeout: $this->timeout($deadline, 60.0, $errorCode));
                 $available = $result->succeeded();
+                if (! $available) {
+                    Log::warning('CI cache ref fetch failed; setup continues cold.', ['project_id' => $project->id, 'exit_code' => $result->exitCode, 'stderr' => $result->stderr]);
+                }
             } catch (ProcessCancelledException $exception) {
                 throw $exception;
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $exception) {
                 $available = false;
+                Log::warning('CI cache ref fetch failed; setup continues cold.', ['project_id' => $project->id, 'reason' => $exception->getMessage()]);
             }
             if (! $available) {
                 // Do not send a previously cached ref after an unreadable upstream refresh.
@@ -208,6 +212,29 @@ final readonly class TaskVmGit
         });
     }
 
+    /** Selects the newest published baseline on the default branch, without waiting for a newer publication. */
+    private function newestCachedMain(Project $project, string $mirror, string $tip, string $errorCode): ?string
+    {
+        $refs = $this->checked('task-vm-git-cache-baseline', $errorCode, $this->git($mirror, [
+            'for-each-ref', '--format=%(refname:strip=3)', 'refs/orbit/ci-cache/',
+        ]));
+        $cached = array_fill_keys(preg_split('/\R/', trim($refs->stdout)) ?: [], true);
+        $history = $this->checked('task-vm-git-cache-baseline', $errorCode, $this->git($mirror, [
+            'rev-list', '--first-parent', $tip,
+        ]));
+        foreach (preg_split('/\R/', trim($history->stdout)) ?: [] as $distance => $commit) {
+            if (isset($cached[$commit])) {
+                Log::info('CI cache baseline selected.', ['project_id' => $project->id, 'tip' => $tip, 'baseline' => $commit, 'distance' => $distance]);
+
+                return $commit;
+            }
+        }
+
+        Log::notice('CI caches cold; no cached first-parent ancestor is available in the mirror.', ['project_id' => $project->id, 'tip' => $tip]);
+
+        return null;
+    }
+
     /**
      * Sets `refs/remotes/origin/<branch>` in the VM's checkout to each commit of the mirror, and deletes it for null.
      * `refs/remotes/origin/HEAD` points at the Project's default branch, as after a clone, so tools that read the
@@ -219,13 +246,13 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException
      */
-    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false): void
+    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false, bool $selectBaseline = false): void
     {
         if (! $cachesOnly) {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, false);
+            $this->transfer($project, $checkout, $tips, $run, $errorCode, false, false);
         }
         try {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, true);
+            $this->transfer($project, $checkout, $tips, $run, $errorCode, true, $selectBaseline);
         } catch (ProcessCancelledException $exception) {
             throw $exception;
         } catch (\RuntimeException) {
@@ -237,7 +264,7 @@ final readonly class TaskVmGit
      * @param  array<string, string|null>  $tips
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function transfer(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly): void
+    private function transfer(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
     {
         $state = $run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout;
         $haves = $this->commitIds($state);
@@ -245,16 +272,19 @@ final readonly class TaskVmGit
         $recorded = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
         $head = preg_match('/^head ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
         $tip = $tips[$default] ?? null;
-        $onDefault = str_contains($state, "branch {$default}\n");
+        $onDefault = $head !== null && str_contains($state, "branch {$default}\n");
         $baseline = $onDefault ? ($tip ?? $recorded) : ($recorded ?? $tip);
         $scratch = $this->scratch($errorCode);
         try {
             $cacheRef = null;
             $cacheCommit = null;
-            $pack = $this->locked($project, $errorCode, function () use ($project, $tips, $haves, $scratch, $errorCode, $cachesOnly, $recorded, $head, $tip, $onDefault, &$baseline, &$cacheRef, &$cacheCommit): string {
+            $pack = $this->locked($project, $errorCode, function () use ($project, $tips, $haves, $scratch, $errorCode, $cachesOnly, $selectBaseline, $recorded, $head, $tip, $onDefault, &$baseline, &$cacheRef, &$cacheCommit): string {
                 $mirror = $this->mirror($project, $errorCode);
+                if ($selectBaseline && is_string($tip)) {
+                    $baseline = $this->newestCachedMain($project, $mirror, $head ?? $tip, $errorCode);
+                }
                 // Another branch at a main commit, such as a fresh agent branch, uses that commit's own caches.
-                if ($cachesOnly && ! $onDefault && $recorded === null && is_string($head) && is_string($tip)
+                if (! $selectBaseline && $cachesOnly && ! $onDefault && $recorded === null && is_string($head) && is_string($tip)
                     && $this->git($mirror, ['merge-base', '--is-ancestor', $head, $tip])->succeeded()) {
                     $baseline = $head;
                 }
@@ -270,6 +300,10 @@ final readonly class TaskVmGit
             foreach ($cachesOnly ? [] : $tips as $branch => $commit) {
                 $updates[] = 'refs/remotes/origin/'.$branch;
                 $updates[] = $commit ?? '-';
+            }
+            if ($selectBaseline && $baseline === null) {
+                $updates[] = 'refs/worktree/orbit/ci-baseline';
+                $updates[] = '-';
             }
             if ($cacheRef !== null && is_string($baseline)) {
                 $updates[] = $cacheRef;
@@ -293,10 +327,12 @@ final readonly class TaskVmGit
      * @param  list<string>  $haves  commits of the mirror, such as those {@see fetch()} returned for the default and task branches
      * @param  Closure(RemoteCommand): CommandResult  $run
      * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
+     * @param  bool  $replace  whether the commit may replace a branch whose history moved: only over the tip that the last
+     *                         {@see fetch()} of the branch saw, and never otherwise forced
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null): void
+    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
@@ -319,7 +355,10 @@ final readonly class TaskVmGit
                 throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
             }
             $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
-            $pushed = $this->git($mirror, ['push', '--quiet', '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
+            $lease = $replace
+                ? ['--force-with-lease=refs/heads/'.$branch.':'.trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout)]
+                : [];
+            $pushed = $this->git($mirror, ['push', '--quiet', ...$lease, '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
             if (! $pushed->succeeded()) {
                 throw new RuntimeConvergenceException('task-pull-request-push', $errorCode, 'The task branch could not be pushed.', result: $pushed);
             }

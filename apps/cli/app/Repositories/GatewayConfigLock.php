@@ -7,12 +7,14 @@ namespace App\Repositories;
 use App\Exceptions\GatewayConfigException;
 use App\Support\EffectiveUser;
 use Closure;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Sleep;
 
 final readonly class GatewayConfigLock
 {
     private const int LOCK_RETRY_MICROSECONDS = 10_000;
 
-    private const int LOCK_TIMEOUT_NANOSECONDS = 5_000_000_000;
+    private const int LOCK_TIMEOUT_SECONDS = 5;
 
     public function __construct(
         private string $configPath,
@@ -81,7 +83,7 @@ final readonly class GatewayConfigLock
     private function acquire()
     {
         $lock = $this->open();
-        $deadline = (int) hrtime(true) + self::LOCK_TIMEOUT_NANOSECONDS;
+        $deadline = Carbon::now()->addSeconds(self::LOCK_TIMEOUT_SECONDS);
 
         while (true) {
             $wouldBlock = 0;
@@ -96,9 +98,9 @@ final readonly class GatewayConfigLock
                 throw new GatewayConfigException('Could not lock Orbit gateway configuration.');
             }
 
-            $remainingNanoseconds = $deadline - (int) hrtime(true);
+            $remainingMicroseconds = (int) Carbon::now()->diffInMicroseconds($deadline, absolute: false);
 
-            if ($remainingNanoseconds <= 0) {
+            if ($remainingMicroseconds <= 0) {
                 fclose($lock);
 
                 throw new GatewayConfigException(
@@ -106,10 +108,7 @@ final readonly class GatewayConfigLock
                 );
             }
 
-            usleep(min(
-                self::LOCK_RETRY_MICROSECONDS,
-                max(1, intdiv(num1: $remainingNanoseconds, num2: 1_000)),
-            ));
+            Sleep::usleep(min(self::LOCK_RETRY_MICROSECONDS, $remainingMicroseconds));
         }
     }
 

@@ -201,11 +201,11 @@ Add a first setup step that copies present `vendor` and `node_modules` folders a
 
 ### Cache ownership
 
-Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The cache worker runs as the managed user that owns the store and imports the main CI artifacts with that user's `gh` login, so the login must read `nckrtl/orbit` and its Actions. Run `bin/tia-cache refresh --repository=/fast/apps/orbit/default` once, then check that `bin/tia-cache status --json --remote` lists all five projects in `current`.
+Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The cache worker runs as the managed user that owns the store and imports the main CI artifacts with that user's `gh` login, so the login must read `hardimpactdev/orbit` and its Actions. Run `bin/tia-cache refresh --repository=/fast/apps/orbit/default` once, then check that `bin/tia-cache status --json --remote` lists all five projects in `current`.
 
 Create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately. Point any `ORBIT_MAIN_CACHE_STORE` override at `/fast/apps/orbit/default/.git/orbit-tia/v1`.
 
-Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
+Stop the old ext4 cache worker before retiring `/home/hardimpactdev/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 
@@ -264,6 +264,8 @@ CI publishes the caches at `refs/orbit/ci-cache/<sha>`, where `<sha>` is the ful
 For a task VM, the Gateway fetches code and the cache namespace into its [Git mirror](/reference/compute-drivers#git-on-a-task-vm), then transfers the selected objects over SSH. Source objects travel first; an optional cache pack follows, so a failed cache transfer cannot fail the source transfer. Ordinary development Instances keep their existing source fetch path and receive an optional cache-only pack from the same Gateway mirror when their Project declares this setup operation.
 
 For GitHub, it uses its [GitHub App](/reference/github-app) with `Contents: read` for this repository, using the existing credentialed Git protections. Reading cache refs needs no `Actions: read` permission. The cache transfer gives the workspace no GitHub credential. Task VMs do not fetch from GitHub themselves. Cache objects stay outside the source tree until the setup step imports them after dependency installation.
+
+[New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline before setup.
 
 The Gateway selects a code SHA before looking up its cache ref. For a checkout of `main`, that is the selected checkout commit. For a task branch, it is the recorded baseline commit from `main`, which must be an ancestor of the checkout's `HEAD`. Another branch with no recorded baseline whose `HEAD` is a `main` commit, such as a fresh agent branch, selects that `HEAD` commit; without one, it runs cold. It requests only `refs/orbit/ci-cache/<selected-sha>`: it never substitutes the newest cache ref, a different ancestor's ref, or a ref for a later main commit.
 

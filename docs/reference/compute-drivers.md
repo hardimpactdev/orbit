@@ -20,7 +20,9 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 ## Machine software recipe
 
-The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+The Node.js artifact pin is `24.22.1`, including the [October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Nodes and task images install it through the shared recipe installer. Vite+ project pins and retained releases select their own runtimes and must be updated separately.
+
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
@@ -48,7 +50,7 @@ Ubuntu pins are version floors on installed machines. The same Debian package on
 
 A newer package from another release, a third-party source, or an unproved origin is refused before package changes; it is never downgraded. An installed version listed in any untrusted index is refused even if a trusted index also lists it or offers a newer candidate. Plans label it `unsupported_newer` with a `refusal` field naming `origin:<tool>`.
 
-APT policy from the normal sources or the cached recipe snapshot must associate the installed version with an index whose release metadata names `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, ports, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
+APT policy must associate the installed version with a trusted Ubuntu index. Evidence can come from the normal sources, the refreshed generic Ubuntu pockets during application, or the cached recipe snapshot. The index's release metadata must name `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, ports, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
 
 Rolling pocket indexes drop superseded builds. When the installed version appears only in dpkg status, convergence dates it by the earliest matching `install` or `upgrade` action in `/var/log/dpkg.log*`, including compressed rotations. Without an action, it uses the earliest `status installed` record for that version. Later trigger runs do not change the date. It must find that exact package version in a trusted index at `snapshot.ubuntu.com` at that time. A newer Ubuntu candidate alone is not proof.
 
@@ -60,7 +62,7 @@ There is a known fail-closed window between `apt update` and installation. If Ub
 
 Recipe installs use a temporary snapshot source and leave the normal Ubuntu sources in place, so unattended-upgrades can continue installing security updates. Application repairs the exact snapshot source file written by earlier Orbit convergence. It first saves that file beside the APT configuration as `ubuntu.sources.orbit-snapshot-backup`, then restores archive, updates, backports, and security sources with the Ubuntu archive keyring, or ports on arm64, and logs the repair through `logger` with the `orbit-recipe` tag. Other source content is preserved.
 
-The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. The post-repair refresh reads only `ubuntu.sources`, so a broken third-party repository cannot block it. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
+The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. See [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) for APT index refresh during application. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
 
 Node convergence and image installs refuse Ubuntu downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
@@ -68,7 +70,7 @@ The recipe pins both Ubuntu `docker.io` and `containerd` for Docker roles and th
 
 Docker CE is not the recipe's Ubuntu `docker.io` provider. Convergence refuses it with `docker-provider:docker-ce` before planning or installing packages. It never stops containers to change providers. Follow the explicit [Docker provider migration](/reference/docker-provider-migration) during a planned window. That command may downgrade Docker and containerd after inventory and compatibility checks; normal recipe convergence still refuses downgrades.
 
-An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
+An `artifact` tool has an `artifacts` object keyed by every declared architecture, except PHP packages, which support amd64 only. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each supported architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
@@ -134,6 +136,8 @@ After the packages, the image build adds `orbit` to `incus-admin`, because cloud
 
 The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
 
+PHP supports amd64 only. PHP packages, including the shared Sury dependencies, declare no arm64 artifacts. Profiles that include PHP support only amd64; PHP installation on arm64 fails with `PHP is not available for arm64` before changing packages. Other tools retain their declared architecture support. The artifact mirror takes only the PHP artifacts declared in the recipe.
+
 | Field | Contract |
 | --- | --- |
 | `php.versions.<version>.packages` | The `php<version>-*` pins of that version. Every such pin in `tools` must be in this list |
@@ -163,6 +167,14 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 #### Install the PHP build
 
 `php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
+
+The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-upload-progress.ini` for every PHP version it installs. It writes `session.upload_progress.enabled = 0` to mitigate CVE-2026-109618 and CVE-2026-109619, which allow unauthenticated remote code execution through session upload progress in multipart requests. It replaces the operator's emergency file at the same path and repairs missing or changed files on later convergence.
+
+A settings-only change validates every active PHP-FPM master, including dedicated production masters, regardless of the caller's FPM scope. It gracefully reloads those that pass. An Instance step reports and logs invalid masters as deferred, keeps the INI, and continues reloading the other masters. Recipe convergence instead fails and restores the previous settings. Rollback uses reload for masters that were reloaded and restart only for masters that were restarted. Images have no active masters, so this reload is a no-op.
+
+Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step, `node:converge-recipe`, or the rollout after the PHP build bump. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
+
+The recipe pins PHP 8.4.27 and 8.5.12, which fix CVE-2026-109618 and CVE-2026-109619. The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
 
 Before it changes anything, the installer checks the machine:
 
@@ -262,7 +274,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
-Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
 
 [Base image builds](#build-the-base-image) record the same identity in the image and build row. Schema version `1` and a short display hash are not substitutes.
 
@@ -276,7 +288,7 @@ Add `--validate` to verify availability and integrity as well as structure. For 
 
 Online validation verifies that the exact snapshot exists for the release and architectures, and that every Ubuntu pin equals the newest version in its authenticated package indexes on all declared architectures. It also checks that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
 
-Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check only when `recipe.json` changes; a hand-edited snapshot date with stale pins fails Required checks.
+Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
 
 Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
@@ -539,7 +551,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
-A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
+[New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
 | Operation | Branches |
 | --- | --- |
@@ -1198,7 +1210,7 @@ When the unit fails, or stops without a result, the subtask asks for assistance 
 
 ### Prove work on a topology
 
-The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
+The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 

@@ -39,8 +39,8 @@ env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
 
 jobs:
-  # Every target is built on Linux. PHPacker does not compile: it appends the PHAR to a prebuilt static PHP for the
-  # target, so the host only needs PHP and Composer. The macOS binary is then run on a hosted Mac that needs no PHP.
+  # Every target is built on Linux amd64. PHPacker does not compile: it appends the PHAR to a prebuilt static PHP for the
+  # target, so the host only needs PHP and Composer. Native arm64 runners only run the binaries and need no PHP.
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -58,12 +58,12 @@ jobs:
             path: apps/cli/builds/dist/linux/linux-x64
             native: true
           - target: linux-arm64
-            runner: ubuntu-26.04-arm
+            runner: ubuntu-26.04
             platform: linux
             architecture: arm
             artifact: orbit-linux-arm64
             path: apps/cli/builds/dist/linux/linux-arm
-            native: true
+            native: false
           - target: macos-arm64
             runner: ubuntu-26.04
             platform: mac
@@ -126,6 +126,30 @@ jobs:
           path: ${{ matrix.path }}
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+
+  # Cross-building needs only amd64 recipe PHP; the native arm64 runner tests the self-contained binary.
+  run-linux-arm64:
+    name: Run linux-arm64
+    needs: build
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: orbit-linux-arm64
+          path: binary
+
+      - name: Run the binary on its own platform
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$VERSION"
+          chmod 0755 binary/linux-arm
+          home="$(mktemp -d)"
+          reported="$(env -i HOME="$home" PATH=/usr/bin:/bin binary/linux-arm --version)"
+          echo "$reported"
+          test "$reported" = "Orbit ${VERSION}"
 
   # The release waits for this job too, so a macOS binary that does not start is never published.
   run-macos:

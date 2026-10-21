@@ -51,6 +51,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `github:app` | `install` and `destroy` | The Gateway's [GitHub App](/reference/github-app) |
 | `instance` | `create` and `destroy` | An Instance |
 | `instance:database` | `add` and `remove` | A Database connection on an Instance |
+| `instance:websocket` | `add` and `remove` | A [Reverb app](/reference/websocket-apps) on an Instance |
 | `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
 | `instance:setup-step` | `create` and `destroy` | A named [setup step](/reference/instance-setup) on a Project |
 | `instance:teardown-step` | `create` and `destroy` | A named [teardown step](/reference/instance-setup) on a Project |
@@ -67,6 +68,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `tasks:comment` | `create` | A typed comment on a subtask |
 | `tasks:subtask` | `create` and `destroy` | A subtask of a task |
 | `tool` | `install` and `remove`; `adopt` establishes ownership of an existing package | A Tool on a Node |
+| `websocket:app` | `create` and `destroy` | A [Reverb app](/reference/websocket-apps) on the `websocket` role |
 
 `route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
 

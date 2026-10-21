@@ -25,7 +25,7 @@ final class FakeCliReleaseCatalog implements CliReleaseCatalog
             return DesiredCliReleaseData::pending($release, $commit);
         }
 
-        $base = 'https://github.com/nckrtl/orbit/releases/download/'.$release->tag();
+        $base = 'https://github.com/hardimpactdev/orbit/releases/download/'.$release->tag();
 
         return DesiredCliReleaseData::available($release, $commit, $base.'/SHA256SUMS', [
             new FleetReleaseAssetData('linux-x86_64', $release->assetName('linux-x86_64'), $base.'/'.$release->assetName('linux-x86_64'), $this->sha256 !== '' ? $this->sha256 : str_repeat('c', 64)),

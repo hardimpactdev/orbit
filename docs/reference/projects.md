@@ -37,7 +37,9 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
-| `merge_check` | The check run that must pass on a head before Orbit merges it, such as `Required checks`. Null by default. The flow needs it. |
+| `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
+
+In a review-and-merge Project, the CI workflow must run the `merge_check` on pushes to `task-*-handoff` branches too, because each [handoff commit](/reference/tasks#handoff-ci) is tested on its push. Other Projects run no handoff CI.
 
 ## Application directory
 
@@ -61,7 +63,7 @@ A Project owns an ordered [development deploy list](/reference/deployments#devel
 
 ## Project types
 
-The type belongs to the Project, so every Instance of one repository behaves the same way.
+The type belongs to the Project, so every Instance of one repository behaves the same way. The Orbit monorepo has repository identity `github.com/hardimpactdev/orbit`.
 
 | Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
 | --- | --- | --- | --- | --- |
@@ -147,7 +149,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 | `review_and_merge` and `--review-and-merge=true\|false` | Switches the [review-and-merge flow](/reference/tasks#review-and-merge). It applies at the next tick, to open tasks too. |
-| `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges. Send null or `--clear-merge-check` to clear it. |
+| `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

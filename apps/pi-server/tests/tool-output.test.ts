@@ -19,7 +19,7 @@ import {
     createReadToolDefinition,
     getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
     OUTPUT_LIMIT_BYTES,
     buildNotice,
@@ -43,34 +43,28 @@ const roots: string[] = [];
 afterEach(async () => {
     await harness?.close();
     harness = undefined;
+    vi.unstubAllEnvs();
     for (const root of roots.splice(0)) {
         rmSync(root, { recursive: true, force: true });
     }
 });
 
 describe("workspace TMPDIR", () => {
-    it("supports cross-user fixtures with a private agent TMPDIR inherited by the test process", () => {
+    it("runs bash in-process with a private agent TMPDIR inherited by the test process", async () => {
         const cwd = sharedWorkspace();
         execFileSync("git", ["init", "-q", cwd]);
         const temporary = workspaceTmpdir(cwd);
         expect(statSync(temporary).mode & 0o777).toBe(0o700);
-        execFileSync(
-            "vp",
-            [
-                "test",
-                "run",
-                "tests/tool-output.test.ts",
-                "-t",
-                "writes as the worker under a Node-owned Orbit directory",
-            ],
-            {
-                cwd: new URL("..", import.meta.url),
-                env: { ...process.env, TMPDIR: temporary },
-                timeout: 30_000,
-            },
-        );
+        vi.stubEnv("TMPDIR", temporary);
+        const { bash } = tools(cwd);
+
+        expect(await run(bash, { command: 'printf %s "$TMPDIR"' })).toEqual({
+            text: temporary,
+            isError: false,
+        });
+        expect(process.env.TMPDIR).toBe(temporary);
         expect(statSync(temporary).mode & 0o777).toBe(0o700);
-    }, 30_000);
+    });
     it("keeps agent caches separate from check caches and other workspaces", async () => {
         const inherited = process.env.TMPDIR;
         const paths: string[] = [];
@@ -310,7 +304,12 @@ describe("stored file", () => {
     });
 
     it("writes as the worker under a Node-owned Orbit directory without closing inherited ACLs", () => {
-        // Cross-user fixtures cannot live beneath the inherited role-private TMPDIR.
+        // Exercise the real worker boundary with a private inherited TMPDIR, without
+        // starting a second test runner. Cross-user fixtures must still use /tmp.
+        const privateWorkspace = workspace();
+        execFileSync("git", ["init", "-q", privateWorkspace]);
+        const temporary = workspaceTmpdir(privateWorkspace);
+        vi.stubEnv("TMPDIR", temporary);
         const cwd = sharedWorkspace();
         const orbit = join(cwd, ".git", "orbit");
         mkdirSync(orbit, { recursive: true });
@@ -351,6 +350,7 @@ describe("stored file", () => {
             { cwd, encoding: "utf-8" },
         ).trim();
 
+        expect(statSync(temporary).mode & 0o777).toBe(0o700);
         expect(statSync(orbit).uid).toBe(userInfo().uid);
         expect(statSync(orbit).mode & 0o777).toBe(0o775);
         expect(statSync(join(orbit, "tool-output")).mode & 0o777).toBe(0o770);
@@ -630,14 +630,17 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-save",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
         const abortSettled = aborted.catch((error: unknown) => error);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
         const abortError = await abortSettled;
         expect(() => {
             throw abortError;
@@ -667,15 +670,18 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-1",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
-
-        await expect(aborted).rejects.toThrow(/Command aborted$/);
+        const abortSettled = expect(aborted).rejects.toThrow(/Command aborted$/);
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
+        await abortSettled;
         const timeout = await run(
             bash,
             { command: "cat large.txt; sleep 30", timeout: 1 },

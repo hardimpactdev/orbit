@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopologyFailedException;
@@ -75,6 +76,18 @@ final readonly class StoreTaskCommentAction
                 TaskAssistance::apply($task, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true, source: $comment);
                 TaskAssistance::apply($group, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true, source: $comment);
                 TaskQuestions::recordOperator($task, $comment);
+            }
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && ! $endedPullRequest
+                && $group->assistance_requested && $group->assistance_kind === AssistanceKind::Failure
+                && TaskScheduler::isTickFailureReason($group->assistance_reason)) {
+                foreach ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->lockForUpdate()->get() as $subtask) {
+                    if (TaskAssistance::sameRequest($subtask, $group)) {
+                        TaskAssistance::apply($subtask, source: $comment);
+                    }
+                }
+                TaskAssistance::apply($group, source: $comment);
+
+                return $comment;
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {

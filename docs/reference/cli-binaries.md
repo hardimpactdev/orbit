@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -58,9 +58,9 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | --- | --- |
 | Tag for commit `C` | `cli-v0.N.0`, where `N` is `git rev-list --count C` |
 | What `N` counts | Every commit that `C` reaches, not only first-parent commits. A shallow clone gives a wrong `N` |
-| Asset URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
+| Asset URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
 | Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
-| Checksums URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/SHA256SUMS` |
+| Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
 | Immutability | A published asset never changes. The tag points at `C`, and the release appears with all four assets at once |
 
@@ -77,12 +77,12 @@ bin/orbit-cli-release-version <commit>        # 0.4681.0
 bin/orbit-cli-release-version --tag <commit>  # cli-v0.4681.0
 ```
 
-The tag points at the commit. `https://api.github.com/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0` returns the commit SHA as `object.sha`. A 404 means the commit has no release yet, or never will because its checks did not pass.
+The tag points at the commit. `https://api.github.com/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0` returns the commit SHA as `object.sha`. A 404 means the commit has no release yet, or never will because its checks did not pass.
 
 To find the newest release without a checkout:
 
 ```bash
-git ls-remote --tags --refs https://github.com/nckrtl/orbit 'cli-v*' \
+git ls-remote --tags --refs https://github.com/hardimpactdev/orbit 'cli-v*' \
   | sed 's#.*/cli-v##' | sort -t. -k2,2n | tail -n 1
 ```
 
@@ -95,7 +95,7 @@ Download the binary and `SHA256SUMS`, check the digest, and install the file.
 ```bash
 version=0.4681.0
 asset="orbit-${version}-linux-x86_64"
-base="https://github.com/nckrtl/orbit/releases/download/cli-v${version}"
+base="https://github.com/hardimpactdev/orbit/releases/download/cli-v${version}"
 curl -fsSL -O "${base}/${asset}" -O "${base}/SHA256SUMS"
 grep "  ${asset}\$" SHA256SUMS | sha256sum --check
 sudo install -m 0755 "$asset" /usr/local/bin/orbit
@@ -138,14 +138,14 @@ The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, build
 | Target | Build runner | Run runner | Builder | Artifact | File |
 | --- | --- | --- | --- | --- | --- |
 | Linux x86_64 | `ubuntu-26.04` | The same | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
-| Linux arm64 | `ubuntu-26.04-arm` | The same | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
+| Linux arm64 | `ubuntu-26.04` | `ubuntu-26.04-arm` | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
 | macOS Apple silicon | `ubuntu-26.04` | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
 Composer installs in the build workflow receive the read-only job token through `COMPOSER_AUTH`, including the production install inside the binary builder. The release verifier downloads `SHA256SUMS` through the authenticated GitHub CLI.
 
-The `Build` jobs build every target on Linux. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
+The `Build` jobs build every target on Linux amd64. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
 
-Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
+The Linux x86_64 build job runs its own binary. The `Run linux-arm64` and `Run macos-arm64` jobs download their artifacts on hosted native runners and run them. These jobs need no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally
 
@@ -205,7 +205,7 @@ A client that verified a checksum must get the same file later, so a published r
 
 ### Build on Linux, run on each platform
 
-PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. A Linux runner therefore builds the macOS binary too. What a native runner adds is the proof that the binary starts on its platform. Linux arm64 builds on its own runner, so one job builds and runs it.
+PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. An amd64 Linux runner therefore builds the Linux arm64 and macOS binaries too. Managed recipe PHP supports amd64 only; the arm64 CLI binary still carries its own static PHP. Native runners prove that each binary starts on its platform without installing recipe PHP.
 
 The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
 

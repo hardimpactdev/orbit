@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('rejects missing repeated or unexpected classes in the four stock Pest shards', function (): void {
+it('keeps ordinary stock Pest shards complete and enforces the no-sudo boundary', function (): void {
     $repository = dirname(__DIR__, 5);
     $process = new Process(
-        ['python3', dirname(__DIR__, 2).'/Fixtures/check-pest-shards-tests.py', $repository.'/bin/check-pest-shards'],
+        ['python3', '-I', dirname(__DIR__, 2).'/Fixtures/check-pest-shards-tests.py'],
         $repository,
         ['PYTHONDONTWRITEBYTECODE' => '1', 'GITHUB_OUTPUT' => false, 'ORBIT_TIA_DIRECTORY' => false],
     );

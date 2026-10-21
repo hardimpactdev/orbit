@@ -26,9 +26,6 @@ use App\Jobs\Problems\CollectDoctorResource;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\ProblemFingerprint;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('defines the firewall doctor probe', function (): void {
     expect(class_exists(FirewallDoctorProbe::class))->toBeTrue();

@@ -164,7 +164,7 @@ it('retries publication after Orbit commits and changes HEAD itself', function (
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);
@@ -203,7 +203,7 @@ it('refuses a reset to the pre-approval HEAD after Orbit committed', function ()
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);

@@ -11,6 +11,11 @@ import { orbitProfile } from "./dev/profile.ts";
 import { orbitBuild } from "./dev/build-id.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const verificationTests = [
+    "dev/web-verify/run.test.ts",
+    "dev/web-verify/idle.test.ts",
+    "dev/web-verify/session.test.ts",
+];
 
 /**
  * Points the dev server at a Gateway. Only `vp dev` needs this: the built app is served by the
@@ -159,6 +164,8 @@ export default defineConfig({
         fs: { allow: [".", "../../packages/php-sdk/fixtures"] },
     },
     test: {
+        fileParallelism: true,
+        maxWorkers: "100%",
         projects: [
             // Pure logic: health rules, event application, log and uptime formatting.
             {
@@ -167,6 +174,16 @@ export default defineConfig({
                     name: "unit",
                     environment: "node",
                     include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
+                    exclude: verificationTests,
+                },
+            },
+            // Real daemon lifecycles and independent browser-protocol checks.
+            {
+                extends: true,
+                test: {
+                    name: "verification",
+                    include: verificationTests,
+                    environment: "node",
                 },
             },
             // The whole app in a real browser against the demo Gateway: keyboard, menus, forms, screens.

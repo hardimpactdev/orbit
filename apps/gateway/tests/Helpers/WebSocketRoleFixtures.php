@@ -7,10 +7,11 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Models\Node;
+use App\Models\WebSocketApp;
 
 /**
- * Activates the `websocket` role on a Node and generates its Reverb
- * credentials through the real credential manager, so realtime tests
+ * Activates the `websocket` role on a Node and returns the Gateway's Reverb
+ * app from the real credential manager, so realtime tests
  * exercise the same resolution path production code does instead of
  * poking `broadcasting.*` config directly.
  *
@@ -32,7 +33,7 @@ function activate_websocket_role(?Node $node = null): array
         ['status' => LifecycleStatus::Active],
     );
 
-    $credentials = app(WebSocketCredentialManager::class)->ensure($node->refresh());
+    app(WebSocketCredentialManager::class)->ensure($node->refresh());
 
-    return [$node, $credentials];
+    return [$node, WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->sole()->credentials()];
 }

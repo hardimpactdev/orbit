@@ -106,7 +106,7 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
 4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
 5. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
-6. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
+6. writes `REVISION`, which the release reads for its [version](#release-layout), then runs `php artisan config:cache` in the release. The cache holds `APP_KEY`, so it is mode `0600`.
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
@@ -666,7 +666,7 @@ Without the permission, phase 2 stops in prepare with `gateway.release_web_build
 As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state. Keep its logs, which record the run:
 
 ```bash
-git clone --quiet https://github.com/nckrtl/orbit.git /home/orbit/adopt-tmp
+git clone --quiet https://github.com/hardimpactdev/orbit.git /home/orbit/adopt-tmp
 git -C /home/orbit/adopt-tmp checkout --quiet --detach <SHA>
 composer --working-dir=/home/orbit/adopt-tmp/apps/gateway install --prefer-dist --no-interaction
 ln -s /home/orbit/orbit/apps/gateway/.env /home/orbit/adopt-tmp/apps/gateway/.env
@@ -837,7 +837,7 @@ The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with H
 | `subject` | `target`, `repository`, `sha`, and `release_id` |
 | `summary` | The redacted summary |
 | `evidence_url` | The evidence link, or null |
-| `text` | One line for a chat channel, such as `Release failed for gateway nckrtl/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
+| `text` | One line for a chat channel, such as `Release failed for gateway hardimpactdev/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
 | `occurred_at` | When the alert was raised, in ISO 8601 UTC |
 | `request_id` | The Activity entry's request ID |
 | `activity_id` | The Activity entry's id, or null when it could not be written |

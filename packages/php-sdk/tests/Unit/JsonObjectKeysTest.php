@@ -21,6 +21,8 @@ describe('JSON object key uniqueness', function (): void {
         'escaped backslash and quote' => ['{"text":"\\\\\\"","id":1}'],
         'distinct numeric names' => ['{"1":1,"01":2,"-0":3,"0":4}'],
         'case-sensitive names' => ['{"id":1,"ID":2}'],
+        'unescaped Unicode names' => ['{"café":1,"😀":2}'],
+        'backslash name' => ['{"a\\\\b":1,"ab":2}'],
         'empty names in separate objects' => ['[{"":1},{"":2}]'],
     ]);
 
@@ -37,6 +39,8 @@ describe('JSON object key uniqueness', function (): void {
         'parent after child' => ['{"id":1,"nested":{"id":2},"id":3}'],
         'second sibling' => ['[{"id":1},{"id":2,"id":3}]'],
         'empty name' => ['{"":1,"":2}'],
+        'numeric name' => ['{"1":1,"1":2}'],
+        'backslash name' => ['{"a\\\\b":1,"a\\u005cb":2}'],
         'escaped quote' => ['{"a\\"b":1,"a\u0022b":2}'],
         'Unicode escape' => ['{"café":1,"caf\u00e9":2}'],
         'Unicode surrogate pair' => ['{"😀":1,"\ud83d\ude00":2}'],

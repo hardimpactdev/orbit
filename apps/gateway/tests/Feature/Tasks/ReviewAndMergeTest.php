@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
+use App\Domain\GitHub\GitHubCheckRun;
+use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubRepository;
@@ -54,6 +57,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Activity;
@@ -67,6 +71,7 @@ use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\AgentCommandDispatcher;
@@ -152,6 +157,13 @@ function rm_reviewing(Task $task, ?string $head = null, ?string $prHead = null):
     if ($checks instanceof FakeTaskCheckRunner) {
         $checks->head = $head ?? RM_HEAD;
     }
+    if (! $task->isFinalReview()) {
+        // The handoff whose commit CI passed: the approval stores it (/reference/tasks#handoff-ci).
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'commit_sha' => $head ?? RM_HEAD,
+            'pid' => 1, 'process_started' => 'handoff', 'head_before' => RM_BASE, 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+        ]);
+    }
 
     return $reviewer;
 }
@@ -195,6 +207,9 @@ function rm_runtime(array $receipts = []): object
         public array $updates = [];
 
         public RequiredCheckState $check = RequiredCheckState::Passed;
+
+        /** The merge check of the pull request's own workflow run; null means the same as {@see $check}. */
+        public ?RequiredCheckState $pullRequestCheck = null;
 
         public bool $mergeAccepted = true;
 
@@ -273,6 +288,18 @@ function rm_runtime(array $receipts = []): object
             return RM_PR_URL;
         }
 
+        /** @var list<string> the handoff commits pushed to task-{id}, each once, as the task VM row records them */
+        public array $handoffs = [];
+
+        public function pushHandoff(Task $group, string $commit): void
+        {
+            if (! in_array($commit, $this->handoffs, true)) {
+                $this->handoffs[] = $commit;
+            }
+        }
+
+        public function deleteHandoffBranch(Task $group): void {}
+
         public function push(Task $group, string $commit): void
         {
             if ($this->pushFailures-- > 0) {
@@ -285,6 +312,31 @@ function rm_runtime(array $receipts = []): object
         public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
         {
             return $this->check;
+        }
+
+        public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
+        {
+            return $this->pullRequestCheck ?? $this->check;
+        }
+
+        public function commitChecks(Task $group, string $sha): ?array
+        {
+            return ['runs' => $this->checkRuns($group, $sha) ?? [], 'suites' => $this->check === RequiredCheckState::Missing ? [] : [new GitHubCheckSuite(1,
+                $this->check === RequiredCheckState::Pending ? 'in_progress' : 'completed',
+                $this->check === RequiredCheckState::Passed ? 'success' : null, RequiredCheckState::CheckApp)], 'pull_request_suites' => []];
+        }
+
+        public function checkRuns(Task $group, string $sha): ?array
+        {
+            return match ($this->check) {
+                RequiredCheckState::Missing => [],
+                RequiredCheckState::Unreadable => throw new TaskPullRequestException('GitHub is unavailable.'),
+                default => [new GitHubCheckRun('Required checks', match ($this->check) {
+                    RequiredCheckState::Passed => 'success',
+                    RequiredCheckState::Failed => 'failure',
+                    default => null,
+                }, null, 1, null, $this->check === RequiredCheckState::Pending ? 'in_progress' : 'completed', $sha, RequiredCheckState::CheckApp)],
+            };
         }
 
         public function merge(Task $group, string $sha): GitHubMergeResult
@@ -313,11 +365,13 @@ function rm_runtime(array $receipts = []): object
             return null;
         }
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $checks = app(TaskCheckRunner::class);
             if ($checks instanceof FakeTaskCheckRunner) {
                 $checks->head = RM_COMMIT;
+                // The commit holds the tree the check passed on.
+                $checks->commitTree = $checks->tree;
             }
 
             return RM_COMMIT;
@@ -448,7 +502,26 @@ describe('final review before every push', function (): void {
             ->and(TaskFinalReview::brief($group))->toContain($rule);
     });
 
-    it('commits an approved subtask without pushing it and starts the next subtask', function (): void {
+    it('reopens the handoff instead of approving a HEAD that is not the commit CI passed', function (): void {
+        $group = rm_group([['Models', TaskStatus::Reviewing], ['Routes', TaskStatus::Todo]]);
+        $first = $group->tasks->firstWhere('title', 'Models');
+        rm_reviewing($first);
+        TaskCheck::query()->where('task_id', $first->id)->update(['commit_sha' => RM_BASE]);
+        $runtime = rm_runtime([rm_receipt('approved', deliverables: ['tests' => 'ModelsTest'])]);
+
+        app(TaskScheduler::class)->tick();
+
+        $check = TaskCheck::query()->where('task_id', $first->id)->sole();
+        expect($first->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($first->comments()->sole()->commit_sha)->toBeNull()
+            // The passed CI result stays as it is; the reopened handoff names the reason.
+            ->and($check->status)->toBe(TaskCheckStatus::Passed)
+            ->and($check->failed_step)->toBeNull()
+            ->and($first->fresh()?->handoff_reopen_reason)->toContain('The workspace HEAD is '.RM_HEAD.', not the commit '.RM_BASE.' that CI passed on')
+            ->and($runtime->pushes)->toBe([]);
+    });
+
+    it('stores the CI-tested handoff commit of an approved subtask without pushing it and starts the next subtask', function (): void {
         $group = rm_group([['Models', TaskStatus::Reviewing], ['Routes', TaskStatus::Todo]]);
         $first = $group->tasks->firstWhere('title', 'Models');
         rm_reviewing($first);
@@ -457,7 +530,7 @@ describe('final review before every push', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($first->fresh()?->status)->toBe(TaskStatus::Completed)
-            ->and($first->comments()->sole()->commit_sha)->toBe(RM_COMMIT)
+            ->and($first->comments()->sole()->commit_sha)->toBe(RM_HEAD)
             ->and($runtime->pushes)->toBe([])
             ->and($group->tasks->firstWhere('title', 'Routes')?->fresh()?->status)->toBe(TaskStatus::Running);
     });
@@ -478,7 +551,7 @@ describe('final review before every push', function (): void {
             ->and($final->status)->toBe(TaskStatus::Reviewing)
             ->and($final->title)->toBe(TaskFinalReview::Title)
             ->and($final->subtask_start_commit)->toBe(RM_BASE)
-            ->and($final->review_workspace_head)->toBe(RM_COMMIT)
+            ->and($final->review_workspace_head)->toBe(RM_HEAD)
             ->and($final->opensPullRequest())->toBeTrue()
             ->and($runtime->reviewers)->toBe([$final->id])
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
@@ -680,6 +753,178 @@ describe('final review before every push', function (): void {
 });
 
 describe('merge on green', function (): void {
+    it('ticks a WaitingForReview group with a Parked VM without reading its workspace', function (RequiredCheckState $check, TaskMergeStatus $expectedStatus, array $expectedMerges): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false]);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $runtime = rm_runtime();
+        $runtime->check = $check;
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->preview->toBeFalse()
+            ->assistance_requested->toBeFalse()->merge_status->toBe($expectedStatus);
+        expect($runtime->merges)->toBe($expectedMerges);
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBeNull();
+        Queue::assertNotPushed(ResumeTaskVm::class);
+        $this->assertDatabaseMissing('task_workspace_leases', ['group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id]);
+    })->with([
+        'waiting for checks' => [RequiredCheckState::Pending, TaskMergeStatus::Waiting, []],
+        'green reviewed head' => [RequiredCheckState::Passed, TaskMergeStatus::Merged, [RM_HEAD]],
+    ]);
+
+    it('retries a group-level tick failure after a resolution on a subtask that is not asking', function (): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false]);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $gateway = $this->markAsGateway($group->taskable->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: TaskScheduler::TickFailedReason.'The task VM is parked.');
+        $task = $group->tasks->sole();
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        app(TaskScheduler::class)->tick();
+        expect($runtime->merges)->toBe([]);
+        expect($group->fresh()->assistance_requested)->toBeTrue();
+        expect($task->fresh()->assistance_requested)->toBeFalse();
+
+        $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", [
+            'type' => 'resolution', 'body' => 'The workspace-free merge-ready fix is deployed.', 'author' => 'operator',
+        ])->assertCreated();
+
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        expect($task->fresh())->assistance_requested->toBeFalse()->resolution_delivered_comment_id->toBeNull();
+        expect(rm_activity($group))->toContain('assistance cleared');
+
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->merge_status->toBe(TaskMergeStatus::Merged);
+        expect($runtime->merges)->toBe([RM_HEAD]);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        Queue::assertNotPushed(ResumeTaskVm::class);
+    });
+
+    it('keeps the group and open subtasks clear after resolving a tick failure without messaging an agent', function (string $target): void {
+        $group = rm_group([['Review', TaskStatus::Reviewing], ['Work', TaskStatus::Running], ['Other', TaskStatus::Completed]]);
+        $reviewing = $group->tasks->firstWhere('title', 'Review');
+        $running = $group->tasks->firstWhere('title', 'Work');
+        rm_reviewing($reviewing);
+        $running->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$running->id, $running)->id]);
+        $reason = TaskScheduler::TickFailedReason.'The workspace could not be reached.';
+        foreach ([$group, $reviewing, $running] as $record) {
+            TaskAssistance::apply($record, AssistanceKind::Failure, reason: $reason);
+        }
+        rm_runtime();
+        app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+        {
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                return ['thread' => ['session' => ['status' => 'running'], 'latestTurn' => ['id' => 'turn-of-'.$threadId, 'state' => 'running']]];
+            }
+        });
+        mock(AgentCommandDispatcher::class)->shouldNotReceive('dispatch');
+        Exceptions::fake();
+
+        $comment = app(StoreTaskCommentAction::class)->execute($group->tasks->firstWhere('title', $target), [
+            'type' => 'resolution', 'body' => 'The workspace access problem is fixed.', 'author' => 'operator',
+        ]);
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertNothingReported();
+        expect($comment->fresh()->body)->toBe('The workspace access problem is fixed.');
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        foreach ($group->tasks()->get() as $task) {
+            expect($task)->assistance_requested->toBeFalse()->assistance_reason->toBeNull()
+                ->resolution_delivered_comment_id->toBeNull()->pending_resolution_comment_id->toBeNull()
+                ->completion_attempt->toBe(1)->review_attempt->toBe(1);
+        }
+        expect($reviewing->fresh()->status)->toBe(TaskStatus::Reviewing);
+        expect($running->fresh()->status)->toBe(TaskStatus::Running);
+    })->with(['different subtask' => 'Other', 'flagged subtask' => 'Review']);
+
+    it('preserves a different open request when resolving the group tick failure', function (AssistanceKind $kind, string $reason): void {
+        $group = rm_group([['Review', TaskStatus::Reviewing], ['Other', TaskStatus::Completed]]);
+        $task = $group->tasks->firstWhere('title', 'Review');
+        TaskAssistance::apply($group, AssistanceKind::Failure, reason: TaskScheduler::TickFailedReason.'Workspace unavailable.');
+        TaskAssistance::apply($task, $kind, question: $kind === AssistanceKind::Direction ? 'Which approach?' : null, reason: $reason);
+        $request = $task->only(TaskAssistance::Fields);
+        mock(AgentCommandDispatcher::class)->shouldNotReceive('dispatch');
+
+        app(StoreTaskCommentAction::class)->execute($group->tasks->firstWhere('title', 'Other'), [
+            'type' => 'resolution', 'body' => 'Workspace access fixed.', 'author' => 'operator',
+        ]);
+
+        expect($group->fresh()->assistance_requested)->toBeFalse();
+        expect($task->fresh()->only(TaskAssistance::Fields))->toBe($request);
+    })->with([
+        'different tick failure' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'A different error.'],
+        'unrelated failure' => [AssistanceKind::Failure, 'The reviewer thread failed.'],
+        'direction' => [AssistanceKind::Direction, 'Which approach?'],
+    ]);
+
+    it('keeps group assistance when a comment does not resolve a tick failure', function (AssistanceKind $kind, string $reason, string $type, string $body): void {
+        $group = rm_settled();
+        TaskAssistance::apply($group, $kind, question: $kind === AssistanceKind::Direction ? 'Which approach?' : null, reason: $reason);
+        $request = $group->only(TaskAssistance::Fields);
+
+        app(StoreTaskCommentAction::class)->execute($group->tasks->sole(), ['type' => $type, 'body' => $body, 'author' => 'operator']);
+
+        expect($group->fresh()->only(TaskAssistance::Fields))->toBe($request);
+    })->with([
+        'unrelated failure' => [AssistanceKind::Failure, 'The expected pull request closed without merging.', 'resolution', 'Fixed.'],
+        'direction request' => [AssistanceKind::Direction, TaskScheduler::TickFailedReason.'Operator direction.', 'resolution', 'Fixed.'],
+        'empty resolution' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'Error.', 'resolution', '  '],
+        'non-resolution comment' => [AssistanceKind::Failure, TaskScheduler::TickFailedReason.'Error.', 'ready_for_review', 'Fixed.'],
+    ]);
+
+    it('cancels a todo subtask while waiting for review without reading the parked workspace', function (bool $anotherTodo): void {
+        Queue::fake([ResumeTaskVm::class]);
+        $group = rm_settled();
+        $settledAt = now()->subHour()->startOfSecond();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'preview' => false, 'settled_at' => $settledAt, 'line_diff' => 42]);
+        $todo = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 2, 'title' => 'Unstarted work', 'brief' => 'Not needed.', 'status' => TaskStatus::Todo,
+        ]);
+        if ($anotherTodo) {
+            Task::query()->create([
+                'parent_id' => $group->id, 'position' => 3, 'title' => 'Later work', 'brief' => 'Still waiting.', 'status' => TaskStatus::Todo,
+            ]);
+        }
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked, 'parked_at' => now()]);
+        $gateway = $this->markAsGateway($group->taskable->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+        rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+        app()->instance(TaskCheckRunner::class, app(RemoteTaskCheckRunner::class));
+        Exceptions::fake();
+
+        $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$todo->id}/cancel")->assertOk();
+
+        Exceptions::assertNothingReported();
+        expect($todo->fresh())->status->toBe(TaskStatus::Cancelled)->implementer_agent_thread_id->toBeNull();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->assistance_requested->toBeFalse()
+            ->line_diff->toBe(42)->settled_at->toEqual($settledAt);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        Queue::assertNotPushed(ResumeTaskVm::class);
+        $this->assertDatabaseMissing('task_workspace_leases', ['group_id' => $group->id, 'owner' => 'settle:'.$group->id]);
+    })->with(['last open subtask' => false, 'another todo remains' => true]);
+
     it('merges a reviewed, green, mergeable head through the App', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
@@ -709,6 +954,20 @@ describe('merge on green', function (): void {
             ->and(array_count_values(rm_activity($group))['merge waiting'] ?? 0)->toBe(1);
     });
 
+    it('waits for the pull request run while only a push run of the head passed', function (): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        // The handoff push run passed on the same commit; the pull request's run on its merge ref has not reported.
+        $runtime->pullRequestCheck = RequiredCheckState::Missing;
+        rm_watch(rm_open(RM_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->merges)->toBe([])
+            ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Waiting)
+            ->and($group->fresh()?->merge_reason)->toBe('Check Required checks has no run on '.RM_HEAD.' yet.');
+    });
+
     it('refuses a head whose merge check failed', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
@@ -736,7 +995,7 @@ describe('merge on green', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
         $repository = GitHubRepository::fromOrigin('https://github.com/acme/orbit.git');
-        $trust = TaskReviewTrust::fromConfig($repository, ['acme/orbit' => [123]]);
+        $trust = TaskReviewTrust::fromConfig($repository, 'acme/orbit:123');
         $review = new GitHubReview(91, 123, 'maintainer', GitHubReviewState::ChangesRequested, str_repeat('9', 40), new DateTimeImmutable('2026-10-08T10:00:00Z'), 'https://github.com/acme/orbit/pull/42#pullrequestreview-91', 'Please change it.');
         rm_watch(rm_open(RM_HEAD), new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, 42, $trust, null, [$review], TaskReviewSelection::select([$review], $trust, RM_HEAD, true)));
 
@@ -765,10 +1024,16 @@ describe('merge on green', function (): void {
         rm_watch(rm_open(RM_HEAD));
 
         app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
 
         expect($runtime->merges)->toBe([RM_HEAD])
             ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Refused)
             ->and($group->fresh()?->merge_reason)->toContain('GitHub refused the merge');
+
+        // GitHub limits writes: a refused head is written again only after a minute.
+        $this->travel(61)->seconds();
+        app(TaskScheduler::class)->tick();
+        expect($runtime->merges)->toBe([RM_HEAD, RM_HEAD]);
     });
 
     it('asks for assistance and does not merge a head someone else pushed to an Orbit task branch', function (): void {
@@ -990,7 +1255,7 @@ describe('incoming pull requests', function (): void {
 describe('incoming pull request watch', function (): void {
     it('creates one review task for each eligible pull request of a listed author', function (): void {
         $project = rm_project();
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [
             rm_listed(1),
@@ -1027,7 +1292,7 @@ describe('incoming pull request watch', function (): void {
 
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toBe([]);
 
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toHaveCount(1);
 
         $runtime->open = [rm_listed(2)];
@@ -1036,7 +1301,7 @@ describe('incoming pull request watch', function (): void {
 
     it('runs on every scheduler tick', function (): void {
         $project = rm_project();
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [rm_listed(1)];
 
@@ -1047,7 +1312,7 @@ describe('incoming pull request watch', function (): void {
 
     it('ignores a Project without the flow', function (): void {
         rm_project(flow: false);
-        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        config(['orbit.tasks.pull_request_authors' => 'acme/orbit:123']);
         $runtime = rm_runtime();
         $runtime->open = [rm_listed(1)];
 
@@ -1306,4 +1571,34 @@ it('does not infer an inherited approval from ambiguous converted history', func
 
     expect(app(TaskPublication::class)->checkReturningPullRequest($group, new TaskPullRequestHealth('merged', headSha: RM_HEAD)))->toBeTrue()
         ->and($group->fresh()->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix);
+});
+
+it('tests, approves, and merges one and the same handoff commit', function (): void {
+    $group = rm_group([['Models', TaskStatus::Running]], TaskGroupStatus::Running);
+    $task = $group->tasks->sole();
+    $task->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$task->id, $task)->id, 'subtask_start_commit' => RM_BASE]);
+    $runtime = rm_runtime([
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Built the models.', deliverables: ['tests' => 'ModelsTest']),
+        rm_receipt('approved', deliverables: ['tests' => 'ModelsTest']),
+        rm_receipt('approved', 'The whole branch is ready.', ['final-review' => 'Read the full diff.'], pullRequest: true),
+    ]);
+
+    foreach (range(1, 8) as $_) {
+        app(TaskScheduler::class)->tick();
+    }
+
+    $handoff = TaskCheck::query()->where('task_id', $task->id)->sole();
+    expect($handoff->commit_sha)->toBe(RM_COMMIT)
+        ->and($runtime->handoffs)->toBe([RM_COMMIT])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->comments()->where('type', 'approved')->sole()->commit_sha)->toBe(RM_COMMIT)
+        ->and(TaskReviewedCommit::query()->where('task_id', $group->id)->sole()->sha)->toBe(RM_COMMIT)
+        ->and($runtime->pushes)->toBe([RM_COMMIT])
+        ->and($group->fresh()?->pr_url)->toBe(RM_PR_URL);
+
+    rm_watch(rm_open(RM_COMMIT));
+    app(TaskScheduler::class)->tick();
+
+    expect($runtime->merges)->toBe([RM_COMMIT])
+        ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Merged);
 });

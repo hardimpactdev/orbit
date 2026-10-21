@@ -13,7 +13,7 @@ covers:
 
 # Incus topologies
 
-This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
 [Compute drivers](/reference/compute-drivers#clone-and-set-up-every-workspace) describes task workspace creation and its package and CI caches.
 
@@ -239,7 +239,7 @@ The public wrapper execs PHP with its own PID, so TERM or HUP sent to that PID r
 
 The session pins the Gateway URL and trusted CA to the selected topology. Inherited endpoint overrides must not redirect Gateway, realtime, or metrics traffic to the live fleet. If the topology, operator, URL, CA, Gateway grant, or WireGuard configuration is absent, startup fails clearly instead of falling back to the caller's live profile or another user's credentials.
 
-Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the topology, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
+Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the topology, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
 
 ### Guest commands
 

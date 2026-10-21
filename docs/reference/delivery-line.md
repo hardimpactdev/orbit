@@ -80,7 +80,7 @@ When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_cod
 
 ## bin/task-group-check
 
-Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
+Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
 
 ```bash
 bin/task-group-check --payload FILE [--kind auto|bug|feature]
@@ -112,7 +112,7 @@ A bug group's first code-changing subtask must carry `fails_on_base` `true` on a
 
 ## bin/pr-head-check
 
-Read the pull request, its reviews, its `Required checks` run, and its file diff. Pass only when those records match the current head and the diff has no leftover the [merge skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) already names. Do not merge.
+Read the pull request, its reviews, its `Required checks` run, and its file diff. Pass only when those records match the current head and the diff has no leftover the [merge skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) already names. Do not merge.
 
 ```bash
 bin/pr-head-check --pr URL
@@ -204,7 +204,7 @@ Run it as the Gateway account from the release under test. It then uses that rel
 | `agent_view` | `orbit-agent-view.service` is `active` and `running`. With `--since`, it started at or after that time. | |
 | `documents` | Creates one text file in the smoke Project, reads it back, renames it with its revision, and removes it. | Always, unless `--write-check` is set. |
 
-A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run.
+A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run. It keeps polling while another poll interval fits, without reserving a full read limit. A read cut short by the total limit counts as `tick_stale`, with the last seen tick in `detail.last_tick_at`, not as `timeout`.
 
 All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks#orbit-tasksstatus) tick record comes from the Gateway clock, so compare it on the Gateway host.
 
@@ -268,7 +268,7 @@ The command prints one JSON object and exits `0` when no check failed or timed o
 | `php_unavailable` | `tasks_tick` | No PHP binary was found. Pass `--php`. |
 | `schedule_unreadable` | `tasks_tick` | `artisan schedule:list` failed or printed no JSON list. `detail.stderr` holds its error. |
 | `tick_unscheduled` | `tasks_tick` | The release's schedule does not list `tasks:tick`. |
-| `tick_stale` | `tasks_tick` | With `--wait-for-tick`, no tick started in time. |
+| `tick_stale` | `tasks_tick` | With `--wait-for-tick`, no tick started in time, including when the total limit cut short a read. |
 | `tick_unreported` | `tasks_tick` | With `--wait-for-tick`, the Gateway does not report `last_tick_at` yet. |
 | `document_mismatch` | `documents` | A step returned other content, name, or result than it wrote. |
 | `timeout` | any | The check did not finish within its limit. |

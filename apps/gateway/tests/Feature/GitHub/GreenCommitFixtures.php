@@ -6,7 +6,7 @@ namespace Tests\Feature\GitHub;
 
 use Illuminate\Http\Client\Request;
 
-/** Real nckrtl/orbit responses, projected as described in `tests/Fixtures/GitHub/GreenCommit/SOURCE.md`. */
+/** Real hardimpactdev/orbit responses, projected as described in `tests/Fixtures/GitHub/GreenCommit/SOURCE.md`. */
 final class GreenCommitFixtures
 {
     /** @return list<array{sha: string, parents: list<array{sha: string}>}> */

@@ -1,21 +1,38 @@
 #!/usr/bin/env python3
-"""Require four stock Pest shards to partition the full non-privileged suite.
+"""Require stock Pest shards to partition the ordinary suite.
 
 Run from the project directory. Pest owns selection and time balancing; this
 check compares its actual listings, not a second implementation of sharding.
 """
 from collections import Counter
+import json
+from pathlib import Path
+import re
 import subprocess
 import sys
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def shard_count():
+    workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+    match = re.search(r'  gateway-shards:\n[\s\S]*?        shard: (\[[^\n]*\])', workflow)
+    if match is None:
+        raise ValueError('Cannot find the static Gateway shard matrix.')
+    matrix = json.loads(match[1])
+    count = len(matrix)
+    if count < 2 or any(type(shard) is not int for shard in matrix) or matrix != list(range(1, count + 1)):
+        raise ValueError('Gateway shard matrix must be the consecutive integers 1..count, with at least 2 shards.')
+    return count
+
 
 def listed_classes(*options):
-    command = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged',
-               *options, '--list-tests', '--colors=never']
+    command = ['vendor/bin/pest', '--no-tia', '--exclude-group=privileged', *options, '--list-tests', '--colors=never']
     result = subprocess.run(command, capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise ValueError(f'Pest listing failed ({" ".join(command)}):\n{result.stdout}{result.stderr}')
-    tests = [line[3:] for line in result.stdout.splitlines() if line.startswith(' - ')]
+    # Pest appends a sentence period to the final listed test, not to its identity.
+    tests = [line[3:] for line in result.stdout.rstrip().removesuffix('.').splitlines() if line.startswith(' - ')]
     if not tests or any('::' not in test for test in tests):
         raise ValueError(f'Pest returned an empty or unreadable listing ({" ".join(command)}).')
     # Pest can shorten method names differently when a class is filtered. The
@@ -24,19 +41,22 @@ def listed_classes(*options):
 
 
 def check():
+    count = shard_count()
     full = listed_classes()
-    assigned = Counter(test for shard in range(1, 5) for test in listed_classes(f'--shard={shard}/4'))
+    assigned = Counter(test for shard in range(1, count + 1) for test in listed_classes(f'--shard={shard}/{count}'))
     missing = sorted(full - assigned.keys())
     extra = sorted(assigned.keys() - full)
     duplicates = sorted(test for test, count in assigned.items() if count != 1)
     if missing or extra or duplicates:
         raise ValueError(f'Pest shards do not partition the full suite.\n'
                          f'Missing: {missing}\nUnexpected: {extra}\nRepeated: {duplicates}')
-    print(f'All {len(full)} non-privileged test classes appear in exactly one of four stock Pest shards.')
+    print(f'All {len(full)} non-privileged test classes appear in exactly one of {count} stock Pest shards.')
 
 
 if __name__ == '__main__':
     try:
+        if sys.argv[1:]:
+            sys.exit('Usage: bin/check-pest-shards')
         check()
     except ValueError as error:
         sys.exit(str(error))

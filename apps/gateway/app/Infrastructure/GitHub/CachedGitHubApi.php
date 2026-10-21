@@ -109,6 +109,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->reviewComments($token, $repository, $number, $reviewId);
     }
 
+    public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void
+    {
+        $this->github->deleteBranch($token, $repository, $branch);
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest
     {
         return $this->github->openPullRequest($token, $repository, $draft);
@@ -132,6 +137,11 @@ final readonly class CachedGitHubApi implements GitHubApi
     public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array
     {
         return $this->github->checkRuns($token, $repository, $sha, $checkName);
+    }
+
+    public function checkSuites(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    {
+        return $this->github->checkSuites($token, $repository, $sha);
     }
 
     public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array

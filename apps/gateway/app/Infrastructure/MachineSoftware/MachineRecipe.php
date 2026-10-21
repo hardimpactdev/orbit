@@ -64,6 +64,11 @@ final readonly class MachineRecipe
             foreach ($tools as $name) {
                 $pin = $this->tools[$name];
                 if ($pin->source !== 'ubuntu' && ! isset($pin->artifacts[$architecture])) {
+                    foreach ($this->php as $build) {
+                        if (in_array($name, $build->packages, true)) {
+                            throw new InvalidArgumentException("PHP is not available for {$architecture}");
+                        }
+                    }
                     throw new InvalidArgumentException("Profile [{$role}] requires tool [{$name}], unavailable for architecture [{$architecture}].");
                 }
             }

@@ -5,6 +5,22 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Console\Commands\AbandonGatewayReleaseCommand;
+use App\Console\Commands\AdoptGatewayReleaseCommand;
+use App\Console\Commands\AutomaticGatewayReleaseCommand;
+use App\Console\Commands\ConfigureGatewayReleaseCommand;
+use App\Console\Commands\DeployGatewayReleaseCommand;
+use App\Console\Commands\FinalizeGatewayReleaseCommand;
+use App\Console\Commands\HandoffGatewayReleaseCommand;
+use App\Console\Commands\InspectGatewayReleaseProcessCommand;
+use App\Console\Commands\ListGatewayReleasesCommand;
+use App\Console\Commands\PrepareGatewayReleaseCommand;
+use App\Console\Commands\RollbackGatewayReleaseCommand;
+use App\Console\Commands\RunGatewayReleaseCommand;
+use App\Console\Commands\SettleGatewayReleaseCommand;
+use App\Console\Commands\ShowGatewayReleaseCommand;
+use App\Console\Commands\SmokeGatewayReleaseCommand;
+use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
@@ -255,6 +271,28 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 deploy: $app->make(DeployGatewayReleaseAction::class),
             ),
         );
+    }
+
+    public function boot(): void
+    {
+        $this->commands([
+            AbandonGatewayReleaseCommand::class,
+            AdoptGatewayReleaseCommand::class,
+            AutomaticGatewayReleaseCommand::class,
+            ConfigureGatewayReleaseCommand::class,
+            DeployGatewayReleaseCommand::class,
+            FinalizeGatewayReleaseCommand::class,
+            HandoffGatewayReleaseCommand::class,
+            InspectGatewayReleaseProcessCommand::class,
+            ListGatewayReleasesCommand::class,
+            PrepareGatewayReleaseCommand::class,
+            RollbackGatewayReleaseCommand::class,
+            RunGatewayReleaseCommand::class,
+            SettleGatewayReleaseCommand::class,
+            ShowGatewayReleaseCommand::class,
+            SmokeGatewayReleaseCommand::class,
+            StageGatewayReleaseCommand::class,
+        ]);
     }
 
     private static function drainSeconds(): int

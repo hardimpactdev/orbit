@@ -46,6 +46,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use DateTimeImmutable;
+use Illuminate\Support\Facades\Config;
 
 /**
  * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: real layout, Git, lock, and
@@ -120,7 +121,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             {
                 public function run(ProcessInvocation $invocation): CommandResult
                 {
-                    return new CommandResult(0, "https://github.com/nckrtl/orbit.git\n", '', 1, false);
+                    return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
                 }
             },
             branch: 'main',
@@ -235,7 +236,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         {
             public function run(ProcessInvocation $invocation): CommandResult
             {
-                return new CommandResult(0, "https://github.com/nckrtl/orbit.git\n", '', 1, false);
+                return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
             }
         };
 
@@ -410,6 +411,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $this,
             $recorder,
             $builder,
+            Config::integer('orbit.gateway_releases.keep'),
             ticks: $this->ticks(),
         );
     }

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\GatewayProfile;
+use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\TerminalText;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -11,7 +13,9 @@ use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
+use Tests\Support\CommandFixture;
 
 pest()->group('subprocess');
 
@@ -82,27 +86,34 @@ function node_firewall_consent_case(string $family, bool $purge = false): array
 function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): array
 {
     $directory = sys_get_temp_dir().'/orbit-consent-'.Str::uuid();
+
+    if (! $pty) {
+        try {
+            config()->set('orbit.home', $directory.'/home');
+            app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
+
+            return CommandFixture::withReplies($case['arguments'], $case['replies']);
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
+    }
+
     new Filesystem()->makeDirectory($directory);
-    $configuration = [...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
+    $configuration = ['isolate_command' => true, ...$case, 'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl',
         'keys' => array_map(base64_encode(...), $keys)];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
     $fixtures = __DIR__.'/../../Fixtures/Console/';
     $argv = [PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'];
 
     try {
-        $process = new Process($pty ? ['python3', $fixtures.'command-consent-pty.py', ...$argv] : $argv,
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', ...$argv],
             env: ['PAO_DISABLE' => '1']);
         $process->setTimeout(15);
         $process->run();
 
-        if ($pty) {
-            expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
-            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $result['output'] = base64_decode($result['raw']);
-        } else {
-            $result = ['status' => $process->getExitCode(), 'output' => $process->getOutput(),
-                'stderr' => $process->getErrorOutput()];
-        }
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $result['output'] = base64_decode($result['raw']);
 
         $result['requests'] = is_file($configuration['trace']) ? array_map(
             static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
@@ -111,6 +122,7 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
 
         return $result;
     } finally {
+        MockClient::destroyGlobal();
         new Filesystem()->deleteDirectory($directory);
     }
 }
@@ -118,6 +130,7 @@ function run_node_firewall_fixture(array $case, array $keys, bool $pty = true): 
 describe('Node and firewall native consent', function (): void {
     it('admits only affirmative consent and restores the terminal', function (string $family, array $keys, bool $accepted): void {
         $case = node_firewall_consent_case($family, purge: $family === 'role');
+        $case['isolate_command'] = ! $accepted;
         $case['arguments'][] = '--no-ansi';
         $result = run_node_firewall_fixture($case, $keys);
         expect($result['status'])->toBe($accepted ? 0 : 1)
