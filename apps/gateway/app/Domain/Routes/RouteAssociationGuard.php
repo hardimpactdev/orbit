@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -44,6 +45,7 @@ final readonly class RouteAssociationGuard
 
     public function assertTargetsDetachable(Route $route): void
     {
+        WebSocketRouteSelection::assertMutable($route);
         $associations = RouteTarget::query()
             ->where('route_id', $route->id)
             ->orderBy('position')

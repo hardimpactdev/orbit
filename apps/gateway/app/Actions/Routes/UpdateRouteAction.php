@@ -19,6 +19,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -43,6 +44,10 @@ final readonly class UpdateRouteAction
                 message: 'Only a Project Route can change domain or publication through Route update.',
                 status: 409,
             );
+        }
+
+        if (($data->domainProvided && $data->domain !== $route->domain) || ($data->publicationProvided && $data->publication !== $route->publication) || $data->webRootProvided) {
+            WebSocketRouteSelection::assertMutable($route);
         }
 
         $targetIds = $route

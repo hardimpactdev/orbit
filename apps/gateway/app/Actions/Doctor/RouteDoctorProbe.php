@@ -19,11 +19,14 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\WebSocket\WebSocketRouteInspector;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -32,6 +35,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     public function __construct(
         private CustomProxyRouteInspector $inspector,
         private ReservedPrivateHostname $reservedHostnames,
+        private WebSocketRouteInspector $websocketRoutes,
     ) {}
 
     public function family(): DoctorFamily
@@ -61,6 +65,30 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         $observedChecks = [];
         foreach ($routes as $route) {
             $observedChecks[$route->id] = [RouteDoctorIssueCode::LifecycleNotActive->value, RouteDoctorIssueCode::DomainReserved->value];
+        }
+        foreach (WebSocketAppTarget::query()->with(['route.targets.instance'])->whereIn('route_id', $routes->modelKeys())->get()->unique('route_id') as $attachment) {
+            $route = $attachment->route;
+            if (! $route instanceof Route) {
+                continue;
+            }
+            try {
+                if (! $context->inspection->reachable) {
+                    throw new ResourceOperationException('websocket.route_inspection_failed', 'Node unreachable.', 409);
+                }
+                $collision = false;
+                foreach ($route->targets as $target) {
+                    $collision = $this->websocketRoutes->hasCollisions($target->instance) || $collision;
+                }
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::WebSocketCollision->value;
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::WebSocketInspectionFailed->value;
+                if ($collision) {
+                    $issues[] = new DoctorIssueData(RouteDoctorIssueCode::WebSocketCollision, DoctorIssueKind::Drift,
+                        'route', $route->id, $route->domain, 'Laravel routes overlap the reserved public Reverb prefixes /app or /apps.', 'no collision', 'collision');
+                }
+            } catch (ResourceOperationException) {
+                $issues[] = new DoctorIssueData(RouteDoctorIssueCode::WebSocketInspectionFailed, DoctorIssueKind::Unverifiable,
+                    'route', $route->id, $route->domain, 'The current Laravel release could not be checked for public Reverb route collisions.', 'verifiable', 'unverifiable');
+            }
         }
         $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 

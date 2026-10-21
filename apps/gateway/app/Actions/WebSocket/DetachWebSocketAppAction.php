@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\WebSocket;
 
 use App\Data\WebSocket\WebSocketAppAttachmentData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
+use App\Domain\WebSocket\WebSocketRoutePublisher;
 use App\Models\Instance;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
@@ -21,14 +23,17 @@ final readonly class DetachWebSocketAppAction
         private InstanceEnvironmentOperationLock $operations,
         private InstanceEnvironmentContextResolver $contexts,
         private InstanceEnvironmentStore $store,
+        private DevelopmentProjectionOperationLock $projections,
+        private WebSocketRoutePublisher $publisher,
     ) {}
 
     public function execute(Instance $instance, WebSocketApp $app): WebSocketAppAttachmentData
     {
-        return $this->operations->run([$instance->id], function () use ($instance, $app): WebSocketAppAttachmentData {
+        return $this->operations->run([$instance->id], fn (): WebSocketAppAttachmentData => $this->projections->run(function () use ($instance, $app): WebSocketAppAttachmentData {
             $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: false);
 
-            return DB::transaction(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
+            $route = WebSocketAppTarget::query()->where('instance_id', $instance->id)->where('websocket_app_id', $app->id)->first()?->route;
+            $result = DB::transaction(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
                 $target = WebSocketAppTarget::query()
                     ->where('instance_id', $instance->id)
                     ->where('websocket_app_id', $app->id)
@@ -55,6 +60,11 @@ final readonly class DetachWebSocketAppAction
                     keyCount: $forgotten->keyCount,
                 );
             });
-        });
+            if ($route !== null) {
+                $this->publisher->publish($route);
+            }
+
+            return $result;
+        }));
     }
 }

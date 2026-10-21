@@ -48,7 +48,14 @@ final readonly class DevelopmentSite
         public bool $upstreamSystemRoots = false,
         /** A Route with a web root that serves another application directory gets its own pool. */
         public ?string $poolSuffix = null,
+        public ?string $websocketKey = null,
+        public ?string $websocketAppId = null,
     ) {}
+
+    public function withWebSocket(string $key, string $appId): self
+    {
+        return clone ($this, ['websocketKey' => $key, 'websocketAppId' => $appId]);
+    }
 
     public function asSecondary(): self
     {

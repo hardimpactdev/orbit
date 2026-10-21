@@ -22,6 +22,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -190,6 +191,12 @@ final readonly class DevelopmentSiteRepository
             }
         }
 
+        $bindings = WebSocketAppTarget::query()->with(['route', 'webSocketApp'])->whereNotNull('route_id')->get();
+        $sites = $sites->map(static function (DevelopmentSite $site) use ($bindings): DevelopmentSite {
+            $binding = $bindings->first(static fn ($target): bool => $target->route?->domain === $site->domain);
+
+            return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->app_id);
+        });
         $sites = $this->withoutDuplicateSecondarySites($sites);
 
         if ($node instanceof Node) {

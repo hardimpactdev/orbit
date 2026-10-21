@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property int $id
  * @property int $websocket_app_id
+ * @property int|null $route_id
+ * @property-read Route|null $route
  * @property int $instance_id
  * @property-read WebSocketApp $webSocketApp
  * @property-read Instance $instance
@@ -26,12 +28,19 @@ final class WebSocketAppTarget extends Model
     protected $fillable = [
         'websocket_app_id',
         'instance_id',
+        'route_id',
     ];
 
     /** @return BelongsTo<WebSocketApp, $this> */
     public function webSocketApp(): BelongsTo
     {
         return $this->belongsTo(WebSocketApp::class, 'websocket_app_id');
+    }
+
+    /** @return BelongsTo<Route, $this> */
+    public function route(): BelongsTo
+    {
+        return $this->belongsTo(Route::class);
     }
 
     /** @return BelongsTo<Instance, $this> */

@@ -9,6 +9,7 @@ use App\Actions\WebSocket\DetachWebSocketAppAction;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\WebSocket\AttachWebSocketAppRequest;
 use App\Models\Instance;
 use App\Models\WebSocketApp;
 use Illuminate\Http\JsonResponse;
@@ -17,10 +18,10 @@ use Illuminate\Http\Request;
 #[RequiresNodeAccess(ServingNode::EnvironmentInstanceOwning)]
 final class WebSocketAppAttachmentsController extends Controller
 {
-    public function store(Request $request, Instance $instance, WebSocketApp $websocketApp, AttachWebSocketAppAction $action): JsonResponse
+    public function store(AttachWebSocketAppRequest $request, Instance $instance, WebSocketApp $websocketApp, AttachWebSocketAppAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($instance, $websocketApp)->toArray(),
+            'data' => $action->execute($instance, $websocketApp, $request->publicRoute())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
