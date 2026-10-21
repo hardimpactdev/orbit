@@ -19,7 +19,7 @@ def install(root=ROOT):
     exec(compile((resources / 'remote/lib/artifacts.py').read_text(), 'artifacts.py', 'exec'), recipe.__dict__)
     spec.loader.exec_module(recipe)
     recipe.VP_STORE_PROGRAM = '\n'.join((resources / 'remote' / name).read_text() for name in (
-        'lib/program.py', 'lib/vp-store.py', 'tools/publish-recipe-node.py'))
+        'lib/program.py', 'lib/vp-store.py', 'tools/install-vp-environment.py'))
     document = json.loads((resources / 'machine-software/recipe.json').read_text())
     tools = {name: document['tools'][name] for name in ('node', 'vp', 'vp-cli', 'pnpm')}
     lock = (resources / 'machine-software/vite-plus-package-lock.json').read_text()

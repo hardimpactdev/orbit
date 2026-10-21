@@ -20,7 +20,7 @@ source = Path(spec.origin).read_text().replace('# ORBIT_TASK_UNIT_STATE',
     (Path(spec.origin).parents[2] / 'tasks/unit-state.py').read_text())
 exec(compile(source, spec.origin, 'exec'), recipe.__dict__)
 recipe.VP_STORE_PROGRAM = '\n'.join((Path(spec.origin).parent.parent / name).read_text() for name in (
-    'lib/program.py', 'lib/vp-store.py', 'tools/publish-recipe-node.py'))
+    'lib/program.py', 'lib/vp-store.py', 'tools/install-vp-environment.py'))
 
 
 class ConvergenceTest(unittest.TestCase):

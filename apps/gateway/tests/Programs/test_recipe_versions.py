@@ -27,7 +27,7 @@ exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/art
 image_spec.loader.exec_module(image)
 exec(compile((RESOURCE / 'build-image.py').read_text(), 'build-image.py', 'exec'), image.__dict__)
 
-recipe.VP_STORE_PROGRAM = image.VP_STORE_PROGRAM = assemble('tools.publish-recipe-node')
+recipe.VP_STORE_PROGRAM = image.VP_STORE_PROGRAM = assemble('tools.install-vp-environment')
 
 PIN = '8.18.0-1ubuntu2.7'
 NEWER = '8.18.0-1ubuntu2.8'

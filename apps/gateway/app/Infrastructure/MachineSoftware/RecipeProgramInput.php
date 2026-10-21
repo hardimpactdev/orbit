@@ -13,7 +13,7 @@ final readonly class RecipeProgramInput
     public static function source(string $program, array $payload, string $entryPoint): string
     {
         if (str_contains($program, '# ORBIT_VP_STORE_PROGRAM')) {
-            $source = new RemoteProgramCatalog()->program('tools.publish-recipe-node')->source;
+            $source = new RemoteProgramCatalog()->program('tools.install-vp-environment')->source;
             $program = str_replace("VP_STORE_PROGRAM = ''  # ORBIT_VP_STORE_PROGRAM", 'VP_STORE_PROGRAM = '.json_encode($source, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $program);
         }
         $encoded = base64_encode(json_encode($payload, JSON_THROW_ON_ERROR));
