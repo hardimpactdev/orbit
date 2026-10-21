@@ -10141,15 +10141,22 @@
       "name": "websocket-app-create",
       "extension": null,
       "title": "Create a WebSocket app",
-      "description": "Creates a Reverb app with a random app ID, key, and secret, and converges the active `websocket` role so that Reverb serves it. Without an active role, the next converge of the role serves it. No response contains the secret. A taken name, `gateway`, or a name that is not a slug returns `validation.failed`.",
+      "description": "Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.",
       "method": "POST",
       "path": "/api/v1/websocket-apps",
       "path_inputs": [],
-      "query_inputs": [],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
       "starts_operation": false,
       "input_schema": {
         "type": "object",
         "properties": {
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
@@ -10167,13 +10174,15 @@
       "name": "websocket-app-destroy",
       "extension": null,
       "title": "Remove a WebSocket app",
-      "description": "Removes a Reverb app, converges the active `websocket` role without it, and returns the removed app. The Gateway app `gateway` returns `websocket.app_reserved` (409). An app that an Instance uses returns `websocket.app_in_use` (409).",
+      "description": "Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).",
       "method": "DELETE",
       "path": "/api/v1/websocket-apps/{websocket_app}",
       "path_inputs": [
         "websocket_app"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10182,6 +10191,11 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "WebSocket app name."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
           }
         },
         "additionalProperties": false,
@@ -10204,6 +10218,40 @@
         "type": "object",
         "properties": {},
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "websocket-app-rotate",
+      "extension": null,
+      "title": "websocket:app:rotate",
+      "description": "Rotate a Reverb app secret and close only that app’s sockets.",
+      "method": "POST",
+      "path": "/api/v1/websocket-apps/{websocket_app}/rotate",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
       }
     },
     {
@@ -10231,6 +10279,57 @@
         "required": [
           "websocket_app"
         ]
+      }
+    },
+    {
+      "name": "websocket-operation-show",
+      "extension": null,
+      "title": "websocket:operation:show",
+      "description": "Show which Reverb processes have applied an app change.",
+      "method": "GET",
+      "path": "/api/v1/websocket-operations/{operation}",
+      "path_inputs": [
+        "operation"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "format": "uuid",
+            "description": "WebSocket registry operation UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "name": "websocket-sync",
+      "extension": null,
+      "title": "websocket:sync",
+      "description": "Wait for Reverb to apply the current app registry without restarting it.",
+      "method": "POST",
+      "path": "/api/v1/websocket-sync",
+      "path_inputs": [],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          }
+        },
+        "additionalProperties": false
       }
     }
   ]

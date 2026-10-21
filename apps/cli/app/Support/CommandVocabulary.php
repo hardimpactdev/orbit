@@ -57,6 +57,7 @@ final readonly class CommandVocabulary
         'tasks' => ['cancel', 'close', 'complete', 'status'],
         'tool' => ['adopt', 'scan'],
         'vault' => ['setup', 'status', 'sync', 'teardown'],
+        'websocket' => ['rotate', 'sync'],
     ];
 
     /** @var list<string> */

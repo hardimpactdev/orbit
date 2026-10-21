@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
-/** Renders the systemd unit that keeps `reverb:start` running on the node. */
+/** Renders the systemd unit that keeps `orbit:reverb:start` running on the node. */
 final readonly class WebSocketServiceUnitRenderer
 {
     public function render(string $installPath, string $managedUser, string $managedGroup, int $port): string
@@ -20,7 +20,7 @@ final readonly class WebSocketServiceUnitRenderer
             User={$managedUser}
             Group={$managedGroup}
             WorkingDirectory={$installPath}
-            ExecStart=/usr/bin/php {$installPath}/artisan reverb:start --host=127.0.0.1 --port={$port}
+            ExecStart=/usr/bin/php {$installPath}/artisan orbit:reverb:start --host=127.0.0.1 --port={$port}
             Restart=always
             RestartSec=1
 

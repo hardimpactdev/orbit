@@ -225,7 +225,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'websocket:app:create',
         'websocket:app:destroy',
         'websocket:app:list',
+        'websocket:app:rotate',
         'websocket:app:show',
+        'websocket:operation:show',
+        'websocket:sync',
     ]);
 });
 
@@ -996,10 +999,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
-        'websocket:app:create' => [['name'], ['json' => false]],
-        'websocket:app:destroy' => [['name'], ['force' => false, 'json' => false]],
+        'websocket:app:create' => [['name'], ['operation-key' => null, 'json' => false]],
+        'websocket:app:destroy' => [['name'], ['force' => false, 'operation-key' => null, 'json' => false]],
         'websocket:app:list' => [[], ['json' => false]],
+        'websocket:app:rotate' => [['name'], ['force' => false, 'operation-key' => null, 'json' => false]],
         'websocket:app:show' => [['name'], ['json' => false]],
+        'websocket:operation:show' => [['id'], ['json' => false]],
+        'websocket:sync' => [[], ['wait' => '60', 'operation-key' => null, 'json' => false]],
         'vault:setup' => [[], [
             'url' => null,
             'client-id' => null,
@@ -1378,7 +1384,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'websocket:app:create' => [['name' => 'hauzer'], ...$profileMissing],
         'websocket:app:destroy' => [['name' => 'hauzer', '--force' => true], ...$profileMissing],
         'websocket:app:list' => [[], ...$profileMissing],
+        'websocket:app:rotate' => [['name' => 'hauzer', '--force' => true], ...$profileMissing],
         'websocket:app:show' => [['name' => 'hauzer'], ...$profileMissing],
+        'websocket:operation:show' => [['id' => '33333333-3333-4333-8333-333333333333'], ...$profileMissing],
+        'websocket:sync' => [[], ...$profileMissing],
     ];
     $visibleCommandNames = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

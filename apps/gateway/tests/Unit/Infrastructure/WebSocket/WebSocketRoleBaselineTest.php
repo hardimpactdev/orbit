@@ -14,7 +14,9 @@ use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\WebSocketRuntime;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -164,7 +166,16 @@ it('touches only the Gateway-side publication and credentials when the node is u
     $events = [];
     $baseline = websocketBaseline($events);
 
+    $runtimes = collect(['default', 'second'])->map(fn (string $slot): WebSocketRuntime => WebSocketRuntime::query()->create([
+        'id' => (string) Str::uuid(), 'node_id' => $node->id, 'slot' => $slot,
+        'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+    ]));
+
     $baseline->removeUnreachable($node, $assignment);
+
+    foreach ($runtimes as $runtime) {
+        expect($runtime->refresh()->required)->toBeFalse();
+    }
 
     expect($events)->toBe([
         'publication:removeUnreachable',
@@ -295,7 +306,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketServerCredentials('base64:'.base64_encode('key'), [new WebSocketCredentials('id', 'key', 'secret')]);
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), 'test-process', 'test-registry-token', 'test-notification-token');
     }
 
     public function current(): ?WebSocketCredentials
@@ -303,7 +314,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         return null;
     }
 
-    public function purge(Node $node): void
+    public function purge(Node $node, bool $runtimeStopped = false): void
     {
         $this->record('credentials:purge');
     }

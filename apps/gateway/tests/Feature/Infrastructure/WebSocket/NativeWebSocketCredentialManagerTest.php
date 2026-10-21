@@ -6,7 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
@@ -14,6 +14,7 @@ use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
 use App\Models\Setting;
 use App\Models\WebSocketApp;
+use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\DB;
 
 it('creates the Gateway app and the server APP_KEY once and keeps them stable across converges', function (): void {
@@ -24,21 +25,21 @@ it('creates the Gateway app and the server APP_KEY once and keeps them stable ac
     $second = $manager->ensure($node);
 
     expect($second)->toEqual($first)
-        ->and($first->apps)->toHaveCount(1)
-        ->and($first->apps[0]->appId)->toBe(WebSocketApp::query()->sole()->app_id)
+        ->and($first->processId)->toBe(WebSocketRuntime::query()->sole()->id)
         ->and(WebSocketApp::query()->sole()->name)->toBe(WebSocketApp::GatewayName)
         ->and($first->laravelAppKey)->toStartWith('base64:');
 });
 
-it('returns every app for the server, ordered by name', function (): void {
+it('loads every app through the current registry instead of bootstrap credentials', function (): void {
     $node = websocketCredentialsNode();
     $issuer = new WebSocketAppIssuer;
     $hauzer = $issuer->issue('hauzer');
     $conn = $issuer->issue('conn');
 
-    $apps = app(WebSocketCredentialManager::class)->ensure($node)->apps;
+    app(WebSocketCredentialManager::class)->ensure($node);
+    $apps = app(WebSocketRegistry::class)->snapshot()['apps'];
 
-    expect(array_map(static fn (WebSocketCredentials $app): string => $app->appId, $apps))->toBe([
+    expect(array_column($apps, 'app_id'))->toEqualCanonicalizing([
         $conn->app_id,
         WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->sole()->app_id,
         $hauzer->app_id,
@@ -54,7 +55,7 @@ it('never stores an app secret or the generated APP_KEY unencrypted', function (
     expect($setting->key)->toBe(WebSocketFootprint::SettingKeyAppKeyLaravel)
         ->and($setting->is_secret)->toBeTrue()
         ->and($setting->value)->not->toContain($credentials->laravelAppKey)
-        ->and($raw->secret)->not->toBe($credentials->apps[0]->appSecret)
+        ->and($raw->secret)->not->toBe(WebSocketApp::query()->sole()->secret)
         ->and(WebSocketApp::query()->sole()->toArray())->not->toHaveKey('secret');
 });
 
@@ -74,7 +75,8 @@ it('returns null credentials when more than one websocket role is active', funct
 it('reads the active assignment credentials through current()', function (): void {
     $node = websocketCredentialsNode();
     $manager = app(WebSocketCredentialManager::class);
-    $ensured = $manager->ensure($node)->apps[0];
+    $manager->ensure($node);
+    $ensured = WebSocketApp::query()->sole()->credentials();
 
     $current = $manager->current();
 

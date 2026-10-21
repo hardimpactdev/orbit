@@ -232,7 +232,7 @@ describe('site sources', function (): void {
             ->not->toContain('__ORBIT_');
     });
 
-    it('renders the services Node byte for byte as main did before the AiRouter source became a contribution', function (): void {
+    it('renders the services Node with a private Reverb control path and contributed sites', function (): void {
         config(['orbit.websocket.port' => 8790]);
         $node = caddy_build_services_node();
         caddy_build_task_vms();

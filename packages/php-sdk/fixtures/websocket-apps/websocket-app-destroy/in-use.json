@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "websocket.app_in_use",
-            "message": "WebSocket app [hauzer] is still on an Instance. Remove it from each Instance first.",
+            "message": "Remove the app from each Instance first.",
             "details": {}
         }
     }

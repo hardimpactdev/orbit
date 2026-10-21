@@ -6,24 +6,19 @@ namespace App\Domain\WebSocket;
 
 use SensitiveParameter;
 
-/**
- * What the Reverb server on the `websocket` role's Node boots with: the Laravel `APP_KEY` of the server
- * app, and every Reverb app it serves, ordered by name.
- */
+/** Protected bootstrap configuration; app credentials arrive only through the registry API. */
 final readonly class WebSocketServerCredentials
 {
-    /** @param  list<WebSocketCredentials>  $apps */
     public function __construct(
-        #[SensitiveParameter]
-        public string $laravelAppKey,
-        public array $apps,
+        #[SensitiveParameter] public string $laravelAppKey,
+        public string $processId,
+        #[SensitiveParameter] public string $registryToken,
+        #[SensitiveParameter] public string $notificationToken,
     ) {}
 
+    /** @return array<string, mixed> */
     public function __debugInfo(): array
     {
-        return [
-            'laravelAppKey' => '[PROTECTED]',
-            'apps' => $this->apps,
-        ];
+        return ['processId' => $this->processId];
     }
 }

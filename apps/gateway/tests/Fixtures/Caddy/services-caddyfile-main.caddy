@@ -50,7 +50,12 @@ reverb.orbit {
     @orbit_outside not remote_ip 10.44.0.0/24
     abort @orbit_outside
     tls /etc/caddy/orbit-websocket-cert-current/reverb.pem /etc/caddy/orbit-websocket-cert-current/reverb.key
-    reverse_proxy 127.0.0.1:8790
+    handle /internal/* {
+        respond 403
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8790
+    }
 }
 
 # orbit: analytics analytics.orbit

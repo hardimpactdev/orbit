@@ -34,7 +34,7 @@ Create an app for each Project that publishes realtime events.
 orbit websocket:app:create hauzer
 ```
 
-The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. After it stores the app, the Gateway converges the active `websocket` role, so Reverb serves the new app. Without an active role, the role's next converge serves it.
+The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision, then notifies each Reverb process. Each process pulls the full snapshot and adds the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
 
 `websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
 
@@ -46,11 +46,11 @@ Destroy an app when no Instance uses it any more.
 orbit websocket:app:destroy hauzer
 ```
 
-The Gateway deletes the app and converges the active role, so Reverb stops serving it. It refuses the `gateway` app with `websocket.app_reserved` (409). It refuses an app that an Instance still holds with `websocket.app_in_use` (409). Remove the app from each Instance first.
+The Gateway deletes the app and publishes a new registry revision. Each process stops accepting the app and closes only its sockets with code 4001. It refuses the `gateway` app with `websocket.app_reserved` (409). It refuses an app that an Instance still holds with `websocket.app_in_use` (409). Remove the app from each Instance first.
 
 The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket#orbit-websocketappdestroy).
 
-When the converge fails, the record change stays. Fix the cause, then run `orbit node:role:add <node> websocket --converge-existing`.
+A saved change stays pending until every serving process confirms it. The API sends a revision notification and returns the current status without waiting for process reports. An unconfirmed change returns HTTP 202 with an operation ID and status URL. The CLI polls the operation to wait for application without restarting Reverb.
 
 ## Add an app on an Instance
 
@@ -85,32 +85,41 @@ Add and remove change stored configuration only. Run [`env:sync`](/reference/env
 
 ## The Reverb server
 
-The role's converge writes every app, ordered by name, into the server's `.env` as one JSON list:
+[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
 
-```text
-REVERB_APPS='[{"app_id":"…","key":"…","secret":"…"},…]'
-```
+The Gateway owns the encrypted app secrets and a versioned registry. After commit, a revision-only webhook prompts each process to fetch the full snapshot. A 30-second reconciliation check repairs missed notifications. HTTP receipt confirms only delivery; a separate process report confirms application.
 
-[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb)'s `config/reverb.php` makes one app of Reverb's `config` provider from each entry. Every app gets the same options: `allowed_origins` `*`, and client events from channel members.
+Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
 
-Each converge restarts `orbit-websocket`, so Reverb loads the current code and every app. A restart closes every connection, and clients reconnect.
+A running process keeps its last applied state when the Gateway is unavailable. This preserves other apps' connections, but removed credentials can remain usable until communication returns. A new process waits for a fresh snapshot before opening its listener.
 
-See [convergence failure handling](/solutions/realtime-reverb#what-the-converge-does).
+### Remove a dead websocket Node
 
-`ORBIT_WEBSOCKET_REF` must name an orbit-reverb commit that reads `REVERB_APPS`. With an older commit, Reverb starts without a usable app.
+Use `orbit node:remove <node> --offline --force` only after confirming the machine is dead or isolated from clients. Orbit checks reachability before abandoning its roles. For an unreachable Node, this confirmation withdraws every runtime on that Node from apply confirmation and revokes its registry access. `orbit node:role:remove <node> websocket --offline --force` also withdraws its runtimes. An ordinary online role removal withdraws only the process it stopped.
+
+The offline path cannot stop a process on the machine. Do not bring the abandoned machine back into service without reconverging it; it may still hold old app secrets. A live Node does not take the offline abandonment path.
+
+### Rotate an app secret
+
+Rotation keeps the app key, generates a fresh secret, and advances its credential generation. It updates attached Instances' stored environment in the same transaction. Each process closes that app's existing sockets with code 4201 when it applies the revision. Other apps stay connected.
+
+Environment synchronization and application reload remain separate operations. The rotating app can have a short interruption while its publisher or private-channel authorization adopts the new secret. Revocation does not wait for an offline Instance.
+
+### Server upgrades
+
+Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
+
+After a successful server activation, Orbit keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
 
 ## Deploy and recover
 
-Deploy multi-app support in this order. No automatic job converges the role, so keep explicit role and app changes paused until step 4.
+Merge the managed orbit-reverb server first, then pin its squash-merge commit from main in the Gateway release and deploy that Gateway. Do not converge any websocket role between the server merge and the Gateway deployment: the older Gateway still installs server main. On that Gateway, app create and app destroy also converge the role, so pause those commands until the new Gateway deploys.
 
-1. Merge [orbit-reverb#1](https://github.com/hardimpactdev/orbit-reverb/pull/1) first.
-2. Release the Gateway with multi-app support.
-3. Confirm that the Gateway's `ORBIT_WEBSOCKET_REF` is unset or `main`.
-4. Run `orbit node:role:add <node> websocket --converge-existing`.
-5. Verify Gateway realtime events.
-6. Only then run `orbit websocket:app:create <name>`.
+Each Gateway release pins an immutable orbit-reverb commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php`. This value has no environment override. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
 
-The migration moves the Gateway's Reverb credentials into the reserved `gateway` app and deletes the old Node settings. A Gateway code rollback does not undo migrations. The old code finds no Reverb app, so the Gateway stops broadcasting. Roll forward or restore the pre-release database backup to recover. See [Gateway recovery](/reference/gateway-recovery).
+Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. After a rollback between pinned Gateway releases, converge the websocket role in an announced reconnect window to install the matching server commit. A Gateway rollback only switches Gateway code; it does not change the running Reverb process. Once the managed orbit-reverb server is on main, rollback to a Gateway release before this one is unsupported. Roll forward instead.
+
+After restoring the Gateway database, restart every Reverb process in a reconnect window so it registers a new boot and loads a fresh snapshot. A changed registry epoch, a lower revision, or different contents at the same revision makes a running process exit with failure; systemd restarts it. An unchanged revision can return HTTP 304, so automatic detection does not replace the required restart after a restore. Recovery does not fall back to a static app list.
 
 ## Why it works this way
 
@@ -120,18 +129,27 @@ These reasons explain the design. Check them before you propose a change.
 
 Reverb already keeps apps apart by key and secret. One server per Project would add Processes, ports, and certificates for the same isolation. Sharing the Gateway's app was rejected, because a Project could then publish on the Gateway's channels.
 
-### A JSON list in the server's environment
+### One durable registry with stock protocol handling
 
-The `.env` is the one file the converge owns on the Node. A JSON list keeps orbit-reverb a plain Laravel app with Reverb's stock `config` provider. Rendering `config/reverb.php` into the checkout was rejected: the converge resets the checkout to its ref, so Orbit would overwrite a tracked file on every converge. Numbered keys such as `REVERB_APP_1_ID` were rejected, because the config would still loop over them. A custom app provider that asks the Gateway was rejected, because it puts Orbit code in the Reverb app.
+The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Revision-only webhooks carry no app secrets and reduce normal update latency. Periodic reconciliation repairs a lost notification without a second queue or registry store.
 
-### Restart on every converge
+An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The integration uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
 
-Reverb reads its apps when it starts. Every explicit converge restarts it so the code and app list agree. Conditional restarts need change detection and leave a crash window between writing the environment and restarting the server. The Gateway's subscriber reconnects, and Reverb's own restart command also closes every connection.
+### Availability during an outage
 
-### One credential source and one deploy order
-
-Keeping the old Node settings after migration would create a second credential path. Recover by rolling forward or restoring the database backup taken before release. The [deploy order](#deploy-and-recover) keeps the Gateway renderer and orbit-reverb config in step: old config cannot read `REVERB_APPS`, and the new config cannot read the old single-app keys. Either mismatch starts Reverb without a usable app even though `systemctl is-active` passes.
+A running process keeps serving its last applied snapshot so a Gateway outage does not drop every app. Status reports expose pending revocations. A cold start requires fresh state to avoid restoring deleted apps or revoked secrets from disk.
 
 ### An app is an attachment, like a database
 
 An Instance gets an app the way it gets a [Database connection](/reference/database-connections#add-a-connection-on-an-instance): a record on the Gateway, written into stored configuration, synchronized by `env:sync`. The attachment record lets destroy refuse an app that an Instance still holds.
+
+
+### Confirmation and recovery
+
+Operation status is `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
+
+The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw membership. Verified shutdown of the default service withdraws only its own process slot.
+
+Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
+
+The first release provisions one process per Node. Multiple workers on one Node need separate callback routes and service provisioning before production use. Two-process tests cover apply confirmation and stock Redis broadcasting.

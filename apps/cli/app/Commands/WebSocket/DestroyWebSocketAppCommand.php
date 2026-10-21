@@ -7,7 +7,7 @@ namespace App\Commands\WebSocket;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
-use Orbit\Sdk\Responses\WebSocket\WebSocketAppResponse;
+use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 final class DestroyWebSocketAppCommand extends WebSocketAppCommand
 {
@@ -15,10 +15,18 @@ final class DestroyWebSocketAppCommand extends WebSocketAppCommand
     protected $signature = 'websocket:app:destroy
         {name : WebSocket app name}
         {--force : Skip the destructive confirmation prompt}
+        {--operation-key= : Reuse this key to retry the same change}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Remove a Reverb app that no Instance uses. Reverb stops serving it.';
+
+    protected function operationKey(): ?string
+    {
+        $key = $this->option('operation-key');
+
+        return is_string($key) ? $key : null;
+    }
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -46,15 +54,15 @@ final class DestroyWebSocketAppCommand extends WebSocketAppCommand
 
         $app = $this->sendWithProgress(
             $connector,
-            new DestroyWebSocketAppRequest($name),
-            WebSocketAppResponse::class,
-            ['Destroy WebSocket app', 'Destroying WebSocket app', 'Destroyed WebSocket app'],
+            new DestroyWebSocketAppRequest($name, $this->operationKey()),
+            WebSocketChangeResponse::class,
+            ['Destroy WebSocket app', 'Destroying WebSocket app', 'Saved WebSocket app removal'],
         );
 
-        if (! $app instanceof WebSocketAppResponse) {
+        if (! $app instanceof WebSocketChangeResponse) {
             return self::FAILURE;
         }
 
-        return $this->renderApp($app, "WebSocket app [{$app->name}] destroyed.");
+        return $this->renderChange($app);
     }
 }

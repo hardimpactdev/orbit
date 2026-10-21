@@ -50,7 +50,7 @@ it('memoizes the resolution for the life of the instance', function (): void {
                 return new WebSocketCredentials('id', 'key', 'secret');
             }
 
-            public function purge(Node $node): void {}
+            public function purge(Node $node, bool $runtimeStopped = false): void {}
         },
         orbitHome: '/tmp/orbit-home',
     );

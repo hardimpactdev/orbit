@@ -12,6 +12,8 @@ use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -38,6 +40,7 @@ function websocket_app_cli_response(int $status = 200): MockResponse
     return MockResponse::make([
         'data' => ['id' => 2, 'name' => 'hauzer', 'app_id' => 'hauzerappid000000001', 'key' => 'hauzerappkey00000001', 'instance_ids' => []],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
+        'operation' => ['id' => '11111111-1111-4111-8111-111111111111', 'epoch' => '22222222-2222-4222-8222-222222222222', 'revision' => 2, 'state' => $status === 202 ? 'pending' : 'applied', 'processes' => [], 'missing_node_ids' => []],
     ], $status);
 }
 
@@ -189,4 +192,30 @@ describe('instance:websocket commands', function (): void {
 
         expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/instances/12/websocket-apps/hauzer');
     });
+});
+
+it('shows a saved change as pending and preserves an explicit retry key', function (): void {
+    $mock = MockClient::global([CreateWebSocketAppRequest::class => websocket_app_cli_response(202)]);
+    $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:create']);
+    expect($tester->execute(['name' => 'hauzer', '--operation-key' => 'retry-create', '--json' => true], ['interactive' => false]))->toBe(0);
+    $output = json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR);
+    expect($output['operation']['state'])->toBe('pending')
+        ->and($mock->getLastRequest()?->headers()->get('Idempotency-Key'))->toBe('retry-create');
+});
+
+it('times out sync with truthful pending status and no restart request', function (): void {
+    $mock = MockClient::global([SyncWebSocketAppsRequest::class => websocket_app_cli_response(202)]);
+    $tester = new CommandTester(app(Kernel::class)->all()['websocket:sync']);
+    expect($tester->execute(['--wait' => '0', '--json' => true], ['interactive' => false]))->toBe(1)
+        ->and(json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR)['operation']['state'])->toBe('pending')
+        ->and($mock->getLastRequest())->toBeInstanceOf(SyncWebSocketAppsRequest::class);
+});
+
+it('requires consent for rotation before sending its typed request', function (): void {
+    $mock = MockClient::global([RotateWebSocketAppRequest::class => websocket_app_cli_response(202)]);
+    $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:rotate']);
+    expect($tester->execute(['name' => 'hauzer', '--json' => true], ['interactive' => false]))->toBe(1)
+        ->and($mock->getLastPendingRequest())->toBeNull();
+    expect($tester->execute(['name' => 'hauzer', '--force' => true, '--json' => true], ['interactive' => false]))->toBe(0)
+        ->and($mock->getLastRequest())->toBeInstanceOf(RotateWebSocketAppRequest::class);
 });

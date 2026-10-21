@@ -10,10 +10,10 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Models\Instance;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
-use Illuminate\Support\Facades\DB;
 
 /** Writes one app's credentials into an Instance's stored environment. It replaces another app's. */
 final readonly class AttachWebSocketAppAction
@@ -23,6 +23,7 @@ final readonly class AttachWebSocketAppAction
         private InstanceEnvironmentContextResolver $contexts,
         private InstanceEnvironmentStore $store,
         private WebSocketAppEnvProjection $projection,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     public function execute(Instance $instance, WebSocketApp $app): WebSocketAppAttachmentData
@@ -38,7 +39,8 @@ final readonly class AttachWebSocketAppAction
         return $this->operations->run([$instance->id], function () use ($instance, $app): WebSocketAppAttachmentData {
             $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: false);
 
-            return DB::transaction(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
+            return $this->registry->write(function () use ($instance, $app, $context): WebSocketAppAttachmentData {
+                $app->refresh();
                 WebSocketAppTarget::query()->updateOrCreate(
                     ['instance_id' => $instance->id],
                     ['websocket_app_id' => $app->id],
